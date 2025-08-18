@@ -4519,14 +4519,6 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @deprecated Use add() instead - it's smart by default now
    * @hidden
    */
-  public async addSmart(
-    vectorOrData: Vector | any,
-    metadata?: T,
-    options: any = {}
-  ): Promise<string> {
-    console.warn('⚠️ addSmart() is deprecated. Use add() instead - it\'s smart by default now!')
-    return this.add(vectorOrData, metadata, { ...options, process: 'auto' })
-  }
 
   /**
    * Get the number of nouns in the database (excluding verbs)
