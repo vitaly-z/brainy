@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     // Default configuration
     globals: true,
-    setupFiles: ['./tests/setup.ts'],
+    setupFiles: ['./tests/test-setup.ts', './tests/setup.ts'],
     testTimeout: 120000, // 120 seconds for TensorFlow operations
     hookTimeout: 120000,
     // Run tests in parallel with limited pool
