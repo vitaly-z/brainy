@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { BrainyData } from '../src/brainyData.js'
-import { BrainyChat } from '../src/chat/brainyChat.js'
+import { BrainyChat } from '../src/chat/BrainyChat.js'
 
 describe('BrainyChat', () => {
   let brainy: BrainyData
