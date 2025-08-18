@@ -17,25 +17,13 @@ import {
   DeleteObjectsCommand 
 } from '@aws-sdk/client-s3'
 import { BrainyData } from '../src/index.js'
-import { Readable } from 'stream'
+import { createMockEmbeddingFunction, createMockS3Body } from './test-utils.js'
 
 // Create S3 mock
 const s3Mock = mockClient(S3Client)
 
-// Helper to create mock S3 response body
-function createMockBody(data: any): any {
-  const jsonString = JSON.stringify(data)
-  return {
-    transformToString: async () => jsonString,
-    transformToByteArray: async () => new TextEncoder().encode(jsonString),
-    transformToWebStream: () => new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(jsonString))
-        controller.close()
-      }
-    })
-  }
-}
+// Use the shared mock body helper
+const createMockBody = createMockS3Body
 
 describe('COMPREHENSIVE S3 Storage Tests', () => {
   let brainy: BrainyData<any>
@@ -75,6 +63,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -86,8 +75,8 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         })
         await brainy.init()
 
-        // Add a noun
-        const id = await brainy.add([0.1, 0.2, 0.3], { name: 'Test noun' })
+        // Add a noun (use string so it gets embedded)
+        const id = await brainy.add('Test noun content', { name: 'Test noun' })
         
         // Verify noun was saved to S3
         const putCalls = s3Mock.commandCalls(PutObjectCommand)
@@ -108,6 +97,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -166,6 +156,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -213,6 +204,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -252,6 +244,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -306,6 +299,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
         brainy = new BrainyData({
+          embeddingFunction: createMockEmbeddingFunction(),
           storage: {
             s3Storage: {
               bucketName: 'test-bucket',
@@ -318,11 +312,11 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         await brainy.init()
 
         // Add items to build index
-        await brainy.add([0.1, 0.2, 0.3], { name: 'Vector 1' })
-        await brainy.add([0.4, 0.5, 0.6], { name: 'Vector 2' })
+        await brainy.add('Vector 1 content', { name: 'Vector 1' })
+        await brainy.add('Vector 2 content', { name: 'Vector 2' })
 
         // Search to verify index works
-        const results = await brainy.search([0.1, 0.2, 0.3], 5)
+        const results = await brainy.search('search query', 5)
         expect(results).toBeDefined()
       })
     })
@@ -486,7 +480,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
       await brainy.init()
 
       // Add item
-      const id = await brainy.add([0.1, 0.2, 0.3], { cached: true }, { id: 'cached-item' })
+      const id = await brainy.add('Cached content', { cached: true }, { id: 'cached-item' })
 
       // First get - should hit S3
       await brainy.get(id)

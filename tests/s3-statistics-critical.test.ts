@@ -17,6 +17,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { BrainyData } from '../src/index.js'
 import { S3CompatibleStorage } from '../src/storage/adapters/s3CompatibleStorage.js'
+import { createMockEmbeddingFunction } from './test-utils.js'
 
 // Create S3 mock
 const s3Mock = mockClient(S3Client)
@@ -58,6 +59,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
 
       // Initialize Brainy with S3 storage
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -104,6 +106,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       })
 
       const brainy2 = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -129,6 +132,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       s3Mock.on(PutObjectCommand).resolves({})
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -185,6 +189,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       })
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -218,6 +223,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       s3Mock.on(ListObjectsV2Command).resolves({ Contents: [] })
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -265,6 +271,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       })
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -301,6 +308,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       s3Mock.on(PutObjectCommand).resolves({})
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -333,6 +341,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       s3Mock.on(PutObjectCommand).resolves({})
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
@@ -417,6 +426,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
       s3Mock.on(PutObjectCommand).resolves({})
 
       brainy = new BrainyData({
+        embeddingFunction: createMockEmbeddingFunction(),
         storage: {
           s3Storage: {
             bucketName: 'test-bucket',
