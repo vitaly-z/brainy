@@ -28,19 +28,19 @@ const CRITICAL_MODEL_CONFIG = {
   modelSize: {
     'onnx/model.onnx': 90555481, // Exact size in bytes
     'tokenizer.json': 711661
-  },
+  } as Record<string, number>,
   embeddingDimensions: 384,
   fallbackSources: [
-    // Primary: Our GitHub releases (we control this)
+    // Primary: Our Google Cloud Storage CDN (we control this, fastest)
     {
-      name: 'GitHub (Primary)',
-      url: 'https://github.com/soulcraftlabs/brainy-models/releases/download/v1.0.0/all-MiniLM-L6-v2.tar.gz',
+      name: 'Soulcraft CDN (Primary)',
+      url: 'https://models.soulcraft.com/models/all-MiniLM-L6-v2.tar.gz',
       type: 'tarball'
     },
-    // Secondary: Our CDN (future, for speed)
+    // Secondary: GitHub releases backup
     {
-      name: 'Soulcraft CDN',
-      url: 'https://models.soulcraft.com/brainy/v1/all-MiniLM-L6-v2.tar.gz',
+      name: 'GitHub Backup',
+      url: 'https://github.com/soulcraftlabs/brainy-models/releases/download/v1.0.0/all-MiniLM-L6-v2.tar.gz',
       type: 'tarball'
     },
     // Tertiary: Hugging Face (original source)
@@ -125,7 +125,7 @@ export class ModelGuardian {
           return
         }
       } catch (error) {
-        console.warn(`❌ ${source.name} failed:`, error.message)
+        console.warn(`❌ ${source.name} failed:`, (error as Error).message)
       }
     }
     

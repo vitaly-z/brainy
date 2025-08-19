@@ -1271,7 +1271,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     // CRITICAL: Ensure model is available before ANY operations
     // This is THE most critical part of the system
     // Without the model, users CANNOT access their data
-    if (this.embeddingFunction) {
+    if (typeof this.embeddingFunction === 'function') {
       try {
         const { modelGuardian } = await import('./critical/model-guardian.js')
         await modelGuardian.ensureCriticalModel()

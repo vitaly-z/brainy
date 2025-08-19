@@ -656,6 +656,22 @@ export class BrainyData {
             return;
         }
         this.isInitializing = true;
+        // CRITICAL: Ensure model is available before ANY operations
+        // This is THE most critical part of the system
+        // Without the model, users CANNOT access their data
+        if (typeof this.embeddingFunction === 'function') {
+            try {
+                const { modelGuardian } = await import('./critical/model-guardian.js');
+                await modelGuardian.ensureCriticalModel();
+            }
+            catch (error) {
+                console.error('🚨 CRITICAL: Model verification failed!');
+                console.error('Brainy cannot function without the transformer model.');
+                console.error('Users cannot access their data without it.');
+                this.isInitializing = false;
+                throw error;
+            }
+        }
         try {
             // Pre-load the embedding model early to ensure it's always available
             // This helps prevent issues with the Universal Sentence Encoder not being loaded

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Brainy Models CDN</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 { 
+            color: #00ff88;
+            margin-top: 0;
+        }
+        .download-box {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .hash {
+            font-family: monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .critical {
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid #ff4444;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        a {
+            color: #00ff88;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Brainy Models CDN</h1>
+        
+        <div class="critical">
+            <strong>⚠️ CRITICAL:</strong> These models MUST NEVER CHANGE<br>
+            They are the foundation of user data access. Changing them would break existing embeddings.
+        </div>
+
+        <h2>Model: all-MiniLM-L6-v2</h2>
+        <p>384-dimensional transformer model for embeddings</p>
+        
+        <div class="download-box">
+            <h3>📦 Download Package</h3>
+            <p><a href="/models/all-MiniLM-L6-v2.tar.gz">all-MiniLM-L6-v2.tar.gz</a> (87MB)</p>
+            <p class="hash">SHA256: <span id="model-hash">Loading...</span></p>
+        </div>
+
+        <h3>Individual Files:</h3>
+        <ul>
+            <li><a href="/models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx">model.onnx</a> - ONNX model (87MB)</li>
+            <li><a href="/models/Xenova/all-MiniLM-L6-v2/tokenizer.json">tokenizer.json</a> - Tokenizer (695KB)</li>
+            <li><a href="/models/Xenova/all-MiniLM-L6-v2/config.json">config.json</a> - Configuration (650B)</li>
+        </ul>
+
+        <h3>Integration:</h3>
+        <pre><code># Direct download
+curl -O https://models.soulcraft.com/models/all-MiniLM-L6-v2.tar.gz
+
+# Verify integrity
+echo "SHA256_HASH  all-MiniLM-L6-v2.tar.gz" | sha256sum -c</code></pre>
+
+        <h3>Manifest:</h3>
+        <p><a href="/models/manifest.json">manifest.json</a> - Model manifest with all hashes</p>
+    </div>
+
+    <script>
+        // Load and display model hash
+        fetch('/models/manifest.json')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('model-hash').textContent = 
+                    data.models['all-MiniLM-L6-v2'].sha256 || 'See manifest';
+            })
+            .catch(() => {
+                document.getElementById('model-hash').textContent = 'See manifest.json';
+            });
+    </script>
+</body>
+</html>

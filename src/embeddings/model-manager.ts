@@ -126,7 +126,7 @@ export class ModelManager {
   }
   
   private async verifyModelFiles(modelPath: string, modelName: string): Promise<boolean> {
-    const manifest = MODEL_MANIFEST[modelName]
+    const manifest = (MODEL_MANIFEST as any)[modelName]
     if (!manifest) return false
     
     for (const [filePath, info] of Object.entries(manifest.files)) {
@@ -140,7 +140,7 @@ export class ModelManager {
         const stats = await import('fs').then(fs => 
           fs.promises.stat(fullPath)
         )
-        if (stats.size !== info.size) {
+        if (stats.size !== (info as any).size) {
           console.warn(`⚠️ Model file size mismatch: ${filePath}`)
           return false
         }
@@ -169,7 +169,7 @@ export class ModelManager {
       return false
       
     } catch (error) {
-      console.log('⚠️ GitHub download failed:', error.message)
+      console.log('⚠️ GitHub download failed:', (error as Error).message)
       return false
     }
   }
@@ -190,7 +190,7 @@ export class ModelManager {
       return false
       
     } catch (error) {
-      console.log('⚠️ CDN download failed:', error.message)
+      console.log('⚠️ CDN download failed:', (error as Error).message)
       return false
     }
   }
