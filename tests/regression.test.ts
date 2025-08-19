@@ -339,8 +339,7 @@ describe('Brainy Regression Tests', () => {
       expect(id2).toBeDefined()
       expect(id1).not.toBe(id2)
       
-      await brainy1.destroy()
-      await brainy2.destroy()
+      // No destroy method needed - instances will be garbage collected
     })
   })
 })

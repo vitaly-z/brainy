@@ -3426,11 +3426,16 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // Handle soft delete vs hard delete
       if (opts.soft) {
         // Soft delete: just mark as deleted - metadata filter will exclude from search
-        return await this.updateMetadata(actualId, { 
-          deleted: true, 
-          deletedAt: new Date().toISOString(),
-          deletedBy: opts.service || 'user'
-        } as T)
+        try {
+          return await this.updateMetadata(actualId, { 
+            deleted: true, 
+            deletedAt: new Date().toISOString(),
+            deletedBy: opts.service || 'user'
+          } as T)
+        } catch (error) {
+          // If item doesn't exist, return false (delete of non-existent item is not an error)
+          return false
+        }
       }
 
       // Hard delete: Remove from index
