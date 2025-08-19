@@ -187,7 +187,7 @@ describe('Brainy 1.0 Unified API', () => {
 
     it('should hard delete when specified', async () => {
       const id = await brainy.add("Data to hard delete")
-      const success = await brainy.delete(id, { soft: false })
+      const success = await brainy.delete(id, { hard: true })
       expect(success).toBe(true)
     })
 

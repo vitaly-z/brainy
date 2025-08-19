@@ -2300,12 +2300,13 @@ export class BrainyData {
      * @returns Promise that resolves to true if the vector was deleted, false otherwise
      */
     async delete(id, options = {}) {
+        // Clear API: use 'hard: true' for hard delete, otherwise soft delete
+        const isHardDelete = options.hard === true;
         const opts = {
-            service: undefined,
-            soft: true, // Soft delete is default - preserves indexes
-            cascade: false,
-            force: false,
-            ...options
+            service: options.service,
+            soft: !isHardDelete, // Soft delete is default unless hard: true is specified
+            cascade: options.cascade || false,
+            force: options.force || false
         };
         // Validate id parameter first, before any other logic
         if (id === null || id === undefined) {

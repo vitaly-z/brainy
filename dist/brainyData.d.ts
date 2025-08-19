@@ -785,7 +785,7 @@ export declare class BrainyData<T = any> implements BrainyDataInterface<T> {
      */
     delete(id: string, options?: {
         service?: string;
-        soft?: boolean;
+        hard?: boolean;
         cascade?: boolean;
         force?: boolean;
     }): Promise<boolean>;

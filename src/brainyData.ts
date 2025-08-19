@@ -3376,17 +3376,19 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     id: string,
     options: {
       service?: string // The service that is deleting the data
-      soft?: boolean // Soft delete (mark as deleted, default: true)
+      hard?: boolean // Hard delete - completely removes from storage (default: false, soft delete is default)
       cascade?: boolean // Delete related verbs (default: false)
       force?: boolean // Force delete even if has relationships (default: false)
     } = {}
   ): Promise<boolean> {
+    // Clear API: use 'hard: true' for hard delete, otherwise soft delete
+    const isHardDelete = options.hard === true
+    
     const opts = {
-      service: undefined,
-      soft: true, // Soft delete is default - preserves indexes
-      cascade: false,
-      force: false,
-      ...options
+      service: options.service,
+      soft: !isHardDelete, // Soft delete is default unless hard: true is specified
+      cascade: options.cascade || false,
+      force: options.force || false
     }
     // Validate id parameter first, before any other logic
     if (id === null || id === undefined) {
