@@ -422,11 +422,13 @@ export function createEmbeddingModel(options?: TransformerEmbeddingOptions): Emb
 }
 
 /**
- * Default embedding function using the lightweight transformer model
+ * Default embedding function using the hybrid model manager (BEST OF BOTH WORLDS)
+ * Prevents multiple model loads while supporting multi-source downloading
  */
 export const defaultEmbeddingFunction: EmbeddingFunction = async (data: string | string[]): Promise<Vector> => {
-  const embedder = new TransformerEmbedding({ verbose: false })
-  return await embedder.embed(data)
+  const { getHybridEmbeddingFunction } = await import('./hybridModelManager.js')
+  const embeddingFn = await getHybridEmbeddingFunction()
+  return await embeddingFn(data)
 }
 
 /**

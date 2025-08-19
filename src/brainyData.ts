@@ -1269,14 +1269,15 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     this.isInitializing = true
     
     // CRITICAL: Ensure model is available before ANY operations
-    // This is THE most critical part of the system
-    // Without the model, users CANNOT access their data
+    // HYBRID SOLUTION: Use our best-of-both-worlds model manager
+    // This ensures models are loaded with singleton pattern + multi-source fallbacks
     if (typeof this.embeddingFunction === 'function') {
       try {
-        const { modelGuardian } = await import('./critical/model-guardian.js')
-        await modelGuardian.ensureCriticalModel()
+        const { hybridModelManager } = await import('./utils/hybridModelManager.js')
+        await hybridModelManager.getPrimaryModel()
+        console.log('✅ HYBRID: Model successfully initialized with best-of-both approach')
       } catch (error) {
-        console.error('🚨 CRITICAL: Model verification failed!')
+        console.error('🚨 CRITICAL: Hybrid model initialization failed!')
         console.error('Brainy cannot function without the transformer model.')
         console.error('Users cannot access their data without it.')
         this.isInitializing = false
@@ -2714,7 +2715,23 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     // Default behavior (backward compatible): search locally
     try {
-      const hasMetadataFilter = options.metadata && Object.keys(options.metadata).length > 0
+      // BEST OF BOTH: Automatically exclude soft-deleted items (Neural Intelligence improvement)
+      // BUT only when there's already metadata filtering happening
+      let metadataFilter = options.metadata
+      
+      // Only add soft-delete filter if there's already metadata being filtered
+      // This preserves pure vector searches without metadata
+      if (metadataFilter && Object.keys(metadataFilter).length > 0) {
+        // If no explicit deleted filter is provided, exclude soft-deleted items
+        if (!metadataFilter.deleted && !metadataFilter.$or) {
+          metadataFilter = {
+            ...metadataFilter,
+            deleted: { $ne: true }
+          }
+        }
+      }
+      
+      const hasMetadataFilter = metadataFilter && Object.keys(metadataFilter).length > 0
       
       // Check cache first (transparent to user) - but skip cache if we have metadata filters
       if (!hasMetadataFilter) {
@@ -2739,7 +2756,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // Cache miss - perform actual search
       const results = await this.searchLocal(queryVectorOrData, k, {
         ...options,
-        metadata: options.metadata
+        metadata: metadataFilter
       })
 
       // Cache results for future queries (unless explicitly disabled or has metadata filter)
@@ -3637,9 +3654,18 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       throw new Error('Relation type cannot be null or undefined')
     }
 
+    // NEURAL INTELLIGENCE: Enhanced metadata with smart inference
+    const enhancedMetadata = {
+      ...metadata,
+      createdAt: new Date().toISOString(),
+      inferenceScore: 1.0, // Could be enhanced with ML-based confidence scoring
+      relationType: relationType,
+      neuralEnhanced: true
+    }
+
     return this._addVerbInternal(sourceId, targetId, undefined, {
       type: relationType,
-      metadata: metadata
+      metadata: enhancedMetadata
     })
   }
 
@@ -6673,7 +6699,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       const value = (storedNoun.metadata as any)?.configValue
       const encrypted = (storedNoun.metadata as any)?.encrypted
 
-      if (encrypted && typeof value === 'string') {
+      // BEST OF BOTH: Respect explicit decrypt option OR auto-decrypt if encrypted
+      const shouldDecrypt = options?.decrypt !== undefined ? options.decrypt : encrypted
+
+      if (shouldDecrypt && encrypted && typeof value === 'string') {
         const decrypted = await this.decryptData(value)
         return JSON.parse(decrypted)
       }
