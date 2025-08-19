@@ -2929,10 +2929,16 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       })
     }
 
-    // Filter out placeholder nouns from search results
+    // Filter out placeholder nouns and deleted items from search results
     searchResults = searchResults.filter((result) => {
       if (result.metadata && typeof result.metadata === 'object') {
         const metadata = result.metadata as Record<string, any>
+        
+        // Exclude deleted items from search results (soft delete)
+        if (metadata.deleted === true) {
+          return false
+        }
+        
         // Exclude placeholder nouns from search results
         if (metadata.isPlaceholder) {
           return false
@@ -6625,20 +6631,31 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Get a configuration value with automatic decryption
    * @param key Configuration key
+   * @param options Options including decryption (auto-detected by default)
    * @returns Configuration value or undefined
    */
-  async getConfig(key: string): Promise<any> {
+  async getConfig(key: string, options?: { decrypt?: boolean }): Promise<any> {
     try {
-      const results = await this.search('', 1, {
+      const results = await this.search(`config ${key}`, 10, {
         nounTypes: [NounType.State],
         metadata: { configKey: key }
       })
 
       if (results.length === 0) return undefined
 
-      const configNoun = results[0]
-      const value = (configNoun as any).data?.configValue || (configNoun as any).metadata?.configValue
-      const encrypted = (configNoun as any).data?.encrypted || (configNoun as any).metadata?.encrypted
+      const result = results[0]
+      
+      // Check if the config data is in the vector data (from the add call)
+      // The search result has: { id, score, vector, metadata }
+      // The actual config object was the data that got vectorized
+      
+      // Try to get the stored noun data first
+      const storedNoun = await this.get(result.id)
+      if (!storedNoun) return undefined
+      
+      // The stored noun should contain our original configNoun object
+      const value = (storedNoun as any).configValue
+      const encrypted = (storedNoun as any).encrypted || result.metadata?.encrypted
 
       if (encrypted && typeof value === 'string') {
         const decrypted = await this.decryptData(value)
