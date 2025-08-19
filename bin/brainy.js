@@ -19,6 +19,8 @@ import { readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { createInterface } from 'readline'
+// @ts-ignore
+import Table from 'cli-table3'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'))
@@ -33,18 +35,30 @@ const getBrainy = async () => {
   return brainy
 }
 
-// Beautiful colors
+// Beautiful colors matching brainy.png logo
 const colors = {
-  primary: chalk.hex('#3A5F4A'),
-  success: chalk.hex('#2D4A3A'), 
-  info: chalk.hex('#4A6B5A'),
-  warning: chalk.hex('#D67441'),
-  error: chalk.hex('#B85C35')
+  primary: chalk.hex('#3A5F4A'),    // Teal container (from logo)
+  success: chalk.hex('#2D4A3A'),    // Deep teal frame (from logo) 
+  info: chalk.hex('#4A6B5A'),      // Medium teal
+  warning: chalk.hex('#D67441'),    // Orange (from logo)
+  error: chalk.hex('#B85C35'),      // Deep orange
+  brain: chalk.hex('#D67441'),      // Brain orange (from logo)
+  cream: chalk.hex('#F5E6A3'),      // Cream background (from logo)
+  dim: chalk.dim,
+  blue: chalk.blue,
+  green: chalk.green,
+  yellow: chalk.yellow,
+  cyan: chalk.cyan
 }
 
 // Helper functions
 const exitProcess = (code = 0) => {
   setTimeout(() => process.exit(code), 100)
+}
+
+// Initialize Brainy instance
+const initBrainy = async () => {
+  return new BrainyData()
 }
 
 const wrapAction = (fn) => {
@@ -984,28 +998,81 @@ program
     
     const actions = {
       list: async () => {
-        const augmentations = brainy.listAugmentations()
-        if (augmentations.length === 0) {
-          console.log(colors.warning('No augmentations registered'))
-          return
+        try {
+          // Use unified professional catalog (fallback to local if not deployed)
+          const REGISTRY_URL = 'https://brain-cloud-api-476163328636.us-central1.run.app/api/registry/augmentations'
+          const response = await fetch(REGISTRY_URL)
+          
+          if (response.ok) {
+            console.log(colors.brain('🏢 SOULCRAFT PROFESSIONAL SUITE\n'))
+            
+            const data = await response.json()
+            const { augmentations = [] } = data
+            
+            const professional = augmentations.filter(a => a.tier === 'professional')
+            const community = augmentations.filter(a => a.tier === 'community')
+            
+            // Display professional augmentations
+            if (professional.length > 0) {
+              console.log(colors.primary('🚀 PROFESSIONAL AUGMENTATIONS'))
+              professional.forEach(aug => {
+                const pricing = aug.pricing === 'FREE' ? colors.success(aug.pricing) : colors.yellow(aug.pricing)
+                const badges = aug.verified ? colors.blue('✓') : ''
+                console.log(`  ${aug.name.padEnd(20)} ${pricing.padEnd(15)} ${badges}`)
+                console.log(`    ${colors.dim(aug.description)}`)
+                if (aug.businessValue) {
+                  console.log(`    ${colors.cyan('→ ' + aug.businessValue)}`)
+                }
+                console.log('')
+              })
+            }
+            
+            // Display local augmentations
+            const localAugmentations = brainy.listAugmentations()
+            if (localAugmentations.length > 0) {
+              console.log(colors.primary('📦 LOCAL AUGMENTATIONS'))
+              localAugmentations.forEach(aug => {
+                const status = aug.enabled ? colors.success('✅ Enabled') : colors.dim('⚪ Disabled')
+                console.log(`  ${aug.name.padEnd(20)} ${status}`)
+                console.log(`    ${colors.dim(aug.description || 'Custom augmentation')}`)
+                console.log('')
+              })
+            }
+            
+            console.log(colors.cyan('🎯 GET STARTED'))
+            console.log('  brainy install <name>        Install augmentation')
+            console.log('  brainy cloud                 Access Brain Cloud features')
+            console.log(`  ${colors.blue('Learn more:')} https://soulcraft.com/augmentations`)
+            
+          } else {
+            throw new Error('Registry unavailable')
+          }
+        } catch (error) {
+          // Fallback to local augmentations only
+          console.log(colors.warning('⚠ Professional catalog unavailable, showing local augmentations'))
+          const augmentations = brainy.listAugmentations()
+          if (augmentations.length === 0) {
+            console.log(colors.warning('No augmentations registered'))
+            return
+          }
+          
+          const table = new Table({
+            head: [colors.brain('Name'), colors.brain('Type'), colors.brain('Status'), colors.brain('Description')],
+            style: { head: [], border: [] }
+          })
+          
+          augmentations.forEach(aug => {
+            table.push([
+              colors.primary(aug.name),
+              colors.info(aug.type),
+              aug.enabled ? colors.success('✅ Enabled') : colors.dim('⚪ Disabled'),
+              colors.dim(aug.description || '')
+            ])
+          })
+          
+          console.log(table.toString())
+          console.log(colors.info(`\nTotal: ${augmentations.length} augmentations`))
         }
-        
-        const table = new Table({
-          head: [colors.brain('Name'), colors.brain('Type'), colors.brain('Status'), colors.brain('Description')],
-          style: { head: [], border: [] }
-        })
-        
-        augmentations.forEach(aug => {
-          table.push([
-            colors.primary(aug.name),
-            colors.info(aug.type),
-            aug.enabled ? colors.success('✅ Enabled') : colors.dim('⚪ Disabled'),
-            colors.dim(aug.description || '')
-          ])
-        })
-        
-        console.log(table.toString())
-        console.log(colors.info(`\nTotal: ${augmentations.length} augmentations`))
       },
       
       enable: async () => {
