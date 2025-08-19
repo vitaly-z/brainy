@@ -62,3 +62,4 @@ yarn-error.log*
 # Test artifacts
 test-results/
 tests/results/models-cache/
+CLAUDE.md
