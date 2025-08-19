@@ -4048,6 +4048,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       }
 
       // Create complete verb metadata separately
+      // Merge original metadata with system metadata to preserve neural enhancements
       const verbMetadata = {
         sourceId: sourceId,
         targetId: targetId,
@@ -4064,7 +4065,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         createdAt: timestamp,
         updatedAt: timestamp,
         createdBy: getAugmentationVersion(service),
-        data: options.metadata // Store the original metadata in the data field
+        // Merge original metadata to preserve neural enhancements from relate()
+        ...(options.metadata || {}),
+        data: options.metadata // Also store in data field for backwards compatibility
       }
 
       // Add to index
@@ -4097,7 +4100,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         createdAt: verbMetadata.createdAt,
         updatedAt: verbMetadata.updatedAt,
         createdBy: verbMetadata.createdBy,
-        metadata: verbMetadata.data,
+        metadata: verbMetadata, // Use full metadata with neural enhancements
         data: verbMetadata.data,
         embedding: hnswVerb.vector
       }
