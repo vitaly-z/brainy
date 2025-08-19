@@ -999,11 +999,28 @@ program
     const actions = {
       list: async () => {
         try {
-          // Use unified professional catalog (fallback to local if not deployed)
-          const REGISTRY_URL = 'https://brain-cloud-api-476163328636.us-central1.run.app/api/registry/augmentations'
-          const response = await fetch(REGISTRY_URL)
+          // Use unified professional catalog with smart fallback
+          const REGISTRY_URLS = [
+            'https://api.soulcraft.com/api/registry/augmentations',
+            'https://brain-cloud-api-476163328636.us-central1.run.app/api/registry/augmentations'
+          ]
           
-          if (response.ok) {
+          let response = null
+          let workingUrl = null
+          
+          for (const url of REGISTRY_URLS) {
+            try {
+              response = await fetch(url, { timeout: 5000 })
+              if (response.ok) {
+                workingUrl = url
+                break
+              }
+            } catch (e) {
+              continue
+            }
+          }
+          
+          if (response && response.ok) {
             console.log(colors.brain('🏢 SOULCRAFT PROFESSIONAL SUITE\n'))
             
             const data = await response.json()
