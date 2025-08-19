@@ -6,6 +6,7 @@
 import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
 import { executeInThread } from './workerUtils.js'
 import { isBrowser } from './environment.js'
+import { ModelManager } from '../embeddings/model-manager.js'
 // @ts-ignore - Transformers.js is now the primary embedding library
 import { pipeline, env } from '@huggingface/transformers'
 
@@ -233,6 +234,10 @@ export class TransformerEmbedding implements EmbeddingModel {
     // Always use real implementation - no mocking
 
     try {
+      // Ensure models are available (downloads if needed)
+      const modelManager = ModelManager.getInstance()
+      await modelManager.ensureModels(this.options.model)
+      
       // Resolve device configuration and cache directory
       const device = await resolveDevice(this.options.device)
       const cacheDir = this.options.cacheDir === './models' 

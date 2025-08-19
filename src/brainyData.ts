@@ -1267,6 +1267,22 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     this.isInitializing = true
+    
+    // CRITICAL: Ensure model is available before ANY operations
+    // This is THE most critical part of the system
+    // Without the model, users CANNOT access their data
+    if (this.embeddingFunction) {
+      try {
+        const { modelGuardian } = await import('./critical/model-guardian.js')
+        await modelGuardian.ensureCriticalModel()
+      } catch (error) {
+        console.error('🚨 CRITICAL: Model verification failed!')
+        console.error('Brainy cannot function without the transformer model.')
+        console.error('Users cannot access their data without it.')
+        this.isInitializing = false
+        throw error
+      }
+    }
 
     try {
       // Pre-load the embedding model early to ensure it's always available

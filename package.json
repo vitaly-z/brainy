@@ -142,7 +142,10 @@
     "_workflow:major": "node scripts/release-workflow.js major",
     "_workflow:dry-run": "npm run build && npm test && npm run _release:dry-run",
     "_dry-run": "npm pack --dry-run",
-    "download-models": "node scripts/download-models.cjs"
+    "download-models": "node scripts/download-models.cjs",
+    "prepare-models": "node scripts/prepare-models.js",
+    "models:verify": "node scripts/ensure-models.js",
+    "models:download": "BRAINY_ALLOW_REMOTE_MODELS=true node scripts/download-models.cjs"
   },
   "keywords": [
     "vector-database",
