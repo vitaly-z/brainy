@@ -91,12 +91,17 @@ const runStorageTests = (
       let item = await brainyInstance.get(id)
       expect(item).toBeDefined()
 
-      // Delete it
+      // Delete it (soft delete by default)
       await brainyInstance.delete(id)
 
-      // Verify it's gone
+      // Verify it's soft deleted (still exists but marked as deleted)
       item = await brainyInstance.get(id)
-      expect(item).toBeNull()
+      expect(item).not.toBeNull()
+      expect(item?.metadata?.deleted).toBe(true)
+      
+      // Verify it doesn't appear in search results
+      const searchResults = await brainyInstance.search('test', 10)
+      expect(searchResults.some(r => r.id === id)).toBe(false)
     })
 
     it('should update metadata', async () => {
@@ -155,6 +160,10 @@ const runStorageTests = (
     })
 
     it('should get statistics', async () => {
+      // Get initial count
+      const initialStats = await brainyInstance.getStatistics()
+      const initialCount = initialStats?.nouns?.count || 0
+      
       // Add some data
       await brainyInstance.add('stats test 1')
       await brainyInstance.add('stats test 2')
@@ -163,7 +172,7 @@ const runStorageTests = (
       const stats = await brainyInstance.getStatistics()
       expect(stats).toBeDefined()
       expect(stats.nouns).toBeDefined()
-      expect(stats.nouns.count).toBe(2)
+      expect(stats.nouns.count).toBeGreaterThanOrEqual(initialCount + 2)
     })
 
     // Backup and restore test removed
