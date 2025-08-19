@@ -1,0 +1,43 @@
+name: 🚨 Repository Content Audit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit-content:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 🔍 Scan for commercial content
+      run: |
+        echo "🚨 Scanning for prohibited content..."
+        
+        # Scan for business terms
+        if grep -r -i "skillvill\|revenue\|pricing.*\$[0-9]\|enterprise.*plan\|business.*plan.*\$" . --exclude-dir=.git --exclude-dir=node_modules; then
+          echo "❌ FOUND BUSINESS CONTENT IN PUBLIC REPO!"
+          exit 1
+        fi
+        
+        # Scan for infrastructure details  
+        if grep -r "476163328636\|brain-cloud-api.*\.run\.app" . --exclude-dir=.git --exclude-dir=node_modules; then
+          echo "❌ FOUND INFRASTRUCTURE DETAILS IN PUBLIC REPO!"
+          exit 1
+        fi
+        
+        # Scan for customer info
+        if grep -r -i "customer.*\$\|client.*enterprise\|acme.*corp.*\$" . --exclude-dir=.git --exclude-dir=node_modules; then
+          echo "❌ FOUND CUSTOMER INFO IN PUBLIC REPO!"
+          exit 1
+        fi
+        
+        echo "✅ Content audit passed - repository is clean!"
+        
+    - name: 📝 Verify allowed content
+      run: |
+        echo "✅ Checking for required open source content..."
+        ls -la src/ bin/ README.md package.json
+        echo "✅ All good - open source content present"
