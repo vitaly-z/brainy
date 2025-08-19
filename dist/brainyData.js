@@ -1936,10 +1936,14 @@ export class BrainyData {
                 offset: options.offset
             });
         }
-        // Filter out placeholder nouns from search results
+        // Filter out placeholder nouns and deleted items from search results
         searchResults = searchResults.filter((result) => {
             if (result.metadata && typeof result.metadata === 'object') {
                 const metadata = result.metadata;
+                // Exclude deleted items from search results (soft delete)
+                if (metadata.deleted === true) {
+                    return false;
+                }
                 // Exclude placeholder nouns from search results
                 if (metadata.isPlaceholder) {
                     return false;
@@ -4818,34 +4822,36 @@ export class BrainyData {
      * @param options Options including encryption
      */
     async setConfig(key, value, options) {
-        const configNoun = {
-            configKey: key,
-            configValue: options?.encrypt ? await this.encryptData(JSON.stringify(value)) : value,
-            encrypted: !!options?.encrypt,
-            timestamp: new Date().toISOString()
-        };
-        await this.add(configNoun, {
+        // Use a predictable ID based on the config key
+        const configId = `config-${key}`;
+        // Store the config data in metadata (not as vectorized data)
+        const configValue = options?.encrypt ? await this.encryptData(JSON.stringify(value)) : value;
+        // Use simple text for vectorization
+        const searchableText = `Configuration setting for ${key}`;
+        await this.add(searchableText, {
             nounType: NounType.State,
             configKey: key,
-            encrypted: !!options?.encrypt
-        });
+            configValue: configValue,
+            encrypted: !!options?.encrypt,
+            timestamp: new Date().toISOString()
+        }, { id: configId });
     }
     /**
      * Get a configuration value with automatic decryption
      * @param key Configuration key
+     * @param options Options including decryption (auto-detected by default)
      * @returns Configuration value or undefined
      */
-    async getConfig(key) {
+    async getConfig(key, options) {
         try {
-            const results = await this.search('', 1, {
-                nounTypes: [NounType.State],
-                metadata: { configKey: key }
-            });
-            if (results.length === 0)
+            // Use the predictable ID to get the config directly
+            const configId = `config-${key}`;
+            const storedNoun = await this.get(configId);
+            if (!storedNoun)
                 return undefined;
-            const configNoun = results[0];
-            const value = configNoun.data?.configValue || configNoun.metadata?.configValue;
-            const encrypted = configNoun.data?.encrypted || configNoun.metadata?.encrypted;
+            // The config data is now stored in metadata
+            const value = storedNoun.metadata?.configValue;
+            const encrypted = storedNoun.metadata?.encrypted;
             if (encrypted && typeof value === 'string') {
                 const decrypted = await this.decryptData(value);
                 return JSON.parse(decrypted);

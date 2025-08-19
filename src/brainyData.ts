@@ -6614,18 +6614,22 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param options Options including encryption
    */
   async setConfig(key: string, value: any, options?: { encrypt?: boolean }): Promise<void> {
-    const configNoun = {
-      configKey: key,
-      configValue: options?.encrypt ? await this.encryptData(JSON.stringify(value)) : value,
-      encrypted: !!options?.encrypt,
-      timestamp: new Date().toISOString()
-    }
+    // Use a predictable ID based on the config key
+    const configId = `config-${key}`
+    
+    // Store the config data in metadata (not as vectorized data)
+    const configValue = options?.encrypt ? await this.encryptData(JSON.stringify(value)) : value
+    
+    // Use simple text for vectorization
+    const searchableText = `Configuration setting for ${key}`
 
-    await this.add(configNoun, {
+    await this.add(searchableText, {
       nounType: NounType.State,
       configKey: key,
-      encrypted: !!options?.encrypt
-    } as T)
+      configValue: configValue,
+      encrypted: !!options?.encrypt,
+      timestamp: new Date().toISOString()
+    } as T, { id: configId })
   }
 
   /**
@@ -6636,26 +6640,15 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    */
   async getConfig(key: string, options?: { decrypt?: boolean }): Promise<any> {
     try {
-      const results = await this.search(`config ${key}`, 10, {
-        nounTypes: [NounType.State],
-        metadata: { configKey: key }
-      })
-
-      if (results.length === 0) return undefined
-
-      const result = results[0]
+      // Use the predictable ID to get the config directly
+      const configId = `config-${key}`
+      const storedNoun = await this.get(configId)
       
-      // Check if the config data is in the vector data (from the add call)
-      // The search result has: { id, score, vector, metadata }
-      // The actual config object was the data that got vectorized
-      
-      // Try to get the stored noun data first
-      const storedNoun = await this.get(result.id)
       if (!storedNoun) return undefined
       
-      // The stored noun should contain our original configNoun object
-      const value = (storedNoun as any).configValue
-      const encrypted = (storedNoun as any).encrypted || result.metadata?.encrypted
+      // The config data is now stored in metadata
+      const value = (storedNoun.metadata as any)?.configValue
+      const encrypted = (storedNoun.metadata as any)?.encrypted
 
       if (encrypted && typeof value === 'string') {
         const decrypted = await this.decryptData(value)

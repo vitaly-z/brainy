@@ -1336,9 +1336,12 @@ export declare class BrainyData<T = any> implements BrainyDataInterface<T> {
     /**
      * Get a configuration value with automatic decryption
      * @param key Configuration key
+     * @param options Options including decryption (auto-detected by default)
      * @returns Configuration value or undefined
      */
-    getConfig(key: string): Promise<any>;
+    getConfig(key: string, options?: {
+        decrypt?: boolean;
+    }): Promise<any>;
     /**
      * Encrypt data using universal crypto utilities
      */
