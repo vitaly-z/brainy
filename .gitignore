@@ -61,4 +61,4 @@ yarn-error.log*
 
 # Test artifacts
 test-results/
-tests/results/
+tests/results/models-cache/
