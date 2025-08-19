@@ -1,0 +1,1307 @@
+/**
+ * OPFS (Origin Private File System) Storage Adapter
+ * Provides persistent storage for the vector database using the Origin Private File System API
+ */
+import { BaseStorage, NOUNS_DIR, VERBS_DIR, METADATA_DIR, NOUN_METADATA_DIR, VERB_METADATA_DIR, INDEX_DIR } from '../baseStorage.js';
+import '../../types/fileSystemTypes.js';
+/**
+ * Helper function to safely get a file from a FileSystemHandle
+ * This is needed because TypeScript doesn't recognize that a FileSystemHandle
+ * can be a FileSystemFileHandle which has the getFile method
+ */
+async function safeGetFile(handle) {
+    // Type cast to any to avoid TypeScript error
+    return handle.getFile();
+}
+// Root directory name for OPFS storage
+const ROOT_DIR = 'opfs-vector-db';
+/**
+ * OPFS storage adapter for browser environments
+ * Uses the Origin Private File System API to store data persistently
+ */
+export class OPFSStorage extends BaseStorage {
+    constructor() {
+        super();
+        this.rootDir = null;
+        this.nounsDir = null;
+        this.verbsDir = null;
+        this.metadataDir = null;
+        this.nounMetadataDir = null;
+        this.verbMetadataDir = null;
+        this.indexDir = null;
+        this.isAvailable = false;
+        this.isPersistentRequested = false;
+        this.isPersistentGranted = false;
+        this.statistics = null;
+        this.activeLocks = new Set();
+        this.lockPrefix = 'opfs-lock-';
+        // Check if OPFS is available
+        this.isAvailable =
+            typeof navigator !== 'undefined' &&
+                'storage' in navigator &&
+                'getDirectory' in navigator.storage;
+    }
+    /**
+     * Initialize the storage adapter
+     */
+    async init() {
+        if (this.isInitialized) {
+            return;
+        }
+        if (!this.isAvailable) {
+            throw new Error('Origin Private File System is not available in this environment');
+        }
+        try {
+            // Get the root directory
+            const root = await navigator.storage.getDirectory();
+            // Create or get our app's root directory
+            this.rootDir = await root.getDirectoryHandle(ROOT_DIR, { create: true });
+            // Create or get nouns directory
+            this.nounsDir = await this.rootDir.getDirectoryHandle(NOUNS_DIR, {
+                create: true
+            });
+            // Create or get verbs directory
+            this.verbsDir = await this.rootDir.getDirectoryHandle(VERBS_DIR, {
+                create: true
+            });
+            // Create or get metadata directory
+            this.metadataDir = await this.rootDir.getDirectoryHandle(METADATA_DIR, {
+                create: true
+            });
+            // Create or get noun metadata directory
+            this.nounMetadataDir = await this.rootDir.getDirectoryHandle(NOUN_METADATA_DIR, {
+                create: true
+            });
+            // Create or get verb metadata directory
+            this.verbMetadataDir = await this.rootDir.getDirectoryHandle(VERB_METADATA_DIR, {
+                create: true
+            });
+            // Create or get index directory
+            this.indexDir = await this.rootDir.getDirectoryHandle(INDEX_DIR, {
+                create: true
+            });
+            this.isInitialized = true;
+        }
+        catch (error) {
+            console.error('Failed to initialize OPFS storage:', error);
+            throw new Error(`Failed to initialize OPFS storage: ${error}`);
+        }
+    }
+    /**
+     * Check if OPFS is available in the current environment
+     */
+    isOPFSAvailable() {
+        return this.isAvailable;
+    }
+    /**
+     * Request persistent storage permission from the user
+     * @returns Promise that resolves to true if permission was granted, false otherwise
+     */
+    async requestPersistentStorage() {
+        if (!this.isAvailable) {
+            console.warn('Cannot request persistent storage: OPFS is not available');
+            return false;
+        }
+        try {
+            // Check if persistence is already granted
+            this.isPersistentGranted = await navigator.storage.persisted();
+            if (!this.isPersistentGranted) {
+                // Request permission for persistent storage
+                this.isPersistentGranted = await navigator.storage.persist();
+            }
+            this.isPersistentRequested = true;
+            return this.isPersistentGranted;
+        }
+        catch (error) {
+            console.warn('Failed to request persistent storage:', error);
+            return false;
+        }
+    }
+    /**
+     * Check if persistent storage is granted
+     * @returns Promise that resolves to true if persistent storage is granted, false otherwise
+     */
+    async isPersistent() {
+        if (!this.isAvailable) {
+            return false;
+        }
+        try {
+            this.isPersistentGranted = await navigator.storage.persisted();
+            return this.isPersistentGranted;
+        }
+        catch (error) {
+            console.warn('Failed to check persistent storage status:', error);
+            return false;
+        }
+    }
+    /**
+     * Save a noun to storage
+     */
+    async saveNoun_internal(noun) {
+        await this.ensureInitialized();
+        try {
+            // Convert connections Map to a serializable format
+            const serializableNoun = {
+                ...noun,
+                connections: this.mapToObject(noun.connections, (set) => Array.from(set))
+            };
+            // Create or get the file for this noun
+            const fileHandle = await this.nounsDir.getFileHandle(`${noun.id}.json`, {
+                create: true
+            });
+            // Write the noun data to the file
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(serializableNoun));
+            await writable.close();
+        }
+        catch (error) {
+            console.error(`Failed to save noun ${noun.id}:`, error);
+            throw new Error(`Failed to save noun ${noun.id}: ${error}`);
+        }
+    }
+    /**
+     * Get a noun from storage
+     */
+    async getNoun_internal(id) {
+        await this.ensureInitialized();
+        try {
+            // Get the file handle for this noun
+            const fileHandle = await this.nounsDir.getFileHandle(`${id}.json`);
+            // Read the noun data from the file
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            const data = JSON.parse(text);
+            // Convert serialized connections back to Map<number, Set<string>>
+            const connections = new Map();
+            for (const [level, nounIds] of Object.entries(data.connections)) {
+                connections.set(Number(level), new Set(nounIds));
+            }
+            return {
+                id: data.id,
+                vector: data.vector,
+                connections,
+                level: data.level || 0
+            };
+        }
+        catch (error) {
+            // Noun not found or other error
+            return null;
+        }
+    }
+    /**
+     * Get nouns by noun type (internal implementation)
+     * @param nounType The noun type to filter by
+     * @returns Promise that resolves to an array of nouns of the specified noun type
+     */
+    async getNounsByNounType_internal(nounType) {
+        return this.getNodesByNounType(nounType);
+    }
+    /**
+     * Get nodes by noun type
+     * @param nounType The noun type to filter by
+     * @returns Promise that resolves to an array of nodes of the specified noun type
+     */
+    async getNodesByNounType(nounType) {
+        await this.ensureInitialized();
+        const nodes = [];
+        try {
+            // Iterate through all files in the nouns directory
+            for await (const [name, handle] of this.nounsDir.entries()) {
+                if (handle.kind === 'file') {
+                    try {
+                        // Read the node data from the file
+                        const file = await safeGetFile(handle);
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        // Get the metadata to check the noun type
+                        const metadata = await this.getMetadata(data.id);
+                        // Include the node if its noun type matches the requested type
+                        if (metadata && metadata.noun === nounType) {
+                            // Convert serialized connections back to Map<number, Set<string>>
+                            const connections = new Map();
+                            for (const [level, nodeIds] of Object.entries(data.connections)) {
+                                connections.set(Number(level), new Set(nodeIds));
+                            }
+                            nodes.push({
+                                id: data.id,
+                                vector: data.vector,
+                                connections,
+                                level: data.level || 0
+                            });
+                        }
+                    }
+                    catch (error) {
+                        console.error(`Error reading node file ${name}:`, error);
+                    }
+                }
+            }
+        }
+        catch (error) {
+            console.error('Error reading nouns directory:', error);
+        }
+        return nodes;
+    }
+    /**
+     * Delete a noun from storage (internal implementation)
+     */
+    async deleteNoun_internal(id) {
+        return this.deleteNode(id);
+    }
+    /**
+     * Delete a node from storage
+     */
+    async deleteNode(id) {
+        await this.ensureInitialized();
+        try {
+            await this.nounsDir.removeEntry(`${id}.json`);
+        }
+        catch (error) {
+            // Ignore NotFoundError, which means the file doesn't exist
+            if (error.name !== 'NotFoundError') {
+                console.error(`Error deleting node ${id}:`, error);
+                throw error;
+            }
+        }
+    }
+    /**
+     * Save a verb to storage (internal implementation)
+     */
+    async saveVerb_internal(verb) {
+        return this.saveEdge(verb);
+    }
+    /**
+     * Save an edge to storage
+     */
+    async saveEdge(edge) {
+        await this.ensureInitialized();
+        try {
+            // Convert connections Map to a serializable format
+            const serializableEdge = {
+                ...edge,
+                connections: this.mapToObject(edge.connections, (set) => Array.from(set))
+            };
+            // Create or get the file for this verb
+            const fileHandle = await this.verbsDir.getFileHandle(`${edge.id}.json`, {
+                create: true
+            });
+            // Write the verb data to the file
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(serializableEdge));
+            await writable.close();
+        }
+        catch (error) {
+            console.error(`Failed to save edge ${edge.id}:`, error);
+            throw new Error(`Failed to save edge ${edge.id}: ${error}`);
+        }
+    }
+    /**
+     * Get a verb from storage (internal implementation)
+     */
+    async getVerb_internal(id) {
+        return this.getEdge(id);
+    }
+    /**
+     * Get an edge from storage
+     */
+    async getEdge(id) {
+        await this.ensureInitialized();
+        try {
+            // Get the file handle for this edge
+            const fileHandle = await this.verbsDir.getFileHandle(`${id}.json`);
+            // Read the edge data from the file
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            const data = JSON.parse(text);
+            // Convert serialized connections back to Map<number, Set<string>>
+            const connections = new Map();
+            for (const [level, nodeIds] of Object.entries(data.connections)) {
+                connections.set(Number(level), new Set(nodeIds));
+            }
+            // Create default timestamp if not present
+            const defaultTimestamp = {
+                seconds: Math.floor(Date.now() / 1000),
+                nanoseconds: (Date.now() % 1000) * 1000000
+            };
+            // Create default createdBy if not present
+            const defaultCreatedBy = {
+                augmentation: 'unknown',
+                version: '1.0'
+            };
+            return {
+                id: data.id,
+                vector: data.vector,
+                connections
+            };
+        }
+        catch (error) {
+            // Edge not found or other error
+            return null;
+        }
+    }
+    /**
+     * Get all edges from storage
+     */
+    async getAllEdges() {
+        await this.ensureInitialized();
+        const allEdges = [];
+        try {
+            // Iterate through all files in the verbs directory
+            for await (const [name, handle] of this.verbsDir.entries()) {
+                if (handle.kind === 'file') {
+                    try {
+                        // Read the edge data from the file
+                        const file = await safeGetFile(handle);
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        // Convert serialized connections back to Map<number, Set<string>>
+                        const connections = new Map();
+                        for (const [level, nodeIds] of Object.entries(data.connections)) {
+                            connections.set(Number(level), new Set(nodeIds));
+                        }
+                        // Create default timestamp if not present
+                        const defaultTimestamp = {
+                            seconds: Math.floor(Date.now() / 1000),
+                            nanoseconds: (Date.now() % 1000) * 1000000
+                        };
+                        // Create default createdBy if not present
+                        const defaultCreatedBy = {
+                            augmentation: 'unknown',
+                            version: '1.0'
+                        };
+                        allEdges.push({
+                            id: data.id,
+                            vector: data.vector,
+                            connections
+                        });
+                    }
+                    catch (error) {
+                        console.error(`Error reading edge file ${name}:`, error);
+                    }
+                }
+            }
+        }
+        catch (error) {
+            console.error('Error reading verbs directory:', error);
+        }
+        return allEdges;
+    }
+    /**
+     * Get verbs by source (internal implementation)
+     */
+    async getVerbsBySource_internal(sourceId) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { sourceId: [sourceId] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Get edges by source
+     */
+    async getEdgesBySource(sourceId) {
+        // This method is deprecated and would require loading metadata for each edge
+        // For now, return empty array since this is not efficiently implementable with new storage pattern
+        console.warn('getEdgesBySource is deprecated and not efficiently supported in new storage pattern');
+        return [];
+    }
+    /**
+     * Get verbs by target (internal implementation)
+     */
+    async getVerbsByTarget_internal(targetId) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { targetId: [targetId] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Get edges by target
+     */
+    async getEdgesByTarget(targetId) {
+        // This method is deprecated and would require loading metadata for each edge
+        // For now, return empty array since this is not efficiently implementable with new storage pattern
+        console.warn('getEdgesByTarget is deprecated and not efficiently supported in new storage pattern');
+        return [];
+    }
+    /**
+     * Get verbs by type (internal implementation)
+     */
+    async getVerbsByType_internal(type) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { verbType: [type] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Get edges by type
+     */
+    async getEdgesByType(type) {
+        // This method is deprecated and would require loading metadata for each edge
+        // For now, return empty array since this is not efficiently implementable with new storage pattern
+        console.warn('getEdgesByType is deprecated and not efficiently supported in new storage pattern');
+        return [];
+    }
+    /**
+     * Delete a verb from storage (internal implementation)
+     */
+    async deleteVerb_internal(id) {
+        return this.deleteEdge(id);
+    }
+    /**
+     * Delete an edge from storage
+     */
+    async deleteEdge(id) {
+        await this.ensureInitialized();
+        try {
+            await this.verbsDir.removeEntry(`${id}.json`);
+        }
+        catch (error) {
+            // Ignore NotFoundError, which means the file doesn't exist
+            if (error.name !== 'NotFoundError') {
+                console.error(`Error deleting edge ${id}:`, error);
+                throw error;
+            }
+        }
+    }
+    /**
+     * Save metadata to storage
+     */
+    async saveMetadata(id, metadata) {
+        await this.ensureInitialized();
+        try {
+            // Create or get the file for this metadata
+            const fileHandle = await this.metadataDir.getFileHandle(`${id}.json`, {
+                create: true
+            });
+            // Write the metadata to the file
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(metadata));
+            await writable.close();
+        }
+        catch (error) {
+            console.error(`Failed to save metadata ${id}:`, error);
+            throw new Error(`Failed to save metadata ${id}: ${error}`);
+        }
+    }
+    /**
+     * Get metadata from storage
+     */
+    async getMetadata(id) {
+        await this.ensureInitialized();
+        try {
+            // Get the file handle for this metadata
+            const fileHandle = await this.metadataDir.getFileHandle(`${id}.json`);
+            // Read the metadata from the file
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            return JSON.parse(text);
+        }
+        catch (error) {
+            // Metadata not found or other error
+            return null;
+        }
+    }
+    /**
+     * Get multiple metadata objects in batches (CRITICAL: Prevents socket exhaustion)
+     * OPFS implementation uses controlled concurrency for file operations
+     */
+    async getMetadataBatch(ids) {
+        await this.ensureInitialized();
+        const results = new Map();
+        const batchSize = 10; // Process 10 files at a time
+        // Process in batches to avoid overwhelming OPFS
+        for (let i = 0; i < ids.length; i += batchSize) {
+            const batch = ids.slice(i, i + batchSize);
+            const batchPromises = batch.map(async (id) => {
+                try {
+                    const metadata = await this.getMetadata(id);
+                    return { id, metadata };
+                }
+                catch (error) {
+                    console.debug(`Failed to read metadata for ${id}:`, error);
+                    return { id, metadata: null };
+                }
+            });
+            const batchResults = await Promise.all(batchPromises);
+            for (const { id, metadata } of batchResults) {
+                if (metadata !== null) {
+                    results.set(id, metadata);
+                }
+            }
+            // Small yield between batches
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        return results;
+    }
+    /**
+     * Save verb metadata to storage
+     */
+    async saveVerbMetadata(id, metadata) {
+        await this.ensureInitialized();
+        const fileName = `${id}.json`;
+        const fileHandle = await this.verbMetadataDir.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(metadata, null, 2));
+        await writable.close();
+    }
+    /**
+     * Get verb metadata from storage
+     */
+    async getVerbMetadata(id) {
+        await this.ensureInitialized();
+        const fileName = `${id}.json`;
+        try {
+            const fileHandle = await this.verbMetadataDir.getFileHandle(fileName);
+            const file = await safeGetFile(fileHandle);
+            const text = await file.text();
+            return JSON.parse(text);
+        }
+        catch (error) {
+            if (error.name !== 'NotFoundError') {
+                console.error(`Error reading verb metadata ${id}:`, error);
+            }
+            return null;
+        }
+    }
+    /**
+     * Save noun metadata to storage
+     */
+    async saveNounMetadata(id, metadata) {
+        await this.ensureInitialized();
+        const fileName = `${id}.json`;
+        const fileHandle = await this.nounMetadataDir.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(metadata, null, 2));
+        await writable.close();
+    }
+    /**
+     * Get noun metadata from storage
+     */
+    async getNounMetadata(id) {
+        await this.ensureInitialized();
+        const fileName = `${id}.json`;
+        try {
+            const fileHandle = await this.nounMetadataDir.getFileHandle(fileName);
+            const file = await safeGetFile(fileHandle);
+            const text = await file.text();
+            return JSON.parse(text);
+        }
+        catch (error) {
+            if (error.name !== 'NotFoundError') {
+                console.error(`Error reading noun metadata ${id}:`, error);
+            }
+            return null;
+        }
+    }
+    /**
+     * Clear all data from storage
+     */
+    async clear() {
+        await this.ensureInitialized();
+        // Helper function to remove all files in a directory
+        const removeDirectoryContents = async (dirHandle) => {
+            try {
+                for await (const [name, handle] of dirHandle.entries()) {
+                    // Use recursive option to handle directories that may contain files
+                    await dirHandle.removeEntry(name, { recursive: true });
+                }
+            }
+            catch (error) {
+                console.error(`Error removing directory contents:`, error);
+                throw error;
+            }
+        };
+        try {
+            // Remove all files in the nouns directory
+            await removeDirectoryContents(this.nounsDir);
+            // Remove all files in the verbs directory
+            await removeDirectoryContents(this.verbsDir);
+            // Remove all files in the metadata directory
+            await removeDirectoryContents(this.metadataDir);
+            // Remove all files in the noun metadata directory
+            await removeDirectoryContents(this.nounMetadataDir);
+            // Remove all files in the verb metadata directory
+            await removeDirectoryContents(this.verbMetadataDir);
+            // Remove all files in the index directory
+            await removeDirectoryContents(this.indexDir);
+            // Clear the statistics cache
+            this.statisticsCache = null;
+            this.statisticsModified = false;
+        }
+        catch (error) {
+            console.error('Error clearing storage:', error);
+            throw error;
+        }
+    }
+    /**
+     * Get information about storage usage and capacity
+     */
+    async getStorageStatus() {
+        await this.ensureInitialized();
+        try {
+            // Calculate the total size of all files in the storage directories
+            let totalSize = 0;
+            // Helper function to calculate directory size
+            const calculateDirSize = async (dirHandle) => {
+                let size = 0;
+                try {
+                    for await (const [name, handle] of dirHandle.entries()) {
+                        if (handle.kind === 'file') {
+                            const file = await handle.getFile();
+                            size += file.size;
+                        }
+                        else if (handle.kind === 'directory') {
+                            size += await calculateDirSize(handle);
+                        }
+                    }
+                }
+                catch (error) {
+                    console.warn(`Error calculating size for directory:`, error);
+                }
+                return size;
+            };
+            // Helper function to count files in a directory
+            const countFilesInDirectory = async (dirHandle) => {
+                let count = 0;
+                try {
+                    for await (const [name, handle] of dirHandle.entries()) {
+                        if (handle.kind === 'file') {
+                            count++;
+                        }
+                    }
+                }
+                catch (error) {
+                    console.warn(`Error counting files in directory:`, error);
+                }
+                return count;
+            };
+            // Calculate size for each directory
+            if (this.nounsDir) {
+                totalSize += await calculateDirSize(this.nounsDir);
+            }
+            if (this.verbsDir) {
+                totalSize += await calculateDirSize(this.verbsDir);
+            }
+            if (this.metadataDir) {
+                totalSize += await calculateDirSize(this.metadataDir);
+            }
+            if (this.indexDir) {
+                totalSize += await calculateDirSize(this.indexDir);
+            }
+            // Get storage quota information using the Storage API
+            let quota = null;
+            let details = {
+                isPersistent: await this.isPersistent(),
+                nounTypes: {}
+            };
+            try {
+                if (navigator.storage && navigator.storage.estimate) {
+                    const estimate = await navigator.storage.estimate();
+                    quota = estimate.quota || null;
+                    details = {
+                        ...details,
+                        usage: estimate.usage,
+                        quota: estimate.quota,
+                        freePercentage: estimate.quota
+                            ? ((estimate.quota - (estimate.usage || 0)) / estimate.quota) *
+                                100
+                            : null
+                    };
+                }
+            }
+            catch (error) {
+                console.warn('Unable to get storage estimate:', error);
+            }
+            // Count files in each directory
+            if (this.nounsDir) {
+                details.nounsCount = await countFilesInDirectory(this.nounsDir);
+            }
+            if (this.verbsDir) {
+                details.verbsCount = await countFilesInDirectory(this.verbsDir);
+            }
+            if (this.metadataDir) {
+                details.metadataCount = await countFilesInDirectory(this.metadataDir);
+            }
+            // Count nouns by type using metadata
+            const nounTypeCounts = {};
+            if (this.metadataDir) {
+                for await (const [name, handle] of this.metadataDir.entries()) {
+                    if (handle.kind === 'file') {
+                        try {
+                            const file = await safeGetFile(handle);
+                            const text = await file.text();
+                            const metadata = JSON.parse(text);
+                            if (metadata.noun) {
+                                nounTypeCounts[metadata.noun] =
+                                    (nounTypeCounts[metadata.noun] || 0) + 1;
+                            }
+                        }
+                        catch (error) {
+                            console.error(`Error reading metadata file ${name}:`, error);
+                        }
+                    }
+                }
+            }
+            details.nounTypes = nounTypeCounts;
+            return {
+                type: 'opfs',
+                used: totalSize,
+                quota,
+                details
+            };
+        }
+        catch (error) {
+            console.error('Failed to get storage status:', error);
+            return {
+                type: 'opfs',
+                used: 0,
+                quota: null,
+                details: { error: String(error) }
+            };
+        }
+    }
+    /**
+     * Get the statistics key for a specific date
+     * @param date The date to get the key for
+     * @returns The statistics key for the specified date
+     */
+    getStatisticsKeyForDate(date) {
+        const year = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        return `statistics_${year}${month}${day}.json`;
+    }
+    /**
+     * Get the current statistics key
+     * @returns The current statistics key
+     */
+    getCurrentStatisticsKey() {
+        return this.getStatisticsKeyForDate(new Date());
+    }
+    /**
+     * Get the legacy statistics key (for backward compatibility)
+     * @returns The legacy statistics key
+     */
+    getLegacyStatisticsKey() {
+        return 'statistics.json';
+    }
+    /**
+     * Acquire a browser-based lock for coordinating operations across multiple tabs
+     * @param lockKey The key to lock on
+     * @param ttl Time to live for the lock in milliseconds (default: 30 seconds)
+     * @returns Promise that resolves to true if lock was acquired, false otherwise
+     */
+    async acquireLock(lockKey, ttl = 30000) {
+        if (typeof localStorage === 'undefined') {
+            console.warn('localStorage not available, proceeding without lock');
+            return false;
+        }
+        const lockStorageKey = `${this.lockPrefix}${lockKey}`;
+        const lockValue = `${Date.now()}_${Math.random()}_${window.location.href}`;
+        const expiresAt = Date.now() + ttl;
+        try {
+            // Check if lock already exists and is still valid
+            const existingLock = localStorage.getItem(lockStorageKey);
+            if (existingLock) {
+                try {
+                    const lockInfo = JSON.parse(existingLock);
+                    if (lockInfo.expiresAt > Date.now()) {
+                        // Lock exists and is still valid
+                        return false;
+                    }
+                }
+                catch (error) {
+                    // Invalid lock data, we can proceed to create a new lock
+                    console.warn(`Invalid lock data for ${lockStorageKey}:`, error);
+                }
+            }
+            // Try to create the lock
+            const lockInfo = {
+                lockValue,
+                expiresAt,
+                tabId: window.location.href,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(lockStorageKey, JSON.stringify(lockInfo));
+            // Add to active locks for cleanup
+            this.activeLocks.add(lockKey);
+            // Schedule automatic cleanup when lock expires
+            setTimeout(() => {
+                this.releaseLock(lockKey, lockValue).catch((error) => {
+                    console.warn(`Failed to auto-release expired lock ${lockKey}:`, error);
+                });
+            }, ttl);
+            return true;
+        }
+        catch (error) {
+            console.warn(`Failed to acquire lock ${lockKey}:`, error);
+            return false;
+        }
+    }
+    /**
+     * Release a browser-based lock
+     * @param lockKey The key to unlock
+     * @param lockValue The value used when acquiring the lock (for verification)
+     * @returns Promise that resolves when lock is released
+     */
+    async releaseLock(lockKey, lockValue) {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+        const lockStorageKey = `${this.lockPrefix}${lockKey}`;
+        try {
+            // If lockValue is provided, verify it matches before releasing
+            if (lockValue) {
+                const existingLock = localStorage.getItem(lockStorageKey);
+                if (existingLock) {
+                    try {
+                        const lockInfo = JSON.parse(existingLock);
+                        if (lockInfo.lockValue !== lockValue) {
+                            // Lock was acquired by someone else, don't release it
+                            return;
+                        }
+                    }
+                    catch (error) {
+                        // Invalid lock data, remove it
+                        localStorage.removeItem(lockStorageKey);
+                        this.activeLocks.delete(lockKey);
+                        return;
+                    }
+                }
+            }
+            // Remove the lock
+            localStorage.removeItem(lockStorageKey);
+            // Remove from active locks
+            this.activeLocks.delete(lockKey);
+        }
+        catch (error) {
+            console.warn(`Failed to release lock ${lockKey}:`, error);
+        }
+    }
+    /**
+     * Clean up expired locks from localStorage
+     */
+    async cleanupExpiredLocks() {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+        try {
+            const now = Date.now();
+            const keysToRemove = [];
+            // Iterate through localStorage to find expired locks
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(this.lockPrefix)) {
+                    try {
+                        const lockData = localStorage.getItem(key);
+                        if (lockData) {
+                            const lockInfo = JSON.parse(lockData);
+                            if (lockInfo.expiresAt <= now) {
+                                keysToRemove.push(key);
+                                const lockKey = key.replace(this.lockPrefix, '');
+                                this.activeLocks.delete(lockKey);
+                            }
+                        }
+                    }
+                    catch (error) {
+                        // Invalid lock data, mark for removal
+                        keysToRemove.push(key);
+                    }
+                }
+            }
+            // Remove expired locks
+            keysToRemove.forEach((key) => {
+                localStorage.removeItem(key);
+            });
+            if (keysToRemove.length > 0) {
+                console.log(`Cleaned up ${keysToRemove.length} expired locks`);
+            }
+        }
+        catch (error) {
+            console.warn('Failed to cleanup expired locks:', error);
+        }
+    }
+    /**
+     * Save statistics data to storage with browser-based locking
+     * @param statistics The statistics data to save
+     */
+    async saveStatisticsData(statistics) {
+        const lockKey = 'statistics';
+        const lockAcquired = await this.acquireLock(lockKey, 10000); // 10 second timeout
+        if (!lockAcquired) {
+            console.warn('Failed to acquire lock for statistics update, proceeding without lock');
+        }
+        try {
+            // Get existing statistics to merge with new data
+            const existingStats = await this.getStatisticsData();
+            let mergedStats;
+            if (existingStats) {
+                // Merge statistics data
+                mergedStats = {
+                    nounCount: {
+                        ...existingStats.nounCount,
+                        ...statistics.nounCount
+                    },
+                    verbCount: {
+                        ...existingStats.verbCount,
+                        ...statistics.verbCount
+                    },
+                    metadataCount: {
+                        ...existingStats.metadataCount,
+                        ...statistics.metadataCount
+                    },
+                    hnswIndexSize: Math.max(statistics.hnswIndexSize || 0, existingStats.hnswIndexSize || 0),
+                    lastUpdated: new Date().toISOString()
+                };
+            }
+            else {
+                // No existing statistics, use new ones
+                mergedStats = {
+                    ...statistics,
+                    lastUpdated: new Date().toISOString()
+                };
+            }
+            // Create a deep copy to avoid reference issues
+            this.statistics = {
+                nounCount: { ...mergedStats.nounCount },
+                verbCount: { ...mergedStats.verbCount },
+                metadataCount: { ...mergedStats.metadataCount },
+                hnswIndexSize: mergedStats.hnswIndexSize,
+                lastUpdated: mergedStats.lastUpdated
+            };
+            // Ensure the root directory is initialized
+            await this.ensureInitialized();
+            // Get or create the index directory
+            if (!this.indexDir) {
+                throw new Error('Index directory not initialized');
+            }
+            // Get the current statistics key
+            const currentKey = this.getCurrentStatisticsKey();
+            // Create a file for the statistics data
+            const fileHandle = await this.indexDir.getFileHandle(currentKey, {
+                create: true
+            });
+            // Create a writable stream
+            const writable = await fileHandle.createWritable();
+            // Write the statistics data to the file
+            await writable.write(JSON.stringify(this.statistics, null, 2));
+            // Close the stream
+            await writable.close();
+            // Also update the legacy key for backward compatibility, but less frequently
+            if (Math.random() < 0.1) {
+                const legacyKey = this.getLegacyStatisticsKey();
+                const legacyFileHandle = await this.indexDir.getFileHandle(legacyKey, {
+                    create: true
+                });
+                const legacyWritable = await legacyFileHandle.createWritable();
+                await legacyWritable.write(JSON.stringify(this.statistics, null, 2));
+                await legacyWritable.close();
+            }
+        }
+        catch (error) {
+            console.error('Failed to save statistics data:', error);
+            throw new Error(`Failed to save statistics data: ${error}`);
+        }
+        finally {
+            if (lockAcquired) {
+                await this.releaseLock(lockKey);
+            }
+        }
+    }
+    /**
+     * Get statistics data from storage
+     * @returns Promise that resolves to the statistics data or null if not found
+     */
+    async getStatisticsData() {
+        // If we have cached statistics, return a deep copy
+        if (this.statistics) {
+            return {
+                nounCount: { ...this.statistics.nounCount },
+                verbCount: { ...this.statistics.verbCount },
+                metadataCount: { ...this.statistics.metadataCount },
+                hnswIndexSize: this.statistics.hnswIndexSize,
+                lastUpdated: this.statistics.lastUpdated
+            };
+        }
+        try {
+            // Ensure the root directory is initialized
+            await this.ensureInitialized();
+            if (!this.indexDir) {
+                throw new Error('Index directory not initialized');
+            }
+            // First try to get statistics from today's file
+            const currentKey = this.getCurrentStatisticsKey();
+            try {
+                const fileHandle = await this.indexDir.getFileHandle(currentKey, {
+                    create: false
+                });
+                const file = await fileHandle.getFile();
+                const text = await file.text();
+                this.statistics = JSON.parse(text);
+                if (this.statistics) {
+                    return {
+                        nounCount: { ...this.statistics.nounCount },
+                        verbCount: { ...this.statistics.verbCount },
+                        metadataCount: { ...this.statistics.metadataCount },
+                        hnswIndexSize: this.statistics.hnswIndexSize,
+                        lastUpdated: this.statistics.lastUpdated
+                    };
+                }
+            }
+            catch (error) {
+                // If today's file doesn't exist, try yesterday's file
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayKey = this.getStatisticsKeyForDate(yesterday);
+                try {
+                    const fileHandle = await this.indexDir.getFileHandle(yesterdayKey, {
+                        create: false
+                    });
+                    const file = await fileHandle.getFile();
+                    const text = await file.text();
+                    this.statistics = JSON.parse(text);
+                    if (this.statistics) {
+                        return {
+                            nounCount: { ...this.statistics.nounCount },
+                            verbCount: { ...this.statistics.verbCount },
+                            metadataCount: { ...this.statistics.metadataCount },
+                            hnswIndexSize: this.statistics.hnswIndexSize,
+                            lastUpdated: this.statistics.lastUpdated
+                        };
+                    }
+                }
+                catch (error) {
+                    // If yesterday's file doesn't exist, try the legacy file
+                    const legacyKey = this.getLegacyStatisticsKey();
+                    try {
+                        const fileHandle = await this.indexDir.getFileHandle(legacyKey, {
+                            create: false
+                        });
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        this.statistics = JSON.parse(text);
+                        if (this.statistics) {
+                            return {
+                                nounCount: { ...this.statistics.nounCount },
+                                verbCount: { ...this.statistics.verbCount },
+                                metadataCount: { ...this.statistics.metadataCount },
+                                hnswIndexSize: this.statistics.hnswIndexSize,
+                                lastUpdated: this.statistics.lastUpdated
+                            };
+                        }
+                    }
+                    catch (error) {
+                        // If the legacy file doesn't exist either, return null
+                        return null;
+                    }
+                }
+            }
+            // If we get here and statistics is null, return default statistics
+            return this.statistics ? this.statistics : null;
+        }
+        catch (error) {
+            console.error('Failed to get statistics data:', error);
+            throw new Error(`Failed to get statistics data: ${error}`);
+        }
+    }
+    /**
+     * Get nouns with pagination support
+     * @param options Pagination and filter options
+     * @returns Promise that resolves to a paginated result of nouns
+     */
+    async getNounsWithPagination(options = {}) {
+        await this.ensureInitialized();
+        const limit = options.limit || 100;
+        const cursor = options.cursor;
+        // Get all noun files
+        const nounFiles = [];
+        if (this.nounsDir) {
+            for await (const [name, handle] of this.nounsDir.entries()) {
+                if (handle.kind === 'file' && name.endsWith('.json')) {
+                    nounFiles.push(name);
+                }
+            }
+        }
+        // Sort files for consistent ordering
+        nounFiles.sort();
+        // Apply cursor-based pagination
+        let startIndex = 0;
+        if (cursor) {
+            const cursorIndex = nounFiles.findIndex(file => file > cursor);
+            if (cursorIndex >= 0) {
+                startIndex = cursorIndex;
+            }
+        }
+        // Get the subset of files for this page
+        const pageFiles = nounFiles.slice(startIndex, startIndex + limit);
+        // Load nouns from files
+        const items = [];
+        for (const fileName of pageFiles) {
+            const id = fileName.replace('.json', '');
+            const noun = await this.getNoun_internal(id);
+            if (noun) {
+                // Apply filters if provided
+                if (options.filter) {
+                    const metadata = await this.getNounMetadata(id);
+                    // Filter by noun type
+                    if (options.filter.nounType) {
+                        const nounTypes = Array.isArray(options.filter.nounType)
+                            ? options.filter.nounType
+                            : [options.filter.nounType];
+                        if (metadata && !nounTypes.includes(metadata.type || metadata.noun)) {
+                            continue;
+                        }
+                    }
+                    // Filter by service
+                    if (options.filter.service) {
+                        const services = Array.isArray(options.filter.service)
+                            ? options.filter.service
+                            : [options.filter.service];
+                        if (metadata && !services.includes(metadata.createdBy?.augmentation)) {
+                            continue;
+                        }
+                    }
+                    // Filter by metadata
+                    if (options.filter.metadata) {
+                        if (!metadata)
+                            continue;
+                        let matches = true;
+                        for (const [key, value] of Object.entries(options.filter.metadata)) {
+                            if (metadata[key] !== value) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if (!matches)
+                            continue;
+                    }
+                }
+                items.push(noun);
+            }
+        }
+        // Determine if there are more items
+        const hasMore = startIndex + limit < nounFiles.length;
+        // Generate next cursor if there are more items
+        const nextCursor = hasMore && pageFiles.length > 0
+            ? pageFiles[pageFiles.length - 1]
+            : undefined;
+        return {
+            items,
+            totalCount: nounFiles.length,
+            hasMore,
+            nextCursor
+        };
+    }
+    /**
+     * Get verbs with pagination support
+     * @param options Pagination and filter options
+     * @returns Promise that resolves to a paginated result of verbs
+     */
+    async getVerbsWithPagination(options = {}) {
+        await this.ensureInitialized();
+        const limit = options.limit || 100;
+        const cursor = options.cursor;
+        // Get all verb files
+        const verbFiles = [];
+        if (this.verbsDir) {
+            for await (const [name, handle] of this.verbsDir.entries()) {
+                if (handle.kind === 'file' && name.endsWith('.json')) {
+                    verbFiles.push(name);
+                }
+            }
+        }
+        // Sort files for consistent ordering
+        verbFiles.sort();
+        // Apply cursor-based pagination
+        let startIndex = 0;
+        if (cursor) {
+            const cursorIndex = verbFiles.findIndex(file => file > cursor);
+            if (cursorIndex >= 0) {
+                startIndex = cursorIndex;
+            }
+        }
+        // Get the subset of files for this page
+        const pageFiles = verbFiles.slice(startIndex, startIndex + limit);
+        // Load verbs from files and convert to GraphVerb
+        const items = [];
+        for (const fileName of pageFiles) {
+            const id = fileName.replace('.json', '');
+            const hnswVerb = await this.getVerb_internal(id);
+            if (hnswVerb) {
+                // Convert HNSWVerb to GraphVerb
+                const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb);
+                if (graphVerb) {
+                    // Apply filters if provided
+                    if (options.filter) {
+                        // Filter by verb type
+                        if (options.filter.verbType) {
+                            const verbTypes = Array.isArray(options.filter.verbType)
+                                ? options.filter.verbType
+                                : [options.filter.verbType];
+                            if (graphVerb.verb && !verbTypes.includes(graphVerb.verb)) {
+                                continue;
+                            }
+                        }
+                        // Filter by source ID
+                        if (options.filter.sourceId) {
+                            const sourceIds = Array.isArray(options.filter.sourceId)
+                                ? options.filter.sourceId
+                                : [options.filter.sourceId];
+                            if (graphVerb.source && !sourceIds.includes(graphVerb.source)) {
+                                continue;
+                            }
+                        }
+                        // Filter by target ID
+                        if (options.filter.targetId) {
+                            const targetIds = Array.isArray(options.filter.targetId)
+                                ? options.filter.targetId
+                                : [options.filter.targetId];
+                            if (graphVerb.target && !targetIds.includes(graphVerb.target)) {
+                                continue;
+                            }
+                        }
+                        // Filter by service
+                        if (options.filter.service) {
+                            const services = Array.isArray(options.filter.service)
+                                ? options.filter.service
+                                : [options.filter.service];
+                            if (graphVerb.createdBy?.augmentation && !services.includes(graphVerb.createdBy.augmentation)) {
+                                continue;
+                            }
+                        }
+                        // Filter by metadata
+                        if (options.filter.metadata && graphVerb.metadata) {
+                            let matches = true;
+                            for (const [key, value] of Object.entries(options.filter.metadata)) {
+                                if (graphVerb.metadata[key] !== value) {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            if (!matches)
+                                continue;
+                        }
+                    }
+                    items.push(graphVerb);
+                }
+            }
+        }
+        // Determine if there are more items
+        const hasMore = startIndex + limit < verbFiles.length;
+        // Generate next cursor if there are more items
+        const nextCursor = hasMore && pageFiles.length > 0
+            ? pageFiles[pageFiles.length - 1]
+            : undefined;
+        return {
+            items,
+            totalCount: verbFiles.length,
+            hasMore,
+            nextCursor
+        };
+    }
+}
+//# sourceMappingURL=opfsStorage.js.map

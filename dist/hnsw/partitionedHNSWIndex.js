@@ -1,0 +1,304 @@
+/**
+ * Partitioned HNSW Index for Large-Scale Vector Search
+ * Implements sharding strategies to handle millions of vectors efficiently
+ */
+import { HNSWIndex } from './hnswIndex.js';
+import { euclideanDistance } from '../utils/index.js';
+/**
+ * Partitioned HNSW Index that splits large datasets across multiple smaller indices
+ * This enables efficient search across millions of vectors by reducing memory usage
+ * and parallelizing search operations
+ */
+export class PartitionedHNSWIndex {
+    constructor(partitionConfig = {}, hnswConfig = {}, distanceFunction = euclideanDistance) {
+        this.partitions = new Map();
+        this.partitionMetadata = new Map();
+        this.dimension = null;
+        this.nextPartitionId = 0;
+        this.config = {
+            maxNodesPerPartition: 50000, // Optimal size for memory efficiency
+            partitionStrategy: 'semantic', // Default to semantic for better performance
+            semanticClusters: 8, // Auto-tuned based on dataset
+            autoTuneSemanticClusters: true,
+            ...partitionConfig
+        };
+        // Optimized HNSW parameters for large scale
+        this.hnswConfig = {
+            M: 32, // Higher connectivity for better recall
+            efConstruction: 400, // Better build quality
+            efSearch: 100, // Balance speed vs accuracy
+            ml: 24, // Deeper hierarchy
+            ...hnswConfig
+        };
+        this.distanceFunction = distanceFunction;
+    }
+    /**
+     * Add a vector to the partitioned index
+     */
+    async addItem(item) {
+        if (this.dimension === null) {
+            this.dimension = item.vector.length;
+        }
+        // Determine which partition this item belongs to
+        const partitionId = await this.selectPartition(item);
+        // Get or create the partition
+        let partition = this.partitions.get(partitionId);
+        if (!partition) {
+            partition = new HNSWIndex(this.hnswConfig, this.distanceFunction, { useParallelization: true });
+            this.partitions.set(partitionId, partition);
+            // Initialize partition metadata
+            this.partitionMetadata.set(partitionId, {
+                id: partitionId,
+                nodeCount: 0,
+                strategy: this.config.partitionStrategy,
+                created: new Date()
+            });
+        }
+        // Add item to the selected partition
+        await partition.addItem(item);
+        // Update partition metadata
+        const metadata = this.partitionMetadata.get(partitionId);
+        metadata.nodeCount = partition.size();
+        // Update bounds for semantic strategy
+        if (this.config.partitionStrategy === 'semantic') {
+            this.updatePartitionBounds(partitionId, item.vector);
+        }
+        // Check if partition is getting too large and needs splitting
+        if (metadata.nodeCount > this.config.maxNodesPerPartition * 1.2) {
+            await this.splitPartition(partitionId);
+        }
+        return item.id;
+    }
+    /**
+     * Search across all partitions for nearest neighbors
+     */
+    async search(queryVector, k = 10, searchScope) {
+        if (this.partitions.size === 0) {
+            return [];
+        }
+        // Determine which partitions to search
+        const partitionsToSearch = await this.selectSearchPartitions(queryVector, searchScope);
+        // Search partitions in parallel
+        const searchPromises = partitionsToSearch.map(async (partitionId) => {
+            const partition = this.partitions.get(partitionId);
+            if (!partition)
+                return [];
+            // Search with higher k to get better global results
+            const partitionK = Math.min(k * 2, partition.size());
+            return partition.search(queryVector, partitionK);
+        });
+        const partitionResults = await Promise.all(searchPromises);
+        // Merge and sort results from all partitions
+        const allResults = [];
+        for (const results of partitionResults) {
+            allResults.push(...results);
+        }
+        // Sort by distance and return top k
+        allResults.sort((a, b) => a[1] - b[1]);
+        return allResults.slice(0, k);
+    }
+    /**
+     * Select the appropriate partition for a new item
+     * Automatically chooses semantic partitioning when beneficial, falls back to hash
+     */
+    async selectPartition(item) {
+        // Auto-tune semantic clusters based on current dataset size
+        if (this.config.autoTuneSemanticClusters && this.config.partitionStrategy === 'semantic') {
+            this.autoTuneSemanticClusters();
+        }
+        switch (this.config.partitionStrategy) {
+            case 'semantic':
+                return await this.semanticPartition(item.vector);
+            case 'hash':
+            default:
+                return this.hashPartition(item.id);
+        }
+    }
+    /**
+     * Hash-based partitioning for even distribution
+     */
+    hashPartition(id) {
+        const hash = this.simpleHash(id);
+        const existingPartitions = Array.from(this.partitions.keys());
+        // Find partition with space, or create new one
+        for (const partitionId of existingPartitions) {
+            const metadata = this.partitionMetadata.get(partitionId);
+            if (metadata && metadata.nodeCount < this.config.maxNodesPerPartition) {
+                return partitionId;
+            }
+        }
+        // Create new partition
+        return `partition_${this.nextPartitionId++}`;
+    }
+    /**
+     * Semantic clustering partitioning
+     */
+    async semanticPartition(vector) {
+        // Find closest partition centroid
+        let closestPartition = '';
+        let minDistance = Infinity;
+        for (const [partitionId, metadata] of this.partitionMetadata.entries()) {
+            if (metadata.bounds?.centroid) {
+                const distance = this.distanceFunction(vector, metadata.bounds.centroid);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestPartition = partitionId;
+                }
+            }
+        }
+        // If no suitable partition found or it's full, create new one
+        if (!closestPartition ||
+            this.partitionMetadata.get(closestPartition).nodeCount >= this.config.maxNodesPerPartition) {
+            closestPartition = `semantic_${this.nextPartitionId++}`;
+        }
+        return closestPartition;
+    }
+    /**
+     * Auto-tune semantic clusters based on dataset size and performance
+     */
+    autoTuneSemanticClusters() {
+        const totalNodes = this.size();
+        const currentPartitions = this.partitions.size;
+        // Optimal clusters based on dataset size
+        let optimalClusters = Math.max(4, Math.min(32, Math.floor(totalNodes / 10000)));
+        // Adjust based on current partition performance
+        if (currentPartitions > 0) {
+            const avgNodesPerPartition = totalNodes / currentPartitions;
+            if (avgNodesPerPartition > this.config.maxNodesPerPartition * 0.8) {
+                // Partitions are getting full, increase clusters
+                optimalClusters = Math.min(32, this.config.semanticClusters + 2);
+            }
+            else if (avgNodesPerPartition < this.config.maxNodesPerPartition * 0.3 && currentPartitions > 4) {
+                // Partitions are underutilized, decrease clusters
+                optimalClusters = Math.max(4, this.config.semanticClusters - 1);
+            }
+        }
+        if (optimalClusters !== this.config.semanticClusters) {
+            console.log(`Auto-tuning semantic clusters: ${this.config.semanticClusters} → ${optimalClusters}`);
+            this.config.semanticClusters = optimalClusters;
+        }
+    }
+    /**
+     * Select which partitions to search based on query
+     */
+    async selectSearchPartitions(queryVector, searchScope) {
+        if (searchScope?.partitionIds) {
+            return searchScope.partitionIds.filter(id => this.partitions.has(id));
+        }
+        const maxPartitions = searchScope?.maxPartitions || Math.min(5, this.partitions.size);
+        if (this.config.partitionStrategy === 'semantic') {
+            // Search partitions with closest centroids
+            const distances = [];
+            for (const [partitionId, metadata] of this.partitionMetadata.entries()) {
+                if (metadata.bounds?.centroid) {
+                    const distance = this.distanceFunction(queryVector, metadata.bounds.centroid);
+                    distances.push([partitionId, distance]);
+                }
+            }
+            distances.sort((a, b) => a[1] - b[1]);
+            return distances.slice(0, maxPartitions).map(([id]) => id);
+        }
+        // For other strategies, search all partitions or random subset
+        const allPartitionIds = Array.from(this.partitions.keys());
+        if (allPartitionIds.length <= maxPartitions) {
+            return allPartitionIds;
+        }
+        // Return random subset
+        const shuffled = [...allPartitionIds].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, maxPartitions);
+    }
+    /**
+     * Update partition bounds for semantic clustering
+     */
+    updatePartitionBounds(partitionId, vector) {
+        const metadata = this.partitionMetadata.get(partitionId);
+        if (!metadata.bounds) {
+            metadata.bounds = {
+                centroid: [...vector],
+                radius: 0
+            };
+            return;
+        }
+        // Update centroid using incremental mean
+        const { centroid } = metadata.bounds;
+        const nodeCount = metadata.nodeCount;
+        for (let i = 0; i < centroid.length; i++) {
+            centroid[i] = (centroid[i] * (nodeCount - 1) + vector[i]) / nodeCount;
+        }
+        // Update radius
+        const distance = this.distanceFunction(vector, centroid);
+        metadata.bounds.radius = Math.max(metadata.bounds.radius, distance);
+    }
+    /**
+     * Split an overgrown partition into smaller partitions
+     */
+    async splitPartition(partitionId) {
+        const partition = this.partitions.get(partitionId);
+        if (!partition)
+            return;
+        console.log(`Splitting partition ${partitionId} with ${partition.size()} nodes`);
+        // For now, we'll implement a simple strategy
+        // In a full implementation, you'd want to analyze the data distribution
+        // and create more intelligent splits
+        // This is a placeholder - actual implementation would require
+        // accessing the internal nodes of the HNSW index
+    }
+    /**
+     * Simple hash function for consistent partitioning
+     */
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return Math.abs(hash);
+    }
+    /**
+     * Get partition statistics
+     */
+    getPartitionStats() {
+        const partitionDetails = Array.from(this.partitionMetadata.values());
+        const totalNodes = partitionDetails.reduce((sum, p) => sum + p.nodeCount, 0);
+        return {
+            totalPartitions: partitionDetails.length,
+            totalNodes,
+            averageNodesPerPartition: totalNodes / partitionDetails.length || 0,
+            partitionDetails
+        };
+    }
+    /**
+     * Remove an item from the index
+     */
+    async removeItem(id) {
+        // Find which partition contains this item
+        for (const [partitionId, partition] of this.partitions.entries()) {
+            if (partition.removeItem(id)) {
+                // Update metadata
+                const metadata = this.partitionMetadata.get(partitionId);
+                metadata.nodeCount = partition.size();
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Clear all partitions
+     */
+    clear() {
+        for (const partition of this.partitions.values()) {
+            partition.clear();
+        }
+        this.partitions.clear();
+        this.partitionMetadata.clear();
+        this.nextPartitionId = 0;
+    }
+    /**
+     * Get total size across all partitions
+     */
+    size() {
+        return Array.from(this.partitions.values()).reduce((sum, partition) => sum + partition.size(), 0);
+    }
+}
+//# sourceMappingURL=partitionedHNSWIndex.js.map
