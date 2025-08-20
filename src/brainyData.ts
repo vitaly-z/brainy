@@ -65,6 +65,8 @@ import { SearchCache, SearchCacheConfig } from './utils/searchCache.js'
 import { CacheAutoConfigurator } from './utils/cacheAutoConfig.js'
 import { StatisticsCollector } from './utils/statisticsCollector.js'
 import { AugmentationManager } from './augmentationManager.js'
+import { RequestDeduplicator } from './utils/requestDeduplicator.js'
+import { WriteAheadLog, WALConfig } from './storage/wal/writeAheadLog.js'
 
 export interface BrainyDataConfig {
   /**
@@ -389,9 +391,18 @@ export interface BrainyDataConfig {
   }
 
   /**
+   * Write-Ahead Log (WAL) configuration for durability
+   * Intelligently enabled based on storage adapter:
+   * - FileSystem/OPFS: Enabled by default (no cost)
+   * - S3/Cloud: Disabled by default (avoid extra costs)
+   * - Memory: Disabled (no persistence)
+   */
+  wal?: WALConfig
+  
+  /**
    * Intelligent verb scoring configuration
    * Automatically generates weight and confidence scores for verb relationships
-   * Off by default - enable by setting enabled: true
+   * Enabled by default for better relationship quality
    */
   intelligentVerbScoring?: {
     /**
@@ -471,6 +482,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private loggingConfig: BrainyDataConfig['logging'] = { verbose: true }
   private defaultService: string = 'default'
   private searchCache: SearchCache<T>
+  private deduplicator: RequestDeduplicator
+  private wal: WriteAheadLog | null = null
   
   /**
    * Type-safe augmentation management
@@ -699,11 +712,19 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     // Initialize search cache with final configuration
     this.searchCache = new SearchCache<T>(finalSearchCacheConfig)
     
+    // Initialize request deduplicator for performance
+    this.deduplicator = new RequestDeduplicator({
+      ttl: 1000, // 1 second TTL for search results
+      maxSize: 100 // Keep last 100 unique requests
+    })
+    
     // Initialize augmentation manager
     this.augmentations = new AugmentationManager()
 
-    // Initialize intelligent verb scoring if enabled
-    if (config.intelligentVerbScoring?.enabled) {
+    // Initialize intelligent verb scoring (enabled by default for better relationship quality)
+    // Can be disabled by setting config.intelligentVerbScoring.enabled = false
+    const verbScoringEnabled = config.intelligentVerbScoring?.enabled !== false
+    if (verbScoringEnabled) {
       this.intelligentVerbScoring = new IntelligentVerbScoring(config.intelligentVerbScoring)
       this.intelligentVerbScoring.enabled = true
     }
@@ -1372,6 +1393,21 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
       // Initialize storage
       await this.storage!.init()
+      
+      // Initialize Write-Ahead Log with intelligent defaults
+      // WAL is automatically configured based on storage type:
+      // - FileSystem/OPFS: Enabled (no cost, high value)
+      // - S3/Cloud: Disabled by default (avoid extra costs)
+      // - Memory: Disabled (no persistence benefit)
+      this.wal = new WriteAheadLog(this.storage!, this.config.wal || {})
+      await this.wal.initialize()
+      
+      if (this.loggingConfig?.verbose && this.wal) {
+        const walEnabled = this.config.wal?.enabled ?? this.wal['config'].enabled
+        if (walEnabled) {
+          console.log('✅ Write-Ahead Log (WAL) enabled for durability')
+        }
+      }
 
       // Initialize distributed mode if configured
       if (this.distributedConfig) {
@@ -1873,12 +1909,24 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         noun = indexNoun
       }
 
-      // Save noun to storage
-      await this.storage!.saveNoun(noun)
-
-      // Track noun statistics
-      const service = this.getServiceName(options)
-      await this.storage!.incrementStatistic('noun', service)
+      // Save noun to storage with WAL protection
+      if (this.wal) {
+        await this.wal.execute(
+          'saveNoun',
+          { id: noun.id, vector: noun.vector },
+          async () => {
+            await this.storage!.saveNoun(noun)
+            // Track noun statistics
+            const service = this.getServiceName(options)
+            await this.storage!.incrementStatistic('noun', service)
+          }
+        )
+      } else {
+        // Fallback if WAL not initialized (shouldn't happen)
+        await this.storage!.saveNoun(noun)
+        const service = this.getServiceName(options)
+        await this.storage!.incrementStatistic('noun', service)
+      }
 
       // Save metadata if provided and not empty
       if (metadata !== undefined) {
@@ -2713,11 +2761,20 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       return this.searchCombined(queryVectorOrData, k, options)
     }
 
-    // Default behavior (backward compatible): search locally
-    try {
-      // BEST OF BOTH: Automatically exclude soft-deleted items (Neural Intelligence improvement)
-      // BUT only when there's already metadata filtering happening
-      let metadataFilter = options.metadata
+    // Generate deduplication key for concurrent request handling
+    const dedupeKey = RequestDeduplicator.getSearchKey(
+      typeof queryVectorOrData === 'string' ? queryVectorOrData : JSON.stringify(queryVectorOrData),
+      k,
+      options
+    )
+    
+    // Deduplicate concurrent identical searches
+    return this.deduplicator.deduplicate(dedupeKey, async () => {
+      // Default behavior (backward compatible): search locally
+      try {
+        // BEST OF BOTH: Automatically exclude soft-deleted items (Neural Intelligence improvement)
+        // BUT only when there's already metadata filtering happening
+        let metadataFilter = options.metadata
       
       // Only add soft-delete filter if there's already metadata being filtered
       // This preserves pure vector searches without metadata
@@ -2776,15 +2833,16 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         this.healthMonitor.recordCacheAccess(false)
       }
 
-      return results
-    } catch (error) {
-      // Track error in health monitor
-      if (this.healthMonitor) {
-        const latency = Date.now() - startTime
-        this.healthMonitor.recordRequest(latency, true)
+        return results
+      } catch (error) {
+        // Track error in health monitor
+        if (this.healthMonitor) {
+          const latency = Date.now() - startTime
+          this.healthMonitor.recordRequest(latency, true)
+        }
+        throw error
       }
-      throw error
-    }
+    })
   }
 
   /**

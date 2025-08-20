@@ -1,58 +1,49 @@
 /**
- * Global test setup - runs before all tests
- * Configures mock embeddings to prevent model loading timeouts
+ * Test Setup Configuration
+ * Ensures models are available for all tests
  */
 
-import { vi } from 'vitest'
+import { beforeAll } from 'vitest'
+import { existsSync } from 'fs'
+import { join } from 'path'
 
-// Mock the embedding module globally
-vi.mock('../src/utils/embedding.js', () => {
-  // Create a deterministic mock embedding function
-  const createMockEmbedding = (dimensions: number = 384) => {
-    return async (input: string | any): Promise<number[]> => {
-      const vector = new Array(dimensions).fill(0)
-      
-      if (typeof input === 'string') {
-        // Use string hash to generate deterministic values
-        let hash = 0
-        for (let i = 0; i < input.length; i++) {
-          hash = ((hash << 5) - hash) + input.charCodeAt(i)
-          hash = hash & hash
-        }
-        
-        // Fill vector with deterministic values
-        for (let i = 0; i < dimensions; i++) {
-          vector[i] = Math.sin(hash * (i + 1)) * 0.5 + 0.5
-        }
-      } else if (Array.isArray(input) && input.every(x => typeof x === 'number')) {
-        // Already a vector, just return it (padded/truncated to dimensions)
-        return input.slice(0, dimensions).concat(new Array(Math.max(0, dimensions - input.length)).fill(0))
-      }
-      
-      return vector
-    }
+beforeAll(() => {
+  // Set model path to local models directory
+  const modelsPath = join(process.cwd(), 'models')
+  
+  // Check if models exist
+  if (existsSync(modelsPath)) {
+    process.env.BRAINY_MODELS_PATH = modelsPath
+    console.log('✅ Using local models for tests:', modelsPath)
+  } else {
+    console.warn('⚠️ Models directory not found, tests may download models')
   }
-
-  return {
-    defaultEmbeddingFunction: createMockEmbedding(),
-    createEmbeddingFunction: () => createMockEmbedding(),
-    TransformerEmbedding: class {
-      async init() { return this }
-      embed = createMockEmbedding()
-    },
-    UniversalSentenceEncoder: class {
-      async init() { return this }
-      embed = createMockEmbedding()
-    },
-    batchEmbed: async (embedFn: any, inputs: string[]) => {
-      const mockEmbed = createMockEmbedding()
-      return Promise.all(inputs.map(input => mockEmbed(input)))
-    },
-    embeddingFunctions: new Map()
-  }
+  
+  // Disable remote model downloads in tests to avoid network dependencies
+  process.env.BRAINY_ALLOW_REMOTE_MODELS = 'false'
+  
+  // Set test environment
+  process.env.NODE_ENV = 'test'
+  
+  // Disable verbose logging in tests
+  process.env.BRAINY_LOG_LEVEL = 'error'
 })
 
-// Set test environment flag
-globalThis.__BRAINY_TEST_ENV__ = true
-
-console.log('✅ Test setup complete - using mock embeddings')
+// Export mock embedding function for tests that need it
+export function createMockEmbedding(text: string, dimensions = 384): Float32Array {
+  // Create deterministic embeddings based on text hash
+  let hash = 0
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  
+  const embedding = new Float32Array(dimensions)
+  for (let i = 0; i < dimensions; i++) {
+    // Generate values between -1 and 1 based on hash
+    embedding[i] = Math.sin(hash + i) * 0.5
+  }
+  
+  return embedding
+}

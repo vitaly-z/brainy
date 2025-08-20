@@ -3,9 +3,32 @@
  * No direct TensorFlow references - patches are handled internally by Brainy
  */
 
-import { beforeEach, afterEach, afterAll } from 'vitest'
+import { beforeAll, beforeEach, afterEach, afterAll } from 'vitest'
 import { existsSync, rmSync } from 'fs'
 import { join } from 'path'
+
+// Configure model loading for tests
+beforeAll(() => {
+  // Set model path to local models directory
+  const modelsPath = join(process.cwd(), 'models')
+  
+  // Check if models exist
+  if (existsSync(modelsPath)) {
+    process.env.BRAINY_MODELS_PATH = modelsPath
+    console.log('✅ Using local models for tests:', modelsPath)
+  } else {
+    console.warn('⚠️ Models directory not found, tests may download models')
+  }
+  
+  // Disable remote model downloads in tests to avoid network dependencies
+  process.env.BRAINY_ALLOW_REMOTE_MODELS = 'false'
+  
+  // Set test environment
+  process.env.NODE_ENV = 'test'
+  
+  // Disable verbose logging in tests
+  process.env.BRAINY_LOG_LEVEL = 'error'
+})
 
 // Define the test utilities type for reuse
 type TestUtilsType = {

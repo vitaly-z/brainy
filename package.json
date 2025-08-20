@@ -92,7 +92,7 @@
     "build:framework": "tsc",
     "start": "node dist/framework.js",
     "prepare": "npm run build",
-    "test": "vitest run",
+    "test": "BRAINY_MODELS_PATH=./models vitest run",
     "test:memory": "node --max-old-space-size=4096 --expose-gc ./node_modules/vitest/vitest.mjs run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

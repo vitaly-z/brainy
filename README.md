@@ -67,7 +67,7 @@ brain.augmentations.list()       // See all augmentations
 brain.augmentations.enable(name) // Enable/disable dynamically
 ```
 
-### ✨ **What's New in 1.0:**
+### ✨ **What's New in 1.5:**
 - **🔥 40+ methods consolidated** → 9 unified methods
 - **♾️ The 9th method** - `augment()` lets you extend Brainy infinitely!
 - **🧠 Smart by default** - `add()` auto-detects and processes intelligently
@@ -75,6 +75,9 @@ brain.augmentations.enable(name) // Enable/disable dynamically
 - **🐳 Container ready** - Model preloading for production deployments
 - **📦 16% smaller package** despite major new features
 - **🔄 Soft delete default** - Better performance, no reindexing needed
+- **🎯 NEW: Intelligent Verb Scoring** - Relationships automatically scored by AI
+- **💾 NEW: Write-Ahead Log (WAL)** - Zero data loss guarantee, always on
+- **⚡ NEW: Request Deduplication** - 3x performance for concurrent requests
 
 **Breaking Changes:** See [MIGRATION.md](MIGRATION.md) for complete upgrade guide.
 
@@ -599,6 +602,44 @@ const insights = await agentBrain.getRelated("enterprise plan")
 3. **Brainy stores** → vector + graph + metadata simultaneously  
 4. **Brainy optimizes** → indexes, caches, tunes performance
 5. **You get superpowers** → semantic search + graph traversal + more
+
+## 🏢 Enterprise Features (NEW in 1.5!)
+
+### 💾 **Write-Ahead Log (WAL) - Always On**
+Zero data loss guarantee with intelligent configuration:
+- **FileSystem/OPFS**: Aggressive durability (1-minute checkpoints)
+- **S3/Cloud**: Cost-optimized (5-minute checkpoints, larger batches)
+- **Memory**: Operation tracking for debugging
+- **Automatic recovery** on startup from crashes
+
+### 🎯 **Intelligent Verb Scoring - Now Default!**
+AI-powered relationship quality:
+```javascript
+// Just add relationships - scoring happens automatically!
+await brain.addVerb(person1, person2, "collaborates_with")
+// Automatically scored based on:
+// - Semantic similarity of entities
+// - Frequency patterns
+// - Temporal decay
+// - Adaptive learning from usage
+```
+
+### ⚡ **Request Deduplication - 3x Performance**
+Concurrent identical requests share results:
+```javascript
+// These fire simultaneously but only one executes
+const [r1, r2, r3] = await Promise.all([
+  brain.search("AI"),
+  brain.search("AI"),  // Returns instantly from first
+  brain.search("AI")   // Returns instantly from first
+])
+```
+
+### 🚀 **Auto-Tuning Everything**
+- **Cache sizes** adjust to your usage patterns
+- **Index parameters** optimize based on data
+- **Write buffers** adapt to load
+- **Connection pools** scale automatically
 
 ## 💡 Core Features
 

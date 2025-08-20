@@ -63,7 +63,7 @@ interface RelationshipStats {
 export class IntelligentVerbScoring implements ICognitionAugmentation {
   readonly name = 'intelligent-verb-scoring'
   readonly description = 'Automatically generates intelligent weight and confidence scores for verb relationships'
-  enabled = false // Off by default as requested
+  enabled = true // Enabled by default for better relationship quality
 
   private config: IVerbScoringConfig
   private relationshipStats: Map<string, RelationshipStats> = new Map()
