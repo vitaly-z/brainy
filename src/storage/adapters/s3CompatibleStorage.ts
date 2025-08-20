@@ -27,6 +27,7 @@ import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
+import { S3ConnectionPool, PooledExecutor } from '../connectionPool.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -73,6 +74,9 @@ type S3Command = any
  */
 export class S3CompatibleStorage extends BaseStorage {
   private s3Client: S3Client | null = null
+  private s3Pool: S3ConnectionPool | null = null
+  private poolExecutor: PooledExecutor<S3Client> | null = null
+  private useConnectionPool: boolean = true
   private bucketName: string
   private serviceType: string
   private region: string
@@ -233,6 +237,20 @@ export class S3CompatibleStorage extends BaseStorage {
 
       // Create the S3 client
       this.s3Client = new S3Client(clientConfig)
+      
+      // Initialize connection pool for better throughput
+      if (this.useConnectionPool) {
+        this.s3Pool = new S3ConnectionPool(clientConfig, {
+          minConnections: 3,
+          maxConnections: 20,
+          acquireTimeout: 30000
+        })
+        this.poolExecutor = new PooledExecutor(this.s3Pool)
+        
+        if (this.logger) {
+          this.logger.info('S3 connection pool initialized with 3-20 connections')
+        }
+      }
 
       // Ensure the bucket exists and is accessible
       const { HeadBucketCommand } = await import('@aws-sdk/client-s3')

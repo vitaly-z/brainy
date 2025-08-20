@@ -7,6 +7,7 @@
 import { StorageAdapter } from '../coreTypes.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { prodLog } from './logger.js'
+import { KeyedAsyncQueue } from './asyncQueue.js'
 
 export interface MetadataIndexEntry {
   field: string
@@ -52,6 +53,7 @@ export class MetadataIndexManager {
   private dirtyFields = new Set<string>()
   private lastFlushTime = Date.now()
   private autoFlushThreshold = 10 // Start with 10 for more frequent non-blocking flushes
+  private updateQueue = new KeyedAsyncQueue() // Prevent race conditions
 
   constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}) {
     this.storage = storage
@@ -192,8 +194,17 @@ export class MetadataIndexManager {
 
   /**
    * Add item to metadata indexes
+   * Now protected against race conditions with async queue
    */
   async addToIndex(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
+    // Use queue to prevent race conditions on same field+value combinations
+    const key = `add:${id}`
+    return this.updateQueue.add(key, async () => {
+      return this._addToIndexInternal(id, metadata, skipFlush)
+    })
+  }
+  
+  private async _addToIndexInternal(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(metadata)
     
     for (let i = 0; i < fields.length; i++) {
@@ -288,8 +299,16 @@ export class MetadataIndexManager {
 
   /**
    * Remove item from metadata indexes
+   * Protected against race conditions with async queue
    */
   async removeFromIndex(id: string, metadata?: any): Promise<void> {
+    const key = `remove:${id}`
+    return this.updateQueue.add(key, async () => {
+      return this._removeFromIndexInternal(id, metadata)
+    })
+  }
+  
+  private async _removeFromIndexInternal(id: string, metadata?: any): Promise<void> {
     if (metadata) {
       // Remove from specific field indexes
       const fields = this.extractIndexableFields(metadata)

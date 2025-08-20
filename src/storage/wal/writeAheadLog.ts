@@ -305,7 +305,19 @@ export class WriteAheadLog {
       }
       
       content += line
-      await this.storage.save(this.currentLogFile, Buffer.from(content))
+      // Use appropriate storage method
+      if (this.storage.save) {
+        await this.storage.save(this.currentLogFile, Buffer.from(content))
+      } else if (this.storage.saveNoun) {
+        // Fallback: save as a noun-like object for compatibility
+        await this.storage.saveNoun({
+          id: this.currentLogFile,
+          vector: [],
+          connections: new Map(),
+          level: 0,
+          metadata: { walLog: content }
+        })
+      }
     }
   }
   
@@ -316,7 +328,28 @@ export class WriteAheadLog {
     const entries: WALEntry[] = []
     
     try {
-      // List all WAL files
+      // Check if storage adapter supports listing
+      if (!this.storage.list) {
+        // Fallback: try to read the current log file directly
+        try {
+          const content = await this.storage.get(this.currentLogFile)
+          if (content) {
+            const lines = content.toString().split('\n').filter(line => line.trim())
+            for (const line of lines) {
+              try {
+                entries.push(JSON.parse(line))
+              } catch {
+                // Skip malformed lines
+              }
+            }
+          }
+        } catch {
+          // No existing log file
+        }
+        return entries
+      }
+      
+      // List all WAL files if supported
       const files = await this.storage.list(this.config.walPath)
       
       for (const file of files) {
