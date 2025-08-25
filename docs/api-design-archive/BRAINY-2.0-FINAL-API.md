@@ -242,7 +242,7 @@ mode                                     // Current mode (readonly)
 
 ✅ **Neural Import** - Smart AI-powered data import
 ✅ **Clustering** - Automatic and manual clustering
-✅ **Triple Intelligence** - Vector + Graph + Field combined
+✅ **Triple Intelligence** - Vector + Graph + Metadata combined
 ✅ **Verb Scoring** - Intelligent relationship scoring
 ✅ **Synapses** - External platform connectors
 ✅ **Conduits** - Brainy-to-Brainy sync

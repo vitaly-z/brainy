@@ -462,7 +462,7 @@ for (const order of orders) {
 // Similar to graph databases but with added benefits:
 // 1. Automatic vector embeddings for similarity
 // 2. Natural language querying
-// 3. Unified with field filtering
+// 3. Unified with metadata filtering
 
 // Enhanced graph queries
 const results = await brain.find("similar users who purchased similar products")

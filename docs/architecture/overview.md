@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Brainy is a multi-dimensional AI database that combines vector similarity, graph relationships, and field filtering into a unified query system. This document provides a comprehensive overview of the system architecture.
+Brainy is a multi-dimensional AI database that combines vector similarity, graph relationships, and metadata filtering into a unified query system. This document provides a comprehensive overview of the system architecture.
 
 ## Core Components
 
@@ -23,7 +23,7 @@ Brainy's revolutionary feature that unifies three types of search:
 const results = await brain.find({
   like: "machine learning papers",              // Vector similarity
   connected: { to: "research-team", depth: 2 }, // Graph traversal  
-  where: { published: { $gte: "2024-01-01" } }  // Field filtering
+  where: { published: { $gte: "2024-01-01" } }  // Metadata filtering
 })
 ```
 

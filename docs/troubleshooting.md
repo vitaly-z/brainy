@@ -225,7 +225,7 @@ const brain = new BrainyData({
    const results = await brain.search("query", { limit: 10 })
    ```
 
-3. **Consider field filtering first**
+3. **Consider metadata filtering first**
    ```typescript
    // Filter by metadata first, then semantic search
    const results = await brain.search("query", {

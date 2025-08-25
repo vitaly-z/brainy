@@ -1,10 +1,10 @@
 # Triple Intelligence System
 
-The Triple Intelligence System is Brainy's revolutionary query engine that unifies vector similarity, graph relationships, and field filtering into a single, optimized query interface.
+The Triple Intelligence System is Brainy's revolutionary query engine that unifies vector similarity, graph relationships, and metadata filtering into a single, optimized query interface.
 
 ## Overview
 
-Traditional databases force you to choose between vector search, graph traversal, OR field filtering. Brainy combines all three intelligences into one magical API that automatically optimizes execution for maximum performance.
+Traditional databases force you to choose between vector search, graph traversal, OR metadata filtering. Brainy combines all three intelligences into one magical API that automatically optimizes execution for maximum performance.
 
 ## Query Interface
 
@@ -116,7 +116,7 @@ const results = await brain.find({
   like: "recent posts",            // Applied to filtered set
   limit: 5
 })
-// Field filter first, then vector search on results
+// Metadata filter first, then vector search on results
 ```
 
 ## Fusion Ranking
@@ -193,7 +193,7 @@ Brainy uses itself to optimize queries:
 
 Triple Intelligence leverages all available indexes:
 - **HNSW Index**: For vector similarity
-- **Metadata Index**: For field filtering
+- **Metadata Index**: For metadata filtering
 - **Graph Index**: For relationship traversal
 
 ## Advanced Features

@@ -6,7 +6,7 @@
 
 ### Core Features (100% Complete)
 - ✅ **Noun-Verb Taxonomy**: Revolutionary data model
-- ✅ **Triple Intelligence**: Vector + Graph + Field unified queries  
+- ✅ **Triple Intelligence**: Vector + Graph + Metadata unified queries  
 - ✅ **HNSW Indexing**: O(log n) vector search
 - ✅ **384 Dimensions**: Fixed with all-MiniLM-L6-v2
 - ✅ **Zero-Config**: Works out of the box

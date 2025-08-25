@@ -1,236 +1,395 @@
-# API Reference
+# 🧠 Brainy 2.0 API Reference
 
-Complete API documentation for Brainy's multi-dimensional AI database.
+> **The definitive API documentation for Brainy 2.0**  
+> Clean • Powerful • Zero-Configuration
 
-## Core APIs
+## Quick Start
 
-### [BrainyData](./brainy-data.md)
-The main entry point for all operations.
-
-### [Triple Intelligence](./triple-intelligence.md)
-Unified query system for vector, graph, and field search.
-
-### [Storage](./storage.md)
-Storage adapter interfaces and implementations.
-
-### [Entity Registry](./entity-registry.md)
-High-performance entity deduplication system.
-
-### [Neural API](./neural-api.md)
-Natural language processing and similarity operations.
-
-## Quick Reference
-
-### Initialization
 ```typescript
-import { BrainyData } from 'brainy'
+import { BrainyData } from '@soulcraft/brainy'
 
-const brain = new BrainyData({
-  storage: { type: 'filesystem', path: './data' },
-  vectors: { dimensions: 384 }
-})
-
+const brain = new BrainyData()  // Zero config!
 await brain.init()
+
+// Add data (text auto-embeds!)
+await brain.addNoun('The future of AI is here')
+
+// Search with Triple Intelligence
+const results = await brain.find({
+  like: 'artificial intelligence',
+  where: { year: { greaterThan: 2020 } },
+  connected: { via: 'references' }
+})
 ```
 
-### Basic Operations
+## Core Concepts
 
-#### Add Entities (Nouns) and Relationships (Verbs)
+### 🧬 Nouns
+Vectors with metadata - the fundamental data unit in Brainy.
+
+### 🔗 Verbs  
+Relationships between nouns - the connections that create knowledge graphs.
+
+### 🧠 Triple Intelligence
+Vector search + Graph traversal + Metadata filtering in one unified query.
+
+---
+
+## API Reference
+
+### Data Operations
+
+#### Nouns (Vectors with Metadata)
+
+##### `addNoun(dataOrVector, metadata?)`
+Add a single noun to the database.
+- **dataOrVector**: `string | number[]` - Text (auto-embeds) or pre-computed vector
+- **metadata**: `object` - Associated metadata
+- **Returns**: `Promise<string>` - The noun's ID
+
+##### `getNoun(id)`
+Retrieve a noun by ID.
+- **id**: `string` - The noun's ID
+- **Returns**: `Promise<VectorDocument | null>`
+
+##### `updateNoun(id, dataOrVector?, metadata?)`
+Update an existing noun.
+- **id**: `string` - The noun's ID
+- **dataOrVector**: `string | number[]` - New data/vector (optional)
+- **metadata**: `object` - New metadata (optional)
+- **Returns**: `Promise<void>`
+
+##### `deleteNoun(id)`
+Delete a noun.
+- **id**: `string` - The noun's ID
+- **Returns**: `Promise<boolean>`
+
+##### `getNouns(options)`
+Get multiple nouns (unified method).
+- **options**: Can be:
+  - `string[]` - Array of IDs
+  - `{filter: object}` - Metadata filter
+  - `{limit: number, offset: number}` - Pagination
+- **Returns**: `Promise<VectorDocument[]>`
+
+#### Verbs (Relationships)
+
+##### `addVerb(source, target, type, metadata?)`
+Create a relationship between nouns.
+- **source**: `string` - Source noun ID
+- **target**: `string` - Target noun ID
+- **type**: `string` - Relationship type
+- **metadata**: `object` - Relationship metadata (optional)
+- **Returns**: `Promise<string>` - The verb's ID
+
+##### `getVerbsBySource(sourceId)`
+Get all outgoing relationships.
+- **sourceId**: `string` - Source noun ID
+- **Returns**: `Promise<Verb[]>`
+
+##### `getVerbsByTarget(targetId)`
+Get all incoming relationships.
+- **targetId**: `string` - Target noun ID
+- **Returns**: `Promise<Verb[]>`
+
+---
+
+### Search Operations
+
+#### `search(query, k?)`
+Simple vector similarity search.
+- **query**: `string | number[]` - Text or vector
+- **k**: `number` - Number of results (default: 10)
+- **Returns**: `Promise<SearchResult[]>`
+
+> 💡 This is equivalent to: `find({like: query, limit: k})`
+
+#### `find(query)` - Triple Intelligence 🧠
+The ultimate search method combining vector, graph, and metadata search.
+
 ```typescript
-// Add entities (nouns) with automatic embedding
-const id = await brain.addNoun("Machine learning is fascinating", {
-  category: "technology",
-  timestamp: Date.now()
+find({
+  // Vector similarity
+  like: 'text query' | vector | {id: 'noun-id'},
+  
+  // Metadata filtering (Brainy operators)
+  where: {
+    field: value,                    // Exact match
+    field: {
+      equals: value,
+      greaterThan: value,
+      lessThan: value,
+      greaterEqual: value,
+      lessEqual: value,
+      oneOf: [val1, val2],          // In array
+      notOneOf: [val1, val2],       // Not in array
+      contains: value,              // Array/string contains
+      startsWith: value,
+      endsWith: value,
+      matches: /pattern/,           // Pattern match
+      between: [min, max]
+    }
+  },
+  
+  // Graph traversal
+  connected: {
+    to: 'noun-id',                  // Target noun
+    from: 'noun-id',                // Source noun  
+    via: 'relationship-type',       // Relationship type
+    depth: 2                        // Traversal depth
+  },
+  
+  // Control
+  limit: 10,                        // Max results
+  offset: 0,                        // Skip results
+  explain: false                    // Include explanation
 })
-
-// Add relationships (verbs) between entities
-const sourceId = await brain.addNoun("Research Paper")
-const targetId = await brain.addNoun("Neural Networks")
-await brain.addVerb(sourceId, targetId, "discusses", {
-  confidence: 0.95,
-  section: "methodology"
-})
-
-// Batch operations
-const entities = ["Entity 1", "Entity 2", "Entity 3"]
-for (const entity of entities) {
-  await brain.addNoun(entity, { type: "batch" })
-}
 ```
 
-#### Search and Find
+---
+
+### Neural API
+
+Access advanced AI features via `brain.neural`:
+
+#### `brain.neural.similar(a, b)`
+Calculate semantic similarity between two items.
+- **Returns**: `Promise<number>` - Similarity score (0-1)
+
+#### `brain.neural.clusters(options?)`
+Automatically cluster nouns.
+- **Returns**: `Promise<Cluster[]>` - Generated clusters
+
+#### `brain.neural.hierarchy(id)`
+Build semantic hierarchy from a noun.
+- **Returns**: `Promise<HierarchyTree>` - Hierarchy structure
+
+#### `brain.neural.neighbors(id, k?)`
+Find k-nearest neighbors.
+- **Returns**: `Promise<Noun[]>` - Nearest neighbors
+
+#### `brain.neural.outliers(threshold?)`
+Detect outlier nouns.
+- **Returns**: `Promise<string[]>` - Outlier IDs
+
+#### `brain.neural.visualize(options?)`
+Generate visualization data for external tools.
 ```typescript
-// Simple semantic search
-const results = await brain.search("AI and machine learning")
-
-// Natural language queries with find()
-const nlpResults = await brain.find("research papers about neural networks from 2024")
-// Automatically interprets: document type, topic, and time range
-
-// Advanced triple intelligence search with structured query
-const structured = await brain.find({
-  like: "neural networks",
-  where: { category: "research" },
-  connected: { to: "team-id", depth: 2 },
-  limit: 20
+visualize({
+  maxNodes: 100,
+  dimensions: 2 | 3,
+  algorithm: 'force' | 'hierarchical' | 'radial',
+  includeEdges: true
 })
-
-// Complex natural language with multiple conditions
-const complex = await brain.find("highly cited papers on deep learning with over 100 citations published in Nature")
-// Automatically extracts: citation count, topic, publication venue
+// Returns format for D3, Cytoscape, or GraphML
 ```
 
-#### Get and Update
+---
+
+### Import & Export
+
+#### `neuralImport(data, options?)`
+AI-powered smart import that auto-detects format.
+- **data**: `any` - Data to import
+- **options**: Import configuration
+  - `confidenceThreshold`: Minimum confidence (0-1)
+  - `autoApply`: Automatically add to database
+  - `skipDuplicates`: Skip existing entities
+- **Returns**: Detected entities and relationships
+
+#### `backup()`
+Create a full backup.
+- **Returns**: `Promise<BackupData>`
+
+#### `restore(backup)`
+Restore from backup.
+- **backup**: `BackupData` - Previous backup
+- **Returns**: `Promise<void>`
+
+---
+
+### Intelligence Features
+
+#### Verb Scoring
+Train the relationship scoring model:
+- `provideFeedbackForVerbScoring(feedback)` - Train model
+- `getVerbScoringStats()` - Get statistics
+- `exportVerbScoringLearningData()` - Export training
+- `importVerbScoringLearningData(data)` - Import training
+
+#### Embeddings
+- `embed(text)` - Generate embedding vector
+- `calculateSimilarity(a, b, metric?)` - Calculate similarity
+
+---
+
+### Configuration & Management
+
+#### Operational Modes
+- `setReadOnly(bool)` - Toggle read-only mode
+- `setWriteOnly(bool)` - Toggle write-only mode  
+- `setFrozen(bool)` - Freeze all modifications
+
+#### Cache & Performance
+- `getCacheStats()` - Get cache statistics
+- `clearCache()` - Clear search cache
+- `size()` - Get total noun count
+- `getStatistics()` - Get full statistics
+
+#### Data Management
+- `clear(options?)` - Clear all data
+- `clearNouns()` - Clear nouns only
+- `clearVerbs()` - Clear verbs only
+- `rebuildMetadataIndex()` - Rebuild index
+
+---
+
+### Lifecycle
+
+#### Initialization
 ```typescript
-// Get noun by ID
-const noun = await brain.getNoun("noun-id")
-
-// Get verb (relationship) by ID
-const verb = await brain.getVerb("verb-id")
-
-// Update noun metadata
-await brain.updateNounMetadata("noun-id", {
-  verified: true,
-  lastModified: Date.now()
-})
-
-// Delete noun (soft delete by default)
-await brain.deleteNoun("noun-id")
-
-// Delete verb (relationship)
-await brain.deleteVerb("verb-id")
-```
-
-## Advanced Features
-
-### Augmentations
-```typescript
-import { 
-  WALAugmentation,
-  EntityRegistryAugmentation,
-  BatchProcessingAugmentation 
-} from 'brainy'
-
 const brain = new BrainyData({
-  augmentations: [
-    new WALAugmentation(),
-    new EntityRegistryAugmentation({ maxCacheSize: 100000 }),
-    new BatchProcessingAugmentation({ batchSize: 100 })
-  ]
+  storage: 'auto',        // auto | memory | filesystem | s3
+  dimensions: 384,        // Vector dimensions
+  cache: true,           // Enable caching
+  index: true           // Enable indexing
+})
+
+await brain.init()       // Required before use!
+```
+
+#### Cleanup
+```typescript
+await brain.shutdown()   // Graceful shutdown
+```
+
+#### Static Methods
+- `BrainyData.preloadModel()` - Preload ML model
+- `BrainyData.warmup()` - Warmup system
+
+---
+
+## Query Operators Reference
+
+Brainy uses its own clean, readable operators:
+
+| Brainy Operator | Description | Example |
+|-----------------|-------------|---------|
+| `equals` | Exact match | `{age: {equals: 25}}` |
+| `greaterThan` | Greater than | `{age: {greaterThan: 18}}` |
+| `lessThan` | Less than | `{price: {lessThan: 100}}` |
+| `greaterEqual` | Greater or equal | `{score: {greaterEqual: 90}}` |
+| `lessEqual` | Less or equal | `{rating: {lessEqual: 3}}` |
+| `oneOf` | In array | `{color: {oneOf: ['red', 'blue']}}` |
+| `notOneOf` | Not in array | `{status: {notOneOf: ['deleted']}}` |
+| `contains` | Contains value | `{tags: {contains: 'ai'}}` |
+| `startsWith` | String prefix | `{name: {startsWith: 'John'}}` |
+| `endsWith` | String suffix | `{email: {endsWith: '@gmail.com'}}` |
+| `matches` | Pattern match | `{text: {matches: /^[A-Z]/}}` |
+| `between` | Range | `{year: {between: [2020, 2024]}}` |
+
+---
+
+## Examples
+
+### Basic Usage
+```typescript
+// Add data
+const id = await brain.addNoun('Quantum computing breakthrough', {
+  category: 'technology',
+  year: 2024,
+  importance: 'high'
+})
+
+// Simple search
+const results = await brain.search('quantum physics', 5)
+
+// Complex query with Triple Intelligence
+const articles = await brain.find({
+  like: 'quantum computing',
+  where: {
+    year: { greaterThan: 2022 },
+    importance: { oneOf: ['high', 'critical'] }
+  },
+  connected: {
+    via: 'references',
+    depth: 2
+  },
+  limit: 10
 })
 ```
 
-### Event System
+### Creating Knowledge Graphs
 ```typescript
-brain.on('addNoun', (noun) => {
-  console.log('Noun added:', noun.id)
-})
+// Add entities
+const ai = await brain.addNoun('Artificial Intelligence')
+const ml = await brain.addNoun('Machine Learning')
+const dl = await brain.addNoun('Deep Learning')
 
-brain.on('addVerb', (verb) => {
-  console.log('Relationship created:', verb.type)
-})
+// Create relationships
+await brain.addVerb(ml, ai, 'subset_of')
+await brain.addVerb(dl, ml, 'subset_of')
+await brain.addVerb(dl, ai, 'enables')
 
-brain.on('search', (query, results) => {
-  console.log(`Search for "${query}" returned ${results.length} results`)
-})
-
-brain.on('error', (error) => {
-  console.error('Error occurred:', error)
-})
-```
-
-### Statistics
-```typescript
-const stats = await brain.statistics()
-console.log(`
-  Total items: ${stats.totalItems}
-  Index size: ${stats.indexSize}
-  Average query time: ${stats.avgQueryTime}ms
-`)
-```
-
-## Type Definitions
-
-### Core Types
-```typescript
-interface SearchResult {
-  id: string
-  score: number
-  content?: string
-  metadata?: Record<string, any>
-}
-
-interface TripleQuery {
-  like?: string | Vector | any
-  where?: Record<string, any>
-  connected?: ConnectionQuery
-  limit?: number
-  threshold?: number
-}
-
-interface Vector {
-  values: number[]
-  dimensions: number
-}
-```
-
-## Error Handling
-
-All methods follow consistent error handling:
-
-```typescript
-try {
-  await brain.addNoun("content", metadata)
-} catch (error) {
-  if (error.code === 'STORAGE_ERROR') {
-    // Handle storage issues
-  } else if (error.code === 'VALIDATION_ERROR') {
-    // Handle validation issues
-  }
-}
-```
-
-## Performance Guidelines
-
-### Batching
-Always use batch operations for bulk data:
-```typescript
-// Good - efficient batch processing
-const items = ["item1", "item2", "item3"]
-for (const item of items) {
-  await brain.addNoun(item, { batch: true })
-}
-
-// For relationships
-const relationships = [
-  { source: id1, target: id2, type: "related" },
-  { source: id2, target: id3, type: "similar" }
-]
-for (const rel of relationships) {
-  await brain.addVerb(rel.source, rel.target, rel.type)
-}
-```
-
-### Caching
-Configure caching for your use case:
-```typescript
-const brain = new BrainyData({
-  cache: {
-    search: { maxSize: 100, ttl: 60000 },
-    metadata: { maxSize: 1000, ttl: 300000 }
-  }
+// Traverse the graph
+const aiEcosystem = await brain.find({
+  connected: { from: ai, depth: 3 }
 })
 ```
 
-### Indexing
-Ensure fields used in queries are indexed:
+### Using Neural Features
 ```typescript
-// Configure indexed fields
-const brain = new BrainyData({
-  indexedFields: ['category', 'author', 'timestamp']
+// Find similar concepts
+const similarity = await brain.neural.similar(
+  'renewable energy',
+  'sustainable power'
+)
+
+// Auto-cluster documents
+const clusters = await brain.neural.clusters({
+  method: 'kmeans',
+  k: 5
 })
+
+// Generate visualization
+const vizData = await brain.neural.visualize({
+  maxNodes: 200,
+  algorithm: 'force',
+  dimensions: 3
+})
+// Use vizData with D3.js, Cytoscape, etc.
 ```
 
-## Migration from v1.x
+---
 
-See the [Migration Guide](../MIGRATION.md) for upgrading from Brainy 1.x to 2.0.
+## Key Features
+
+### ✨ Zero Configuration
+Works instantly with sensible defaults. No setup required.
+
+### 🧠 Triple Intelligence  
+Combines vector search, graph traversal, and metadata filtering in one query.
+
+### 🚀 Auto-Embedding
+Text automatically converts to vectors - no manual embedding needed.
+
+### 📊 Built-in Visualization
+Export data formatted for popular visualization libraries.
+
+### 🔒 Clean Operators
+Readable, intuitive operators - no cryptic symbols.
+
+### 🎯 Everything Included
+All features in the MIT licensed package - no premium tiers.
+
+---
+
+## Support
+
+- **GitHub**: [github.com/soulcraft/brainy](https://github.com/soulcraft/brainy)
+- **Documentation**: [docs.soulcraft.com/brainy](https://docs.soulcraft.com/brainy)
+- **License**: MIT
+
+---
+
+*Brainy 2.0 - Intelligence for Everyone*

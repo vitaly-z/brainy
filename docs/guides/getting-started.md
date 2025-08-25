@@ -1,6 +1,6 @@
 # Getting Started with Brainy
 
-This guide will help you get up and running with Brainy, the multi-dimensional AI database that combines vector similarity, graph relationships, and field filtering.
+This guide will help you get up and running with Brainy, the multi-dimensional AI database that combines vector similarity, graph relationships, and metadata filtering.
 
 ## Installation
 
@@ -90,7 +90,7 @@ results.forEach(result => {
 const results = await brain.find("show me technology articles about AI from 2023")
 // Automatically interprets: topic, category, and time range
 
-// Structured queries with vector similarity and field filtering
+// Structured queries with vector similarity and metadata filtering
 const structured = await brain.find({
   like: "artificial intelligence",
   where: {

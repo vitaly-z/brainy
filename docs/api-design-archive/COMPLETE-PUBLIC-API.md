@@ -60,7 +60,7 @@ searchByNounTypes(types[], query)          // Filter by noun types
 searchWithinItems(query, ids[], k?)        // Search within specific nouns
 searchVerbs(query)                         // Search relationships
 searchNounsByVerbs(conditions)             // Graph-based noun search
-searchByStandardField(field, value)        // Field-based search
+searchByStandardField(field, value)        // Metadata-based search
 ```
 
 ### Distributed Search

@@ -60,11 +60,11 @@ await brain.searchWithinNouns(ids[], query)     // Search within specific nouns
 
 ### Triple Intelligence 🧠
 ```typescript
-await brain.find(query)                         // Unified Vector + Graph + Field search
+await brain.find(query)                         // Unified Vector + Graph + Metadata search
 // Examples:
 await brain.find('documents about AI')          // Natural language
 await brain.find({ like: 'sample-id' })        // Similar to ID
-await brain.find({ where: { type: 'doc' }})    // Field filter
+await brain.find({ where: { type: 'doc' }})    // Metadata filter
 await brain.find({ connected: { to: id }})     // Graph traversal
 ```
 

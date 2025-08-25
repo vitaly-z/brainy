@@ -1,4 +1,4 @@
-# 🧠 Brainy 2.0 Complete Public API
+# 🧠 Brainy 2.0 Final Public API
 
 > **Clean, Specific, Beautiful** - Every method has ONE clear purpose.
 
@@ -17,7 +17,7 @@ hasNoun(id)                                 // Check if noun exists
 
 // Batch Operations  
 addNouns(items[])                          // Add multiple nouns
-getNouns(idsOrOptions)                     // Get multiple nouns (unified method)
+getNouns(idsOrOptions)                     // Get multiple nouns (by IDs or query)
   // getNouns(['id1', 'id2'])              // Get by specific IDs
   // getNouns({ filter: {...} })           // Get with filters
   // getNouns({ limit: 10, offset: 20 })   // Get with pagination
@@ -47,14 +47,14 @@ deleteVerbs(ids[])                         // Delete multiple verbs
 // Core Search
 search(query, k?, options?)                 // Primary vector search
 searchText(text, k?, options?)              // Natural language search
-find(query)                                 // Triple Intelligence (Vector+Graph+Field) 🧠
+find(query)                                 // Triple Intelligence (Vector+Graph+Metadata) 🧠
 findSimilar(id, k?, options?)              // Find similar to existing noun
 
 // Advanced Search
 searchByNounTypes(types[], query, k?)      // Filter by noun types
 searchWithinItems(query, ids[], k?)        // Search within specific nouns
 searchWithCursor(query, cursor)            // Paginated search
-searchByStandardField(field, value, k?)    // Field-based search
+searchByStandardField(field, value, k?)    // Metadata-based search
 
 // Graph Search
 searchVerbs(query, options?)               // Search relationships
@@ -206,15 +206,5 @@ These are now private (use new methods above):
 - `addItem()`, `addToBoth()`, `addBatch()`, `getBatch()`
 
 ### ✅ Triple Intelligence
-- New `find()` method unifies Vector + Graph + Field search
+- New `find()` method unifies Vector + Graph + Metadata search
 - Most powerful search capability in one simple method
-
-### ✅ Zero-Configuration
-- Everything works instantly with sensible defaults
-- Optional configuration only for advanced users
-- No complex setup required
-
-### ✅ Clean Architecture
-- Augmentation system for extensibility
-- All features included (no premium tiers)
-- Beautiful developer experience

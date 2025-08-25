@@ -48,7 +48,7 @@ find({
   // Vector search
   like: 'text' | vector | {id: 'noun-id'},
   
-  // Field filtering with BRAINY OPERATORS (NOT MongoDB!)
+  // Metadata filtering with BRAINY OPERATORS (NOT MongoDB!)
   where: {
     // Direct equality
     field: value,
@@ -261,7 +261,7 @@ brain.generateRandomGraph(nodes, edges)   // Test data
 3. **Simple neuralImport** - One method, smart detection
 4. **Visualization exports** - For D3, Cytoscape, GraphML
 5. **search() is just convenience** - Not a complete alias
-6. **find() has Triple Intelligence** - Vector + Graph + Field
+6. **find() has Triple Intelligence** - Vector + Graph + Metadata
 7. **Proper operator names** - greaterThan not $gt
 8. **Complete clustering API** - Fast, large, streaming options
 9. **Synapses and Conduits** - External and internal sync

@@ -32,7 +32,7 @@
 - Real transformer models (no mocking)
 
 ### 6. Natural Language ✅
-- `tests/triple-intelligence.test.ts` - Vector + Graph + Field queries
+- `tests/triple-intelligence.test.ts` - Vector + Graph + Metadata queries
 - Natural language query understanding
 
 ### 7. Error Handling ✅

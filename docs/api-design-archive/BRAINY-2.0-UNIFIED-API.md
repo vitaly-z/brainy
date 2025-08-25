@@ -54,7 +54,7 @@ search(query, k?)                         // Simple vector search
   // Equivalent to: find({like: query, limit: k})
 
 find(query)                               // TRIPLE INTELLIGENCE 🧠
-  // Combines Vector + Graph + Field search
+  // Combines Vector + Graph + Metadata search
 ```
 
 ### Find Query Structure
@@ -329,7 +329,7 @@ brain.initialized                         // Is initialized?
 1. **Brainy Operators** - NOT MongoDB style ($gt, $lt)
 2. **Neural API** - Complete with visualization export
 3. **Simple Search** - Just `search()` and `find()`
-4. **Triple Intelligence** - Vector + Graph + Field in `find()`
+4. **Triple Intelligence** - Vector + Graph + Metadata in `find()`
 5. **Auto-embedding** - `addNoun()` accepts text directly
 6. **Unified Methods** - `getNouns()` handles all plural queries
 7. **Clean Architecture** - Augmentation system for extensibility

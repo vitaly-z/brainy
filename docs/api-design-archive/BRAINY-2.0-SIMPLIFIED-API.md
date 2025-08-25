@@ -53,7 +53,7 @@ find('documents about AI')
 // Similar to existing noun
 find({ like: 'noun-id-123' })            
 
-// Field filtering
+// Metadata filtering
 find({ where: { type: 'article' }})      
 
 // Graph traversal
@@ -62,7 +62,7 @@ find({ connected: { to: 'id', via: 'references' }})
 // Combined queries (Triple Intelligence!)
 find({
   like: 'sample-doc',                    // Vector similarity
-  where: { status: 'published' },        // Field filter
+  where: { status: 'published' },        // Metadata filter
   connected: { via: 'cites' },          // Graph relationships
   limit: 10                              // Pagination
 })
@@ -127,7 +127,7 @@ shutdown()                               // Cleanup
 ### Why So Simple?
 
 1. **`addNoun()` handles everything** - Text? Auto-embeds. Vector? Uses directly.
-2. **`find()` is the ultimate search** - Combines vector, graph, and field search
+2. **`find()` is the ultimate search** - Combines vector, graph, and metadata search
 3. **`search()` is just convenience** - Simple alias to `find()` for basic queries
 4. **No duplicate methods** - One way to do each thing
 
@@ -136,7 +136,7 @@ shutdown()                               // Cleanup
 The `find()` method is your Swiss Army knife:
 - Text search → Auto-embeds and searches
 - Vector search → `{ like: 'id' }` or `{ like: vector }`
-- Field search → `{ where: { field: value }}`
+- Metadata search → `{ where: { field: value }}`
 - Graph search → `{ connected: { to/from: 'id' }}`
 - Combine them all → Triple Intelligence!
 

@@ -162,7 +162,7 @@ The natural language is converted to a structured Triple Intelligence query:
 ### 5. Execution
 The structured query is executed using Triple Intelligence, combining:
 - Vector similarity search
-- Field filtering
+- Metadata filtering
 - Graph traversal
 
 ## Advanced Features

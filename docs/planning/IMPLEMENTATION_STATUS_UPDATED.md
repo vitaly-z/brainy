@@ -6,7 +6,7 @@ After thorough investigation of the codebase, here's what's ACTUALLY implemented
 
 ### Core Features
 - ✅ **Noun-Verb Taxonomy** - Complete with addNoun() and addVerb()
-- ✅ **Triple Intelligence Engine** - Vector + Graph + Field unified queries
+- ✅ **Triple Intelligence Engine** - Vector + Graph + Metadata unified queries
 - ✅ **Natural Language find()** - Basic NLP with 220+ embedded patterns
 - ✅ **HNSW Vector Search** - O(log n) similarity search with partitioning support
 - ✅ **Field Indexing** - O(1) metadata lookups via FieldIndex class

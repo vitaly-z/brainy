@@ -48,7 +48,7 @@ Just TWO methods - simple and powerful:
 
 ```typescript
 search(query, k?)         // Convenience: same as find({like: query, limit: k})
-find(query)              // TRIPLE INTELLIGENCE: Vector + Graph + Field
+find(query)              // TRIPLE INTELLIGENCE: Vector + Graph + Metadata
 ```
 
 ### Find Query (with CORRECT Brainy Operators):
@@ -229,7 +229,7 @@ BrainyData.warmup()                    // Warmup
 
 1. **Zero-Config** - Works instantly, no setup
 2. **Auto-Embedding** - Text automatically becomes vectors
-3. **Triple Intelligence** - Vector + Graph + Field combined
+3. **Triple Intelligence** - Vector + Graph + Metadata combined
 4. **Brainy Operators** - Clean, legal, no MongoDB style
 5. **Complete Neural API** - All clustering/viz features
 6. **Simple Import** - One method, auto-detects everything

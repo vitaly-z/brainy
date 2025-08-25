@@ -15,7 +15,7 @@ Unified query system that automatically combines:
 // All three intelligences work together automatically
 const results = await brain.find({
   like: 'AI research',           // Vector search
-  where: { year: 2024 },          // Field filtering  
+  where: { year: 2024 },          // Metadata filtering  
   connected: { to: authorId }     // Graph traversal
 })
 ```

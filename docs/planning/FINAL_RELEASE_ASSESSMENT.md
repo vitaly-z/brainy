@@ -20,7 +20,7 @@
 - ✅ Natural language queries ("find developers")
 - ✅ Vector similarity search (`similar: 'text'`)
 - ✅ Graph traversal (`connected: { to: 'node' }`)
-- ✅ Field filtering (`where: { field: 'value' }`)
+- ✅ Metadata filtering (`where: { field: 'value' }`)
 - ✅ Combined intelligence with fusion scoring
 - ✅ Performance optimized for complex queries
 - **Status: PRODUCTION READY**
@@ -94,7 +94,7 @@ const viz = await neural.visualize()
 ```
 
 ### Core Innovation Validated
-- ✅ **Triple Intelligence**: Vector + Graph + Field search unified
+- ✅ **Triple Intelligence**: Vector + Graph + Metadata search unified
 - ✅ **Intelligent Verb Scoring**: Smart relationship weights
 - ✅ **Neural APIs**: Ready for external visualization libraries
 - ✅ **Zero Config**: Works perfectly out of the box
@@ -118,7 +118,7 @@ const viz = await neural.visualize()
 - **Scalability**: Tested with complex datasets
 
 ### Innovation Leadership ✅
-- **First True Triple Intelligence**: Vector + Graph + Field unified
+- **First True Triple Intelligence**: Vector + Graph + Metadata unified
 - **Smart by Default**: No configuration required
 - **Revolutionary Data Model**: Noun-verb taxonomy
 - **Neural API**: Ready for external clustering/visualization libraries
@@ -133,7 +133,7 @@ const viz = await neural.visualize()
 
 Brainy 2.0 represents a fundamental leap forward in vector database technology:
 
-1. **Triple Intelligence** solves the problem of having to choose between vector, graph, or field search
+1. **Triple Intelligence** solves the problem of having to choose between vector, graph, or metadata search
 2. **Intelligent Verb Scoring** automatically computes optimal relationship weights
 3. **Neural APIs** enable external libraries to build advanced visualizations
 4. **Zero Configuration** makes it accessible to all developers

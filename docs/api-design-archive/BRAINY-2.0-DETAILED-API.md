@@ -126,7 +126,7 @@ Simple vector similarity search (convenience wrapper)
     // Vector similarity
     like?: string | number[] | {id: string},  // Text, vector, or noun ID
     
-    // Field filtering
+    // Metadata filtering
     where?: {
       field: value,                          // Exact match
       field: {$in: [values]},                // In array
