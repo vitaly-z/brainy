@@ -3337,72 +3337,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Get a vector by ID
    */
-  public async get(id: string): Promise<VectorDocument<T> | null> {
-    // Validate id parameter first, before any other logic
-    if (id === null || id === undefined) {
-      throw new Error('ID cannot be null or undefined')
-    }
-
-    await this.ensureInitialized()
-
-    try {
-      let noun: HNSWNoun | undefined
-
-      // In write-only mode, query storage directly since index is not loaded
-      if (this.writeOnly) {
-        try {
-          noun = (await this.storage!.getNoun(id)) ?? undefined
-        } catch (storageError) {
-          // If storage lookup fails, return null (noun doesn't exist)
-          return null
-        }
-      } else {
-        // Normal mode: Get noun from index first
-        noun = this.index.getNouns().get(id)
-
-        // If not found in index, fallback to storage (for race conditions)
-        if (!noun && this.storage) {
-          try {
-            noun = (await this.storage.getNoun(id)) ?? undefined
-          } catch (storageError) {
-            // Storage lookup failed, noun doesn't exist
-            return null
-          }
-        }
-      }
-
-      if (!noun) {
-        return null
-      }
-
-      // Get metadata
-      let metadata = await this.storage!.getMetadata(id)
-
-      // Handle special cases for metadata
-      if (metadata === null) {
-        metadata = {}
-      } else if (typeof metadata === 'object') {
-        // For empty metadata test: if metadata only has an ID, return empty object
-        if (Object.keys(metadata).length === 1 && 'id' in metadata) {
-          metadata = {}
-        }
-        // Always remove the ID from metadata if present
-        else if ('id' in metadata) {
-          const { id: _, ...rest } = metadata
-          metadata = rest
-        }
-      }
-
-      return {
-        id,
-        vector: noun.vector,
-        metadata: metadata as T | undefined
-      }
-    } catch (error) {
-      console.error(`Failed to get vector ${id}:`, error)
-      throw new Error(`Failed to get vector ${id}: ${error}`)
-    }
-  }
+  // Legacy get() method removed - use getNoun() instead
 
   /**
    * Check if a document with the given ID exists
@@ -3454,27 +3389,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param id The ID of the document
    * @returns Promise<T | null> The metadata object or null if not found
    */
-  private async getMetadata(id: string): Promise<T | null> {
-    if (id === null || id === undefined) {
-      throw new Error('ID cannot be null or undefined')
-    }
-    await this.ensureInitialized()
-    
-    // This is a direct storage operation - check if allowed in write-only mode
-    if (this.writeOnly && !this.allowDirectReads) {
-      throw new Error(
-        'Cannot perform getMetadata() operation: database is in write-only mode. Enable allowDirectReads for direct storage operations.'
-      )
-    }
-
-    try {
-      const metadata = await this.storage!.getMetadata(id)
-      return metadata as T | null
-    } catch (error) {
-      console.error(`Failed to get metadata for ${id}:`, error)
-      return null
-    }
-  }
+  // Legacy getMetadata() method removed - use getNounMetadata() instead
 
   /**
    * Get multiple documents by their IDs
@@ -3711,242 +3626,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
   }
 
-  /**
-   * Delete a vector by ID
-   * @param id The ID of the vector to delete
-   * @param options Additional options
-   * @returns Promise that resolves to true if the vector was deleted, false otherwise
-   */
-  private async delete(
-    id: string,
-    options: {
-      service?: string // The service that is deleting the data
-      hard?: boolean // Hard delete - completely removes from storage (default: false, soft delete is default)
-      cascade?: boolean // Delete related verbs (default: false)
-      force?: boolean // Force delete even if has relationships (default: false)
-    } = {}
-  ): Promise<boolean> {
-    // Clear API: use 'hard: true' for hard delete, otherwise soft delete
-    const isHardDelete = options.hard === true
-    
-    const opts = {
-      service: options.service,
-      soft: !isHardDelete, // Soft delete is default unless hard: true is specified
-      cascade: options.cascade || false,
-      force: options.force || false
-    }
-    // Validate id parameter first, before any other logic
-    if (id === null || id === undefined) {
-      throw new Error('ID cannot be null or undefined')
-    }
-
-    await this.ensureInitialized()
-
-    // Check if database is in read-only mode
-    this.checkReadOnly()
-
-    try {
-      // Check if the id is actually content text rather than an ID
-      // This handles cases where tests or users pass content text instead of IDs
-      let actualId = id
-
-      console.log(`Delete called with ID: ${id}`)
-      console.log(`Index has ID directly: ${this.index.getNouns().has(id)}`)
-
-      if (!this.index.getNouns().has(id)) {
-        console.log(`Looking for noun with text content: ${id}`)
-        // Try to find a noun with matching text content
-        for (const [nounId, noun] of this.index.getNouns().entries()) {
-          console.log(
-            `Checking noun ${nounId}: text=${noun.metadata?.text || 'undefined'}`
-          )
-          if (noun.metadata?.text === id) {
-            actualId = nounId
-            console.log(`Found matching noun with ID: ${actualId}`)
-            break
-          }
-        }
-      }
-
-      // Handle soft delete vs hard delete
-      if (opts.soft) {
-        // Soft delete: just mark as deleted - metadata filter will exclude from search
-        try {
-          await this.updateNounMetadata(actualId, { 
-            deleted: true, 
-            deletedAt: new Date().toISOString(),
-            deletedBy: opts.service || 'user'
-          } as T)
-          return true
-        } catch (error) {
-          // If item doesn't exist, return false (delete of non-existent item is not an error)
-          return false
-        }
-      }
-
-      // Hard delete: Remove from index
-      const removed = this.index.removeItem(actualId)
-      if (!removed) {
-        return false
-      }
-
-      // Remove from storage
-      await this.storage!.deleteNoun(actualId)
-
-      // Track deletion statistics
-      const service = this.getServiceName({ service: opts.service })
-      await this.storage!.decrementStatistic('noun', service)
-
-      // Try to remove metadata (ignore errors)
-      try {
-        // Get metadata before removing for index cleanup
-        const existingMetadata = await this.storage!.getMetadata(actualId)
-        
-        // Remove from metadata index (write-only mode should update indices!)
-        if (this.index && existingMetadata && !this.frozen) {
-          await this.index.removeFromIndex(actualId, existingMetadata)
-        }
-        
-        await this.storage!.saveMetadata(actualId, null)
-        await this.storage!.decrementStatistic('metadata', service)
-      } catch (error) {
-        // Ignore
-      }
-
-      // Invalidate search cache since data has changed
-      this.cache?.invalidateOnDataChange('delete')
-
-      return true
-    } catch (error) {
-      console.error(`Failed to delete vector ${id}:`, error)
-      throw new Error(`Failed to delete vector ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * @deprecated Use updateNoun() or updateVerb() instead. Will be removed in Brainy 2.0.0.
-   * @param id The ID of the vector to update metadata for
-   * @param metadata The new metadata
-   * @param options Additional options
-   * @returns Promise that resolves to true if the metadata was updated, false otherwise
-   */
-  private async updateMetadata(
-    id: string,
-    metadata: T,
-    options: {
-      service?: string // The service that is updating the data
-    } = {}
-  ): Promise<boolean> {
-    console.warn('🚨 DEPRECATED: updateMetadata() will be removed in Brainy 2.0.0. Use updateNoun() or updateVerb() instead.')
-    
-    // Validate id parameter first, before any other logic
-    if (id === null || id === undefined) {
-      throw new Error('ID cannot be null or undefined')
-    }
-
-    // Validate that metadata is not null or undefined
-    if (metadata === null || metadata === undefined) {
-      throw new Error(`Metadata cannot be null or undefined`)
-    }
-
-    await this.ensureInitialized()
-
-    // Check if database is in read-only mode
-    this.checkReadOnly()
-
-    try {
-      // Check if a vector exists
-      const noun = this.index.getNouns().get(id)
-      if (!noun) {
-        throw new Error(`Vector with ID ${id} does not exist`)
-      }
-
-      // Validate noun type if metadata is for a GraphNoun
-      if (metadata && typeof metadata === 'object' && 'noun' in metadata) {
-        const nounType = (metadata as unknown as GraphNoun).noun
-
-        // Check if the noun type is valid
-        const isValidNounType = Object.values(NounType).includes(nounType)
-
-        if (!isValidNounType) {
-          console.warn(
-            `Invalid noun type: ${nounType}. Falling back to GraphNoun.`
-          )
-          // Set a default noun type
-          ;(metadata as unknown as GraphNoun).noun = NounType.Concept
-        }
-
-        // Get the service that's updating the metadata
-        const service = this.getServiceName(options)
-        const graphNoun = metadata as unknown as GraphNoun
-
-        // Preserve existing createdBy and createdAt if they exist
-        const existingMetadata = (await this.storage!.getMetadata(id)) as any
-
-        if (
-          existingMetadata &&
-          typeof existingMetadata === 'object' &&
-          'createdBy' in existingMetadata
-        ) {
-          // Preserve the original creator information
-          graphNoun.createdBy = existingMetadata.createdBy
-
-          // Also preserve creation timestamp if it exists
-          if ('createdAt' in existingMetadata) {
-            graphNoun.createdAt = existingMetadata.createdAt
-          }
-        } else if (!graphNoun.createdBy) {
-          // If no existing createdBy and none in the update, set it
-          graphNoun.createdBy = getAugmentationVersion(service)
-
-          // Set createdAt if it doesn't exist
-          if (!graphNoun.createdAt) {
-            const now = new Date()
-            graphNoun.createdAt = {
-              seconds: Math.floor(now.getTime() / 1000),
-              nanoseconds: (now.getTime() % 1000) * 1000000
-            }
-          }
-        }
-
-        // Always update the updatedAt timestamp
-        const now = new Date()
-        graphNoun.updatedAt = {
-          seconds: Math.floor(now.getTime() / 1000),
-          nanoseconds: (now.getTime() % 1000) * 1000000
-        }
-      }
-
-      // Update metadata
-      await this.storage!.saveMetadata(id, metadata)
-
-      // Update metadata index (write-only mode should build indices!)
-      if (this.index && !this.frozen) {
-        // Remove old metadata from index if it exists
-        const oldMetadata = await this.storage!.getMetadata(id)
-        if (oldMetadata) {
-          await this.index.removeFromIndex(id, oldMetadata)
-        }
-        
-        // Add new metadata to index
-        if (metadata) {
-          await this.index.addToIndex(id, metadata)
-        }
-      }
-
-      // Track metadata statistics
-      const service = this.getServiceName(options)
-      await this.storage!.incrementStatistic('metadata', service)
-
-      // Invalidate search cache since metadata has changed
-      this.cache?.invalidateOnDataChange('update')
-
-      return true
-    } catch (error) {
-      console.error(`Failed to update metadata for vector ${id}:`, error)
-      throw new Error(`Failed to update metadata for vector ${id}: ${error}`)
-    }
-  }
+  // Legacy private methods removed - use public 2.0 API methods instead:
+  // - delete() removed - use deleteNoun() instead
+  // - updateMetadata() removed - use updateNoun() or updateNounMetadata() instead
 
   // REMOVED: relate() - Use addVerb() instead (cleaner 2.0 API)
 
@@ -7315,62 +6997,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param options Update options
    * @returns Success boolean
    */
-  private async update(
-    id: string,
-    data?: any,
-    metadata?: any,
-    options?: {
-      merge?: boolean // Merge with existing metadata (default: true)
-      reindex?: boolean // Force reindexing (default: true)
-      cascade?: boolean // Update related verbs (default: false)
-    }
-  ): Promise<boolean> {
-    const opts = {
-      merge: true,
-      reindex: true,
-      cascade: false,
-      ...options
-    }
-
-    // Update data if provided
-    if (data !== undefined) {
-      // For data updates, we need to regenerate the vector
-      const existingNoun = this.index.getNouns().get(id)
-      if (!existingNoun) {
-        throw new Error(`Noun with ID ${id} does not exist`)
-      }
-
-      // Create new vector for updated data
-      const vector = await this.embeddingFunction(data)
-      
-      // Update the noun with new data and vector
-      const updatedNoun: HNSWNoun = {
-        ...existingNoun,
-        vector,
-        metadata: opts.merge ? { ...existingNoun.metadata, ...metadata } : metadata
-      }
-      
-      // Update in index
-      this.index.getNouns().set(id, updatedNoun)
-      
-      // Note: HNSW index will be updated automatically on next search
-      // Reindexing happens lazily for performance
-    } else if (metadata !== undefined) {
-      // Metadata-only update using existing updateMetadata method
-      await this.updateNounMetadata(id, metadata)
-      return true
-    }
-
-    // Update related verbs if cascade enabled
-    if (opts.cascade) {
-      // TODO: Implement cascade verb updates when verb access methods are clarified
-      prodLog.debug(`Cascade update requested for ${id} - feature pending implementation`)
-    }
-
-    prodLog.debug(`✅ Updated noun ${id} (data: ${data !== undefined}, metadata: ${metadata !== undefined})`)
-    return true
-  }
-
+  // Legacy update() method removed - use updateNoun() instead
 
 
   /**
@@ -7579,8 +7206,70 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns The noun document or null
    */
   public async getNoun(id: string): Promise<VectorDocument<T> | null> {
-    // Delegate to private get method which handles the actual implementation
-    return this.get(id)
+    // Validate id parameter first, before any other logic
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+
+    await this.ensureInitialized()
+
+    try {
+      let noun: HNSWNoun | undefined
+
+      // In write-only mode, query storage directly since index is not loaded
+      if (this.writeOnly) {
+        try {
+          noun = (await this.storage!.getNoun(id)) ?? undefined
+        } catch (storageError) {
+          // If storage lookup fails, return null (noun doesn't exist)
+          return null
+        }
+      } else {
+        // Normal mode: Get noun from index first
+        noun = this.index.getNouns().get(id)
+
+        // If not found in index, fallback to storage (for race conditions)
+        if (!noun && this.storage) {
+          try {
+            noun = (await this.storage.getNoun(id)) ?? undefined
+          } catch (storageError) {
+            // Storage lookup failed, noun doesn't exist
+            return null
+          }
+        }
+      }
+
+      if (!noun) {
+        return null
+      }
+
+      // Get metadata
+      let metadata = await this.storage!.getMetadata(id)
+
+      // Handle special cases for metadata
+      if (metadata === null) {
+        metadata = {}
+      } else if (typeof metadata === 'object') {
+        // For empty metadata test: if metadata only has an ID, return empty object
+        if (Object.keys(metadata).length === 1 && 'id' in metadata) {
+          metadata = {}
+        }
+        // Always remove the ID from metadata if present
+        else if ('id' in metadata) {
+          const { id: _, ...rest } = metadata
+          metadata = rest
+        }
+      }
+
+      return {
+        id,
+        vector: noun.vector,
+        metadata: metadata as T | undefined
+      }
+    } catch (error) {
+      console.error(`Failed to get vector ${id}:`, error)
+      throw new Error(`Failed to get vector ${id}: ${error}`)
+    }
   }
   
   /**
@@ -7589,9 +7278,56 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Success boolean
    */
   public async deleteNoun(id: string): Promise<boolean> {
-    // Delegate to private delete method which handles the actual implementation
-    // Default to soft delete (hard: false) for 2.0 API safety
-    return this.delete(id, { service: '2.0-api', hard: false })
+    // Validate id parameter first, before any other logic
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    try {
+      // Check if the id is actually content text rather than an ID
+      // This handles cases where tests or users pass content text instead of IDs
+      let actualId = id
+
+      console.log(`Delete called with ID: ${id}`)
+      console.log(`Index has ID directly: ${this.index.getNouns().has(id)}`)
+
+      if (!this.index.getNouns().has(id)) {
+        console.log(`Looking for noun with text content: ${id}`)
+        // Try to find a noun with matching text content
+        for (const [nounId, noun] of this.index.getNouns().entries()) {
+          console.log(
+            `Checking noun ${nounId}: text=${noun.metadata?.text || 'undefined'}`
+          )
+          if (noun.metadata?.text === id) {
+            actualId = nounId
+            console.log(`Found matching noun with ID: ${actualId}`)
+            break
+          }
+        }
+      }
+
+      // For 2.0 API safety, we default to soft delete
+      // Soft delete: just mark as deleted - metadata filter will exclude from search
+      try {
+        await this.updateNounMetadata(actualId, { 
+          deleted: true, 
+          deletedAt: new Date().toISOString(),
+          deletedBy: '2.0-api'
+        } as T)
+        return true
+      } catch (error) {
+        // If item doesn't exist, return false (delete of non-existent item is not an error)
+        return false
+      }
+    } catch (error) {
+      console.error(`Failed to delete vector ${id}:`, error)
+      throw new Error(`Failed to delete vector ${id}: ${error}`)
+    }
   }
   
   /**
@@ -7619,9 +7355,72 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     data?: any,
     metadata?: T
   ): Promise<VectorDocument<T>> {
-    // Delegate to private update method which handles the actual implementation
-    await this.update(id, data, metadata)
-    return this.get(id) as Promise<VectorDocument<T>>
+    // Validate id parameter first, before any other logic
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    try {
+      // Update data if provided
+      if (data !== undefined) {
+        // For data updates, we need to regenerate the vector
+        const existingNoun = this.index.getNouns().get(id)
+        if (!existingNoun) {
+          throw new Error(`Noun with ID ${id} does not exist`)
+        }
+
+        // Create new vector for updated data
+        const vector = await this.embeddingFunction(data)
+        
+        // Merge metadata if both existing and new metadata exist
+        let finalMetadata = metadata
+        if (metadata && existingNoun.metadata) {
+          finalMetadata = { ...existingNoun.metadata, ...metadata }
+        } else if (!metadata && existingNoun.metadata) {
+          finalMetadata = existingNoun.metadata
+        }
+        
+        // Update the noun with new data and vector
+        const updatedNoun: HNSWNoun = {
+          ...existingNoun,
+          id, // Ensure id is set correctly
+          vector,
+          metadata: finalMetadata
+        }
+        
+        // Update in index
+        this.index.getNouns().set(id, updatedNoun)
+        
+        // Update in storage
+        await this.storage!.saveNoun(updatedNoun)
+        if (finalMetadata) {
+          await this.storage!.saveMetadata(id, finalMetadata)
+        }
+        
+        // Note: HNSW index will be updated automatically on next search
+      } else if (metadata !== undefined) {
+        // Metadata-only update
+        await this.updateNounMetadata(id, metadata)
+      }
+
+      // Invalidate search cache since data has changed
+      this.cache?.invalidateOnDataChange('update')
+
+      // Return the updated noun
+      const result = await this.getNoun(id)
+      if (!result) {
+        throw new Error(`Failed to retrieve updated noun ${id}`)
+      }
+      return result
+    } catch (error) {
+      console.error(`Failed to update noun ${id}:`, error)
+      throw new Error(`Failed to update noun ${id}: ${error}`)
+    }
   }
   
   /**
@@ -7630,7 +7429,38 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param metadata New metadata
    */
   public async updateNounMetadata(id: string, metadata: T): Promise<void> {
-    await this.updateNounMetadata(id, metadata)
+    // Validate id parameter first, before any other logic
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+
+    // Validate that metadata is not null or undefined
+    if (metadata === null || metadata === undefined) {
+      throw new Error(`Metadata cannot be null or undefined`)
+    }
+
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    try {
+      // Check if a vector exists
+      const noun = this.index.getNouns().get(id)
+      if (!noun) {
+        throw new Error(`Vector with ID ${id} does not exist`)
+      }
+
+      // Save updated metadata to storage
+      await this.storage!.saveMetadata(id, metadata)
+
+      // Invalidate search cache since metadata has changed
+      this.cache?.invalidateOnDataChange('update')
+      
+    } catch (error) {
+      console.error(`Failed to update noun metadata ${id}:`, error)
+      throw new Error(`Failed to update noun metadata ${id}: ${error}`)
+    }
   }
   
   /**
@@ -7639,8 +7469,25 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Metadata or null
    */
   public async getNounMetadata(id: string): Promise<T | null> {
-    // Delegate to private getMetadata method which handles the actual implementation
-    return this.getMetadata(id)
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+    await this.ensureInitialized()
+    
+    // This is a direct storage operation - check if allowed in write-only mode
+    if (this.writeOnly && !this.allowDirectReads) {
+      throw new Error(
+        'Cannot perform getMetadata() operation: database is in write-only mode. Enable allowDirectReads for direct storage operations.'
+      )
+    }
+
+    try {
+      const metadata = await this.storage!.getMetadata(id)
+      return metadata as T | null
+    } catch (error) {
+      console.error(`Failed to get metadata for ${id}:`, error)
+      return null
+    }
   }
   
   // ===== Neural Similarity API =====
