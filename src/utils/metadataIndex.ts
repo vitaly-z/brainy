@@ -7,6 +7,7 @@
 import { StorageAdapter } from '../coreTypes.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { prodLog } from './logger.js'
+import { getGlobalCache, UnifiedCache } from './unifiedCache.js'
 
 export interface MetadataIndexEntry {
   field: string
@@ -41,6 +42,13 @@ export interface MetadataIndexConfig {
  * Manages metadata indexes for fast filtering
  * Maintains inverted indexes: field+value -> list of IDs
  */
+// Sorted index for range queries
+interface SortedFieldIndex {
+  values: Array<[value: any, ids: Set<string>]>
+  isDirty: boolean
+  fieldType: 'number' | 'string' | 'date' | 'mixed'
+}
+
 export class MetadataIndexManager {
   private storage: StorageAdapter
   private config: Required<MetadataIndexConfig>
@@ -52,6 +60,13 @@ export class MetadataIndexManager {
   private dirtyFields = new Set<string>()
   private lastFlushTime = Date.now()
   private autoFlushThreshold = 10 // Start with 10 for more frequent non-blocking flushes
+  
+  // Sorted indices for range queries (only for numeric/date fields)
+  private sortedIndices = new Map<string, SortedFieldIndex>()
+  private numericFields = new Set<string>() // Track which fields are numeric
+  
+  // Unified cache for coordinated memory management
+  private unifiedCache: UnifiedCache
 
   constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}) {
     this.storage = storage
@@ -69,6 +84,9 @@ export class MetadataIndexManager {
       maxSize: 500,          // 500 entries (field indexes + value chunks)
       enabled: true
     })
+    
+    // Get global unified cache for coordinated memory management
+    this.unifiedCache = getGlobalCache()
   }
 
   /**
@@ -77,6 +95,161 @@ export class MetadataIndexManager {
   private getIndexKey(field: string, value: any): string {
     const normalizedValue = this.normalizeValue(value)
     return `${field}:${normalizedValue}`
+  }
+  
+  /**
+   * Ensure sorted index exists for a field (for range queries)
+   */
+  private async ensureSortedIndex(field: string): Promise<void> {
+    if (!this.sortedIndices.has(field)) {
+      // Try to load from storage first
+      const loaded = await this.loadSortedIndex(field)
+      if (loaded) {
+        this.sortedIndices.set(field, loaded)
+      } else {
+        // Create new sorted index
+        this.sortedIndices.set(field, {
+          values: [],
+          isDirty: true,
+          fieldType: 'mixed'
+        })
+      }
+    }
+  }
+  
+  /**
+   * Build sorted index for a field from hash index
+   */
+  private async buildSortedIndex(field: string): Promise<void> {
+    const sortedIndex = this.sortedIndices.get(field)
+    if (!sortedIndex || !sortedIndex.isDirty) return
+    
+    // Collect all values for this field from hash index
+    const valueMap = new Map<any, Set<string>>()
+    
+    for (const [key, entry] of this.indexCache.entries()) {
+      if (entry.field === field) {
+        const existing = valueMap.get(entry.value)
+        if (existing) {
+          // Merge ID sets
+          entry.ids.forEach(id => existing.add(id))
+        } else {
+          valueMap.set(entry.value, new Set(entry.ids))
+        }
+      }
+    }
+    
+    // Convert to sorted array
+    const sorted = Array.from(valueMap.entries())
+    
+    // Detect field type and sort accordingly
+    if (sorted.length > 0) {
+      const sampleValue = sorted[0][0]
+      if (typeof sampleValue === 'number') {
+        sortedIndex.fieldType = 'number'
+        sorted.sort((a, b) => a[0] - b[0])
+      } else if (sampleValue instanceof Date) {
+        sortedIndex.fieldType = 'date'
+        sorted.sort((a, b) => a[0].getTime() - b[0].getTime())
+      } else {
+        sortedIndex.fieldType = 'string'
+        sorted.sort((a, b) => {
+          const aVal = String(a[0])
+          const bVal = String(b[0])
+          return aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+        })
+      }
+    }
+    
+    sortedIndex.values = sorted
+    sortedIndex.isDirty = false
+  }
+  
+  /**
+   * Binary search for range start (inclusive or exclusive)
+   */
+  private binarySearchStart(sorted: Array<[any, Set<string>]>, target: any, inclusive: boolean): number {
+    let left = 0
+    let right = sorted.length - 1
+    let result = sorted.length
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2)
+      const midVal = sorted[mid][0]
+      
+      if (inclusive ? midVal >= target : midVal > target) {
+        result = mid
+        right = mid - 1
+      } else {
+        left = mid + 1
+      }
+    }
+    
+    return result
+  }
+  
+  /**
+   * Binary search for range end (inclusive or exclusive)
+   */
+  private binarySearchEnd(sorted: Array<[any, Set<string>]>, target: any, inclusive: boolean): number {
+    let left = 0
+    let right = sorted.length - 1
+    let result = -1
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2)
+      const midVal = sorted[mid][0]
+      
+      if (inclusive ? midVal <= target : midVal < target) {
+        result = mid
+        left = mid + 1
+      } else {
+        right = mid - 1
+      }
+    }
+    
+    return result
+  }
+  
+  /**
+   * Get IDs matching a range query
+   */
+  private async getIdsForRange(
+    field: string,
+    min?: any,
+    max?: any,
+    includeMin: boolean = true,
+    includeMax: boolean = true
+  ): Promise<string[]> {
+    // Ensure sorted index exists and is up to date
+    await this.ensureSortedIndex(field)
+    await this.buildSortedIndex(field)
+    
+    const sortedIndex = this.sortedIndices.get(field)
+    if (!sortedIndex || sortedIndex.values.length === 0) return []
+    
+    const sorted = sortedIndex.values
+    const resultSet = new Set<string>()
+    
+    // Find range boundaries
+    let start = 0
+    let end = sorted.length - 1
+    
+    if (min !== undefined) {
+      start = this.binarySearchStart(sorted, min, includeMin)
+    }
+    
+    if (max !== undefined) {
+      end = this.binarySearchEnd(sorted, max, includeMax)
+    }
+    
+    // Collect all IDs in range
+    for (let i = start; i <= end && i < sorted.length; i++) {
+      const [, ids] = sorted[i]
+      ids.forEach(id => resultSet.add(id))
+    }
+    
+    return Array.from(resultSet)
   }
 
   /**
@@ -195,6 +368,14 @@ export class MetadataIndexManager {
    */
   async addToIndex(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(metadata)
+    
+    // Mark sorted indices as dirty when adding new data
+    for (const { field } of fields) {
+      const sortedIndex = this.sortedIndices.get(field)
+      if (sortedIndex) {
+        sortedIndex.isDirty = true
+      }
+    }
     
     for (let i = 0; i < fields.length; i++) {
       const { field, value } = fields[i]
@@ -463,7 +644,14 @@ export class MetadataIndexManager {
               // For contains, the operand is the value we're looking for in an array field
               criteria.push({ field: key, values: [operand] })
               break
-            // For other operators, we can't use index efficiently, skip for now
+            case 'greaterThan':
+            case 'lessThan':
+            case 'greaterEqual':
+            case 'lessEqual':
+            case 'between':
+              // Range queries will be handled separately
+              // Sorted index will be created/loaded when needed in getIdsForRange
+              break
             default:
               break
           }
@@ -482,6 +670,146 @@ export class MetadataIndexManager {
    * Get IDs matching Brainy Field Operator metadata filter using indexes where possible
    */
   async getIdsForFilter(filter: any): Promise<string[]> {
+    if (!filter || Object.keys(filter).length === 0) {
+      return []
+    }
+    
+    // Handle logical operators
+    if (filter.allOf && Array.isArray(filter.allOf)) {
+      // For allOf, we need intersection of all sub-filters
+      const allIds: string[][] = []
+      for (const subFilter of filter.allOf) {
+        const subIds = await this.getIdsForFilter(subFilter)
+        allIds.push(subIds)
+      }
+      
+      if (allIds.length === 0) return []
+      if (allIds.length === 1) return allIds[0]
+      
+      // Intersection of all sets
+      return allIds.reduce((intersection, currentSet) => 
+        intersection.filter(id => currentSet.includes(id))
+      )
+    }
+    
+    if (filter.anyOf && Array.isArray(filter.anyOf)) {
+      // For anyOf, we need union of all sub-filters
+      const unionIds = new Set<string>()
+      for (const subFilter of filter.anyOf) {
+        const subIds = await this.getIdsForFilter(subFilter)
+        subIds.forEach(id => unionIds.add(id))
+      }
+      return Array.from(unionIds)
+    }
+    
+    // Process field filters with range support
+    const idSets: string[][] = []
+    
+    for (const [field, condition] of Object.entries(filter)) {
+      // Skip logical operators
+      if (field === 'allOf' || field === 'anyOf' || field === 'not') continue
+      
+      let fieldResults: string[] = []
+      
+      if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
+        // Handle Brainy Field Operators
+        for (const [op, operand] of Object.entries(condition)) {
+          switch (op) {
+            // Exact match operators
+            case 'equals':
+            case 'is':
+            case 'eq':
+              fieldResults = await this.getIds(field, operand)
+              break
+            
+            // Multiple value operators
+            case 'oneOf':
+            case 'in':
+              if (Array.isArray(operand)) {
+                const unionIds = new Set<string>()
+                for (const value of operand) {
+                  const ids = await this.getIds(field, value)
+                  ids.forEach(id => unionIds.add(id))
+                }
+                fieldResults = Array.from(unionIds)
+              }
+              break
+            
+            // Range operators
+            case 'greaterThan':
+            case 'gt':
+              fieldResults = await this.getIdsForRange(field, operand, undefined, false, true)
+              break
+            
+            case 'greaterEqual':
+            case 'gte':
+            case 'greaterThanOrEqual':
+              fieldResults = await this.getIdsForRange(field, operand, undefined, true, true)
+              break
+            
+            case 'lessThan':
+            case 'lt':
+              fieldResults = await this.getIdsForRange(field, undefined, operand, true, false)
+              break
+            
+            case 'lessEqual':
+            case 'lte':
+            case 'lessThanOrEqual':
+              fieldResults = await this.getIdsForRange(field, undefined, operand, true, true)
+              break
+            
+            case 'between':
+              if (Array.isArray(operand) && operand.length === 2) {
+                fieldResults = await this.getIdsForRange(field, operand[0], operand[1], true, true)
+              }
+              break
+            
+            // Array contains operator
+            case 'contains':
+              fieldResults = await this.getIds(field, operand)
+              break
+            
+            // Existence operator
+            case 'exists':
+              if (operand) {
+                // Get all IDs that have this field (any value)
+                const allIds = new Set<string>()
+                for (const [key, entry] of this.indexCache.entries()) {
+                  if (entry.field === field) {
+                    entry.ids.forEach(id => allIds.add(id))
+                  }
+                }
+                fieldResults = Array.from(allIds)
+              }
+              break
+          }
+        }
+      } else {
+        // Direct value match (shorthand for equals)
+        fieldResults = await this.getIds(field, condition)
+      }
+      
+      if (fieldResults.length > 0) {
+        idSets.push(fieldResults)
+      } else {
+        // If any field has no matches, intersection will be empty
+        return []
+      }
+    }
+    
+    if (idSets.length === 0) return []
+    if (idSets.length === 1) return idSets[0]
+    
+    // Intersection of all field criteria (implicit AND)
+    return idSets.reduce((intersection, currentSet) => 
+      intersection.filter(id => currentSet.includes(id))
+    )
+  }
+  
+  /**
+   * DEPRECATED - Old implementation for backward compatibility
+   */
+  private async getIdsForFilterOld(filter: any): Promise<string[]> {
     if (!filter || Object.keys(filter).length === 0) {
       return []
     }
@@ -548,7 +876,10 @@ export class MetadataIndexManager {
    * Flush dirty entries to storage (non-blocking version)
    */
   async flush(): Promise<void> {
-    if (this.dirtyEntries.size === 0 && this.dirtyFields.size === 0) {
+    // Check if we have anything to flush (including sorted indices)
+    const hasDirtySortedIndices = Array.from(this.sortedIndices.values()).some(idx => idx.isDirty)
+    
+    if (this.dirtyEntries.size === 0 && this.dirtyFields.size === 0 && !hasDirtySortedIndices) {
       return // Nothing to flush
     }
     
@@ -588,6 +919,13 @@ export class MetadataIndexManager {
       }
     }
     
+    // Flush sorted indices (for range queries)
+    for (const [field, sortedIndex] of this.sortedIndices.entries()) {
+      if (sortedIndex.isDirty) {
+        allPromises.push(this.saveSortedIndex(field, sortedIndex))
+      }
+    }
+    
     // Wait for all operations to complete
     await Promise.all(allPromises)
     
@@ -608,35 +946,47 @@ export class MetadataIndexManager {
    * Load field index from storage
    */
   private async loadFieldIndex(field: string): Promise<FieldIndexData | null> {
-    try {
-      const filename = this.getFieldIndexFilename(field)
-      const cacheKey = `field_index_${filename}`
-      
-      // Check cache first
-      const cached = this.metadataCache.get(cacheKey)
-      if (cached) {
-        return cached
-      }
-      
-      // Load from storage
-      const indexId = `__metadata_field_index__${filename}`
-      const data = await this.storage.getMetadata(indexId)
-      
-      if (data) {
-        const fieldIndex = {
-          values: data.values || {},
-          lastUpdated: data.lastUpdated || Date.now()
+    const filename = this.getFieldIndexFilename(field)
+    const unifiedKey = `metadata:field:${filename}`
+    
+    // Check unified cache first with loader function
+    return await this.unifiedCache.get(unifiedKey, async () => {
+      try {
+        const cacheKey = `field_index_${filename}`
+        
+        // Check old cache for migration
+        const cached = this.metadataCache.get(cacheKey)
+        if (cached) {
+          // Add to unified cache
+          const size = JSON.stringify(cached).length
+          this.unifiedCache.set(unifiedKey, cached, 'metadata', size, 1) // Low rebuild cost
+          return cached
         }
         
-        // Cache it
-        this.metadataCache.set(cacheKey, fieldIndex)
+        // Load from storage
+        const indexId = `__metadata_field_index__${filename}`
+        const data = await this.storage.getMetadata(indexId)
         
-        return fieldIndex
+        if (data) {
+          const fieldIndex = {
+            values: data.values || {},
+            lastUpdated: data.lastUpdated || Date.now()
+          }
+          
+          // Add to unified cache
+          const size = JSON.stringify(fieldIndex).length
+          this.unifiedCache.set(unifiedKey, fieldIndex, 'metadata', size, 1)
+          
+          // Also keep in old cache for now (transition period)
+          this.metadataCache.set(cacheKey, fieldIndex)
+          
+          return fieldIndex
+        }
+      } catch (error) {
+        // Field index doesn't exist yet
       }
-    } catch (error) {
-      // Field index doesn't exist yet
-    }
-    return null
+      return null
+    })
   }
 
   /**
@@ -645,14 +995,79 @@ export class MetadataIndexManager {
   private async saveFieldIndex(field: string, fieldIndex: FieldIndexData): Promise<void> {
     const filename = this.getFieldIndexFilename(field)
     const indexId = `__metadata_field_index__${filename}`
+    const unifiedKey = `metadata:field:${filename}`
     
     await this.storage.saveMetadata(indexId, {
       values: fieldIndex.values,
       lastUpdated: fieldIndex.lastUpdated
     })
     
-    // Invalidate cache
+    // Update unified cache
+    const size = JSON.stringify(fieldIndex).length
+    this.unifiedCache.set(unifiedKey, fieldIndex, 'metadata', size, 1)
+    
+    // Invalidate old cache
     this.metadataCache.invalidatePattern(`field_index_${filename}`)
+  }
+  
+  /**
+   * Save sorted index to storage for range queries
+   */
+  private async saveSortedIndex(field: string, sortedIndex: SortedFieldIndex): Promise<void> {
+    const filename = `sorted_${field}`
+    const indexId = `__metadata_sorted_index__${filename}`
+    const unifiedKey = `metadata:sorted:${field}`
+    
+    // Convert Set to Array for serialization
+    const serializable = {
+      values: sortedIndex.values.map(([value, ids]) => [value, Array.from(ids)]),
+      fieldType: sortedIndex.fieldType,
+      lastUpdated: Date.now()
+    }
+    
+    await this.storage.saveMetadata(indexId, serializable)
+    
+    // Mark as clean
+    sortedIndex.isDirty = false
+    
+    // Update unified cache (sorted indices are expensive to rebuild)
+    const size = JSON.stringify(serializable).length
+    this.unifiedCache.set(unifiedKey, sortedIndex, 'metadata', size, 100) // Higher rebuild cost
+  }
+  
+  /**
+   * Load sorted index from storage
+   */
+  private async loadSortedIndex(field: string): Promise<SortedFieldIndex | null> {
+    const filename = `sorted_${field}`
+    const indexId = `__metadata_sorted_index__${filename}`
+    const unifiedKey = `metadata:sorted:${field}`
+    
+    // Check unified cache first
+    const cached = await this.unifiedCache.get(unifiedKey, async () => {
+      try {
+        const data = await this.storage.getMetadata(indexId)
+        if (data) {
+          // Convert Arrays back to Sets
+          const sortedIndex: SortedFieldIndex = {
+            values: data.values.map(([value, ids]: [any, string[]]) => [value, new Set(ids)]),
+            fieldType: data.fieldType || 'mixed',
+            isDirty: false
+          }
+          
+          // Add to unified cache
+          const size = JSON.stringify(data).length
+          this.unifiedCache.set(unifiedKey, sortedIndex, 'metadata', size, 100)
+          
+          return sortedIndex
+        }
+      } catch (error) {
+        // Sorted index doesn't exist yet
+      }
+      return null
+    })
+    
+    return cached
   }
 
   /**
@@ -859,32 +1274,44 @@ export class MetadataIndexManager {
    * Load index entry from storage using safe filenames
    */
   private async loadIndexEntry(key: string): Promise<MetadataIndexEntry | null> {
-    try {
-      // Extract field and value from key
-      const [field, value] = key.split(':', 2)
-      const filename = this.getValueChunkFilename(field, value)
-      
-      // Load from metadata indexes directory with safe filename
-      const indexId = `__metadata_index__${filename}`
-      const data = await this.storage.getMetadata(indexId)
-      if (data) {
-        return {
-          field: data.field,
-          value: data.value,
-          ids: new Set(data.ids || []),
-          lastUpdated: data.lastUpdated || Date.now()
+    const unifiedKey = `metadata:entry:${key}`
+    
+    // Use unified cache with loader function
+    return await this.unifiedCache.get(unifiedKey, async () => {
+      try {
+        // Extract field and value from key
+        const [field, value] = key.split(':', 2)
+        const filename = this.getValueChunkFilename(field, value)
+        
+        // Load from metadata indexes directory with safe filename
+        const indexId = `__metadata_index__${filename}`
+        const data = await this.storage.getMetadata(indexId)
+        if (data) {
+          const entry = {
+            field: data.field,
+            value: data.value,
+            ids: new Set(data.ids || []),
+            lastUpdated: data.lastUpdated || Date.now()
+          }
+          
+          // Add to unified cache (metadata entries are cheap to rebuild)
+          const size = JSON.stringify(Array.from(entry.ids)).length + 100
+          this.unifiedCache.set(unifiedKey, entry, 'metadata', size, 1)
+          
+          return entry
         }
+      } catch (error) {
+        // Index entry doesn't exist yet
       }
-    } catch (error) {
-      // Index entry doesn't exist yet
-    }
-    return null
+      return null
+    })
   }
 
   /**
    * Save index entry to storage using safe filenames
    */
   private async saveIndexEntry(key: string, entry: MetadataIndexEntry): Promise<void> {
+    const unifiedKey = `metadata:entry:${key}`
     const data = {
       field: entry.field,
       value: entry.value,
@@ -899,17 +1326,25 @@ export class MetadataIndexManager {
     // Store metadata indexes with safe filename
     const indexId = `__metadata_index__${filename}`
     await this.storage.saveMetadata(indexId, data)
+    
+    // Update unified cache
+    const size = JSON.stringify(data.ids).length + 100
+    this.unifiedCache.set(unifiedKey, entry, 'metadata', size, 1)
   }
 
   /**
    * Delete index entry from storage using safe filenames
    */
   private async deleteIndexEntry(key: string): Promise<void> {
+    const unifiedKey = `metadata:entry:${key}`
     try {
       const [field, value] = key.split(':', 2)
       const filename = this.getValueChunkFilename(field, value)
       const indexId = `__metadata_index__${filename}`
       await this.storage.saveMetadata(indexId, null)
+      
+      // Remove from unified cache
+      this.unifiedCache.delete(unifiedKey)
     } catch (error) {
       // Entry might not exist
     }

@@ -592,7 +592,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     return this.augmentations.get('cache')
   }
   
-  private get index(): any {
+  // IMPORTANT: this.index returns the HNSW vector index, NOT the metadata index!
+  // The metadata index is available through this.metadataIndex
+  private get index(): HNSWIndex | HNSWIndexOptimized {
+    return this.hnswIndex
+  }
+
+  // Metadata index for field-based queries (from IndexAugmentation)
+  private get metadataIndex(): any {
     return this.augmentations.get('index')
   }
   
@@ -1120,12 +1127,13 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * Start metadata index maintenance
    */
   private startMetadataIndexMaintenance(): void {
-    if (!this.index) return
+    const metaIndex = this.metadataIndex
+    if (!metaIndex) return
     
     // Flush index periodically to persist changes
     const flushInterval = setInterval(async () => {
       try {
-        await this.index!.flush()
+        await metaIndex.flush()
       } catch (error) {
         prodLog.warn('Error flushing metadata index:', error)
       }
@@ -1702,7 +1710,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         // Skip rebuild for memory storage (starts empty) or when in read-only mode
         // Also skip if index already has entries
         const isMemoryStorage = this.storage?.constructor?.name === 'MemoryStorage'
-        const stats = await this.index?.getStats?.() || { totalEntries: 0 }
+        const stats = await this.metadataIndex?.getStats?.() || { totalEntries: 0 }
         
         if (!isMemoryStorage && !this.readOnly && stats.totalEntries === 0) {
           // Check if we have existing data that needs indexing
@@ -1717,9 +1725,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
                 if (this.loggingConfig?.verbose) {
                   console.log('🔄 Rebuilding metadata index for existing data...')
                 }
-                await this.index.rebuild()
+                await this.metadataIndex?.rebuild?.()
                 if (this.loggingConfig?.verbose) {
-                  const newStats = await this.index?.getStats?.() || { totalEntries: 0 }
+                  const newStats = await this.metadataIndex?.getStats?.() || { totalEntries: 0 }
                   console.log(`✅ Metadata index rebuilt: ${newStats.totalEntries} entries, ${newStats.fieldsIndexed.length} fields`)
                 }
               } else {
@@ -2085,11 +2093,11 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
           metadata: undefined // Will be set separately
         }
       } else {
-        // Normal mode: Add to index first
-        await this.index.addItem({ id, vector })
+        // Normal mode: Add to HNSW index first
+        await this.hnswIndex.addItem({ id, vector, metadata })
 
-        // Get the noun from the index
-        const indexNoun = this.index.getNouns().get(id)
+        // Get the noun from the HNSW index
+        const indexNoun = this.hnswIndex.getNouns().get(id)
         if (!indexNoun) {
           throw new Error(`Failed to retrieve newly created noun with ID ${id}`)
         }
@@ -2200,7 +2208,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
           // Update metadata index (write-only mode should build indices!)
           if (this.index && !this.frozen) {
-            await this.index.addToIndex(id, metadataToSave)
+            await this.metadataIndex?.addToIndex?.(id, metadataToSave)
           }
 
           // Track metadata statistics
@@ -2218,8 +2226,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             )
           }
 
-          // Track update timestamp
-          this.metrics.trackUpdate()
+          // Track update timestamp (handled by metrics augmentation)
         }
       }
 
@@ -2638,13 +2645,13 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         let preFilteredIds: Set<string> | undefined
         
         // Use metadata index for pre-filtering if available
-        if (hasMetadataFilter && this.index) {
+        if (hasMetadataFilter && this.metadataIndex) {
           try {
             // Ensure metadata index is up to date
-            await this.index?.flush?.()
+            await this.metadataIndex?.flush?.()
             
             // Get candidate IDs from metadata index
-            const candidateIds = await this.index.getIdsForFilter(options.metadata)
+            const candidateIds = await this.metadataIndex?.getIdsForFilter?.(options.metadata) || []
             if (candidateIds.length > 0) {
               preFilteredIds = new Set(candidateIds)
               
@@ -4072,7 +4079,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
       // Update metadata index
       if (this.index && verbMetadata) {
-        await this.index.addToIndex(id, verbMetadata)
+        await this.metadataIndex?.addToIndex?.(id, verbMetadata)
       }
 
       // Track verb statistics
@@ -4443,7 +4450,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
       // Remove from metadata index
       if (this.index && existingMetadata) {
-        await this.index.removeFromIndex(id, existingMetadata)
+        await this.metadataIndex?.removeFromIndex?.(id, existingMetadata)
       }
 
       // Remove from storage
@@ -4817,7 +4824,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
           // Always include for now
           // Add index health metrics
           try {
-            const indexHealth = this.index.getIndexHealth()
+            const indexHealth = this.metadataIndex?.getIndexHealth?.() || { healthy: true }
             ;(result as any).indexHealth = indexHealth
           } catch (e) {
             // Index health not available
@@ -5498,7 +5505,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     
     // Delegate to index augmentation
     const index = this.augmentations.get('index') as any
-    return this.index?.getFilterValues(field) || []
+    return index?.getFilterValues?.(field) || []
   }
 
   /**
@@ -5512,7 +5519,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     
     // Delegate to index augmentation
     const index = this.augmentations.get('index') as any
-    return this.index?.getFilterFields() || []
+    return index?.getFilterFields?.() || []
   }
 
   /**
@@ -6528,9 +6535,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     this.maintenanceIntervals = []
 
     // Flush metadata index one last time
-    if (this.index) {
+    if (this.metadataIndex) {
       try {
-        await this.index?.flush?.()
+        await this.metadataIndex?.flush?.()
       } catch (error) {
         console.warn('Error flushing metadata index during cleanup:', error)
       }
@@ -7195,7 +7202,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * Exposed for Cortex reindex command
    */
   async rebuildMetadataIndex(): Promise<void> {
-    await this.index?.rebuild()
+    await this.metadataIndex?.rebuild?.()
   }
 
   // ===== Clean 2.0 API - Primary Methods =====

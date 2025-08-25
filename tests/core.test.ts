@@ -3,7 +3,7 @@
  * Tests core Brainy features as a consumer would use them
  */
 
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterEach } from 'vitest'
 
 /**
  * Helper function to create a 512-dimensional vector for testing
@@ -18,10 +18,27 @@ function createTestVector(primaryIndex: number = 0): number[] {
 
 describe('Brainy Core Functionality', () => {
   let brainy: any
+  let activeInstances: any[] = []
 
   beforeAll(async () => {
     // Load brainy library as a consumer would
     brainy = await import('../src/index.js')
+  })
+
+  afterEach(async () => {
+    // Clean up all active BrainyData instances to prevent memory leaks
+    for (const instance of activeInstances) {
+      try {
+        await instance.shutdown()
+      } catch (e) {
+        // Ignore shutdown errors
+      }
+    }
+    activeInstances = []
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc()
+    }
   })
 
   describe('Library Exports', () => {
@@ -88,6 +105,7 @@ describe('Brainy Core Functionality', () => {
 
     it('should use default values for optional parameters', () => {
       const data = new brainy.BrainyData({})
+      activeInstances.push(data)
 
       expect(data.dimensions).toBe(384)
       // Should have reasonable defaults for other parameters
@@ -101,6 +119,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       await data.init()
       await data.clear() // Clear any existing data
@@ -122,6 +141,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       await data.init()
       await data.clear() // Clear any existing data
@@ -146,10 +166,12 @@ describe('Brainy Core Functionality', () => {
       const euclideanData = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(euclideanData)
 
       const cosineData = new brainy.BrainyData({
         metric: 'cosine'
       })
+      activeInstances.push(cosineData)
 
       await euclideanData.init()
       await cosineData.init()
@@ -190,12 +212,13 @@ describe('Brainy Core Functionality', () => {
             forceMemoryStorage: true
           }
         })
+        activeInstances.push(data)
 
         await data.init()
 
         // Add text items
-        await data.addItem('Hello world', { id: 'greeting', type: 'text' })
-        await data.addItem('Goodbye world', { id: 'farewell', type: 'text' })
+        await data.addNoun('Hello world', { id: 'greeting', type: 'text' })
+        await data.addNoun('Goodbye world', { id: 'farewell', type: 'text' })
 
         // Search with text
         const results = await data.search('Hi there', 1)
@@ -217,11 +240,12 @@ describe('Brainy Core Functionality', () => {
           // Dimensions are always 384 - not configurable
           metric: 'cosine'
         })
+        activeInstances.push(data)
 
         await data.init()
 
         // Add text item
-        await data.addItem('Machine learning', { id: 'text1', type: 'text' })
+        await data.addNoun('Machine learning', { id: 'text1', type: 'text' })
 
         // Add vector item (using embedding of similar text)
         const embedding = await embeddingFunction('Artificial intelligence')
@@ -242,6 +266,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       await data.init()
 
@@ -256,6 +281,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       // Try to search without initialization
       await expect(data.search(createTestVector(0), 1)).rejects.toThrow()
@@ -265,6 +291,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       await data.init()
       await data.clear() // Clear any existing data
@@ -282,6 +309,7 @@ describe('Brainy Core Functionality', () => {
       const data = new brainy.BrainyData({
         metric: 'euclidean'
       })
+      activeInstances.push(data)
 
       await data.init()
 
@@ -310,6 +338,7 @@ describe('Brainy Core Functionality', () => {
         embeddingFunction: brainy.createEmbeddingFunction(),
         metric: 'cosine'
       })
+      activeInstances.push(db)
 
       await db.init()
       await db.clear() // Clear any existing data
@@ -346,6 +375,7 @@ describe('Brainy Core Functionality', () => {
         metric: 'euclidean',
         storage: { type: 'memory' }
       })
+      activeInstances.push(data)
 
       await data.init()
       await data.clear() // Clear any existing data
@@ -356,8 +386,8 @@ describe('Brainy Core Functionality', () => {
       await data.add(createTestVector(2), { id: 'v3', label: 'z-axis' })
 
       // Add some connections (verbs)
-      await data.connect('v1', 'v2', 'related_to')
-      await data.connect('v2', 'v3', 'related_to')
+      await data.addVerb('v1', 'v2', 'related_to')
+      await data.addVerb('v2', 'v3', 'related_to')
 
       // Get statistics
       const stats = await data.getStatistics()

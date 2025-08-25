@@ -13,6 +13,7 @@ import {
 } from '../coreTypes.js'
 import { HNSWIndex } from './hnswIndex.js'
 import { StorageAdapter } from '../coreTypes.js'
+import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
 
 // Configuration for the optimized HNSW index
 export interface HNSWOptimizedConfig extends HNSWConfig {
@@ -296,6 +297,9 @@ export class HNSWIndexOptimized extends HNSWIndex {
   
   // Thread safety for memory usage tracking
   private memoryUpdateLock: Promise<void> = Promise.resolve()
+  
+  // Unified cache for coordinated memory management
+  private unifiedCache: UnifiedCache
 
   constructor(
     config: Partial<HNSWOptimizedConfig> = {},
@@ -322,6 +326,9 @@ export class HNSWIndexOptimized extends HNSWIndex {
 
     // Set disk-based index flag
     this.useDiskBasedIndex = this.optimizedConfig.useDiskBasedIndex || false
+    
+    // Get global unified cache for coordinated memory management
+    this.unifiedCache = getGlobalCache()
   }
 
   /**

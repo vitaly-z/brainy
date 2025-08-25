@@ -67,18 +67,11 @@ export interface QueryStep {
  */
 export class TripleIntelligenceEngine {
   private brain: BrainyData
-  private queryHistory?: BrainyData // For self-optimization
   private planCache = new Map<string, QueryPlan>()
   
-  constructor(brain: BrainyData, enableSelfOptimization = true) {
+  constructor(brain: BrainyData) {
     this.brain = brain
-    
-    if (enableSelfOptimization) {
-      // Brainy uses Brainy to optimize Brainy!
-      // But prevent infinite recursion by disabling writeOnly mode
-      this.queryHistory = new BrainyData({ writeOnly: true })
-      this.queryHistory.init()
-    }
+    // Query history removed - unnecessary complexity for minimal gain
   }
   
   /**
@@ -112,10 +105,7 @@ export class TripleIntelligenceEngine {
       results = this.addExplanations(results, plan, timing)
     }
     
-    // Learn from this query for future optimization
-    if (this.queryHistory) {
-      await this.learnFromQuery(query, results, Date.now() - startTime)
-    }
+    // Query history removed - no learning needed
     
     // Apply limit
     if (query.limit) {
@@ -197,10 +187,7 @@ export class TripleIntelligenceEngine {
       }
     }
     
-    // Learn from history if available
-    if (this.queryHistory) {
-      plan = await this.optimizeFromHistory(query, plan)
-    }
+    // Query history removed - use default plan
     
     this.planCache.set(cacheKey, plan)
     return plan
@@ -335,40 +322,22 @@ export class TripleIntelligenceEngine {
    * Field-based filtering
    */
   private async fieldFilter(where: Record<string, any>): Promise<any[]> {
-    // Use BrainyData's advanced metadata filtering capabilities
-    // Convert Triple Intelligence 'where' clauses to metadata filter format
+    // Use BrainyData's advanced metadata filtering with Brain Patterns
     
     if (!where || Object.keys(where).length === 0) {
       return this.brain.search('*', 1000) // Return all if no filter
     }
     
-    // Convert Brain Patterns (like {year: {greaterThan: 2020}}) to search metadata filters
-    const metadata: Record<string, any> = {}
+    // Pass Brain Patterns directly - the metadata index now supports them natively!
+    // Examples:
+    //   { year: 2023 } - exact match
+    //   { year: { greaterThan: 2020 } } - range query
+    //   { year: { greaterThan: 2020, lessThan: 2025 } } - range with bounds
+    //   { status: { in: ['active', 'pending'] } } - set membership
+    //   { tags: { contains: 'javascript' } } - array contains
     
-    for (const [key, value] of Object.entries(where)) {
-      if (typeof value === 'object' && value !== null) {
-        // Handle Brain Pattern operators
-        if (value.greaterThan !== undefined) {
-          metadata[`${key}:`] = `>${value.greaterThan}`
-        } else if (value.greaterEqual !== undefined) {
-          metadata[`${key}:`] = `>=${value.greaterEqual}`
-        } else if (value.lessThan !== undefined) {
-          metadata[`${key}:`] = `<${value.lessThan}`
-        } else if (value.lessEqual !== undefined) {
-          metadata[`${key}:`] = `<=${value.lessEqual}`
-        } else if (value.equals !== undefined) {
-          metadata[key] = value.equals
-        } else {
-          // Direct object comparison
-          metadata[key] = value
-        }
-      } else {
-        // Direct value comparison
-        metadata[key] = value
-      }
-    }
-    
-    return this.brain.search('*', 1000, { metadata })
+    // The metadata index handles all Brain Pattern operators natively now
+    return this.brain.search('*', 1000, { metadata: where })
   }
   
   /**
@@ -597,55 +566,12 @@ export class TripleIntelligenceEngine {
     }))
   }
   
-  /**
-   * Learn from query execution for future optimization
-   */
-  private async learnFromQuery(query: TripleQuery, results: TripleResult[], executionTime: number): Promise<void> {
-    if (!this.queryHistory) return
-    
-    // Store query pattern and performance
-    await this.queryHistory.addNoun(
-      query, // Query itself becomes the vector
-      {
-        timestamp: Date.now(),
-        executionTime,
-        resultCount: results.length,
-        performance: Math.min(1.0, 100 / executionTime), // Faster = better
-        queryShape: {
-          hasVector: !!(query.like || query.similar),
-          hasGraph: !!query.connected,
-          hasField: !!query.where
-        }
-      }
-    )
-  }
+  // Query learning removed - unnecessary complexity
   
   /**
    * Optimize plan based on historical patterns
    */
-  private async optimizeFromHistory(query: TripleQuery, defaultPlan: QueryPlan): Promise<QueryPlan> {
-    if (!this.queryHistory) return defaultPlan
-    
-    // Check if the brain is initialized before searching
-    if (!this.brain.initialized) return defaultPlan
-    
-    // Find similar successful queries
-    const similar = await this.queryHistory.search(query, 5, {
-      metadata: { performance: { greaterThan: 0.8 } }
-    })
-    
-    if (similar.length === 0) return defaultPlan
-    
-    // Average the successful execution patterns
-    // This is simplified - real implementation would be more sophisticated
-    const successfulPlans = similar
-      .map(s => s.metadata.queryShape)
-      .filter(Boolean)
-    
-    // For now, just return the default plan
-    // Real implementation would merge and optimize
-    return defaultPlan
-  }
+  // Query optimization from history removed
   
   /**
    * Execute single signal query without fusion
@@ -676,7 +602,7 @@ export class TripleIntelligenceEngine {
   getStats(): any {
     return {
       cachedPlans: this.planCache.size,
-      historySize: this.queryHistory ? this.queryHistory.size : 0
+      historySize: 0 // Query history removed
     }
   }
 }
