@@ -194,18 +194,18 @@ export {
   createStreamingPipeline,
   StreamlinedExecutionMode,
 
-  // Augmentation factory exports
-  createSenseAugmentation,
-  addWebSocketSupport,
-  executeAugmentation,
-  loadAugmentationModule
+  // Augmentation factory exports (REMOVED in 2.0 - Use BrainyAugmentation interface)
+  // createSenseAugmentation,     // → Use BaseAugmentation class
+  // addWebSocketSupport,         // → Use APIServerAugmentation  
+  // executeAugmentation,         // → Use brain.augmentations.execute()
+  // loadAugmentationModule       // → Use dynamic imports
 }
 export type {
   PipelineOptions,
   PipelineResult,
   StreamlinedPipelineOptions,
-  StreamlinedPipelineResult,
-  AugmentationOptions
+  StreamlinedPipelineResult
+  // AugmentationOptions - REMOVED in 2.0 (use BaseAugmentation config)
 }
 
 // Export augmentation registry for build-time loading
