@@ -80,6 +80,25 @@ export namespace BrainyAugmentations {
   export interface ISynapseAugmentation extends BrainyAugmentation {}
 }
 
+// Export deprecated interfaces directly for compatibility
+export type ISenseAugmentation = BrainyAugmentations.ISenseAugmentation
+export type IConduitAugmentation = BrainyAugmentations.IConduitAugmentation
+export type ICognitionAugmentation = BrainyAugmentations.ICognitionAugmentation
+export type IMemoryAugmentation = BrainyAugmentations.IMemoryAugmentation
+export type IPerceptionAugmentation = BrainyAugmentations.IPerceptionAugmentation
+export type IDialogAugmentation = BrainyAugmentations.IDialogAugmentation
+export type IActivationAugmentation = BrainyAugmentations.IActivationAugmentation
+export type ISynapseAugmentation = BrainyAugmentations.ISynapseAugmentation
+
+// WebSocket types for compatibility
+export type IWebSocketCognitionAugmentation = ICognitionAugmentation & IWebSocketSupport
+export type IWebSocketSenseAugmentation = ISenseAugmentation & IWebSocketSupport
+export type IWebSocketPerceptionAugmentation = IPerceptionAugmentation & IWebSocketSupport
+export type IWebSocketActivationAugmentation = IActivationAugmentation & IWebSocketSupport
+export type IWebSocketDialogAugmentation = IDialogAugmentation & IWebSocketSupport
+export type IWebSocketConduitAugmentation = IConduitAugmentation & IWebSocketSupport
+export type IWebSocketMemoryAugmentation = IMemoryAugmentation & IWebSocketSupport
+
 /**
  * @deprecated Use BrainyAugmentation instead
  */

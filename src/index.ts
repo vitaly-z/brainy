@@ -189,6 +189,27 @@ import {
   AugmentationOptions
 } from './augmentationFactory.js'
 
+// Export factory functions for creating augmentations
+import {
+  createSenseAugmentation,
+  createConduitAugmentation,
+  createCognitionAugmentation,
+  createMemoryAugmentation,
+  createPerceptionAugmentation,
+  createDialogAugmentation,
+  createActivationAugmentation
+} from './augmentationFactory.js'
+
+export {
+  createSenseAugmentation,
+  createConduitAugmentation,
+  createCognitionAugmentation,
+  createMemoryAugmentation,
+  createPerceptionAugmentation,
+  createDialogAugmentation,
+  createActivationAugmentation
+}
+
 export {
   // Unified pipeline exports
   Pipeline,
@@ -268,8 +289,7 @@ import {
 } from './augmentations/storageAugmentations.js'
 import {
   WebSocketConduitAugmentation,
-  WebRTCConduitAugmentation,
-  createConduitAugmentation
+  WebRTCConduitAugmentation
 } from './augmentations/conduitAugmentations.js'
 import {
   ServerSearchConduitAugmentation,
