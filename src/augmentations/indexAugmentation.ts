@@ -15,6 +15,7 @@ import type { BaseStorageAdapter as StorageAdapter } from '../storage/adapters/b
 export interface IndexConfig {
   enabled?: boolean
   maxFieldValues?: number
+  maxIndexSize?: number // Max number of entries per field value
   autoRebuild?: boolean
   rebuildThreshold?: number
   flushInterval?: number
@@ -209,8 +210,8 @@ export class IndexAugmentation extends BaseAugmentation {
   private async handleClear(): Promise<void> {
     if (!this.metadataIndex) return
 
-    // Clear the index when all data is cleared
-    await this.metadataIndex.clear()
+    // Clear the index when all data is cleared (rebuild effectively clears it)
+    await this.metadataIndex.rebuild()
     this.log('Index cleared due to clear operation')
   }
 

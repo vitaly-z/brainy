@@ -62,7 +62,8 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
         } else {
           // Create a new instance for this synapse
           this.neuralImport = new NeuralImportAugmentation()
-          await this.neuralImport.initialize()
+          // NeuralImport will be initialized when the synapse is added to BrainyData
+          // await this.neuralImport.initialize()
         }
       } catch (error) {
         console.warn(`[${this.synapseId}] Neural Import not available, using basic import`)
@@ -135,14 +136,7 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
     // Override in implementations for cleanup
   }
   
-  async getSynapseStatus(): Promise<'active' | 'inactive' | 'error'> {
-    try {
-      const result = await this.testConnection()
-      return result.success ? 'active' : 'error'
-    } catch {
-      return 'error'
-    }
-  }
+  // getSynapseStatus implemented below with full response
   
   /**
    * ISynapseAugmentation methods

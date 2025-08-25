@@ -18,8 +18,10 @@ import {
  * Memory Storage Augmentation - Fast in-memory storage
  */
 export class MemoryStorageAugmentation extends StorageAugmentation {
-  constructor(name: string = 'memory-storage') {
-    super(name)
+  readonly name = 'memory-storage'
+  
+  constructor() {
+    super()
   }
   
   async provideStorage(): Promise<StorageAdapter> {
@@ -38,10 +40,11 @@ export class MemoryStorageAugmentation extends StorageAugmentation {
  * FileSystem Storage Augmentation - Node.js persistent storage
  */
 export class FileSystemStorageAugmentation extends StorageAugmentation {
+  readonly name = 'filesystem-storage'
   private rootDirectory: string
   
-  constructor(rootDirectory: string = './brainy-data', name: string = 'filesystem-storage') {
-    super(name)
+  constructor(rootDirectory: string = './brainy-data') {
+    super()
     this.rootDirectory = rootDirectory
   }
   
@@ -71,10 +74,11 @@ export class FileSystemStorageAugmentation extends StorageAugmentation {
  * OPFS Storage Augmentation - Browser persistent storage
  */
 export class OPFSStorageAugmentation extends StorageAugmentation {
+  readonly name = 'opfs-storage'
   private requestPersistent: boolean
   
-  constructor(requestPersistent: boolean = false, name: string = 'opfs-storage') {
-    super(name)
+  constructor(requestPersistent: boolean = false) {
+    super()
     this.requestPersistent = requestPersistent
   }
   
@@ -108,6 +112,7 @@ export class OPFSStorageAugmentation extends StorageAugmentation {
  * S3 Storage Augmentation - Amazon S3 cloud storage
  */
 export class S3StorageAugmentation extends StorageAugmentation {
+  readonly name = 's3-storage'
   private config: {
     bucketName: string
     region?: string
@@ -126,8 +131,8 @@ export class S3StorageAugmentation extends StorageAugmentation {
     sessionToken?: string
     cacheConfig?: any
     operationConfig?: any
-  }, name: string = 's3-storage') {
-    super(name)
+  }) {
+    super()
     this.config = config
   }
   
@@ -150,6 +155,7 @@ export class S3StorageAugmentation extends StorageAugmentation {
  * R2 Storage Augmentation - Cloudflare R2 storage
  */
 export class R2StorageAugmentation extends StorageAugmentation {
+  readonly name = 'r2-storage'
   private config: {
     bucketName: string
     accountId: string
@@ -164,8 +170,8 @@ export class R2StorageAugmentation extends StorageAugmentation {
     accessKeyId: string
     secretAccessKey: string
     cacheConfig?: any
-  }, name: string = 'r2-storage') {
-    super(name)
+  }) {
+    super()
     this.config = config
   }
   
@@ -188,6 +194,7 @@ export class R2StorageAugmentation extends StorageAugmentation {
  * GCS Storage Augmentation - Google Cloud Storage
  */
 export class GCSStorageAugmentation extends StorageAugmentation {
+  readonly name = 'gcs-storage'
   private config: {
     bucketName: string
     region?: string
@@ -204,8 +211,8 @@ export class GCSStorageAugmentation extends StorageAugmentation {
     secretAccessKey: string
     endpoint?: string
     cacheConfig?: any
-  }, name: string = 'gcs-storage') {
-    super(name)
+  }) {
+    super()
     this.config = config
   }
   
@@ -243,14 +250,12 @@ export async function createAutoStorageAugmentation(options: {
   if (isNodeEnv) {
     // Node.js environment - use FileSystem
     return new FileSystemStorageAugmentation(
-      options.rootDirectory || './brainy-data',
-      'auto-filesystem-storage'
+      options.rootDirectory || './brainy-data'
     )
   } else {
     // Browser environment - try OPFS, fall back to memory
     const opfsAug = new OPFSStorageAugmentation(
-      options.requestPersistentStorage || false,
-      'auto-opfs-storage'
+      options.requestPersistentStorage || false
     )
     
     // Test if OPFS is available
@@ -259,7 +264,7 @@ export async function createAutoStorageAugmentation(options: {
       return opfsAug
     } else {
       // Fall back to memory
-      return new MemoryStorageAugmentation('auto-memory-storage')
+      return new MemoryStorageAugmentation()
     }
   }
 }

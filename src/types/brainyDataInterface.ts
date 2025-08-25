@@ -17,15 +17,16 @@ export interface BrainyDataInterface<T = unknown> {
    * Get a noun by ID
    * @param id The ID of the noun to get
    */
-  get(id: string): Promise<unknown>
+  getNoun(id: string): Promise<unknown>
 
   /**
-   * Add a vector or data to the database
-   * @param vectorOrData Vector or data to add
-   * @param metadata Optional metadata to associate with the vector
-   * @returns The ID of the added vector
+   * Add a noun (entity with vector and metadata) to the database
+   * @param data Text string or vector representation (will auto-embed strings)
+   * @param metadata Optional metadata to associate with the noun
+   * @param options Optional configuration including custom ID
+   * @returns The ID of the added noun
    */
-  add(vectorOrData: Vector | unknown, metadata?: T): Promise<string>
+  addNoun(data: string | Vector, metadata?: T, options?: { id?: string; [key: string]: any }): Promise<string>
 
   /**
    * Search for text in the database
@@ -36,14 +37,14 @@ export interface BrainyDataInterface<T = unknown> {
   searchText(text: string, limit?: number): Promise<unknown[]>
 
   /**
-   * Create a relationship between two entities
+   * Create a relationship (verb) between two entities
    * @param sourceId The ID of the source entity
    * @param targetId The ID of the target entity
-   * @param relationType The type of relationship
+   * @param verbType The type of relationship
    * @param metadata Optional metadata about the relationship
-   * @returns The ID of the created relationship
+   * @returns The ID of the created verb
    */
-  relate(sourceId: string, targetId: string, relationType: string, metadata?: unknown): Promise<string>
+  addVerb(sourceId: string, targetId: string, verbType: string, metadata?: unknown): Promise<string>
 
   /**
    * Find entities similar to a given entity ID
@@ -52,4 +53,11 @@ export interface BrainyDataInterface<T = unknown> {
    * @returns Array of search results with similarity scores
    */
   findSimilar(id: string, options?: { limit?: number }): Promise<unknown[]>
+
+  /**
+   * Generate embedding vector from text
+   * @param text The text to embed
+   * @returns Vector representation of the text
+   */
+  embed(text: string): Promise<Vector>
 }

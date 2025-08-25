@@ -63,12 +63,14 @@ export class MonitoringAugmentation extends BaseAugmentation {
       return
     }
 
-    // Initialize config manager (for distributed configs)
-    this.configManager = new ConfigManager()
-
-    // Initialize health monitor
-    this.healthMonitor = new HealthMonitor(this.configManager)
-    this.healthMonitor.start()
+    // Initialize config manager and health monitor (requires storage)
+    if (this.context?.storage) {
+      this.configManager = new ConfigManager(this.context.storage as any)
+      this.healthMonitor = new HealthMonitor(this.configManager)
+      this.healthMonitor.start()
+    } else {
+      this.log('Storage not available - health monitoring disabled', 'warn')
+    }
 
     this.log('Monitoring augmentation initialized')
   }
@@ -207,7 +209,7 @@ export class MonitoringAugmentation extends BaseAugmentation {
   recordCustomMetric(name: string, value: number): void {
     if (this.healthMonitor) {
       // Health monitor could be extended to track custom metrics
-      this.log(`Custom metric recorded: ${name}=${value}`, 'debug')
+      this.log(`Custom metric recorded: ${name}=${value}`, 'info')
     }
   }
 

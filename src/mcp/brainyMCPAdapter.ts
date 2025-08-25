@@ -75,7 +75,7 @@ export class BrainyMCPAdapter {
       )
     }
 
-    const noun = await this.brainyData.get(id)
+    const noun = await this.brainyData.getNoun(id)
     
     if (!noun) {
       return this.createErrorResponse(
@@ -124,7 +124,8 @@ export class BrainyMCPAdapter {
       )
     }
 
-    const id = await this.brainyData.add(text, metadata)
+    // Add noun directly - addNoun handles string input automatically
+    const id = await this.brainyData.addNoun(text, metadata)
     return this.createSuccessResponse(request.requestId, { id })
   }
 

@@ -19,10 +19,9 @@ export abstract class StorageAugmentation extends BaseAugmentation implements Br
   
   protected storageAdapter: StorageAdapter | null = null
   
-  // Initialize name in constructor
-  constructor(name: string) {
+  // Storage augmentations must provide their name via readonly property
+  constructor() {
     super()
-    this.name = name
   }
   
   /**
@@ -78,11 +77,10 @@ export abstract class StorageAugmentation extends BaseAugmentation implements Br
  * Used for backward compatibility and zero-config
  */
 export class DynamicStorageAugmentation extends StorageAugmentation {
-  constructor(
-    private adapter: StorageAdapter,
-    name?: string
-  ) {
-    super(name || `${adapter.constructor.name}Augmentation`)
+  readonly name = 'dynamic-storage'
+  
+  constructor(private adapter: StorageAdapter) {
+    super()
     this.storageAdapter = adapter
   }
   
@@ -112,7 +110,7 @@ export async function createStorageAugmentationFromConfig(
     const adapter = await createStorage(config)
     
     // Wrap in augmentation
-    return new DynamicStorageAugmentation(adapter, 'auto-storage')
+    return new DynamicStorageAugmentation(adapter)
   } catch (error) {
     console.warn('Failed to create storage augmentation from config:', error)
     return null

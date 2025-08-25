@@ -94,7 +94,7 @@ export class MCPAugmentationToolset {
             method !== 'initialize' &&
             method !== 'shutDown' &&
             method !== 'getStatus' &&
-            typeof augmentation[method] === 'function'
+            typeof (augmentation as any)[method] === 'function'
           )
         
         // Create a tool for each method
@@ -143,26 +143,23 @@ export class MCPAugmentationToolset {
    * @returns The result of the pipeline execution
    */
   private async executePipeline(type: string, method: string, parameters: any): Promise<any> {
+    // In Brainy 2.0, we directly call methods on augmentation instances
+    // instead of using the old typed pipeline system
+    
     const { args = [], options = {} } = parameters
     
-    switch (type) {
-      case AugmentationType.SENSE:
-        return await augmentationPipeline.executeSensePipeline(method, args, options)
-      case AugmentationType.CONDUIT:
-        return await augmentationPipeline.executeConduitPipeline(method, args, options)
-      case AugmentationType.COGNITION:
-        return await augmentationPipeline.executeCognitionPipeline(method, args, options)
-      case AugmentationType.MEMORY:
-        return await augmentationPipeline.executeMemoryPipeline(method, args, options)
-      case AugmentationType.PERCEPTION:
-        return await augmentationPipeline.executePerceptionPipeline(method, args, options)
-      case AugmentationType.DIALOG:
-        return await augmentationPipeline.executeDialogPipeline(method, args, options)
-      case AugmentationType.ACTIVATION:
-        return await augmentationPipeline.executeActivationPipeline(method, args, options)
-      default:
-        throw new Error(`Unsupported augmentation type: ${type}`)
+    // Get augmentations of the specified type
+    const augmentations = augmentationPipeline.getAugmentationsByType(type as any)
+    
+    // Find the first augmentation that has the requested method
+    for (const augmentation of augmentations) {
+      if (typeof (augmentation as any)[method] === 'function') {
+        // Call the method directly on the augmentation instance
+        return await (augmentation as any)[method](...args, options)
+      }
     }
+    
+    throw new Error(`Method '${method}' not found in any ${type} augmentation`)
   }
 
   /**

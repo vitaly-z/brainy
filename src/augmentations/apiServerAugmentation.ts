@@ -120,7 +120,7 @@ export class APIServerAugmentation extends BaseAugmentation {
         return
       }
       
-      const WebSocketServer = ws?.WebSocketServer || ws?.default?.WebSocketServer
+      const WebSocketServer = (ws as any)?.WebSocketServer || (ws as any)?.default?.WebSocketServer || (ws as any)?.Server
       
       const app = express.default()
       

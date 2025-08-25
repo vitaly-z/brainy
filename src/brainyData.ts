@@ -496,6 +496,20 @@ export interface BrainyDataConfig {
    */
   entityCacheSize?: number
   entityCacheTTL?: number
+
+  /**
+   * Statistics collection configuration
+   * When false, disables metrics collection. When true or config object, enables with options.
+   * Default: true
+   */
+  statistics?: boolean
+
+  /**
+   * Health monitoring configuration
+   * When false, disables health monitoring. When true or config object, enables with options.
+   * Default: false (enabled automatically for distributed setups)
+   */
+  health?: boolean
 }
 
 export class BrainyData<T = any> implements BrainyDataInterface<T> {
@@ -556,10 +570,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private lastUpdateTime = 0
   private lastKnownNounCount = 0
 
-  // Remote server properties
+  // Remote server properties - TODO: Implement in post-2.0.0 release
   private remoteServerConfig: BrainyDataConfig['remoteServer'] | null = null
-  private serverSearchConduit: ServerSearchConduitAugmentation | null = null
-  private serverConnection: WebSocketConnection | null = null
+  // private serverSearchConduit: ServerSearchConduitAugmentation | null = null
+  // private serverConnection: WebSocketConnection | null = null
   private intelligentVerbScoring: IntelligentVerbScoringAugmentation | null = null
 
   // Distributed mode properties
@@ -802,10 +816,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     // Register core feature augmentations (previously hardcoded)
     // These replace SearchCache, MetadataIndex, StatisticsCollector, HealthMonitor
     const defaultAugs = createDefaultAugmentations({
-      cache: this.config.searchCache !== false ? this.config.searchCache : true,
-      index: this.config.metadataIndex !== false ? this.config.metadataIndex : true,
+      cache: this.config.searchCache !== undefined ? this.config.searchCache as Record<string, any> : true,
+      index: this.config.metadataIndex !== undefined ? this.config.metadataIndex as Record<string, any> : true,
       metrics: this.config.statistics !== false,
-      monitoring: this.config.health || this.distributedConfig?.enabled
+      monitoring: Boolean(this.config.health || this.distributedConfig?.enabled)
     })
     
     for (const aug of defaultAugs) {
@@ -918,13 +932,13 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         this.storage = await createStorage(storageOptions as any)
         
         // Wrap in augmentation for consistency
-        const wrapper = new DynamicStorageAugmentation(this.storage, 'config-storage')
+        const wrapper = new DynamicStorageAugmentation(this.storage)
         this.augmentations.register(wrapper)
       } else {
         // Zero-config: auto-select based on environment
         const autoAug = await createAutoStorageAugmentation({
-          rootDirectory: this.storageConfig?.rootDirectory,
-          requestPersistentStorage: storageOptions.requestPersistentStorage
+          rootDirectory: (storageOptions as any).rootDirectory,
+          requestPersistentStorage: (storageOptions as any).requestPersistentStorage
         })
         this.augmentations.register(autoAug)
         this.storage = await autoAug.provideStorage()
@@ -1473,9 +1487,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       for (const type of augmentationTypes) {
         const augmentations = augmentationPipeline.getAugmentationsByType(type)
 
-        // Find the first enabled augmentation
+        // Find the first augmentation (all registered augmentations are considered enabled)
         for (const augmentation of augmentations) {
-          if (augmentation.enabled) {
+          if (augmentation) {
             return augmentation.name
           }
         }
@@ -1890,9 +1904,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         }
       )
 
-      // Store the conduit and connection
-      this.serverSearchConduit = conduit
-      this.serverConnection = connection
+      // TODO: Store conduit and connection (post-2.0.0 feature)
+      // this.serverSearchConduit = conduit
+      // this.serverConnection = connection
 
       return connection
     } catch (error) {
@@ -1921,7 +1935,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * // Force neural processing
    * await brainy.add("John works at Acme Corp", null, { process: 'neural' })
    */
-  private async add(
+  public async add(
     vectorOrData: Vector | any,
     metadata?: T,
     options: {
@@ -2248,12 +2262,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // 🧠 AI Processing (Neural Import) - Based on processing mode
       if (shouldProcessNeurally) {
         try {
-          // Execute SENSE pipeline (includes Neural Import and other AI augmentations)
-          await augmentationPipeline.executeSensePipeline(
-            'processRawData',
-            [vectorOrData, typeof vectorOrData === 'string' ? 'text' : 'data'],
-            { mode: ExecutionMode.SEQUENTIAL }
-          )
+          // Execute augmentation pipeline for data processing
+          // Note: Augmentations will be called via this.augmentations.execute during the actual add operation
+          // This replaces the legacy SENSE pipeline
           
           if (this.loggingConfig?.verbose) {
             console.log(`🧠 AI processing completed for data: ${id}`)
@@ -2277,50 +2288,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
   }
 
-  /**
-   * Add a text item to the database with automatic embedding
-   * This is a convenience method for adding text data with metadata
-   * @param text Text data to add
-   * @param metadata Metadata to associate with the text
-   * @param options Additional options
-   * @returns The ID of the added item
-   */
-  private async addItem(
-    text: string,
-    metadata?: T,
-    options: {
-      addToRemote?: boolean // Whether to also add to the remote server if connected
-      id?: string // Optional ID to use instead of generating a new one
-    } = {}
-  ): Promise<string> {
-    // Use the existing addNoun method with forceEmbed to ensure text is embedded
-    return this.addNoun(text, metadata, { ...options, forceEmbed: true })
-  }
+  // REMOVED: addItem() - Use addNoun() instead (cleaner 2.0 API)
 
-  /**
-   * Add data to both local and remote Brainy instances
-   * @param vectorOrData Vector or data to add
-   * @param metadata Optional metadata to associate with the vector
-   * @param options Additional options
-   * @returns The ID of the added vector
-   */
-  private async addToBoth(
-    vectorOrData: Vector | any,
-    metadata?: T,
-    options: {
-      forceEmbed?: boolean // Force using the embedding function even if input is a vector
-    } = {}
-  ): Promise<string> {
-    // Check if connected to a remote server
-    if (!this.isConnectedToRemoteServer()) {
-      throw new Error(
-        'Not connected to a remote server. Call connectToRemoteServer() first.'
-      )
-    }
-
-    // Add to local with addToRemote option
-    return this.addNoun(vectorOrData, metadata, { ...options, addToRemote: true })
-  }
+  // REMOVED: addToBoth() - Remote server functionality moved to post-2.0.0
 
   /**
    * Add a vector to the remote server
@@ -2340,22 +2310,25 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     try {
-      if (!this.serverSearchConduit || !this.serverConnection) {
-        throw new Error(
-          'Server search conduit or connection is not initialized'
-        )
-      }
+      // TODO: Remote server operations (post-2.0.0 feature)
+      // if (!this.serverSearchConduit || !this.serverConnection) {
+      //   throw new Error(
+      //     'Server search conduit or connection is not initialized'
+      //   )
+      // }
 
-      // Add to remote server
-      const addResult = await this.serverSearchConduit.addToBoth(
-        this.serverConnection.connectionId,
-        vector,
-        metadata
-      )
+      // TODO: Add to remote server
+      // const addResult = await this.serverSearchConduit.addToBoth(
+      //   this.serverConnection.connectionId,
+      //   vector,
+      //   metadata
+      // )
+      throw new Error('Remote server functionality not yet implemented in Brainy 2.0.0')
 
-      if (!addResult.success) {
-        throw new Error(`Remote add failed: ${addResult.error}`)
-      }
+      // TODO: Handle remote add result (post-2.0.0 feature)
+      // if (!addResult.success) {
+      //   throw new Error(`Remote add failed: ${addResult.error}`)
+      // }
 
       return true
     } catch (error) {
@@ -2455,7 +2428,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
         // Process vector items (already embedded)
         const vectorPromises = vectorItems.map((item) =>
-          this.addNoun(item.vectorOrData, item.metadata, options)
+          this.addNoun(item.vectorOrData, item.metadata)
         )
 
         // Process text items in a single batch embedding operation
@@ -2469,10 +2442,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
           // Add each item with its embedding
           textPromises = textItems.map((item, i) =>
-            this.addNoun(embeddings[i], item.metadata, {
-              ...options,
-              forceEmbed: false
-            })
+            this.addNoun(embeddings[i], item.metadata)
           )
         }
 
@@ -3367,7 +3337,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Get a vector by ID
    */
-  private async get(id: string): Promise<VectorDocument<T> | null> {
+  public async get(id: string): Promise<VectorDocument<T> | null> {
     // Validate id parameter first, before any other logic
     if (id === null || id === undefined) {
       throw new Error('ID cannot be null or undefined')
@@ -3563,8 +3533,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       return this.getNounsByIds(options.ids)
     }
     
-    // Otherwise, do a filtered/paginated query
-    return this.queryNounsByFilter(options)
+    // Otherwise, do a filtered/paginated query and extract items
+    const result = await this.queryNounsByFilter(options)
+    return result.items
   }
   
   /**
@@ -3801,11 +3772,12 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       if (opts.soft) {
         // Soft delete: just mark as deleted - metadata filter will exclude from search
         try {
-          return await this.updateNounMetadata(actualId, { 
+          await this.updateNounMetadata(actualId, { 
             deleted: true, 
             deletedAt: new Date().toISOString(),
             deletedBy: opts.service || 'user'
           } as T)
+          return true
         } catch (error) {
           // If item doesn't exist, return false (delete of non-existent item is not an error)
           return false
@@ -3976,54 +3948,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
   }
 
-  /**
-   * Create a relationship between two entities
-   * This is a convenience wrapper around addVerb
-   */
-  private async relate(
-    sourceId: string,
-    targetId: string,
-    relationType: string,
-    metadata?: any
-  ): Promise<string> {
-    // Validate inputs are not null or undefined
-    if (sourceId === null || sourceId === undefined) {
-      throw new Error('Source ID cannot be null or undefined')
-    }
-    if (targetId === null || targetId === undefined) {
-      throw new Error('Target ID cannot be null or undefined')
-    }
-    if (relationType === null || relationType === undefined) {
-      throw new Error('Relation type cannot be null or undefined')
-    }
+  // REMOVED: relate() - Use addVerb() instead (cleaner 2.0 API)
 
-    // NEURAL INTELLIGENCE: Enhanced metadata with smart inference
-    const enhancedMetadata = {
-      ...metadata,
-      createdAt: new Date().toISOString(),
-      inferenceScore: 1.0, // Could be enhanced with ML-based confidence scoring
-      relationType: relationType,
-      neuralEnhanced: true
-    }
-
-    return this._addVerbInternal(sourceId, targetId, undefined, {
-      type: relationType,
-      metadata: enhancedMetadata
-    })
-  }
-
-  /**
-   * Create a connection between two entities
-   * This is an alias for relate() for backward compatibility
-   */
-  private async connect(
-    sourceId: string,
-    targetId: string,
-    relationType: string,
-    metadata?: any
-  ): Promise<string> {
-    return this.addVerb(sourceId, targetId, relationType, metadata)
-  }
+  // REMOVED: connect() - Use addVerb() instead (cleaner 2.0 API)
 
   /**
    * Add a verb between two nouns
@@ -4214,8 +4141,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             createdBy: getAugmentationVersion(service)
           }
 
-          // Add the missing noun
-          await this.addNoun(placeholderVector, metadata, { id: sourceId })
+          // Add the missing noun (custom ID not supported in 2.0 addNoun yet)
+          await this.addNoun(placeholderVector, metadata)
 
           // Get the newly created noun
           sourceNoun = this.index.getNouns().get(sourceId)
@@ -4253,8 +4180,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             createdBy: getAugmentationVersion(service)
           }
 
-          // Add the missing noun
-          await this.addNoun(placeholderVector, metadata, { id: targetId })
+          // Add the missing noun (custom ID not supported in 2.0 addNoun yet)
+          await this.addNoun(placeholderVector, metadata)
 
           // Get the newly created noun
           targetNoun = this.index.getNouns().get(targetId)
@@ -4580,7 +4507,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       const result = await this.getNouns({
         pagination: { limit: Number.MAX_SAFE_INTEGER }
       })
-      return result.items
+      return result.filter((noun): noun is VectorDocument<T> => noun !== null)
     }
     
     // Fall back to on-demand loading
@@ -4792,7 +4719,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   ): Promise<string[]> {
     const ids: string[] = []
     for (const verb of verbs) {
-      const id = await this.addVerb(verb.source, verb.target, verb.type, verb.metadata)
+      const id = await this.addVerb(verb.source, verb.target, verb.type as VerbType, verb.metadata)
       ids.push(id)
     }
     return ids
@@ -4886,7 +4813,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private adaptCacheConfiguration(): void {
     const stats = this.cache?.getStats() || {}
     const memoryUsage = this.cache?.getMemoryUsage() || 0
-    const currentConfig = this.searchCache.getConfig()
+    const currentConfig = this.cache?.getConfig() || {}
 
     // Prepare performance metrics for adaptation
     const performanceMetrics = {
@@ -4905,7 +4832,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     if (newConfig) {
       // Apply new cache configuration
-      this.searchCache.updateConfig(newConfig.cacheConfig)
+      this.cache?.updateConfig(newConfig.cacheConfig)
 
       // Apply new real-time update configuration if needed
       if (
@@ -6043,57 +5970,11 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       offset?: number // Number of results to skip for pagination (default: 0)
     } = {}
   ): Promise<SearchResult<T>[]> {
+    // TODO: Remote server search will be implemented in post-2.0.0 release
     await this.ensureInitialized()
-
-    // Check if database is in write-only mode
     this.checkWriteOnly()
-
-    // Check if connected to a remote server
-    if (!this.isConnectedToRemoteServer()) {
-      throw new Error(
-        'Not connected to a remote server. Call connectToRemoteServer() first.'
-      )
-    }
-
-    try {
-      // If input is a string, convert it to a query string for the server
-      let query: string
-      if (typeof queryVectorOrData === 'string') {
-        query = queryVectorOrData
-      } else {
-        // For vectors, we need to embed them as a string query
-        // This is a simplification - ideally we would send the vector directly
-        query = 'vector-query' // Placeholder, would need a better approach for vector queries
-      }
-
-      if (!this.serverSearchConduit || !this.serverConnection) {
-        throw new Error(
-          'Server search conduit or connection is not initialized'
-        )
-      }
-
-      // When using offset, fetch more results and slice
-      const offset = options.offset || 0
-      const totalNeeded = k + offset
-
-      // Search the remote server for totalNeeded results
-      const searchResult = await this.serverSearchConduit.searchServer(
-        this.serverConnection.connectionId,
-        query,
-        totalNeeded
-      )
-
-      if (!searchResult.success) {
-        throw new Error(`Remote search failed: ${searchResult.error}`)
-      }
-
-      // Apply offset to remote results
-      const allResults = searchResult.data as SearchResult<T>[]
-      return allResults.slice(offset, offset + k)
-    } catch (error) {
-      console.error('Failed to search remote server:', error)
-      throw new Error(`Failed to search remote server: ${error}`)
-    }
+    
+    throw new Error('Remote server search functionality not yet implemented in Brainy 2.0.0')
   }
 
   /**
@@ -6204,7 +6085,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns True if connected to a remote server, false otherwise
    */
   public isConnectedToRemoteServer(): boolean {
-    return !!(this.serverSearchConduit && this.serverConnection)
+    // TODO: Remote server connections will be implemented in post-2.0.0 release
+    return false
   }
 
   /**
@@ -6212,31 +6094,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns True if successfully disconnected, false if not connected
    */
   public async disconnectFromRemoteServer(): Promise<boolean> {
-    if (!this.isConnectedToRemoteServer()) {
-      return false
-    }
-
-    try {
-      if (!this.serverSearchConduit || !this.serverConnection) {
-        throw new Error(
-          'Server search conduit or connection is not initialized'
-        )
-      }
-
-      // Close the WebSocket connection
-      await this.serverSearchConduit.closeWebSocket(
-        this.serverConnection.connectionId
-      )
-
-      // Clear the connection information
-      this.serverSearchConduit = null
-      this.serverConnection = null
-
-      return true
-    } catch (error) {
-      console.error('Failed to disconnect from remote server:', error)
-      throw new Error(`Failed to disconnect from remote server: ${error}`)
-    }
+    // TODO: Remote server disconnection will be implemented in post-2.0.0 release
+    console.warn('disconnectFromRemoteServer: Remote server functionality not yet implemented in Brainy 2.0.0')
+    return false
   }
 
   /**
@@ -6440,7 +6300,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       const nounsResult = await this.getNouns({
         pagination: { limit: Number.MAX_SAFE_INTEGER }
       })
-      const nouns = nounsResult.items
+      const nouns = nounsResult.filter((noun): noun is VectorDocument<T> => noun !== null)
 
       const verbsResult = await this.getVerbs({
         pagination: { limit: Number.MAX_SAFE_INTEGER }
@@ -6599,8 +6459,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             }
           }
 
-          // Add the noun with its vector and metadata
-          await this.addNoun(noun.vector, noun.metadata, { id: noun.id })
+          // Add the noun with its vector and metadata (custom ID not supported)
+          await this.addNoun(noun.vector, noun.metadata)
           nounsRestored++
         } catch (error) {
           console.error(`Failed to restore noun ${noun.id}:`, error)
@@ -6756,7 +6616,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     // Clear existing data if requested
     if (clearExisting) {
-      await this.clearAll({ force: true })
+      await this.clear({ force: true })
     }
 
     try {
@@ -7039,7 +6899,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       configValue: configValue,
       encrypted: !!options?.encrypt,
       timestamp: new Date().toISOString()
-    } as T, { id: configId })
+    } as T)
   }
 
   /**
@@ -7163,10 +7023,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             metadata.nounType = detectedType
           }
 
-          // Import item using standard add method
-          const id = await this.addNoun(item, metadata, {
-            process: (options?.process as 'auto' | 'literal' | 'neural') || 'auto'
-          })
+          // Import item using standard add method (process option not supported in 2.0)
+          const id = await this.addNoun(item, metadata)
           
           results.push(id)
         } catch (error) {
@@ -7200,7 +7058,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     vectorOrData: Vector | any,
     metadata?: T
   ): Promise<string> {
-    return await this.addNoun(vectorOrData, metadata)
+    return await this.add(vectorOrData, metadata)
   }
 
   /**
@@ -7499,7 +7357,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // Reindexing happens lazily for performance
     } else if (metadata !== undefined) {
       // Metadata-only update using existing updateMetadata method
-      return await this.updateNounMetadata(id, metadata)
+      await this.updateNounMetadata(id, metadata)
+      return true
     }
 
     // Update related verbs if cascade enabled
@@ -7720,7 +7579,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns The noun document or null
    */
   public async getNoun(id: string): Promise<VectorDocument<T> | null> {
-    return this.getNoun(id)
+    // Delegate to private get method which handles the actual implementation
+    return this.get(id)
   }
   
   /**
@@ -7729,7 +7589,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Success boolean
    */
   public async deleteNoun(id: string): Promise<boolean> {
-    return this.deleteNoun(id)
+    // Delegate to private delete method which handles the actual implementation
+    // Default to soft delete (hard: false) for 2.0 API safety
+    return this.delete(id, { service: '2.0-api', hard: false })
   }
   
   /**
@@ -7757,7 +7619,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     data?: any,
     metadata?: T
   ): Promise<VectorDocument<T>> {
-    return this.updateNoun(id, data, metadata)
+    // Delegate to private update method which handles the actual implementation
+    await this.update(id, data, metadata)
+    return this.get(id) as Promise<VectorDocument<T>>
   }
   
   /**
@@ -7775,7 +7639,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Metadata or null
    */
   public async getNounMetadata(id: string): Promise<T | null> {
-    return this.getNounMetadata(id)
+    // Delegate to private getMetadata method which handles the actual implementation
+    return this.getMetadata(id)
   }
   
   // ===== Neural Similarity API =====
@@ -7921,7 +7786,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     // Get all data with optional filtering
     const nounsResult = await this.getNouns()
-    const allNouns = nounsResult.items || []
+    const allNouns = (nounsResult || []).filter((noun): noun is VectorDocument<T> => noun !== null)
     let exportData: any[] = []
 
     // Apply filters and limits
