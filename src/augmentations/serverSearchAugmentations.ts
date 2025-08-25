@@ -6,13 +6,10 @@
  */
 
 import {
-  AugmentationType,
-  IConduitAugmentation,
-  IActivationAugmentation,
-  IWebSocketSupport,
   AugmentationResponse,
   WebSocketConnection
 } from '../types/augmentations.js'
+import { BaseAugmentation, AugmentationContext } from '../augmentations/brainyAugmentation.js'
 import { WebSocketConduitAugmentation } from './conduitAugmentations.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 import { BrainyDataInterface } from '../types/brainyDataInterface.js'
@@ -316,48 +313,45 @@ export class ServerSearchConduitAugmentation extends WebSocketConduitAugmentatio
  *
  * An activation augmentation that provides actions for server search functionality.
  */
-export class ServerSearchActivationAugmentation
-  implements IActivationAugmentation
-{
-  readonly name: string
-  readonly description: string
-  enabled: boolean = true
-  private isInitialized = false
+export class ServerSearchActivationAugmentation extends BaseAugmentation {
+  readonly timing = 'after' as const
+  readonly operations = ['search', 'addNoun'] as const
+  readonly priority = 20
+  
   private conduitAugmentation: ServerSearchConduitAugmentation | null = null
   private connections: Map<string, WebSocketConnection> = new Map()
 
   constructor(name: string = 'server-search-activation') {
-    this.name = name
+    super(name)
     this.description = 'Activation augmentation for server-hosted Brainy search'
   }
 
-  getType(): AugmentationType {
-    return AugmentationType.ACTIVATION
+  protected async onInit(): Promise<void> {
+    // Initialization logic if needed
   }
 
-  /**
-   * Initialize the augmentation
-   */
-  async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      return
+  protected async onShutdown(): Promise<void> {
+    // Cleanup connections
+    this.connections.clear()
+  }
+  
+  async execute<T = any>(
+    operation: string,
+    params: any,
+    context?: AugmentationContext
+  ): Promise<T | void> {
+    // Handle server search operations
+    if (operation === 'search' && this.conduitAugmentation) {
+      // Trigger server search when local search happens
+      const connectionId = this.connections.keys().next().value
+      if (connectionId && params.query) {
+        await this.conduitAugmentation.searchServer(
+          connectionId,
+          params.query,
+          params.limit || 10
+        )
+      }
     }
-
-    this.isInitialized = true
-  }
-
-  /**
-   * Shut down the augmentation
-   */
-  async shutDown(): Promise<void> {
-    this.isInitialized = false
-  }
-
-  /**
-   * Get the status of the augmentation
-   */
-  async getStatus(): Promise<'active' | 'inactive' | 'error'> {
-    return this.isInitialized ? 'active' : 'inactive'
   }
 
   /**

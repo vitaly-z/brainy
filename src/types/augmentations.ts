@@ -45,29 +45,12 @@ export type BrainyAugmentation = BA
 export type BaseAugmentation = BaseA  
 export type AugmentationContext = AC
 
-/**
- * @deprecated - Being removed in 2.0 final. Use BrainyAugmentation directly
- */
+// REMOVED: Old augmentation type system for 2.0 clean architecture
+// All augmentations now use the unified BrainyAugmentation interface from brainyAugmentation.ts
+
+// Temporary exports for compilation - TO BE REMOVED
 export type IAugmentation = BrainyAugmentation
-
-/**
- * @deprecated - Being removed in 2.0 final
- */
-export enum AugmentationType {
-  SENSE = 'sense',
-  CONDUIT = 'conduit',
-  COGNITION = 'cognition',
-  MEMORY = 'memory',
-  PERCEPTION = 'perception',
-  DIALOG = 'dialog',
-  ACTIVATION = 'activation',
-  WEBSOCKET = 'webSocket',
-  SYNAPSE = 'synapse'
-}
-
-/**
- * @deprecated - Being removed in 2.0 final. These are just aliases now
- */
+export enum AugmentationType { SENSE = 'sense', CONDUIT = 'conduit', COGNITION = 'cognition', MEMORY = 'memory', PERCEPTION = 'perception', DIALOG = 'dialog', ACTIVATION = 'activation', WEBSOCKET = 'webSocket', SYNAPSE = 'synapse' }
 export namespace BrainyAugmentations {
   export type ISenseAugmentation = BrainyAugmentation
   export type IConduitAugmentation = BrainyAugmentation
@@ -78,23 +61,12 @@ export namespace BrainyAugmentations {
   export type IActivationAugmentation = BrainyAugmentation
   export type ISynapseAugmentation = BrainyAugmentation
 }
-
-// Export as individual types for compatibility
-export type ISenseAugmentation = BrainyAugmentations.ISenseAugmentation
-export type IConduitAugmentation = BrainyAugmentations.IConduitAugmentation
-export type ICognitionAugmentation = BrainyAugmentations.ICognitionAugmentation
-export type IMemoryAugmentation = BrainyAugmentations.IMemoryAugmentation
-export type IPerceptionAugmentation = BrainyAugmentations.IPerceptionAugmentation
-export type IDialogAugmentation = BrainyAugmentations.IDialogAugmentation
-export type IActivationAugmentation = BrainyAugmentations.IActivationAugmentation
-
-/**
- * @deprecated - Being removed in 2.0 final
- */
-export interface IWebSocketSupport {
-  connectWebSocket?(url: string, protocols?: string | string[]): Promise<WebSocketConnection>
-  sendWebSocketMessage?(connectionId: string, data: unknown): Promise<void>
-  onWebSocketMessage?(connectionId: string, callback: DataCallback<unknown>): Promise<void>
-  offWebSocketMessage?(connectionId: string, callback: DataCallback<unknown>): Promise<void>
-  closeWebSocket?(connectionId: string, code?: number, reason?: string): Promise<void>
-}
+export type ISenseAugmentation = BrainyAugmentation
+export type IConduitAugmentation = BrainyAugmentation
+export type ICognitionAugmentation = BrainyAugmentation
+export type IMemoryAugmentation = BrainyAugmentation
+export type IPerceptionAugmentation = BrainyAugmentation
+export type IDialogAugmentation = BrainyAugmentation
+export type IActivationAugmentation = BrainyAugmentation
+export type ISynapseAugmentation = BrainyAugmentation
+export interface IWebSocketSupport {}

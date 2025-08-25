@@ -18,31 +18,26 @@
  */
 
 import { 
-  ISynapseAugmentation,
   AugmentationResponse 
 } from '../types/augmentations.js'
-import { BrainyAugmentation, AugmentationContext } from './brainyAugmentation.js'
+import { BaseAugmentation, BrainyAugmentation, AugmentationContext } from './brainyAugmentation.js'
 import { NeuralImportAugmentation } from './neuralImport.js'
 
 /**
  * Base class for all synapse augmentations
  * Provides common functionality for external data synchronization
  */
-export abstract class SynapseAugmentation implements ISynapseAugmentation, BrainyAugmentation {
+export abstract class SynapseAugmentation extends BaseAugmentation {
   // BrainyAugmentation properties
-  abstract readonly name: string
-  abstract readonly description: string
   readonly timing = 'after' as const
   readonly operations = ['all'] as ('all')[]
   readonly priority = 10
   
-  // ISynapseAugmentation properties
+  // Synapse-specific properties
   abstract readonly synapseId: string
   abstract readonly supportedTypes: string[]
   
   // State management
-  enabled = true
-  protected context?: AugmentationContext
   protected syncInProgress = false
   protected lastSyncId?: string
   protected syncStats = {
@@ -55,17 +50,13 @@ export abstract class SynapseAugmentation implements ISynapseAugmentation, Brain
   protected neuralImport?: NeuralImportAugmentation
   protected useNeuralImport = true // Enable by default
   
-  /**
-   * Initialize the synapse with BrainyData context
-   */
-  async initialize(context: AugmentationContext): Promise<void> {
-    this.context = context
+  protected async onInit(): Promise<void> {
     
     // Initialize Neural Import if available
-    if (this.useNeuralImport && context.brain) {
+    if (this.useNeuralImport && this.context?.brain) {
       try {
         // Check if neural import is already loaded
-        const existingNeuralImport = context.brain.augmentations?.get('neural-import')
+        const existingNeuralImport = this.context.brain.augmentations?.get('neural-import')
         if (existingNeuralImport) {
           this.neuralImport = existingNeuralImport as NeuralImportAugmentation
         } else {
@@ -133,21 +124,18 @@ export abstract class SynapseAugmentation implements ISynapseAugmentation, Brain
     }
   }
   
-  /**
-   * IAugmentation required methods
-   */
-  async shutDown(): Promise<void> {
+  protected async onShutdown(): Promise<void> {
     if (this.syncInProgress) {
       await this.stopSync()
     }
-    await this.onShutdown()
+    await this.onSynapseShutdown()
   }
   
-  protected async onShutdown(): Promise<void> {
+  protected async onSynapseShutdown(): Promise<void> {
     // Override in implementations for cleanup
   }
   
-  async getStatus(): Promise<'active' | 'inactive' | 'error'> {
+  async getSynapseStatus(): Promise<'active' | 'inactive' | 'error'> {
     try {
       const result = await this.testConnection()
       return result.success ? 'active' : 'error'
