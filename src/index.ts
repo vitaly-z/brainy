@@ -180,35 +180,7 @@ import {
 
 // Sequential pipeline removed - use unified pipeline instead
 
-// Export augmentation factory
-import {
-  createSenseAugmentation,
-  addWebSocketSupport,
-  executeAugmentation,
-  loadAugmentationModule,
-  AugmentationOptions
-} from './augmentationFactory.js'
-
-// Export factory functions for creating augmentations
-import {
-  createSenseAugmentation,
-  createConduitAugmentation,
-  createCognitionAugmentation,
-  createMemoryAugmentation,
-  createPerceptionAugmentation,
-  createDialogAugmentation,
-  createActivationAugmentation
-} from './augmentationFactory.js'
-
-export {
-  createSenseAugmentation,
-  createConduitAugmentation,
-  createCognitionAugmentation,
-  createMemoryAugmentation,
-  createPerceptionAugmentation,
-  createDialogAugmentation,
-  createActivationAugmentation
-}
+// REMOVED: Old augmentation factory for 2.0 clean architecture
 
 export {
   // Unified pipeline exports
@@ -288,8 +260,7 @@ import {
   createAutoStorageAugmentation
 } from './augmentations/storageAugmentations.js'
 import {
-  WebSocketConduitAugmentation,
-  WebRTCConduitAugmentation
+  WebSocketConduitAugmentation
 } from './augmentations/conduitAugmentations.js'
 import {
   ServerSearchConduitAugmentation,
@@ -365,45 +336,22 @@ export type {
 
 // Export augmentation types
 import type {
-  IAugmentation,
   AugmentationResponse,
-  IWebSocketSupport,
-  ISenseAugmentation,
-  IConduitAugmentation,
-  ICognitionAugmentation,
-  IMemoryAugmentation,
-  IPerceptionAugmentation,
-  IDialogAugmentation,
-  IActivationAugmentation
+  BrainyAugmentation,
+  BaseAugmentation,
+  AugmentationContext
 } from './types/augmentations.js'
-import { AugmentationType, BrainyAugmentations } from './types/augmentations.js'
 
 // Export augmentation manager for type-safe augmentation management
 export { AugmentationManager, type AugmentationInfo } from './augmentationManager.js'
 
-export type { IAugmentation, AugmentationResponse, IWebSocketSupport }
-export {
-  AugmentationType,
-  BrainyAugmentations,
-  ISenseAugmentation,
-  IConduitAugmentation,
-  ICognitionAugmentation,
-  IMemoryAugmentation,
-  IPerceptionAugmentation,
-  IDialogAugmentation,
-  IActivationAugmentation
+// Export only the clean augmentation types for 2.0
+export type { 
+  AugmentationResponse,
+  BrainyAugmentation,
+  BaseAugmentation,
+  AugmentationContext
 }
-
-// Export combined WebSocket augmentation interfaces
-export type {
-  IWebSocketCognitionAugmentation,
-  IWebSocketSenseAugmentation,
-  IWebSocketPerceptionAugmentation,
-  IWebSocketActivationAugmentation,
-  IWebSocketDialogAugmentation,
-  IWebSocketConduitAugmentation,
-  IWebSocketMemoryAugmentation
-} from './types/augmentations.js'
 
 // Export graph types
 import type {

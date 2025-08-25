@@ -46,17 +46,16 @@ export type BaseAugmentation = BaseA
 export type AugmentationContext = AC
 
 /**
- * Legacy compatibility - these are deprecated and should not be used in new code
- * @deprecated Use BrainyAugmentation instead
+ * @deprecated - Being removed in 2.0 final. Use BrainyAugmentation directly
  */
 export type IAugmentation = BrainyAugmentation
 
 /**
- * @deprecated AugmentationType enum is no longer used - augmentations are identified by name
+ * @deprecated - Being removed in 2.0 final
  */
 export enum AugmentationType {
   SENSE = 'sense',
-  CONDUIT = 'conduit', 
+  CONDUIT = 'conduit',
   COGNITION = 'cognition',
   MEMORY = 'memory',
   PERCEPTION = 'perception',
@@ -67,20 +66,20 @@ export enum AugmentationType {
 }
 
 /**
- * @deprecated Use specific augmentation classes instead
+ * @deprecated - Being removed in 2.0 final. These are just aliases now
  */
 export namespace BrainyAugmentations {
-  export interface ISenseAugmentation extends BrainyAugmentation {}
-  export interface IConduitAugmentation extends BrainyAugmentation {}
-  export interface ICognitionAugmentation extends BrainyAugmentation {}
-  export interface IMemoryAugmentation extends BrainyAugmentation {}
-  export interface IPerceptionAugmentation extends BrainyAugmentation {}
-  export interface IDialogAugmentation extends BrainyAugmentation {}
-  export interface IActivationAugmentation extends BrainyAugmentation {}
-  export interface ISynapseAugmentation extends BrainyAugmentation {}
+  export type ISenseAugmentation = BrainyAugmentation
+  export type IConduitAugmentation = BrainyAugmentation
+  export type ICognitionAugmentation = BrainyAugmentation
+  export type IMemoryAugmentation = BrainyAugmentation
+  export type IPerceptionAugmentation = BrainyAugmentation
+  export type IDialogAugmentation = BrainyAugmentation
+  export type IActivationAugmentation = BrainyAugmentation
+  export type ISynapseAugmentation = BrainyAugmentation
 }
 
-// Export deprecated interfaces directly for compatibility
+// Export as individual types for compatibility
 export type ISenseAugmentation = BrainyAugmentations.ISenseAugmentation
 export type IConduitAugmentation = BrainyAugmentations.IConduitAugmentation
 export type ICognitionAugmentation = BrainyAugmentations.ICognitionAugmentation
@@ -88,21 +87,11 @@ export type IMemoryAugmentation = BrainyAugmentations.IMemoryAugmentation
 export type IPerceptionAugmentation = BrainyAugmentations.IPerceptionAugmentation
 export type IDialogAugmentation = BrainyAugmentations.IDialogAugmentation
 export type IActivationAugmentation = BrainyAugmentations.IActivationAugmentation
-export type ISynapseAugmentation = BrainyAugmentations.ISynapseAugmentation
-
-// WebSocket types for compatibility
-export type IWebSocketCognitionAugmentation = ICognitionAugmentation & IWebSocketSupport
-export type IWebSocketSenseAugmentation = ISenseAugmentation & IWebSocketSupport
-export type IWebSocketPerceptionAugmentation = IPerceptionAugmentation & IWebSocketSupport
-export type IWebSocketActivationAugmentation = IActivationAugmentation & IWebSocketSupport
-export type IWebSocketDialogAugmentation = IDialogAugmentation & IWebSocketSupport
-export type IWebSocketConduitAugmentation = IConduitAugmentation & IWebSocketSupport
-export type IWebSocketMemoryAugmentation = IMemoryAugmentation & IWebSocketSupport
 
 /**
- * @deprecated Use BrainyAugmentation instead
+ * @deprecated - Being removed in 2.0 final
  */
-export interface IWebSocketSupport extends BrainyAugmentation {
+export interface IWebSocketSupport {
   connectWebSocket?(url: string, protocols?: string | string[]): Promise<WebSocketConnection>
   sendWebSocketMessage?(connectionId: string, data: unknown): Promise<void>
   onWebSocketMessage?(connectionId: string, callback: DataCallback<unknown>): Promise<void>

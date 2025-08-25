@@ -47,31 +47,6 @@ abstract class BaseConduitAugmentation extends BaseAugmentation {
 }
 
 /**
- * WebRTC Conduit Augmentation (placeholder for backwards compatibility)
- * @deprecated Use WebSocketConduitAugmentation instead
- */
-export class WebRTCConduitAugmentation extends BaseConduitAugmentation {
-  readonly name = 'webrtc-conduit'
-  
-  async execute<T = any>(
-    operation: string,
-    params: any,
-    context?: AugmentationContext
-  ): Promise<T | void> {
-    // Placeholder - WebRTC not yet implemented
-    this.log('WebRTC conduit not yet implemented, use WebSocket instead', 'warn')
-  }
-  
-  async establishConnection(
-    targetSystemId: string,
-    config?: Record<string, unknown>
-  ): Promise<WebSocketConnection | null> {
-    this.log('WebRTC conduit not yet implemented, use WebSocket instead', 'warn')
-    return null
-  }
-}
-
-/**
  * WebSocket Conduit Augmentation
  * Syncs data between Brainy instances using WebSockets
  */
