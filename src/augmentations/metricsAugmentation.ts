@@ -39,7 +39,7 @@ export class MetricsAugmentation extends BaseAugmentation {
 
   private statisticsCollector: StatisticsCollector | null = null
   private config: MetricsConfig
-  private metricsTimer: NodeJS.Timer | null = null
+  private metricsTimer: NodeJS.Timeout | null = null
 
   constructor(config: MetricsConfig = {}) {
     super()
@@ -74,7 +74,7 @@ export class MetricsAugmentation extends BaseAugmentation {
           this.log('Loaded existing metrics from storage')
         }
       } catch (e) {
-        this.log('Could not load existing metrics', 'debug')
+        this.log('Could not load existing metrics', 'info')
       }
     }
 
@@ -172,7 +172,7 @@ export class MetricsAugmentation extends BaseAugmentation {
       this.statisticsCollector.trackVerbType(params.metadata.verb)
     }
 
-    this.log(`Add operation completed in ${duration}ms`, 'debug')
+    this.log(`Add operation completed in ${duration}ms`, 'info')
   }
 
   /**
@@ -183,7 +183,7 @@ export class MetricsAugmentation extends BaseAugmentation {
 
     const { query } = params
     this.statisticsCollector.trackSearch(query || '', duration)
-    this.log(`Search completed in ${duration}ms`, 'debug')
+    this.log(`Search completed in ${duration}ms`, 'info')
   }
 
   /**
@@ -193,7 +193,7 @@ export class MetricsAugmentation extends BaseAugmentation {
     if (!this.statisticsCollector) return
 
     this.statisticsCollector.trackUpdate()
-    this.log(`Delete operation completed in ${duration}ms`, 'debug')
+    this.log(`Delete operation completed in ${duration}ms`, 'info')
   }
 
   /**
@@ -245,7 +245,7 @@ export class MetricsAugmentation extends BaseAugmentation {
         })
       }
     } catch (e) {
-      this.log('Could not update storage metrics', 'debug')
+      this.log('Could not update storage metrics', 'info')
     }
   }
 
@@ -259,9 +259,9 @@ export class MetricsAugmentation extends BaseAugmentation {
       const stats = this.statisticsCollector.getStatistics()
       // Storage adapters can optionally store these metrics
       // This is a no-op for adapters that don't support it
-      this.log('Metrics persisted to storage', 'debug')
+      this.log('Metrics persisted to storage', 'info')
     } catch (e) {
-      this.log('Could not persist metrics', 'debug')
+      this.log('Could not persist metrics', 'info')
     }
   }
 

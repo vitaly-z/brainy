@@ -37,7 +37,7 @@ export class IndexAugmentation extends BaseAugmentation {
 
   private metadataIndex: MetadataIndexManager | null = null
   private config: IndexConfig
-  private flushTimer: NodeJS.Timer | null = null
+  private flushTimer: NodeJS.Timeout | null = null
 
   constructor(config: IndexConfig = {}) {
     super()
@@ -68,7 +68,7 @@ export class IndexAugmentation extends BaseAugmentation {
     this.metadataIndex = new MetadataIndexManager(
       storage as StorageAdapter,
       {
-        maxFieldValues: this.config.maxFieldValues
+        maxIndexSize: this.config.maxIndexSize || 10000
       }
     )
 
@@ -86,7 +86,7 @@ export class IndexAugmentation extends BaseAugmentation {
             this.log(`Index rebuilt: ${newStats.totalEntries} entries, ${newStats.fieldsIndexed.length} fields`)
           }
         } catch (e) {
-          this.log('Could not check storage statistics', 'debug')
+          this.log('Could not check storage statistics', 'info')
         }
       }
     }
@@ -166,7 +166,7 @@ export class IndexAugmentation extends BaseAugmentation {
     const { id, metadata } = params
     if (id && metadata) {
       await this.metadataIndex.addToIndex(id, metadata)
-      this.log(`Indexed metadata for ${id}`, 'debug')
+      this.log(`Indexed metadata for ${id}`, 'info')
     }
   }
 
@@ -186,7 +186,7 @@ export class IndexAugmentation extends BaseAugmentation {
     // Add new metadata
     if (id && newMetadata) {
       await this.metadataIndex.addToIndex(id, newMetadata)
-      this.log(`Reindexed metadata for ${id}`, 'debug')
+      this.log(`Reindexed metadata for ${id}`, 'info')
     }
   }
 
@@ -199,7 +199,7 @@ export class IndexAugmentation extends BaseAugmentation {
     const { id, metadata } = params
     if (id && metadata) {
       await this.metadataIndex.removeFromIndex(id, metadata)
-      this.log(`Removed ${id} from index`, 'debug')
+      this.log(`Removed ${id} from index`, 'info')
     }
   }
 
@@ -295,7 +295,7 @@ export class IndexAugmentation extends BaseAugmentation {
   async flush(): Promise<void> {
     if (this.metadataIndex) {
       await this.metadataIndex.flush()
-      this.log('Index flushed to storage', 'debug')
+      this.log('Index flushed to storage', 'info')
     }
   }
   

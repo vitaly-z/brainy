@@ -120,13 +120,13 @@ export class APIServerAugmentation extends BaseAugmentation {
         return
       }
       
-      const { WebSocketServer } = ws
+      const WebSocketServer = ws?.WebSocketServer || ws?.default?.WebSocketServer
       
       const app = express.default()
       
       // Middleware
       app.use(cors.default(this.config.cors))
-      app.use(express.json({ limit: '50mb' }))
+      app.use((express.default || express).json({ limit: '50mb' }))
       app.use(this.authMiddleware.bind(this))
       app.use(this.rateLimitMiddleware.bind(this))
       

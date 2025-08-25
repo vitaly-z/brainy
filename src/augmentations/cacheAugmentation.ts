@@ -17,7 +17,6 @@ export interface CacheConfig {
   ttl?: number
   enabled?: boolean
   invalidateOnWrite?: boolean
-  memoryLimit?: number
 }
 
 /**
@@ -45,7 +44,6 @@ export class CacheAugmentation extends BaseAugmentation {
       ttl: 300000, // 5 minutes default
       enabled: true,
       invalidateOnWrite: true,
-      memoryLimit: 50 * 1024 * 1024, // 50MB default
       ...config
     }
   }
@@ -60,7 +58,7 @@ export class CacheAugmentation extends BaseAugmentation {
     this.searchCache = new SearchCache<GraphNoun>({
       maxSize: this.config.maxSize!,
       maxAge: this.config.ttl!,  // SearchCache uses maxAge, not ttl
-      memoryLimit: this.config.memoryLimit
+      enabled: true
     })
 
     this.log(`Cache augmentation initialized (maxSize: ${this.config.maxSize}, ttl: ${this.config.ttl}ms)`)
@@ -180,7 +178,6 @@ export class CacheAugmentation extends BaseAugmentation {
 
     const stats = this.searchCache.getStats()
     return {
-      enabled: true,
       ...stats,
       memoryUsage: this.searchCache.getMemoryUsage()
     }
@@ -206,7 +203,7 @@ export class CacheAugmentation extends BaseAugmentation {
       this.searchCache.updateConfig({
         maxSize: this.config.maxSize!,
         maxAge: this.config.ttl!,  // SearchCache uses maxAge
-        memoryLimit: this.config.memoryLimit
+        enabled: this.config.enabled
       })
       this.log('Cache configuration updated')
     }
