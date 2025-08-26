@@ -1,0 +1,84 @@
+# Source files (not needed in package)
+src/
+tests/
+scripts/
+coverage/
+
+# Model files (downloaded on first use, not bundled)
+models/
+models-cache/
+
+# Development and backup files
+backup-*
+backup-*/
+docs/backup*/
+
+# Documentation (except essentials)
+*.md
+!README.md
+!LICENSE
+!CHANGELOG.md
+!MIGRATION.md
+
+# Configuration files
+.gitignore
+.npmignore
+tsconfig.json
+vitest.config.ts
+vitest.config.mts
+*.config.js
+*.config.ts
+.eslintrc*
+.prettierrc*
+
+# Test files
+test-*.js
+test-*.ts
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# Temporary and log files
+*.log
+*.tmp
+tmp/
+temp/
+brainy-data/
+
+# Git and CI files
+.git/
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Private files
+PLAN.md
+CLAUDE.md
+INTERNAL_NOTES.md
+TODO_PRIVATE.md
+*-ANALYSIS.md
+*-PLAN.md
+
+# Build artifacts not needed
+*.tsbuildinfo
+*.map
+
+# Development environment
+.env*
+.nvm*
+.node-version
+
+# Keep dist/ for the compiled code
+# Keep bin/ for the CLI
+# Keep package.json, package-lock.json
