@@ -58,6 +58,7 @@ TODO_PRIVATE.md
 
 # Models (downloaded at runtime)
 models/
+models-cache/
 
 # Development planning files (not for commit)
 PLAN.md
