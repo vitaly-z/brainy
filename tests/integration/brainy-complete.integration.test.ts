@@ -91,7 +91,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log('🔍 Testing semantic search accuracy...')
 
       // Test 1: Programming language query
-      const langResults = await brain.search('programming languages for software development', 5)
+      const langResults = await brain.search('programming languages for software development', { limit: 5 })
       expect(langResults).toHaveLength(5)
       expect(langResults[0].score).toBeGreaterThan(0.3) // Should have good semantic similarity
       
@@ -103,7 +103,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       expect(programmingResults.length).toBeGreaterThan(0)
 
       // Test 2: Frontend technology query  
-      const frontendResults = await brain.search('user interface and web frontend', 3)
+      const frontendResults = await brain.search('user interface and web frontend', { limit: 3 })
       expect(frontendResults).toHaveLength(3)
       
       // Should find React and Vue.js
@@ -114,7 +114,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       expect(uiResults.length).toBeGreaterThan(0)
 
       // Test 3: Infrastructure and deployment
-      const infraResults = await brain.search('deployment containerization orchestration', 3)
+      const infraResults = await brain.search('deployment containerization orchestration', { limit: 3 })
       expect(infraResults).toHaveLength(3)
       
       // Should find Docker and Kubernetes
@@ -131,15 +131,15 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log('🧪 Testing search edge cases...')
 
       // Empty query
-      const emptyResults = await brain.search('', 5)
+      const emptyResults = await brain.search('', { limit: 5 })
       expect(emptyResults).toHaveLength(5) // Should return top items
 
       // Very specific query
-      const specificResults = await brain.search('relational database SQL queries', 2)
+      const specificResults = await brain.search('relational database SQL queries', { limit: 2 })
       expect(specificResults).toHaveLength(2)
       
       // Score ordering verification
-      const orderedResults = await brain.search('web development framework', 5)
+      const orderedResults = await brain.search('web development framework', { limit: 5 })
       for (let i = 0; i < orderedResults.length - 1; i++) {
         expect(orderedResults[i].score).toBeGreaterThanOrEqual(orderedResults[i + 1].score)
       }
@@ -289,7 +289,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       const startTime = Date.now()
 
       // Test efficient metadata filtering
-      const patternResults = await brain.search('*', 10, {
+      const patternResults = await brain.search('*', { limit: 10,
         metadata: {
           type: 'backend',
           language: 'Python'
@@ -326,7 +326,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       })
 
       // Query nested metadata (if supported)
-      const nestedResults = await brain.search('*', 5)
+      const nestedResults = await brain.search('*', { limit: 5 })
       expect(nestedResults.length).toBeGreaterThan(0)
 
       console.log('✅ Nested metadata handled correctly')
@@ -376,7 +376,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       expect(retrieved?.metadata?.test).toBe('persistence')
 
       // Verify search finds it
-      const searchResults = await brain.search('persistence test', 5)
+      const searchResults = await brain.search('persistence test', { limit: 5 })
       const found = searchResults.find(r => r.id === testId)
       expect(found).toBeTruthy()
 
@@ -434,7 +434,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
 
       // Test batch search performance
       const searchStart = Date.now()
-      const searchResults = await brain.search('performance test database', 10)
+      const searchResults = await brain.search('performance test database', { limit: 10 })
       const searchTime = Date.now() - searchStart
 
       console.log(`   Search completed in ${searchTime}ms`)
@@ -456,7 +456,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       const testQuery = 'modern web development tools and frameworks'
       
       // 1. search() with semantic relevance
-      const searchResults = await brain.search(testQuery, 5)
+      const searchResults = await brain.search(testQuery, { limit: 5 })
       expect(searchResults).toHaveLength(5)
       console.log(`   ✅ search() returned ${searchResults.length} results`)
 
@@ -475,7 +475,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log(`   ✅ triple.search() returned ${tripleResults.length} results`)
 
       // 4. Brain Patterns metadata filtering
-      const patternResults = await brain.search('*', 5, {
+      const patternResults = await brain.search('*', { limit: 5,
         metadata: { category: 'backend' }
       })
       expect(patternResults).toBeInstanceOf(Array)

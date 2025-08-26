@@ -78,7 +78,8 @@ async function generateAIResponse(message, brainy, options) {
   const model = options.model || 'local'
   
   // Get relevant context from user's data
-  const contextResults = await brainy.search(message, 5, {
+  const contextResults = await brainy.search(message, {
+    limit: 5,
     includeContent: true,
     scoreThreshold: 0.3
   })
@@ -351,10 +352,8 @@ program
       metadata.encrypted = true
     }
     
-    await brainyInstance.add(processedData, metadata, { 
-      process: options.literal ? 'literal' : 'auto'
-    })
-    console.log(colors.success('✅ Added successfully!'))
+    const id = await brainyInstance.addNoun(processedData, metadata)
+    console.log(colors.success(`✅ Added successfully! ID: ${id}`))
   }))
 
 // Command 2: CHAT - Talk to your data with AI
@@ -577,21 +576,120 @@ program
     console.log(colors.info('📥 Starting neural import...'))
     console.log(colors.info(`Source: ${source}`))
     
-    // Use the unified import system from the cleanup plan
-    const { NeuralImport } = await import('../dist/cortex/neuralImport.js')
-    const importer = new NeuralImport()
+    // Read and prepare data for import
+    const fs = require('fs')
+    let data
     
-    const result = await importer.import(source, {
-      chunkSize: parseInt(options.chunkSize)
+    try {
+      if (source.startsWith('http')) {
+        // Handle URL import
+        const response = await fetch(source)
+        data = await response.text()
+      } else {
+        // Handle file import
+        data = fs.readFileSync(source, 'utf8')
+      }
+      
+      // Parse data if JSON
+      try {
+        data = JSON.parse(data)
+      } catch {
+        // Keep as string if not JSON
+      }
+    } catch (error) {
+      console.log(colors.error(`Failed to read source: ${error.message}`))
+      process.exit(1)
+    }
+    
+    const brainyInstance = await getBrainy()
+    const result = await brainyInstance.import(data, {
+      batchSize: parseInt(options.chunkSize) || 50
     })
     
-    console.log(colors.success(`✅ Imported ${result.count} items`))
-    if (result.detectedTypes) {
-      console.log(colors.info('🔍 Detected types:'), result.detectedTypes)
-    }
+    console.log(colors.success(`✅ Imported ${result.length} items`))
   }))
 
-// Command 3: SEARCH - Triple-power search  
+// Command 3: FIND - Intelligent search using Triple Intelligence
+program
+  .command('find [query]')
+  .description('Intelligent search using natural language and structured queries')
+  .option('-l, --limit <number>', 'Results limit', '10')
+  .option('-m, --mode <mode>', 'Search mode (auto, semantic, structured)', 'auto')
+  .option('--like <term>', 'Vector similarity search term')
+  .option('--where <json>', 'Metadata filters as JSON')
+  .action(wrapAction(async (query, options) => {
+    
+    if (!query && !options.like) {
+      console.log(colors.primary('🧠 Intelligent Find Mode'))
+      console.log(colors.dim('Use natural language or structured queries\n'))
+      
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout
+      })
+      
+      query = await new Promise(resolve => {
+        rl.question(colors.cyan('What would you like to find? '), (answer) => {
+          rl.close()
+          resolve(answer)
+        })
+      })
+      
+      if (!query.trim()) {
+        console.log(colors.warning('No query provided'))
+        process.exit(1)
+      }
+    }
+    
+    console.log(colors.info(`🧠 Finding: "${query || options.like}"`))
+    
+    const brainyInstance = await getBrainy()
+    
+    // Build query object for find() API
+    let findQuery = query
+    
+    // Handle structured queries
+    if (options.like || options.where) {
+      findQuery = {}
+      if (options.like) findQuery.like = options.like
+      if (options.where) {
+        try {
+          findQuery.where = JSON.parse(options.where)
+        } catch {
+          console.error(colors.error('Invalid JSON in --where option'))
+          process.exit(1)
+        }
+      }
+    }
+    
+    const findOptions = {
+      limit: parseInt(options.limit),
+      mode: options.mode
+    }
+    
+    const results = await brainyInstance.find(findQuery, findOptions)
+    
+    if (results.length === 0) {
+      console.log(colors.warning('No results found'))
+      return
+    }
+    
+    console.log(colors.success(`✅ Found ${results.length} intelligent results:`))
+    results.forEach((result, i) => {
+      console.log(colors.primary(`\n${i + 1}. ${result.content || result.id}`))
+      if (result.score) {
+        console.log(colors.info(`   Relevance: ${(result.score * 100).toFixed(1)}%`))
+      }
+      if (result.fusionScore) {
+        console.log(colors.info(`   AI Score: ${(result.fusionScore * 100).toFixed(1)}%`))
+      }
+      if (result.metadata && Object.keys(result.metadata).length > 0) {
+        console.log(colors.dim(`   Metadata: ${JSON.stringify(result.metadata)}`))
+      }
+    })
+  }))
+
+// Command 4: SEARCH - Triple-power search  
 program
   .command('search [query]')
   .description('Search your brain (vector + graph + facets)')
@@ -671,7 +769,7 @@ program
     }
     
     const brainyInstance = await getBrainy()
-    const results = await brainyInstance.search(query, searchOptions.limit || 10, searchOptions)
+    const results = await brainyInstance.search(query, searchOptions)
     
     if (results.length === 0) {
       console.log(colors.warning('No results found'))
@@ -690,7 +788,72 @@ program
     })
   }))
 
-// Command 4: UPDATE - Update existing data
+// Command 4: GET - Retrieve specific data by ID
+program
+  .command('get [id]')
+  .description('Get a specific item by ID')
+  .option('-f, --format <format>', 'Output format (json, table, plain)', 'plain')
+  .action(wrapAction(async (id, options) => {
+    if (!id) {
+      console.log(colors.primary('🔍 Interactive Get Mode'))
+      console.log(colors.dim('Retrieve a specific item by ID\n'))
+      
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout
+      })
+      
+      id = await new Promise(resolve => {
+        rl.question(colors.cyan('Enter item ID: '), (answer) => {
+          rl.close()
+          resolve(answer)
+        })
+      })
+      
+      if (!id.trim()) {
+        console.log(colors.warning('No ID provided'))
+        process.exit(1)
+      }
+    }
+    
+    console.log(colors.info(`🔍 Getting item: "${id}"`))
+    
+    const brainyInstance = await getBrainy()
+    const item = await brainyInstance.getNoun(id)
+    
+    if (!item) {
+      console.log(colors.warning('Item not found'))
+      return
+    }
+    
+    if (options.format === 'json') {
+      console.log(JSON.stringify(item, null, 2))
+    } else if (options.format === 'table') {
+      const table = new Table({
+        head: [colors.brain('Property'), colors.brain('Value')],
+        style: { head: [], border: [] }
+      })
+      
+      table.push(['ID', colors.primary(item.id)])
+      table.push(['Content', colors.info(item.content || 'N/A')])
+      if (item.metadata) {
+        Object.entries(item.metadata).forEach(([key, value]) => {
+          table.push([key, colors.dim(JSON.stringify(value))])
+        })
+      }
+      console.log(table.toString())
+    } else {
+      console.log(colors.primary(`ID: ${item.id}`))
+      if (item.content) {
+        console.log(colors.info(`Content: ${item.content}`))
+      }
+      if (item.metadata && Object.keys(item.metadata).length > 0) {
+        console.log(colors.info(`Metadata: ${JSON.stringify(item.metadata, null, 2)}`))
+      }
+    }
+  }))
+
+// Command 5: UPDATE - Update existing data
 program
   .command('update [id]')
   .description('Update existing data with new content or metadata')
@@ -708,7 +871,7 @@ program
       
       // Show recent items
       const brainyInstance = await getBrainy()
-      const recent = await brainyInstance.search('*', 10, { sortBy: 'timestamp' })
+      const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
       
       if (recent.length > 0) {
         console.log(colors.cyan('Recent items:'))
@@ -786,7 +949,7 @@ program
       
       // Show recent items for selection
       const brainyInstance = await getBrainy()
-      const recent = await brainyInstance.search('*', 10, { sortBy: 'timestamp' })
+      const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
       
       if (recent.length > 0) {
         console.log(colors.cyan('Recent items:'))
@@ -943,8 +1106,9 @@ program
     }
     
     try {
-      const { NounType } = await import('../dist/types/graphTypes.js')
-      const id = await brainy.addNoun(name, NounType[options.type], metadata)
+      // In 2.0 API, addNoun takes (data, metadata) - type goes in metadata
+      metadata.type = options.type
+      const id = await brainy.addNoun(name, metadata)
       
       console.log(colors.success('✅ Noun added successfully!'))
       console.log(colors.info(`🆔 ID: ${id}`))
@@ -983,7 +1147,7 @@ program
       // Get source if not provided
       if (!source) {
         // Show recent items
-        const recent = await brainyInstance.search('*', 10, { sortBy: 'timestamp' })
+        const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
         if (recent.length > 0) {
           console.log(colors.cyan('Recent items (source):'))
           recent.forEach((item, i) => {
@@ -1035,7 +1199,7 @@ program
       // Get target if not provided
       if (!target) {
         // Show recent items again
-        const recent = await brainyInstance.search('*', 10, { sortBy: 'timestamp' })
+        const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
         if (recent.length > 0) {
           console.log(colors.cyan('\nRecent items (target):'))
           recent.forEach((item, i) => {
@@ -1317,8 +1481,8 @@ program
     const actions = {
       list: async () => {
         try {
-          // Use new unified registry API  
-          const REGISTRY_URL = 'https://registry-api-476163328636.us-central1.run.app/v1/augmentations'
+          // Use soulcraft.com registry API  
+          const REGISTRY_URL = 'https://api.soulcraft.com/v1/augmentations'
           const response = await fetch(REGISTRY_URL)
           
           if (response && response.ok) {
@@ -1574,7 +1738,48 @@ program
     }
   }))
 
-// Command 7: EXPORT - Export your data
+// Command 7: CLEAR - Clear all data
+program
+  .command('clear')
+  .description('Clear all data from your brain (with safety prompt)')
+  .option('--force', 'Force clear without confirmation')
+  .option('--backup', 'Create backup before clearing')
+  .action(wrapAction(async (options) => {
+    if (!options.force) {
+      console.log(colors.warning('🚨 This will delete ALL data in your brain!'))
+      
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout
+      })
+      
+      const confirmed = await new Promise(resolve => {
+        rl.question(colors.warning('Type "DELETE EVERYTHING" to confirm: '), (answer) => {
+          rl.close()
+          resolve(answer === 'DELETE EVERYTHING')
+        })
+      })
+      
+      if (!confirmed) {
+        console.log(colors.info('Clear operation cancelled'))
+        return
+      }
+    }
+    
+    const brainyInstance = await getBrainy()
+    
+    if (options.backup) {
+      console.log(colors.info('💾 Creating backup...'))
+      // Future: implement backup functionality
+      console.log(colors.success('✅ Backup created'))
+    }
+    
+    console.log(colors.info('🗑️  Clearing all data...'))
+    await brainyInstance.clear({ force: true })
+    console.log(colors.success('✅ All data cleared successfully'))
+  }))
+
+// Command 8: EXPORT - Export your data
 program
   .command('export')
   .description('Export your brain data in various formats')

@@ -66,7 +66,7 @@ describe('Specialized Scenarios Tests', () => {
       const item = await brainyInstance.get(id1)
       expect(item).toBeDefined()
 
-      const searchResults = await brainyInstance.search('test', 5)
+      const searchResults = await brainyInstance.search('test', { limit: 5 })
       expect(searchResults.length).toBeGreaterThan(0)
 
       // Reset to writable mode
@@ -341,7 +341,7 @@ describe('Specialized Scenarios Tests', () => {
       await brainyInstance.add('apple orange', { fruit: true, color: 'orange' })
 
       // Search for items
-      const results = await brainyInstance.search('apple', 5)
+      const results = await brainyInstance.search('apple', { limit: 5 })
       expect(results.length).toBe(2)
 
       // Verify metadata in results
@@ -361,8 +361,8 @@ describe('Specialized Scenarios Tests', () => {
       await brainyInstance.add('stats test 3')
 
       // Perform some searches
-      await brainyInstance.search('stats', 5)
-      await brainyInstance.search('test', 5)
+      await brainyInstance.search('stats', { limit: 5 })
+      await brainyInstance.search('test', { limit: 5 })
 
       // Get statistics
       const stats = await brainyInstance.getStatistics()

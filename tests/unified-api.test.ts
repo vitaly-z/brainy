@@ -54,7 +54,7 @@ describe('Brainy 1.0 Unified API', () => {
     })
 
     it('should perform vector similarity search', async () => {
-      const results = await brainy.search("data scientist", 5)
+      const results = await brainy.search("data scientist", { limit: 5 })
       expect(results).toBeDefined()
       expect(Array.isArray(results)).toBe(true)
     })
@@ -63,7 +63,8 @@ describe('Brainy 1.0 Unified API', () => {
       await brainy.add("David", { department: "engineering" })
       await brainy.add("Emma", { department: "marketing" })
       
-      const results = await brainy.search("", 10, { 
+      const results = await brainy.search("", { 
+        limit: 10,
         metadata: { department: "engineering" } 
       })
       expect(results).toBeDefined()
@@ -75,7 +76,7 @@ describe('Brainy 1.0 Unified API', () => {
       const companyId = await brainy.addNoun("Tech Inc", NounType.Organization)
       await brainy.addVerb(personId, companyId, VerbType.WorksWith)
 
-      const results = await brainy.search("", 10, { 
+      const results = await brainy.search("", { limit: 10, 
         searchConnectedNouns: true,
         sourceId: personId
       })
@@ -181,7 +182,7 @@ describe('Brainy 1.0 Unified API', () => {
       expect(success).toBe(true)
 
       // Should not appear in search results
-      const results = await brainy.search("Test data for deletion", 10)
+      const results = await brainy.search("Test data for deletion", { limit: 10 })
       expect(results.length).toBe(0)
     })
 

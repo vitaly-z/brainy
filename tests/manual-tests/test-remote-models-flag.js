@@ -35,7 +35,7 @@ async function testLocalModelsOnly() {
     const id2 = await brain.add('TypeScript adds types to JavaScript', { type: 'concept' })
     
     console.log('✅ Testing search functionality...')
-    const results = await brain.search('programming language', 2)
+    const results = await brain.search('programming language', { limit: 2 })
     
     console.log(`✅ Found ${results.length} results`)
     results.forEach((result, i) => {

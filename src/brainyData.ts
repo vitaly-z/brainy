@@ -2003,6 +2003,16 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             })
             vector = await this.embeddingFunction(preparedText)
 
+            // IMPORTANT: When an object is passed as data and no metadata is provided,
+            // use the object AS the metadata too. This is expected behavior for the API.
+            // Users can pass either:
+            // 1. addNoun(string, metadata) - vectorize string, store metadata
+            // 2. addNoun(object) - vectorize object text, store object as metadata
+            // 3. addNoun(object, metadata) - vectorize object text, store provided metadata
+            if (!metadata) {
+              metadata = vectorOrData as T
+            }
+
             // Track field names for this JSON document
             const service = this.getServiceName(options)
             if (this.storage) {
@@ -2529,6 +2539,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param options Additional options
    * @returns Array of search results
    */
+  /**
+   * @deprecated Use search() with nounTypes option instead
+   * @example
+   * // Old way (deprecated)
+   * await brain.searchByNounTypes(query, 10, ['type1', 'type2'])
+   * // New way
+   * await brain.search(query, { limit: 10, nounTypes: ['type1', 'type2'] })
+   */
   public async searchByNounTypes(
     queryVectorOrData: Vector | any,
     k: number = 10,
@@ -2831,46 +2849,117 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param options Simple search options (metadata filters only)
    * @returns Vector search results
    */
+  /**
+   * 🔍 Simple Vector Similarity Search - Clean wrapper around find()
+   * 
+   * search(query) = find({like: query}) - Pure vector similarity search
+   * 
+   * @param queryVectorOrData - Query string, vector, or object to search with
+   * @param options - Search options for filtering and pagination
+   * @returns Array of search results with scores and metadata
+   * 
+   * @example
+   * // Simple vector search
+   * await brain.search('machine learning')
+   * 
+   * // With filters and pagination
+   * await brain.search('AI', {
+   *   limit: 20,
+   *   metadata: { type: 'article' },
+   *   nounTypes: ['document']
+   * })
+   */
   public async search(
     queryVectorOrData: Vector | any,
-    k: number = 10,
     options: {
-      metadata?: any // Metadata filter for simple field matching  
-      nounTypes?: string[] // Optional array of noun types to search within
-      // 🔄 BACKWARD COMPATIBILITY: Accept but ignore legacy options for smooth transition
-      forceEmbed?: boolean
-      includeVerbs?: boolean  
-      searchMode?: 'local' | 'remote' | 'combined'
-      searchVerbs?: boolean
-      verbTypes?: string[]
-      searchConnectedNouns?: boolean
-      verbDirection?: 'outgoing' | 'incoming' | 'both'
-      service?: string
-      searchField?: string
-      filter?: { domain?: string }
-      offset?: number
-      skipCache?: boolean
+      // Pagination
+      limit?: number              // Number of results (default: 10, max: 10000)
+      offset?: number             // Skip N results for pagination
+      cursor?: string             // Cursor-based pagination (more efficient)
+      
+      // Filtering
+      metadata?: any              // Metadata filters using O(log n) MetadataIndex
+      nounTypes?: string[]        // Filter by noun types
+      itemIds?: string[]          // Search within specific items
+      excludeDeleted?: boolean    // Filter soft-deleted items (default: true)
+      
+      // Results enhancement
+      threshold?: number          // Minimum similarity score threshold
+      
+      // Performance options
+      timeout?: number            // Query timeout in milliseconds
     } = {}
   ): Promise<SearchResult<T>[]> {
-    // 🚀 2.0.0: Use find() as core engine - PURE VECTOR SEARCH ONLY
+    
+    // Build metadata filter from options
+    const metadataFilter: any = { ...options.metadata }
+    
+    // Add noun type filtering
+    if (options.nounTypes && options.nounTypes.length > 0) {
+      metadataFilter.nounType = { in: options.nounTypes }
+    }
+    
+    // Add item ID filtering
+    if (options.itemIds && options.itemIds.length > 0) {
+      metadataFilter.id = { in: options.itemIds }
+    }
+    
+    // Build simple TripleQuery for vector similarity
     const tripleQuery: TripleQuery = {
-      like: queryVectorOrData,
-      limit: k
+      like: queryVectorOrData
     }
     
-    // Add metadata filter if provided
-    if (options.metadata) {
-      tripleQuery.where = options.metadata
+    // Add metadata filter if we have conditions
+    if (Object.keys(metadataFilter).length > 0) {
+      tripleQuery.where = metadataFilter
     }
     
-    // Use Triple Intelligence find() but configured for vector search only
-    const tripleResults = await this.find(tripleQuery)
+    // Extract find() options
+    const findOptions = {
+      limit: options.limit,
+      offset: options.offset,
+      cursor: options.cursor,
+      excludeDeleted: options.excludeDeleted,
+      timeout: options.timeout
+    }
     
-    // Convert to SearchResult format (TripleResult extends SearchResult)
-    return tripleResults.map(r => ({
+    // Call find() with structured query - this is the key simplification!
+    let results = await this.find(tripleQuery, findOptions)
+    
+    // Apply threshold filtering if specified
+    if (options.threshold !== undefined) {
+      results = results.filter(r => 
+        (r.fusionScore || r.score || 0) >= options.threshold!
+      )
+    }
+    
+    // Convert to SearchResult format
+    return results.map(r => ({
       ...r,
       score: r.fusionScore || r.score || 0
     }))
+    
+    return results
+  }
+
+  /**
+   * Helper method to encode cursor for pagination
+   * @internal
+   */
+  private encodeCursor(data: { offset: number; timestamp: number }): string {
+    return Buffer.from(JSON.stringify(data)).toString('base64')
+  }
+  
+  /**
+   * Helper method to decode cursor for pagination
+   * @internal
+   */
+  private decodeCursor(cursor: string): { offset: number; timestamp: number } {
+    try {
+      return JSON.parse(Buffer.from(cursor, 'base64').toString())
+    } catch {
+      return { offset: 0, timestamp: 0 }
+    }
   }
 
   /**
@@ -3089,6 +3178,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param k Number of results to return
    * @param options Additional options including cursor for pagination
    * @returns Paginated search results with cursor for next page
+   */
+  /**
+   * @deprecated Use search() with cursor option instead
+   * @example
+   * // Old way (deprecated)
+   * await brain.searchWithCursor(query, 10, { cursor: 'abc123' })
+   * // New way
+   * await brain.search(query, { limit: 10, cursor: 'abc123' })
    */
   public async searchWithCursor(
     queryVectorOrData: Vector | any,
@@ -4475,6 +4572,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     id: string,
     options: {
       service?: string // The service that is deleting the data
+      hard?: boolean   // If true, permanently delete. Default: false (soft delete)
     } = {}
   ): Promise<boolean> {
     await this.ensureInitialized()
@@ -4483,7 +4581,30 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     this.checkReadOnly()
 
     try {
-      // Get existing metadata before removal for index cleanup
+      // PERFORMANCE: Use soft delete by default for O(log n) filtering
+      // The MetadataIndex can efficiently filter out deleted items
+      if (!options.hard) {
+        // Soft delete: Just mark as deleted in metadata
+        try {
+          await this.storage!.saveVerbMetadata(id, {
+            deleted: true,
+            deletedAt: new Date().toISOString(),
+            deletedBy: options.service || '2.0-api'
+          })
+          
+          // Update MetadataIndex for O(log n) filtering
+          if (this.metadataIndex) {
+            await this.metadataIndex.updateIndex(id, { deleted: true })
+          }
+          
+          return true
+        } catch (error) {
+          // If verb doesn't exist, return false (not an error)
+          return false
+        }
+      }
+      
+      // Hard delete path (explicit request only)
       const existingMetadata = await this.storage!.getVerbMetadata(id)
       
       // Remove from index
@@ -4907,15 +5028,16 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         return result
       }
 
-      // If statistics are not available, return zeros instead of calculating on-demand
-      console.warn('Persistent statistics not available, returning zeros')
-
-      // Never use getVerbs and getNouns as fallback for getStatistics
-      // as it's too expensive with millions of potential entries
-      const nounCount = 0
-      const verbCount = 0
-      const metadataCount = 0
-      const hnswIndexSize = 0
+      // If statistics are not available from storage, use index counts for small datasets
+      // For production with millions of entries, this would be cached
+      const indexSize = this.index?.getNouns?.()?.size || 0
+      
+      // Use actual counts for small datasets (< 10000 items)
+      // In production, these would be tracked incrementally
+      const nounCount = indexSize < 10000 ? indexSize : 0
+      const verbCount = 0 // Verbs require expensive storage scan
+      const metadataCount = nounCount // Metadata count equals noun count
+      const hnswIndexSize = indexSize
 
       // Create default statistics
       const defaultStats = {
@@ -5576,6 +5698,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param options Additional options
    * @returns Array of search results
    */
+  /**
+   * @deprecated Use search() with itemIds option instead
+   * @example
+   * // Old way (deprecated)
+   * await brain.searchWithinItems(query, itemIds, 10)
+   * // New way
+   * await brain.search(query, { limit: 10, itemIds })
+   */
   public async searchWithinItems(
     queryVectorOrData: Vector | any,
     itemIds: string[],
@@ -5641,6 +5771,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @param k Number of results to return
    * @param options Additional options
    * @returns Array of search results
+   */
+  /**
+   * @deprecated Use search() directly with text - it auto-detects strings
+   * @example
+   * // Old way (deprecated)
+   * await brain.searchText('query text', 10)
+   * // New way
+   * await brain.search('query text', { limit: 10 })
    */
   public async searchText(
     query: string,
@@ -7301,6 +7439,12 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       if (metadata === null) {
         metadata = {}
       } else if (typeof metadata === 'object') {
+        // Check if this item is soft-deleted
+        if ((metadata as any).deleted === true) {
+          // Return null for soft-deleted items to match expected API behavior
+          return null
+        }
+        
         // For empty metadata test: if metadata only has an ID, return empty object
         if (Object.keys(metadata).length === 1 && 'id' in metadata) {
           metadata = {}
@@ -7344,19 +7488,12 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // This handles cases where tests or users pass content text instead of IDs
       let actualId = id
 
-      console.log(`Delete called with ID: ${id}`)
-      console.log(`Index has ID directly: ${this.index.getNouns().has(id)}`)
 
       if (!this.index.getNouns().has(id)) {
-        console.log(`Looking for noun with text content: ${id}`)
         // Try to find a noun with matching text content
         for (const [nounId, noun] of this.index.getNouns().entries()) {
-          console.log(
-            `Checking noun ${nounId}: text=${noun.metadata?.text || 'undefined'}`
-          )
           if (noun.metadata?.text === id) {
             actualId = nounId
-            console.log(`Found matching noun with ID: ${actualId}`)
             break
           }
         }
@@ -7424,16 +7561,37 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         if (!existingNoun) {
           throw new Error(`Noun with ID ${id} does not exist`)
         }
+        
+        // Get existing metadata from storage (not just from index)
+        const existingMetadata = await this.storage!.getMetadata(id) || {}
 
         // Create new vector for updated data
-        const vector = await this.embeddingFunction(data)
+        let vector: Vector
+        if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+          // Process JSON object for better vectorization (same as addNoun)
+          const preparedText = prepareJsonForVectorization(data, {
+            priorityFields: ['name', 'title', 'company', 'organization', 'description', 'summary']
+          })
+          vector = await this.embeddingFunction(preparedText)
+          
+          // IMPORTANT: Auto-detect object as metadata when no separate metadata provided
+          // This matches the addNoun behavior for API consistency
+          // For updates, we MERGE with existing metadata, not replace
+          if (!metadata) {
+            // Use the data object as metadata to merge
+            metadata = data as T
+          }
+        } else {
+          // Use standard embedding for non-JSON data
+          vector = await this.embeddingFunction(data)
+        }
         
         // Merge metadata if both existing and new metadata exist
         let finalMetadata = metadata
-        if (metadata && existingNoun.metadata) {
-          finalMetadata = { ...existingNoun.metadata, ...metadata }
-        } else if (!metadata && existingNoun.metadata) {
-          finalMetadata = existingNoun.metadata
+        if (metadata && existingMetadata) {
+          finalMetadata = { ...existingMetadata, ...metadata }
+        } else if (!metadata && existingMetadata) {
+          finalMetadata = existingMetadata
         }
         
         // Update the noun with new data and vector
@@ -7601,18 +7759,60 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   }
 
   /**
-   * 🚀 TRIPLE INTELLIGENCE SEARCH - Vector + Graph + Field unified
-   * The revolutionary search that combines all three intelligence types in ONE query!
+   * 🚀 TRIPLE INTELLIGENCE SEARCH - Natural Language & Complex Queries
+   * The revolutionary search that combines vector, graph, and metadata intelligence!
    * 
-   * @param query Triple Intelligence query, natural language string, or auto-breakdown object
+   * @param query - Natural language string or structured TripleQuery
+   * @param options - Pagination and performance options
    * @returns Unified search results with fusion scoring
+   * 
+   * @example
+   * // Natural language query
+   * await brain.find('frameworks from recent years with high popularity')
+   * 
+   * // Structured query with pagination
+   * await brain.find({
+   *   like: 'machine learning',
+   *   where: { year: { greaterThan: 2020 } },
+   *   connected: { from: 'authorId123' }
+   * }, { 
+   *   limit: 50,
+   *   cursor: lastCursor 
+   * })
    */
-  /**
-   * Triple Intelligence search - unified Vector + Graph + Field
-   * @param query Natural language string or TripleQuery object
-   * @returns Unified search results
-   */
-  public async find(query: TripleQuery | string): Promise<TripleResult[]> {
+  public async find(
+    query: TripleQuery | string,
+    options?: {
+      // Pagination options (NEW for 2.0)
+      limit?: number           // Results per page (default: 10, max: 10000)
+      offset?: number          // Skip N results
+      cursor?: string          // Cursor-based pagination
+      
+      // Performance options
+      mode?: 'auto' | 'vector' | 'graph' | 'metadata' | 'fusion'  // Search mode
+      maxDepth?: number        // Max graph traversal depth (default: 2)
+      parallel?: boolean       // Parallel execution (default: true)
+      timeout?: number         // Query timeout in milliseconds
+      
+      // Filtering
+      excludeDeleted?: boolean // Filter soft-deleted items (default: true)
+    }
+  ): Promise<TripleResult[]> {
+    // Extract options with defaults
+    const {
+      limit = 10,
+      offset = 0,
+      cursor,
+      mode = 'auto',
+      maxDepth = 2,
+      parallel = true,
+      timeout,
+      excludeDeleted = true
+    } = options || {}
+    
+    // Validate and cap limit for safety
+    const safeLimit = Math.min(limit, 10000)
+    
     if (!this._tripleEngine) {
       this._tripleEngine = new TripleIntelligenceEngine(this)
     }
@@ -7628,7 +7828,54 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       processedQuery = query
     }
     
-    return this._tripleEngine.find(processedQuery)
+    // Apply pagination options
+    processedQuery.limit = safeLimit
+    
+    // Handle cursor-based pagination
+    if (cursor) {
+      const decodedCursor = this.decodeCursor(cursor)
+      processedQuery.offset = decodedCursor.offset
+    } else if (offset > 0) {
+      processedQuery.offset = offset
+    }
+    
+    // Apply soft-delete filtering if needed
+    if (excludeDeleted) {
+      if (!processedQuery.where) {
+        processedQuery.where = {}
+      }
+      processedQuery.where.deleted = { notEquals: true }
+    }
+    
+    // Apply mode-specific optimizations
+    if (mode !== 'auto') {
+      processedQuery.mode = mode
+    }
+    
+    // Apply graph traversal depth limit
+    if (processedQuery.connected) {
+      processedQuery.connected.maxDepth = Math.min(
+        processedQuery.connected.maxDepth || maxDepth,
+        maxDepth
+      )
+    }
+    
+    // Execute with Triple Intelligence engine
+    const results = await this._tripleEngine.find(processedQuery)
+    
+    // Generate next cursor if we hit the limit
+    if (results.length === safeLimit) {
+      const nextCursor = this.encodeCursor({
+        offset: (offset || 0) + safeLimit,
+        timestamp: Date.now()
+      })
+      // Attach cursor to last result for convenience
+      if (results.length > 0) {
+        (results[results.length - 1] as any).nextCursor = nextCursor
+      }
+    }
+    
+    return results
   }
   
   /**

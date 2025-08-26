@@ -103,7 +103,7 @@ describe('Error Handling Tests', () => {
     
     it('should handle empty string query', async () => {
       // Empty string should return empty results, not error
-      const results = await brainyInstance.search('', 5)
+      const results = await brainyInstance.search('', { limit: 5 })
       expect(Array.isArray(results)).toBe(true)
     })
     
@@ -115,7 +115,7 @@ describe('Error Handling Tests', () => {
       await expect(brainyInstance.search('query', -1)).rejects.toThrow()
       
       // Try with zero k
-      await expect(brainyInstance.search('query', 0)).rejects.toThrow()
+      await expect(brainyInstance.search('query', { limit: 0 })).rejects.toThrow()
       
       // Try with non-numeric k
       await expect(brainyInstance.search('query', 'invalid' as any)).rejects.toThrow()

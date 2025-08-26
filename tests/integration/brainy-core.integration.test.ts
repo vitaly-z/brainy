@@ -91,7 +91,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       console.log('🔍 Testing semantic search queries...')
 
       // Test semantic similarity - should find AI-related content
-      const aiResults = await brain.search('artificial intelligence and deep learning', 3)
+      const aiResults = await brain.search('artificial intelligence and deep learning', { limit: 3 })
       expect(aiResults).toHaveLength(3)
       expect(aiResults[0].score).toBeGreaterThan(0)
       
@@ -106,7 +106,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       console.log(`✅ Semantic search found ${aiResults.length} relevant results`)
 
       // Test frontend-related search
-      const frontendResults = await brain.search('user interface development', 2)
+      const frontendResults = await brain.search('user interface development', { limit: 2 })
       expect(frontendResults).toHaveLength(2)
       
       console.log('✅ Real AI semantic search working correctly')
@@ -122,7 +122,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
 
       for (const query of queries) {
         console.log(`🔍 Testing query: "${query}"`)
-        const results = await brain.search(query, 2)
+        const results = await brain.search(query, { limit: 2 })
         
         expect(results).toHaveLength(2)
         expect(results[0].score).toBeGreaterThan(0)
@@ -163,7 +163,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       console.log('🔍 Testing Brain Patterns: semantic search + metadata filtering...')
 
       // Find frontend frameworks with semantic search + metadata filtering
-      const frontendResults = await brain.search('user interface framework', 10, {
+      const frontendResults = await brain.search('user interface framework', { limit: 10,
         metadata: { 
           type: 'frontend',
           language: 'JavaScript' 
@@ -182,7 +182,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       console.log(`✅ Found ${frontendResults.length} frontend JavaScript frameworks`)
 
       // Find modern frameworks (after 2012) with semantic relevance
-      const modernResults = await brain.search('modern web framework', 5, {
+      const modernResults = await brain.search('modern web framework', { limit: 5,
         metadata: {
           year: { greaterThan: 2012 }
         }
@@ -200,7 +200,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       console.log('🔍 Testing range queries with semantic search...')
 
       // Find frameworks from the 2010s decade
-      const decade2010s = await brain.search('web development framework', 10, {
+      const decade2010s = await brain.search('web development framework', { limit: 10,
         metadata: {
           year: { 
             greaterThan: 2009,
@@ -287,7 +287,7 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
 
       for (const op of operations) {
         await brain.addNoun(op)
-        await brain.search(op.slice(0, 20), 3) // Search with part of the content
+        await brain.search(op.slice(0, { limit: 20 }), 3) // Search with part of the content
       }
 
       const afterMemory = process.memoryUsage()

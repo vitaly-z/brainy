@@ -20,14 +20,19 @@ export interface TripleQuery {
     from?: string | string[]
     type?: string | string[]
     depth?: number
+    maxDepth?: number  // Maximum traversal depth
     direction?: 'in' | 'out' | 'both'
   }
   
   // Field/Attribute search
   where?: Record<string, any>
   
-  // Advanced options
+  // Pagination options (NEW for 2.0)
   limit?: number
+  offset?: number  // Skip N results for pagination
+  
+  // Advanced options
+  mode?: 'auto' | 'vector' | 'graph' | 'metadata' | 'fusion'  // Search mode
   boost?: 'recent' | 'popular' | 'verified' | string
   explain?: boolean
   threshold?: number
@@ -358,8 +363,53 @@ export class TripleIntelligenceEngine {
    * Fusion ranking combines all signals
    */
   private fusionRank(resultSets: any[][], query: TripleQuery): TripleResult[] {
+    // PERFORMANCE CRITICAL: When metadata filters are present, use INTERSECTION not UNION
+    // This ensures O(log n) performance with millions of items
+    
+    // Determine which result sets we have based on query
+    let vectorResultsIdx = -1
+    let graphResultsIdx = -1
+    let metadataResultsIdx = -1
+    let currentIdx = 0
+    
+    if (query.like || query.similar) {
+      vectorResultsIdx = currentIdx++
+    }
+    if (query.connected) {
+      graphResultsIdx = currentIdx++
+    }
+    if (query.where) {
+      metadataResultsIdx = currentIdx++
+    }
+    
+    // If we have metadata filters AND other searches, apply intersection
+    if (metadataResultsIdx >= 0 && resultSets.length > 1) {
+      const metadataResults = resultSets[metadataResultsIdx]
+      
+      // CRITICAL: If metadata filter returned no results, entire query should return empty
+      // This ensures correct behavior for non-matching filters
+      if (metadataResults.length === 0) {
+        // Return empty results immediately
+        return []
+      }
+      
+      const metadataIds = new Set(metadataResults.map(r => r.id || r))
+      
+      // Filter ALL other result sets to only include items that match metadata
+      for (let i = 0; i < resultSets.length; i++) {
+        if (i !== metadataResultsIdx) {
+          resultSets[i] = resultSets[i].filter(r => metadataIds.has(r.id || r))
+        }
+      }
+    }
+    
     // Combine and deduplicate results
     const allResults = new Map<string, TripleResult>()
+    
+    // Need to capture indices for closure
+    const vectorIdx = vectorResultsIdx
+    const graphIdx = graphResultsIdx
+    const metadataIdx = metadataResultsIdx
     
     // Process each result set
     resultSets.forEach((results, index) => {
@@ -381,12 +431,12 @@ export class TripleIntelligenceEngine {
         
         const result = allResults.get(id)!
         
-        // Assign scores based on source
-        if (index === 0 && (query.like || query.similar)) {
+        // Assign scores based on source (using the indices we calculated)
+        if (index === vectorIdx) {
           result.vectorScore = r.score || 1.0
-        } else if (index === 1 && query.connected) {
+        } else if (index === graphIdx) {
           result.graphScore = r.score || 1.0
-        } else if (query.where) {
+        } else if (index === metadataIdx) {
           result.fieldScore = r.score || 1.0
         }
       })

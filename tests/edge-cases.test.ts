@@ -57,7 +57,7 @@ describe('Edge Case Tests', () => {
       await brainyInstance.add('test data 2')
       
       // Search with empty string
-      const results = await brainyInstance.search('', 5)
+      const results = await brainyInstance.search('', { limit: 5 })
       expect(Array.isArray(results)).toBe(true)
     })
     
@@ -91,7 +91,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search for the special text
-      const results = await brainyInstance.search(specialText, 1)
+      const results = await brainyInstance.search(specialText, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })
@@ -102,7 +102,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search for the emoji text
-      const results = await brainyInstance.search(emojiText, 1)
+      const results = await brainyInstance.search(emojiText, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })
@@ -113,7 +113,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search for the HTML text
-      const results = await brainyInstance.search(htmlText, 1)
+      const results = await brainyInstance.search(htmlText, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })
@@ -127,7 +127,7 @@ describe('Edge Case Tests', () => {
       }
       
       // Search with very large k
-      const results = await brainyInstance.search('test', 1000)
+      const results = await brainyInstance.search('test', { limit: 1000 })
       expect(Array.isArray(results)).toBe(true)
       // Should return at most the number of items in the database
       expect(results.length).toBeLessThanOrEqual(10)
@@ -176,7 +176,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search with the same vector
-      const results = await brainyInstance.search(smallVector, 1)
+      const results = await brainyInstance.search(smallVector, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })
@@ -188,7 +188,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search with the same vector
-      const results = await brainyInstance.search(largeVector, 1)
+      const results = await brainyInstance.search(largeVector, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })
@@ -200,7 +200,7 @@ describe('Edge Case Tests', () => {
       expect(id).toBeDefined()
       
       // Search with the same vector
-      const results = await brainyInstance.search(mixedVector, 1)
+      const results = await brainyInstance.search(mixedVector, { limit: 1 })
       expect(results.length).toBe(1)
       expect(results[0].id).toBe(id)
     })

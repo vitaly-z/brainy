@@ -43,7 +43,7 @@ async function quickTest() {
 
     // Test 4: Search
     console.log('\n4. Performing search...')
-    const results = await brain.search('programming languages', 3)
+    const results = await brain.search('programming languages', { limit: 3 })
     console.log(`✅ Found ${results.length} results`)
 
     // Test 5: Natural language search
@@ -61,7 +61,7 @@ async function quickTest() {
 
     // Test 7: Brain Patterns (range query)
     console.log('\n7. Brain Pattern range query...')
-    const rangeResults = await brain.search('*', 10, {
+    const rangeResults = await brain.search('*', { limit: 10,
       metadata: {
         year: { greaterThan: 1990, lessThan: 2000 }
       }

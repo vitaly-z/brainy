@@ -438,7 +438,7 @@ describe('BrainyData with Distributed Mode', () => {
     await brainy.add(vector3, { domain: 'medical', content: 'medical2' })
     
     // Search with domain filter
-    const results = await brainy.search(vector1, 10, {
+    const results = await brainy.search(vector1, { limit: 10,
       filter: { domain: 'medical' }
     })
     

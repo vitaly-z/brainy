@@ -35,7 +35,7 @@ async function testMemoryUsage() {
   
   // Now try search (not find)
   console.log('🔍 Testing search...')
-  const results = await brain.search('Item', 3)
+  const results = await brain.search('Item', { limit: 3 })
   console.log(`Found ${results.length} results\n`)
   
   // Log memory after search

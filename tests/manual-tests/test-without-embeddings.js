@@ -76,7 +76,7 @@ async function testCoreFeatures() {
     
     // 4. Test metadata filtering (Brain Patterns)
     console.log('\n5. Testing Brain Patterns (metadata filtering)...')
-    const filterResults = await brain.search('*', 10, {
+    const filterResults = await brain.search('*', { limit: 10,
       metadata: {
         type: 'framework',
         year: { greaterThan: 2012 }
@@ -86,7 +86,7 @@ async function testCoreFeatures() {
     
     // 5. Test range queries
     console.log('\n6. Testing range queries...')
-    const rangeResults = await brain.search('*', 10, {
+    const rangeResults = await brain.search('*', { limit: 10,
       metadata: {
         year: { greaterThan: 1990, lessThan: 2010 }
       }

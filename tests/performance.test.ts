@@ -77,7 +77,7 @@ describe('Performance Tests', () => {
       
       // Measure search performance
       const executionTime = await measureExecutionTime(async () => {
-        await brainyInstance.search('Test item', 10)
+        await brainyInstance.search('Test item', { limit: 10 })
       })
       
       console.log(`Searching in 50 items took ${executionTime.toFixed(2)}ms`)
@@ -108,7 +108,7 @@ describe('Performance Tests', () => {
       
       // Measure search performance
       const executionTime = await measureExecutionTime(async () => {
-        await brainyInstance.search('Test item', 10)
+        await brainyInstance.search('Test item', { limit: 10 })
       })
       
       console.log(`Searching in 200 items took ${executionTime.toFixed(2)}ms`)
@@ -129,7 +129,7 @@ describe('Performance Tests', () => {
       ]
       
       const executionTime = await measureExecutionTime(async () => {
-        await Promise.all(searchQueries.map(query => brainyInstance.search(query, 10)))
+        await Promise.all(searchQueries.map(query => brainyInstance.search(query, { limit: 10 })))
       })
       
       console.log(`5 concurrent searches in 200 items took ${executionTime.toFixed(2)}ms (${(executionTime / 5).toFixed(2)}ms per search)`)
@@ -160,7 +160,7 @@ describe('Performance Tests', () => {
       
       // Measure search performance
       const executionTime = await measureExecutionTime(async () => {
-        await brainyInstance.search('Test item', 10)
+        await brainyInstance.search('Test item', { limit: 10 })
       })
       
       console.log(`Searching in 1000 items took ${executionTime.toFixed(2)}ms`)
@@ -181,7 +181,7 @@ describe('Performance Tests', () => {
       ]
       
       const executionTime = await measureExecutionTime(async () => {
-        await Promise.all(searchQueries.map(query => brainyInstance.search(query, 10)))
+        await Promise.all(searchQueries.map(query => brainyInstance.search(query, { limit: 10 })))
       })
       
       console.log(`5 concurrent searches in 1000 items took ${executionTime.toFixed(2)}ms (${(executionTime / 5).toFixed(2)}ms per search)`)
@@ -201,7 +201,7 @@ describe('Performance Tests', () => {
         
         // Measure search performance
         const executionTime = await measureExecutionTime(async () => {
-          await brainyInstance.search('Test item', 10)
+          await brainyInstance.search('Test item', { limit: 10 })
         })
         
         results.push({ size, time: executionTime })

@@ -55,7 +55,7 @@ async function testRealSearch() {
     // Test 1: Semantic search
     console.log('\n3. Testing SEMANTIC SEARCH...')
     console.log('   Searching for "web development"...')
-    const semanticResults = await brain.search('web development', 3)
+    const semanticResults = await brain.search('web development', { limit: 3 })
     console.log(`   ✅ Found ${semanticResults.length} semantic matches`)
     semanticResults.forEach(r => {
       console.log(`      - ${r.metadata?.name || r.id} (score: ${r.score?.toFixed(3)})`)
@@ -89,7 +89,7 @@ async function testRealSearch() {
     // Test 4: Range queries with metadata
     console.log('\n6. Testing RANGE QUERIES...')
     console.log('   Query: Languages from 1990-2000')
-    const rangeResults = await brain.search('*', 10, {
+    const rangeResults = await brain.search('*', { limit: 10,
       metadata: {
         year: { greaterThan: 1990, lessThan: 2000 },
         type: 'programming language'

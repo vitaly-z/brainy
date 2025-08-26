@@ -60,7 +60,7 @@ describe('Distributed Caching', () => {
       })
 
       // Search and cache the result
-      const results1 = await serviceA.search('initial data', 5)
+      const results1 = await serviceA.search('initial data', { limit: 5 })
       expect(results1.length).toBe(1)
       
       // Verify cache is populated
@@ -78,7 +78,7 @@ describe('Distributed Caching', () => {
       expect(stats.search.size).toBe(0) // Cache cleared
 
       // Search again - should get fresh results including new data
-      const results2 = await serviceA.search('data from service', 10)
+      const results2 = await serviceA.search('data from service', { limit: 10 })
       expect(results2.length).toBe(2) // Should now see both items
 
       stats = serviceA.getCacheStats()
@@ -104,7 +104,7 @@ describe('Distributed Caching', () => {
         text: 'short cache test'
       })
 
-      const results1 = await shortCacheService.search('short cache', 5)
+      const results1 = await shortCacheService.search('short cache', { limit: 5 })
       expect(results1.length).toBe(1)
 
       // Wait for cache to expire
@@ -115,7 +115,7 @@ describe('Distributed Caching', () => {
       expect(expiredCount).toBeGreaterThan(0)
 
       // Search again - should work fine with fresh data
-      const results2 = await shortCacheService.search('short cache', 5)
+      const results2 = await shortCacheService.search('short cache', { limit: 5 })
       expect(results2.length).toBe(1)
 
       await shortCacheService.clearAll({ force: true })
@@ -134,10 +134,10 @@ describe('Distributed Caching', () => {
       serviceA.clearCache()
 
       // Perform searches to populate cache
-      await serviceA.search('test data', 5) // Miss
-      await serviceA.search('test data', 5) // Hit
-      await serviceA.search('test data', 3) // Miss (different k)
-      await serviceA.search('test data', 3) // Hit
+      await serviceA.search('test data', { limit: 5 }) // Miss
+      await serviceA.search('test data', { limit: 5 }) // Hit
+      await serviceA.search('test data', { limit: 3 }) // Miss (different k)
+      await serviceA.search('test data', { limit: 3 }) // Hit
 
       const stats = serviceA.getCacheStats()
       
@@ -165,7 +165,7 @@ describe('Distributed Caching', () => {
       })
 
       // Search with cache
-      const results1 = await serviceA.search('skip cache', 5)
+      const results1 = await serviceA.search('skip cache', { limit: 5 })
       expect(results1.length).toBe(1)
 
       // Verify cache is populated
@@ -173,7 +173,7 @@ describe('Distributed Caching', () => {
       expect(stats.search.size).toBe(1)
 
       // Search with skipCache - should bypass cache
-      const results2 = await serviceA.search('skip cache', 5, { skipCache: true })
+      const results2 = await serviceA.search('skip cache', { limit: 5, skipCache: true })
       expect(results2.length).toBe(1)
 
       // Cache size shouldn't increase
@@ -230,8 +230,8 @@ describe('Distributed Caching', () => {
 
       // Perform multiple searches (some will be cache hits)
       for (const query of queries) {
-        await serviceA.search(query, 5) // First search - cache miss
-        await serviceA.search(query, 5) // Second search - cache hit
+        await serviceA.search(query, { limit: 5 }) // First search - cache miss
+        await serviceA.search(query, { limit: 5 }) // Second search - cache hit
       }
 
       const stats = serviceA.getCacheStats()

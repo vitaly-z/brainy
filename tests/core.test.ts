@@ -130,7 +130,7 @@ describe('Brainy Core Functionality', () => {
       await data.add(createTestVector(2), { id: 'v3', label: 'z-axis' })
 
       // Search for similar vector
-      const results = await data.search(createTestVector(0), 1)
+      const results = await data.search(createTestVector(0), { limit: 1 })
 
       expect(results).toBeDefined()
       expect(results.length).toBe(1)
@@ -158,7 +158,7 @@ describe('Brainy Core Functionality', () => {
       }
 
       // Search should return results
-      const results = await data.search(createTestVector(15), 3)
+      const results = await data.search(createTestVector(15), { limit: 3 })
       expect(results.length).toBe(3)
     })
 
@@ -186,8 +186,8 @@ describe('Brainy Core Functionality', () => {
       await euclideanData.add(vector, metadata)
       await cosineData.add(vector, metadata)
 
-      const euclideanResults = await euclideanData.search(vector, 1)
-      const cosineResults = await cosineData.search(vector, 1)
+      const euclideanResults = await euclideanData.search(vector, { limit: 1 })
+      const cosineResults = await cosineData.search(vector, { limit: 1 })
 
       expect(euclideanResults.length).toBe(1)
       expect(cosineResults.length).toBe(1)
@@ -221,7 +221,7 @@ describe('Brainy Core Functionality', () => {
         await data.addNoun('Goodbye world', { id: 'farewell', type: 'text' })
 
         // Search with text
-        const results = await data.search('Hi there', 1)
+        const results = await data.search('Hi there', { limit: 1 })
 
         expect(results).toBeDefined()
         expect(results.length).toBeGreaterThan(0)
@@ -252,7 +252,7 @@ describe('Brainy Core Functionality', () => {
         await data.add(embedding, { id: 'vector1', type: 'vector' })
 
         // Search should find both
-        const results = await data.search('AI and ML', 2)
+        const results = await data.search('AI and ML', { limit: 2 })
 
         expect(results).toBeDefined()
         expect(results.length).toBeGreaterThan(0)
@@ -284,7 +284,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(data)
 
       // Try to search without initialization
-      await expect(data.search(createTestVector(0), 1)).rejects.toThrow()
+      await expect(data.search(createTestVector(0), { limit: 1 })).rejects.toThrow()
     })
 
     it('should handle empty search results gracefully', async () => {
@@ -297,7 +297,7 @@ describe('Brainy Core Functionality', () => {
       await data.clearAll({ force: true }) // Clear any existing data
 
       // Search in empty database
-      const results = await data.search(createTestVector(0), 1)
+      const results = await data.search(createTestVector(0), { limit: 1 })
       expect(results).toBeDefined()
       expect(Array.isArray(results)).toBe(true)
       expect(results.length).toBe(0)
@@ -324,7 +324,7 @@ describe('Brainy Core Functionality', () => {
 
       // Search should be fast
       const searchStart = Date.now()
-      const results = await data.search(createTestVector(50), 10)
+      const results = await data.search(createTestVector(50), { limit: 10 })
       const searchTime = Date.now() - searchStart
 
       expect(results.length).toBeLessThanOrEqual(10)
@@ -352,7 +352,7 @@ describe('Brainy Core Functionality', () => {
       }
 
       // Perform search using the correct method
-      const results = await db.search('known data', 10)
+      const results = await db.search('known data', { limit: 10 })
 
       // Debugging output
       console.log(

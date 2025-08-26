@@ -29,7 +29,7 @@ async function testBasicFunctionality() {
 
     // Test 4: Search
     console.log('4. Testing search...')
-    const results = await brain.search('test', 1)
+    const results = await brain.search('test', { limit: 1 })
     console.log(`✅ Search returned ${results.length} result(s)\n`)
 
     // Test 5: Metadata field discovery

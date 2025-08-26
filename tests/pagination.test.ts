@@ -42,7 +42,7 @@ describe('Pagination with Offset', () => {
       }
 
       // Search without offset (default offset=0)
-      const results = await db.search('test document', 5)
+      const results = await db.search('test document', { limit: 5 })
       expect(results.length).toBe(5)
       
       // Results should be the top 5 most similar
@@ -64,12 +64,12 @@ describe('Pagination with Offset', () => {
       }
 
       // Get first page (no offset)
-      const firstPage = await db.search('test document', 5)
+      const firstPage = await db.search('test document', { limit: 5 })
       expect(firstPage.length).toBe(5)
       const firstPageIds = firstPage.map(r => r.metadata.id)
 
       // Get second page (offset=5)
-      const secondPage = await db.search('test document', 5, { offset: 5 })
+      const secondPage = await db.search('test document', { limit: 5, offset: 5 })
       expect(secondPage.length).toBe(5)
       const secondPageIds = secondPage.map(r => r.metadata.id)
 
@@ -88,7 +88,7 @@ describe('Pagination with Offset', () => {
       }
 
       // Search with offset beyond available results
-      const results = await db.search('test document', 5, { offset: 15 })
+      const results = await db.search('test document', { limit: 5, offset: 15 })
       expect(results.length).toBe(0)
     })
 
@@ -102,7 +102,7 @@ describe('Pagination with Offset', () => {
       }
 
       // Search with offset that allows only partial results
-      const results = await db.search('test document', 5, { offset: 7 })
+      const results = await db.search('test document', { limit: 5, offset: 7 })
       expect(results.length).toBe(3) // Only 3 results available after offset 7
     })
   })
@@ -129,14 +129,14 @@ describe('Pagination with Offset', () => {
       }
 
       // Get first page of documents
-      const firstPage = await db.search('document', 5, {
+      const firstPage = await db.search('document', { limit: 5,
         nounTypes: ['document']
       })
       expect(firstPage.length).toBe(5)
       expect(firstPage.every(r => r.metadata.type === 'document')).toBe(true)
 
       // Get second page of documents
-      const secondPage = await db.search('document', 5, {
+      const secondPage = await db.search('document', { limit: 5,
         nounTypes: ['document'],
         offset: 5
       })
@@ -164,10 +164,10 @@ describe('Pagination with Offset', () => {
       }
 
       // Get paginated results for service-a
-      const page1 = await db.search('test item', 3, {
+      const page1 = await db.search('test item', { limit: 3,
         service: 'service-a'
       })
-      const page2 = await db.search('test item', 3, {
+      const page2 = await db.search('test item', { limit: 3,
         service: 'service-a',
         offset: 3
       })
@@ -195,13 +195,13 @@ describe('Pagination with Offset', () => {
       }
 
       // Get all results in one query
-      const allResults = await db.search('consistent test', 30)
+      const allResults = await db.search('consistent test', { limit: 30 })
       const allIds = allResults.map(r => r.metadata.id)
 
       // Get results in pages
-      const page1 = await db.search('consistent test', 10, { offset: 0 })
-      const page2 = await db.search('consistent test', 10, { offset: 10 })
-      const page3 = await db.search('consistent test', 10, { offset: 20 })
+      const page1 = await db.search('consistent test', { limit: 10, offset: 0 })
+      const page2 = await db.search('consistent test', { limit: 10, offset: 10 })
+      const page3 = await db.search('consistent test', { limit: 10, offset: 20 })
 
       const pagedIds = [
         ...page1.map(r => r.metadata.id),
@@ -215,7 +215,7 @@ describe('Pagination with Offset', () => {
 
     it('should handle empty results gracefully', async () => {
       // Search empty database with offset
-      const results = await db.search('nonexistent', 10, { offset: 5 })
+      const results = await db.search('nonexistent', { limit: 10, offset: 5 })
       expect(results).toEqual([])
     })
   })
@@ -236,11 +236,11 @@ describe('Pagination with Offset', () => {
       const queryVector = new Array(384).fill(0).map(() => Math.random())
 
       // Get first page
-      const page1 = await db.search(queryVector, 5, { forceEmbed: false })
+      const page1 = await db.search(queryVector, { limit: 5, forceEmbed: false })
       expect(page1.length).toBe(5)
 
       // Get second page
-      const page2 = await db.search(queryVector, 5, { 
+      const page2 = await db.search(queryVector, { limit: 5, 
         forceEmbed: false,
         offset: 5 
       })

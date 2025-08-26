@@ -69,14 +69,14 @@ async function testBrainyCore() {
     
     // Test 6: Search Operations (Vector-based)
     console.log('\n🔎 Testing Search Operations')
-    const searchResults = await brain.search('programming language', 2)
+    const searchResults = await brain.search('programming language', { limit: 2 })
     assert(Array.isArray(searchResults), 'Search should return array')
     assert(searchResults.length > 0, 'Should find programming languages')
     console.log(`   Found ${searchResults.length} results for "programming language"`)
     
     // Test 7: Metadata Filtering (Brain Patterns)
     console.log('\n🧠 Testing Brain Patterns (Metadata Filtering)')
-    const frameworkResults = await brain.search('*', 10, {
+    const frameworkResults = await brain.search('*', { limit: 10,
       metadata: { type: 'framework' }
     })
     assert(Array.isArray(frameworkResults), 'Metadata filter should return array')
@@ -98,7 +98,7 @@ async function testBrainyCore() {
     // Test 10: Clear All (with force)
     console.log('\n🧹 Testing Clear Operations')
     await brain.clearAll({ force: true })
-    const afterClear = await brain.search('*', 10)
+    const afterClear = await brain.search('*', { limit: 10 })
     assert(afterClear.length === 0, 'Should clear all items')
     
     // Memory check

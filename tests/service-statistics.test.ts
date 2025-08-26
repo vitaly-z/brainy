@@ -306,7 +306,7 @@ describe('Per-Service Statistics', () => {
     })
     
     it('should filter search results by service', async () => {
-      const results = await brainy.search('repository', 10, {
+      const results = await brainy.search('repository', { limit: 10,
         service: 'github-service'
       })
       

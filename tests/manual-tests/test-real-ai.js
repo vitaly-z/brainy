@@ -40,7 +40,7 @@ async function testAllFeatures() {
     }
     
     console.log('\n3. Testing search() with real semantic understanding...')
-    const searchResults = await brain.search('web development programming', 3)
+    const searchResults = await brain.search('web development programming', { limit: 3 })
     console.log(`   ✅ Found ${searchResults.length} results with real embeddings`)
     searchResults.forEach((result, i) => {
       console.log(`   ${i+1}. Score: ${result.score.toFixed(3)} - ${JSON.stringify(result.metadata).substring(0, 50)}...`)
@@ -54,7 +54,7 @@ async function testAllFeatures() {
     await brain.addNoun('React framework', { type: 'frontend', year: 2013 })
     await brain.addNoun('Vue.js framework', { type: 'frontend', year: 2014 })
     
-    const patternResults = await brain.search('user interface framework', 5, {
+    const patternResults = await brain.search('user interface framework', { limit: 5,
       metadata: { type: 'frontend' }
     })
     console.log(`   ✅ Found ${patternResults.length} frontend frameworks`)

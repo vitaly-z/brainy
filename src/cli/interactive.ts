@@ -125,7 +125,7 @@ export async function promptItemId(
   let choices: any[] = []
   if (brain) {
     try {
-      const recent = await brain.search('*', 10, { 
+      const recent = await brain.search('*', { limit: 10, 
         sortBy: 'timestamp',
         descending: true 
       })

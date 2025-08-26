@@ -6,7 +6,7 @@
  * NO runtime loading, NO external files needed!
  */
 
-import { BrainyData } from '../src/brainyData.js'
+import { BrainyData } from '../dist/brainyData.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { fileURLToPath } from 'url'

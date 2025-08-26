@@ -59,11 +59,11 @@ async function testMemorySafety() {
     }
     
     console.log('\n🔍 Testing search operations...')
-    const searchResults = await brain.search('programming', 5)
+    const searchResults = await brain.search('programming', { limit: 5 })
     console.log(`✅ Search completed: found ${searchResults.length} results`)
     
     console.log('\n🧠 Testing Brain Patterns...')
-    const filteredResults = await brain.search('*', 10, {
+    const filteredResults = await brain.search('*', { limit: 10,
       metadata: { category: 'tech' }
     })
     console.log(`✅ Brain Patterns completed: found ${filteredResults.length} results`)

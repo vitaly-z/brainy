@@ -46,7 +46,7 @@ describe('Brainy Regression Tests', () => {
           const id = await brainy.add("Test data for regression testing")
           expect(id).toBeDefined()
 
-          const results = await brainy.search("regression testing", 5)
+          const results = await brainy.search("regression testing", { limit: 5 })
           expect(results.length).toBeGreaterThan(0)
           expect(results[0].id).toBe(id)
         })
@@ -65,7 +65,7 @@ describe('Brainy Regression Tests', () => {
           await brainy.add("Item 1", { category: "A", priority: 1 })
           await brainy.add("Item 2", { category: "B", priority: 2 })
           
-          const results = await brainy.search("", 10, {
+          const results = await brainy.search("", { limit: 10,
             metadata: { category: "A" }
           })
           expect(results.length).toBe(1)
@@ -77,7 +77,7 @@ describe('Brainy Regression Tests', () => {
           const success = await brainy.update(id, "Updated content", { version: 2 })
           expect(success).toBe(true)
 
-          const results = await brainy.search("Updated content", 5)
+          const results = await brainy.search("Updated content", { limit: 5 })
           expect(results[0].metadata.version).toBe(2)
         })
 
@@ -87,7 +87,7 @@ describe('Brainy Regression Tests', () => {
           expect(success).toBe(true)
 
           // Should not appear in search results
-          const results = await brainy.search("Content to delete", 10)
+          const results = await brainy.search("Content to delete", { limit: 10 })
           expect(results.length).toBe(0)
         })
       })
@@ -134,7 +134,7 @@ describe('Brainy Regression Tests', () => {
 
       // Benchmark search
       const startTime = performance.now()
-      const results = await brainy.search("document topics", 10)
+      const results = await brainy.search("document topics", { limit: 10 })
       const endTime = performance.now()
       const duration = endTime - startTime
 
@@ -196,25 +196,25 @@ describe('Brainy Regression Tests', () => {
       const id2 = await brainy.add("Article about artificial intelligence")
       
       // Verify both exist
-      let results = await brainy.search("machine learning", 10)
+      let results = await brainy.search("machine learning", { limit: 10 })
       expect(results.some(r => r.id === id1)).toBe(true)
       
-      results = await brainy.search("artificial intelligence", 10)
+      results = await brainy.search("artificial intelligence", { limit: 10 })
       expect(results.some(r => r.id === id2)).toBe(true)
 
       // Update one item
       await brainy.update(id1, "Updated document about deep learning")
       
       // Verify update
-      results = await brainy.search("deep learning", 10)
+      results = await brainy.search("deep learning", { limit: 10 })
       expect(results.some(r => r.id === id1)).toBe(true)
 
       // Original content should not be found
-      results = await brainy.search("machine learning", 10)
+      results = await brainy.search("machine learning", { limit: 10 })
       expect(results.some(r => r.id === id1)).toBe(false)
 
       // Other document should remain unchanged
-      results = await brainy.search("artificial intelligence", 10)
+      results = await brainy.search("artificial intelligence", { limit: 10 })
       expect(results.some(r => r.id === id2)).toBe(true)
     })
 
@@ -230,7 +230,7 @@ describe('Brainy Regression Tests', () => {
       expect(ids.length).toBe(20)
       
       // Verify all items can be found
-      const results = await brainy.search("Concurrent item", 25)
+      const results = await brainy.search("Concurrent item", { limit: 25 })
       expect(results.length).toBe(20)
     })
   })
@@ -252,7 +252,7 @@ describe('Brainy Regression Tests', () => {
     it('should handle empty search queries gracefully', async () => {
       await brainy.add("Some content")
       
-      const results = await brainy.search("", 10)
+      const results = await brainy.search("", { limit: 10 })
       expect(Array.isArray(results)).toBe(true)
       // Empty query might return all results or none, but should not throw
     })
@@ -270,7 +270,7 @@ describe('Brainy Regression Tests', () => {
       const id = await brainy.add(largeText)
       expect(id).toBeDefined()
 
-      const results = await brainy.search("Lorem ipsum", 5)
+      const results = await brainy.search("Lorem ipsum", { limit: 5 })
       expect(results.some(r => r.id === id)).toBe(true)
     })
 
@@ -279,7 +279,7 @@ describe('Brainy Regression Tests', () => {
       const id = await brainy.add(specialText)
       expect(id).toBeDefined()
 
-      const results = await brainy.search("世界", 5)
+      const results = await brainy.search("世界", { limit: 5 })
       expect(results.some(r => r.id === id)).toBe(true)
     })
   })

@@ -54,7 +54,7 @@ describe('Vector Operations', () => {
     await db.add(testVector, { id: 'test' })
 
     // Search for the same vector
-    const results = await db.search(testVector, 1)
+    const results = await db.search(testVector, { limit: 1 })
 
     expect(results).toBeDefined()
     expect(results.length).toBeGreaterThan(0)
@@ -85,7 +85,7 @@ describe('Vector Operations', () => {
     await db.add(mixedVector, { id: 'vec4', type: 'mixed' })
 
     // Search for multiple results
-    const results = await db.search(createTestVector(0), 3)
+    const results = await db.search(createTestVector(0), { limit: 3 })
 
     expect(results).toBeDefined()
     expect(results.length).toBeGreaterThanOrEqual(1)

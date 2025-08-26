@@ -288,7 +288,7 @@ export class NeuralImport {
    */
   private async calculateEntityTypeConfidence(text: string, data: any, nounType: string): Promise<number> {
     // Base semantic similarity using search instead of similarity method
-    const searchResults = await this.brainy.search(text + ' ' + nounType, 1)
+    const searchResults = await this.brainy.search(text + ' ' + nounType, { limit: 1 })
     const textSimilarity = searchResults.length > 0 ? searchResults[0].score : 0.5
     
     // Field-based confidence boost
@@ -372,7 +372,7 @@ export class NeuralImport {
     const reasons: string[] = []
 
     // Semantic similarity reason using search
-    const searchResults = await this.brainy.search(text + ' ' + nounType, 1)
+    const searchResults = await this.brainy.search(text + ' ' + nounType, { limit: 1 })
     const similarity = searchResults.length > 0 ? searchResults[0].score : 0.5
     if (similarity > 0.7) {
       reasons.push(`High semantic similarity (${(similarity * 100).toFixed(1)}%)`)
@@ -456,11 +456,11 @@ export class NeuralImport {
   ): Promise<number> {
     // Semantic similarity between entities and verb type using search
     const relationshipText = `${this.extractMainText(source.originalData)} ${verbType} ${this.extractMainText(target.originalData)}`
-    const directResults = await this.brainy.search(relationshipText, 1)
+    const directResults = await this.brainy.search(relationshipText, { limit: 1 })
     const directSimilarity = directResults.length > 0 ? directResults[0].score : 0.5
     
     // Context-based similarity using search
-    const contextResults = await this.brainy.search(context + ' ' + verbType, 1)
+    const contextResults = await this.brainy.search(context + ' ' + verbType, { limit: 1 })
     const contextSimilarity = contextResults.length > 0 ? contextResults[0].score : 0.5
     
     // Entity type compatibility

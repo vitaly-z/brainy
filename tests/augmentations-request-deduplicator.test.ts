@@ -30,8 +30,8 @@ describe('Request Deduplicator Augmentation', () => {
       // Request deduplicator should be active
       // Test by making duplicate searches
       const vector = createTestVector(1)
-      const promise1 = db.search(vector, 5)
-      const promise2 = db.search(vector, 5)
+      const promise1 = db.search(vector, { limit: 5 })
+      const promise2 = db.search(vector, { limit: 5 })
       
       const [results1, results2] = await Promise.all([promise1, promise2])
       
@@ -53,7 +53,7 @@ describe('Request Deduplicator Augmentation', () => {
       await db.add(createTestVector(1), { id: 'test1' })
       
       // Should work with custom config
-      const results = await db.search(createTestVector(1), 1)
+      const results = await db.search(createTestVector(1), { limit: 1 })
       expect(results.length).toBeGreaterThan(0)
     })
   })
@@ -92,7 +92,7 @@ describe('Request Deduplicator Augmentation', () => {
       // Make multiple identical searches concurrently
       const promises = []
       for (let i = 0; i < 5; i++) {
-        promises.push(db!.search(searchVector, 3))
+        promises.push(db!.search(searchVector, { limit: 3 }))
       }
       
       const results = await Promise.all(promises)
@@ -112,7 +112,7 @@ describe('Request Deduplicator Augmentation', () => {
       const promises = []
       for (let i = 0; i < 5; i++) {
         const uniqueVector = createTestVector(i * 10)
-        promises.push(db!.search(uniqueVector, 2))
+        promises.push(db!.search(uniqueVector, { limit: 2 }))
       }
       
       const results = await Promise.all(promises)
@@ -126,17 +126,17 @@ describe('Request Deduplicator Augmentation', () => {
       const searchVector = createTestVector(1)
       
       // First search
-      const result1 = await db!.search(searchVector, 3)
+      const result1 = await db!.search(searchVector, { limit: 3 })
       
       // Immediate second search (should be cached)
-      const result2 = await db!.search(searchVector, 3)
+      const result2 = await db!.search(searchVector, { limit: 3 })
       expect(result2).toEqual(result1)
       
       // Wait for TTL to expire
       await new Promise(resolve => setTimeout(resolve, 600))
       
       // Third search (cache expired, should re-execute)
-      const result3 = await db!.search(searchVector, 3)
+      const result3 = await db!.search(searchVector, { limit: 3 })
       
       // Results should be same content but might be new objects
       expect(result3.length).toBe(result1.length)
@@ -164,12 +164,12 @@ describe('Request Deduplicator Augmentation', () => {
       
       // First search (cold)
       const start1 = performance.now()
-      await db!.search(searchVector, 10)
+      await db!.search(searchVector, { limit: 10 })
       const time1 = performance.now() - start1
       
       // Second search (cached)
       const start2 = performance.now()
-      await db!.search(searchVector, 10)
+      await db!.search(searchVector, { limit: 10 })
       const time2 = performance.now() - start2
       
       // Cached should be much faster
@@ -183,7 +183,7 @@ describe('Request Deduplicator Augmentation', () => {
       const startTime = performance.now()
       const promises = []
       for (let i = 0; i < 100; i++) {
-        promises.push(db!.search(searchVector, 5))
+        promises.push(db!.search(searchVector, { limit: 5 }))
       }
       
       await Promise.all(promises)
@@ -234,19 +234,19 @@ describe('Request Deduplicator Augmentation', () => {
       }
       
       // Make searches to fill cache
-      await db.search(createTestVector(1), 1) // Cache entry 1
-      await db.search(createTestVector(2), 1) // Cache entry 2
-      await db.search(createTestVector(3), 1) // Cache entry 3
+      await db.search(createTestVector(1), { limit: 1 }) // Cache entry 1
+      await db.search(createTestVector(2), { limit: 1 }) // Cache entry 2
+      await db.search(createTestVector(3), { limit: 1 }) // Cache entry 3
       
       // Access entry 1 again (makes it recently used)
-      await db.search(createTestVector(1), 1)
+      await db.search(createTestVector(1), { limit: 1 })
       
       // Add new entry (should evict entry 2, not 1)
-      await db.search(createTestVector(4), 1)
+      await db.search(createTestVector(4), { limit: 1 })
       
       // Entry 1 should still be cached (was recently used)
       const start = performance.now()
-      await db.search(createTestVector(1), 1)
+      await db.search(createTestVector(1), { limit: 1 })
       const time = performance.now() - start
       
       expect(time).toBeLessThan(5) // Should be very fast (cached)
@@ -276,9 +276,9 @@ describe('Request Deduplicator Augmentation', () => {
       const vector = createTestVector(5)
       
       const promises = [
-        db!.search(vector, 5),
-        db!.search(vector, 5),
-        db!.search(vector, 5)
+        db!.search(vector, { limit: 5 }),
+        db!.search(vector, { limit: 5 }),
+        db!.search(vector, { limit: 5 })
       ]
       
       const results = await Promise.all(promises)
@@ -355,12 +355,12 @@ describe('Request Deduplicator Augmentation', () => {
       const vector = createTestVector(1)
       
       // First search (miss)
-      await db.search(vector, 1)
+      await db.search(vector, { limit: 1 })
       
       // Duplicate searches (hits)
-      await db.search(vector, 1)
-      await db.search(vector, 1)
-      await db.search(vector, 1)
+      await db.search(vector, { limit: 1 })
+      await db.search(vector, { limit: 1 })
+      await db.search(vector, { limit: 1 })
       
       // Hit rate should be 75% (3 hits out of 4 total)
       // Note: Actual implementation may vary
@@ -389,7 +389,7 @@ describe('Request Deduplicator Augmentation', () => {
       
       // Subsequent valid search should work
       await db!.add(createTestVector(1), { id: 'error1' })
-      const results = await db!.search(createTestVector(1), 1)
+      const results = await db!.search(createTestVector(1), { limit: 1 })
       expect(results.length).toBeGreaterThan(0)
     })
     
@@ -399,13 +399,13 @@ describe('Request Deduplicator Augmentation', () => {
       
       let error1, error2
       try {
-        await db!.search(badVector, 1)
+        await db!.search(badVector, { limit: 1 })
       } catch (e) {
         error1 = e
       }
       
       try {
-        await db!.search(badVector, 1)
+        await db!.search(badVector, { limit: 1 })
       } catch (e) {
         error2 = e
       }

@@ -111,7 +111,7 @@ async function runTests() {
     await brain.addNoun({ name: 'Vue', type: 'framework', category: 'frontend' })
     await brain.addNoun({ name: 'Express', type: 'framework', category: 'backend' })
     
-    const results = await brain.search('frontend framework', 5)
+    const results = await brain.search('frontend framework', { limit: 5 })
     if (!Array.isArray(results) || results.length === 0) {
       throw new Error('search should return array of results')
     }
@@ -123,7 +123,7 @@ async function runTests() {
     await brain.addNoun({ name: 'FastAPI', type: 'framework', year: 2018, language: 'Python' })
     await brain.addNoun({ name: 'Rails', type: 'framework', year: 2004, language: 'Ruby' })
     
-    const pythonFrameworks = await brain.search('*', 10, {
+    const pythonFrameworks = await brain.search('*', { limit: 10,
       metadata: { 
         type: 'framework',
         language: 'Python'
@@ -141,7 +141,7 @@ async function runTests() {
     await brain.addNoun({ name: 'ModernTech1', year: 2015 })
     await brain.addNoun({ name: 'ModernTech2', year: 2020 })
     
-    const modernItems = await brain.search('*', 10, {
+    const modernItems = await brain.search('*', { limit: 10,
       metadata: {
         year: { greaterThan: 2010 }
       }

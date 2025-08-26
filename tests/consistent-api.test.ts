@@ -228,7 +228,7 @@ describe('🚀 Consistent API Methods (1.6.0+)', () => {
         await brain.clearNouns({ force: true })
         
         // Verify nouns are cleared but verbs might remain (implementation dependent)
-        const searchResult = await brain.search('test', 10)
+        const searchResult = await brain.search('test', { limit: 10 })
         expect(searchResult.length).toBe(0)
       })
     })
@@ -242,7 +242,7 @@ describe('🚀 Consistent API Methods (1.6.0+)', () => {
         await brain.clearVerbs({ force: true })
         
         // Nouns should still exist
-        const searchResult = await brain.search('test', 10)
+        const searchResult = await brain.search('test', { limit: 10 })
         expect(searchResult.length).toBeGreaterThan(0)
       })
     })
@@ -256,7 +256,7 @@ describe('🚀 Consistent API Methods (1.6.0+)', () => {
         await brain.clearAll({ force: true })
         
         // Everything should be cleared
-        const searchResult = await brain.search('test', 10)
+        const searchResult = await brain.search('test', { limit: 10 })
         expect(searchResult.length).toBe(0)
       })
     })
@@ -287,7 +287,7 @@ describe('🚀 Consistent API Methods (1.6.0+)', () => {
     describe('getNouns() with IDs', () => {
       it('should get multiple nouns by IDs', async () => {
         // First get some IDs
-        const allResults = await brain.search('document', 10)
+        const allResults = await brain.search('document', { limit: 10 })
         const ids = allResults.slice(0, 2).map(r => r.id)
         
         const nouns = await brain.getNouns(ids)

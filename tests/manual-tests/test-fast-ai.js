@@ -31,7 +31,7 @@ async function quickTest() {
     
     // Simple search with timeout
     console.log('🔍 Testing search (with timeout)...')
-    const searchPromise = brain.search('test', 1)
+    const searchPromise = brain.search('test', { limit: 1 })
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Search timeout')), 10000) // 10 second timeout
     })

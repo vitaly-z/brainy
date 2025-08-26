@@ -17,7 +17,7 @@ async function test1_ZeroConfig() {
   await brain.init()
   
   await brain.add('test', { content: 'Zero-config test' })
-  const results = await brain.search('test', 1)
+  const results = await brain.search('test', { limit: 1 })
   
   console.log('✅ Zero-config works:', results.length > 0)
   await brain.destroy()
@@ -33,7 +33,7 @@ async function test2_ConfigBased() {
   await brain.init()
   
   await brain.add('config test', { content: 'Config-based test' })
-  const results = await brain.search('config', 1)
+  const results = await brain.search('config', { limit: 1 })
   
   console.log('✅ Config-based works:', results.length > 0)
   await brain.destroy()
@@ -49,7 +49,7 @@ async function test3_AugmentationOverride() {
   await brain.init()
   
   await brain.add('augmentation test', { content: 'Augmentation override test' })
-  const results = await brain.search('augmentation', 1)
+  const results = await brain.search('augmentation', { limit: 1 })
   
   console.log('✅ Augmentation override works:', results.length > 0)
   await brain.destroy()

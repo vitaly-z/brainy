@@ -225,7 +225,7 @@ describe('Metadata Filtering Performance Analysis', () => {
       const noFilterTimes: number[] = []
       for (let i = 0; i < numSearches; i++) {
         const { time } = await measureTime(async () => {
-          return await brainy.search(searchQuery, 20)
+          return await brainy.search(searchQuery, { limit: 20 })
         })
         noFilterTimes.push(time)
       }
@@ -236,7 +236,7 @@ describe('Metadata Filtering Performance Analysis', () => {
       const simpleFilterTimes: number[] = []
       for (let i = 0; i < numSearches; i++) {
         const { time } = await measureTime(async () => {
-          return await brainy.search(searchQuery, 20, {
+          return await brainy.search(searchQuery, { limit: 20,
             metadata: { department: 'Engineering' }
           })
         })
@@ -249,7 +249,7 @@ describe('Metadata Filtering Performance Analysis', () => {
       const complexFilterTimes: number[] = []
       for (let i = 0; i < numSearches; i++) {
         const { time } = await measureTime(async () => {
-          return await brainy.search(searchQuery, 20, {
+          return await brainy.search(searchQuery, { limit: 20,
             metadata: {
               department: { $in: ['Engineering', 'Marketing'] },
               level: { $in: ['senior', 'staff'] },
@@ -267,7 +267,7 @@ describe('Metadata Filtering Performance Analysis', () => {
       const nestedFilterTimes: number[] = []
       for (let i = 0; i < numSearches; i++) {
         const { time } = await measureTime(async () => {
-          return await brainy.search(searchQuery, 20, {
+          return await brainy.search(searchQuery, { limit: 20,
             metadata: {
               'nested.profile.rating': { $gte: 4 },
               'nested.profile.verified': true
@@ -316,7 +316,7 @@ describe('Metadata Filtering Performance Analysis', () => {
       
       for (const { name, filter, expected } of filters) {
         const { result, time } = await measureTime(async () => {
-          return await brainy.search(searchQuery, 10, { metadata: filter })
+          return await brainy.search(searchQuery, { limit: 10, metadata: filter })
         })
         
         console.log(`${name} (${expected}): ${time.toFixed(2)}ms, ${result.length} results`)

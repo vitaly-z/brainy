@@ -26,7 +26,7 @@ async function testMinimalSearch() {
     console.log('Memory before search:', (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2), 'MB')
     
     console.log('Performing minimal search...')
-    const results = await brain.search('test', 1)
+    const results = await brain.search('test', { limit: 1 })
     
     console.log('Memory after search:', (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2), 'MB')
     console.log(`Found ${results.length} results`)

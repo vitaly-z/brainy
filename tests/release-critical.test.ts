@@ -57,7 +57,7 @@ describe('🚀 Release Critical - All Core Features', () => {
       expect(item1?.metadata?.category).toBe('tech')
       
       // Search functionality
-      const results = await db!.search(createTestVector(1.1), 2)
+      const results = await db!.search(createTestVector(1.1), { limit: 2 })
       expect(results.length).toBeGreaterThan(0)
       expect(results.length).toBeLessThanOrEqual(2)
     })
@@ -317,7 +317,7 @@ describe('🚀 Release Critical - All Core Features', () => {
       
       // Measure search time
       const start = performance.now()
-      const results = await db.search(createTestVector(50), 10)
+      const results = await db.search(createTestVector(50), { limit: 10 })
       const elapsed = performance.now() - start
       
       // Should search quickly (under 100ms for 100 items)
@@ -386,7 +386,7 @@ describe('🚀 Release Critical - All Core Features', () => {
       
       // Should still work
       await db.add(createTestVector(2), { id: 'valid2' })
-      const results = await db.search(createTestVector(1), 5)
+      const results = await db.search(createTestVector(1), { limit: 5 })
       expect(results.length).toBeGreaterThan(0)
     })
   })

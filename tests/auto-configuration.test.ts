@@ -93,7 +93,7 @@ describe('Auto-Configuration System', () => {
 
       // Perform many searches to create usage patterns
       for (let i = 0; i < 10; i++) {
-        await brainy.search(`test data ${i % 5}`, 5)
+        await brainy.search(`test data ${i % 5}`, { limit: 5 })
       }
 
       // Manual trigger of adaptation (normally happens during real-time updates)
@@ -121,7 +121,7 @@ describe('Auto-Configuration System', () => {
 
       // Simulate read-heavy usage
       for (let i = 0; i < 20; i++) {
-        await readHeavyBrainy.search('test data', 5)
+        await readHeavyBrainy.search('test data', { limit: 5 })
       }
 
       const readHeavyStats = readHeavyBrainy.getCacheStats()
@@ -142,7 +142,7 @@ describe('Auto-Configuration System', () => {
 
       // Should still work with auto-detected configuration
       await brainy.add({ text: 'auto-config test unique phrase' })
-      const results = await brainy.search('unique phrase', 5)
+      const results = await brainy.search('unique phrase', { limit: 5 })
       
       expect(results.length).toBeGreaterThanOrEqual(1)
 
@@ -205,7 +205,7 @@ describe('Auto-Configuration System', () => {
 
       // Perform searches to warm up cache
       for (let i = 0; i < 10; i++) {
-        await brainy.search(`performance test data ${i % 5}`, 10)
+        await brainy.search(`performance test data ${i % 5}`, { limit: 10 })
       }
 
       const stats = brainy.getCacheStats()

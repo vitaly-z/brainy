@@ -316,7 +316,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
         await brainy.add('Vector 2 content', { name: 'Vector 2' })
 
         // Search to verify index works
-        const results = await brainy.search('search query', 5)
+        const results = await brainy.search('search query', { limit: 5 })
         expect(results).toBeDefined()
       })
     })

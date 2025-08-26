@@ -67,7 +67,7 @@ const runStorageTests = (
       })
 
       // Search for fruits
-      const fruitResults = await brainyInstance.search('banana', 5)
+      const fruitResults = await brainyInstance.search('banana', { limit: 5 })
       expect(fruitResults.length).toBeGreaterThan(0)
       // The fruit item should be found in the results, but not necessarily first
       // due to potential variations in embedding similarity calculations
@@ -75,7 +75,7 @@ const runStorageTests = (
       expect(fruitItemFound).toBe(true)
 
       // Search for vehicles
-      const vehicleResults = await brainyInstance.search('motorcycle', 5)
+      const vehicleResults = await brainyInstance.search('motorcycle', { limit: 5 })
       expect(vehicleResults.length).toBeGreaterThan(0)
       // The vehicle item should be found in the results, but not necessarily first
       // due to potential variations in embedding similarity calculations
@@ -100,7 +100,7 @@ const runStorageTests = (
       expect(item?.metadata?.deleted).toBe(true)
       
       // Verify it doesn't appear in search results
-      const searchResults = await brainyInstance.search('test', 10)
+      const searchResults = await brainyInstance.search('test', { limit: 10 })
       expect(searchResults.some(r => r.id === id)).toBe(false)
     })
 

@@ -79,7 +79,7 @@ describe('Brainy in Node.js Environment', () => {
       await db.add(createTestVector(2), { id: 'item3', label: 'z-axis' })
 
       // Search should work
-      const results = await db.search(createTestVector(0), 1)
+      const results = await db.search(createTestVector(0), { limit: 1 })
       expect(results).toBeDefined()
       expect(results.length).toBe(1)
       expect(results[0].metadata.id).toBe('item1')
@@ -110,7 +110,7 @@ describe('Brainy in Node.js Environment', () => {
         await db.addItem('Goodbye world', { id: 'farewell' })
 
         // Search with text
-        const results = await db.search('Hi there', 1)
+        const results = await db.search('Hi there', { limit: 1 })
         expect(results).toBeDefined()
         expect(results.length).toBeGreaterThan(0)
         expect(results[0].metadata).toHaveProperty('id')
@@ -145,7 +145,7 @@ describe('Brainy in Node.js Environment', () => {
       }
 
       // Search should return relevant results
-      const results = await db.search(createTestVector(15), 2)
+      const results = await db.search(createTestVector(15), { limit: 2 })
       expect(results.length).toBe(2)
       expect(
         results.every(
@@ -181,7 +181,7 @@ describe('Brainy in Node.js Environment', () => {
       await db.init()
       await db.clearAll({ force: true }) // Clear any existing data
 
-      const results = await db.search(createTestVector(0), 5)
+      const results = await db.search(createTestVector(0), { limit: 5 })
       expect(results).toBeDefined()
       expect(Array.isArray(results)).toBe(true)
       expect(results.length).toBe(0)

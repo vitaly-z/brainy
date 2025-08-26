@@ -94,7 +94,7 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should return search results with mocked embeddings', async () => {
-      const results = await brain.search('frontend framework', 5)
+      const results = await brain.search('frontend framework', { limit: 5 })
       
       expect(results).toBeInstanceOf(Array)
       expect(results.length).toBeGreaterThan(0)
@@ -109,9 +109,9 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should respect search limits', async () => {
-      const results1 = await brain.search('framework', 1)
-      const results2 = await brain.search('framework', 2)
-      const results3 = await brain.search('framework', 10)
+      const results1 = await brain.search('framework', { limit: 1 })
+      const results2 = await brain.search('framework', { limit: 2 })
+      const results3 = await brain.search('framework', { limit: 10 })
       
       expect(results1).toHaveLength(1)
       expect(results2).toHaveLength(2)
@@ -129,7 +129,7 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should filter by exact metadata match', async () => {
-      const pythonFrameworks = await brain.search('*', 10, {
+      const pythonFrameworks = await brain.search('*', { limit: 10,
         metadata: { 
           type: 'framework',
           language: 'Python'
@@ -144,7 +144,7 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should handle range queries with Brain Patterns', async () => {
-      const modernFrameworks = await brain.search('*', 10, {
+      const modernFrameworks = await brain.search('*', { limit: 10,
         metadata: {
           type: 'framework',
           year: { greaterThan: 2010 }
@@ -156,7 +156,7 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should handle multiple range conditions', async () => {
-      const earlyFrameworks = await brain.search('*', 10, {
+      const earlyFrameworks = await brain.search('*', { limit: 10,
         metadata: {
           year: { 
             greaterThan: 2000, 
@@ -173,7 +173,7 @@ describe('Brainy Core (Unit Tests)', () => {
     })
 
     it('should return empty results for non-matching filters', async () => {
-      const results = await brain.search('*', 10, {
+      const results = await brain.search('*', { limit: 10,
         metadata: { language: 'NonExistent' }
       })
       
@@ -188,30 +188,30 @@ describe('Brainy Core (Unit Tests)', () => {
       
       const stats = await brain.getStatistics()
       
-      expect(stats).toHaveProperty('totalItems')
-      expect(stats).toHaveProperty('dimensions')
-      expect(stats).toHaveProperty('indexSize')
+      expect(stats).toHaveProperty('nounCount')
+      expect(stats).toHaveProperty('verbCount')
+      expect(stats).toHaveProperty('hnswIndexSize')
       
-      expect(stats.totalItems).toBeGreaterThanOrEqual(2)
-      expect(stats.dimensions).toBe(384)
-      expect(typeof stats.indexSize).toBe('number')
+      expect(stats.nounCount).toBeGreaterThanOrEqual(2)
+      expect(stats.verbCount).toBe(0)
+      expect(typeof stats.hnswIndexSize).toBe('number')
     })
 
     it('should handle statistics for empty database', async () => {
       const stats = await brain.getStatistics()
       
-      expect(stats.totalItems).toBe(0)
-      expect(stats.dimensions).toBe(384)
+      expect(stats.nounCount).toBe(0)
+      expect(stats.verbCount).toBe(0)
     })
   })
 
   describe('Bulk Operations', () => {
-    it('should handle getAllNouns', async () => {
+    it('should search all items with wildcard', async () => {
       await brain.addNoun({ name: 'Item1', category: 'test' })
       await brain.addNoun({ name: 'Item2', category: 'test' })
       await brain.addNoun({ name: 'Item3', category: 'test' })
       
-      const allItems = await brain.getAllNouns()
+      const allItems = await brain.search('*', { limit: 100 })
       
       expect(allItems).toHaveLength(3)
       allItems.forEach(item => {
@@ -226,14 +226,14 @@ describe('Brainy Core (Unit Tests)', () => {
       await brain.addNoun({ name: 'Item2' })
       
       // Verify items exist
-      expect(await brain.getAllNouns()).toHaveLength(2)
+      expect((await brain.search('*', { limit: 100 }))).toHaveLength(2)
       
       // Clear database
       await brain.clearAll({ force: true })
       
       // Verify empty
-      expect(await brain.getAllNouns()).toHaveLength(0)
-      expect((await brain.getStatistics()).totalItems).toBe(0)
+      expect((await brain.search('*', { limit: 100 }))).toHaveLength(0)
+      expect((await brain.getStatistics()).nounCount).toBe(0)
     })
 
     it('should require force flag for clearAll', async () => {
@@ -242,7 +242,7 @@ describe('Brainy Core (Unit Tests)', () => {
       await expect(brain.clearAll()).rejects.toThrow(/force.*true/)
       
       // Data should still be there
-      expect(await brain.getAllNouns()).toHaveLength(1)
+      expect((await brain.search('*', { limit: 100 }))).toHaveLength(1)
     })
   })
 
