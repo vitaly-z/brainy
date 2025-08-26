@@ -37,7 +37,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
 
   afterEach(async () => {
     if (brainy) {
-      await brainy.clear()
+      await brainy.clearAll({ force: true })
     }
     vi.useRealTimers()
   })
@@ -643,7 +643,7 @@ describe('COMPREHENSIVE S3 Storage Tests', () => {
       await brainy.init()
 
       // Clear all data
-      await brainy.clear()
+      await brainy.clearAll({ force: true })
 
       // Verify batch delete was used
       const batchDeleteCalls = s3Mock.commandCalls(DeleteObjectsCommand)

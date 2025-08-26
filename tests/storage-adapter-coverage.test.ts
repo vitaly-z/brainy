@@ -36,13 +36,13 @@ const runStorageTests = (
       await brainyInstance.init()
 
       // Clear any existing data
-      await brainyInstance.clear()
+      await brainyInstance.clearAll({ force: true })
     })
 
     afterEach(async () => {
       // Clean up
       if (brainyInstance) {
-        await brainyInstance.clear()
+        await brainyInstance.clearAll({ force: true })
         await brainyInstance.shutDown()
       }
     })

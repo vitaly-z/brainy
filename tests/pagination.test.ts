@@ -23,7 +23,7 @@ describe('Pagination with Offset', () => {
   })
 
   afterEach(async () => {
-    await db.clear()
+    await db.clearAll({ force: true })
     await cleanupWorkerPools()
   })
 

@@ -59,7 +59,7 @@ describe('OPFSStorage', () => {
     expect(retrievedMetadata).toEqual(testMetadata)
     
     // Clean up
-    await opfsStorage.clear()
+    await opfsStorage.clearAll({ force: true })
   })
 
   it('should handle noun operations correctly', async () => {
@@ -116,7 +116,7 @@ describe('OPFSStorage', () => {
     expect(deletedNoun).toBeNull()
     
     // Clean up
-    await opfsStorage.clear()
+    await opfsStorage.clearAll({ force: true })
   })
 
   it('should handle verb operations correctly', async () => {
@@ -197,7 +197,7 @@ describe('OPFSStorage', () => {
     expect(deletedVerb).toBeNull()
     
     // Clean up
-    await opfsStorage.clear()
+    await opfsStorage.clearAll({ force: true })
   })
 
   it('should handle storage status correctly', async () => {
@@ -229,7 +229,7 @@ describe('OPFSStorage', () => {
     expect(status.quota).toBeGreaterThan(0)
     
     // Clean up
-    await opfsStorage.clear()
+    await opfsStorage.clearAll({ force: true })
   })
 
   it('should handle persistence correctly', async () => {
@@ -252,6 +252,6 @@ describe('OPFSStorage', () => {
     expect(persistResult).toBe(true)
     
     // Clean up
-    await opfsStorage.clear()
+    await opfsStorage.clearAll({ force: true })
   })
 })

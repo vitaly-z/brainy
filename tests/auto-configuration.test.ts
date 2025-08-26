@@ -11,7 +11,7 @@ describe('Auto-Configuration System', () => {
 
   afterEach(async () => {
     if (brainy) {
-      await brainy.clear()
+      await brainy.clearAll({ force: true })
     }
     await cleanupWorkerPools()
   })
@@ -130,7 +130,7 @@ describe('Auto-Configuration System', () => {
       expect(readHeavyStats.search.hitRate).toBeGreaterThan(0.5)
       expect(readHeavyStats.search.enabled).toBe(true)
 
-      await readHeavyBrainy.clear()
+      await readHeavyBrainy.clearAll({ force: true })
     })
 
     it('should handle zero-configuration scenarios gracefully', async () => {

@@ -28,13 +28,13 @@ describe('Multi-Environment Tests', () => {
     await brainyInstance.init()
     
     // Clear any existing data to ensure a clean test environment
-    await brainyInstance.clear()
+    await brainyInstance.clearAll({ force: true })
   })
   
   afterEach(async () => {
     // Clean up after each test
     if (brainyInstance) {
-      await brainyInstance.clear()
+      await brainyInstance.clearAll({ force: true })
       await brainyInstance.shutDown()
     }
   })
@@ -243,7 +243,7 @@ describe('Multi-Environment Tests', () => {
       expect(typeof backup).toBe('object')
       
       // Clear the database
-      await brainyInstance.clear()
+      await brainyInstance.clearAll({ force: true })
       
       // Restore from backup
       await brainyInstance.restore(backup)

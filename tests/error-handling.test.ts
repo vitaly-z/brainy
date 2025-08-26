@@ -28,13 +28,13 @@ describe('Error Handling Tests', () => {
     await brainyInstance.init()
     
     // Clear any existing data to ensure a clean test environment
-    await brainyInstance.clear()
+    await brainyInstance.clearAll({ force: true })
   })
   
   afterEach(async () => {
     // Clean up after each test
     if (brainyInstance) {
-      await brainyInstance.clear()
+      await brainyInstance.clearAll({ force: true })
       await brainyInstance.shutDown()
     }
   })

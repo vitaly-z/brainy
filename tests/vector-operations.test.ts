@@ -47,7 +47,7 @@ describe('Vector Operations', () => {
     })
 
     await db.init()
-    await db.clear() // Clear any existing data
+    await db.clearAll({ force: true }) // Clear any existing data
 
     // Add a simple vector
     const testVector = createTestVector(1)
@@ -72,7 +72,7 @@ describe('Vector Operations', () => {
     })
 
     await db.init()
-    await db.clear() // Clear any existing data
+    await db.clearAll({ force: true }) // Clear any existing data
 
     // Add multiple vectors
     await db.add(createTestVector(0), { id: 'vec1', type: 'unit' })

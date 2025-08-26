@@ -10,6 +10,16 @@ import { ModelManager } from '../embeddings/model-manager.js'
 // @ts-ignore - Transformers.js is now the primary embedding library
 import { pipeline, env } from '@huggingface/transformers'
 
+// CRITICAL: Disable ONNX memory arena to prevent 4-8GB allocation
+// This is needed for BOTH production and testing - reduces memory by 50-75%
+if (typeof process !== 'undefined' && process.env) {
+  process.env.ORT_DISABLE_MEMORY_ARENA = '1'
+  process.env.ORT_DISABLE_MEMORY_PATTERN = '1'
+  // Also limit ONNX thread count for more predictable memory usage
+  process.env.ORT_INTRA_OP_NUM_THREADS = '2'
+  process.env.ORT_INTER_OP_NUM_THREADS = '2'
+}
+
 /**
  * Detect the best available GPU device for the current environment
  */
@@ -118,7 +128,7 @@ export class TransformerEmbedding implements EmbeddingModel {
       verbose: this.verbose,
       cacheDir: options.cacheDir || './models',
       localFilesOnly: localFilesOnly,
-      dtype: options.dtype || 'fp32',
+      dtype: options.dtype || 'q8',  // Changed from fp32 to q8 for 75% memory reduction
       device: options.device || 'auto'
     }
     
@@ -248,11 +258,19 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       const startTime = Date.now()
       
-      // Load the feature extraction pipeline with GPU support
+      // Load the feature extraction pipeline with memory optimizations
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
-        dtype: this.options.dtype
+        dtype: this.options.dtype || 'q8',  // Use quantized model for lower memory
+        // CRITICAL: ONNX memory optimizations
+        session_options: {
+          enableCpuMemArena: false,  // Disable pre-allocated memory arena
+          enableMemPattern: false,   // Disable memory pattern optimization
+          interOpNumThreads: 2,      // Limit thread count
+          intraOpNumThreads: 2,      // Limit parallelism
+          graphOptimizationLevel: 'all'
+        }
       }
       
       // Add device configuration for GPU acceleration

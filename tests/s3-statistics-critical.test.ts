@@ -35,7 +35,7 @@ describe('CRITICAL: S3 Statistics at Scale', () => {
 
   afterEach(async () => {
     if (brainy) {
-      await brainy.clear()
+      await brainy.clearAll({ force: true })
     }
     vi.useRealTimers()
   })

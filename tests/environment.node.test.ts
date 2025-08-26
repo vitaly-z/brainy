@@ -71,7 +71,7 @@ describe('Brainy in Node.js Environment', () => {
       })
 
       await db.init()
-      await db.clear() // Clear any existing data
+      await db.clearAll({ force: true }) // Clear any existing data
 
       // Add some test vectors
       await db.add(createTestVector(0), { id: 'item1', label: 'x-axis' })
@@ -103,7 +103,7 @@ describe('Brainy in Node.js Environment', () => {
         })
 
         await db.init()
-        await db.clear() // Clear any existing data
+        await db.clearAll({ force: true }) // Clear any existing data
 
         // Add text items as a consumer would
         await db.addItem('Hello world', { id: 'greeting' })
@@ -131,7 +131,7 @@ describe('Brainy in Node.js Environment', () => {
       })
 
       await db.init()
-      await db.clear() // Clear any existing data
+      await db.clearAll({ force: true }) // Clear any existing data
 
       // Add different types of data
       const testData = [
@@ -179,7 +179,7 @@ describe('Brainy in Node.js Environment', () => {
       })
 
       await db.init()
-      await db.clear() // Clear any existing data
+      await db.clearAll({ force: true }) // Clear any existing data
 
       const results = await db.search(createTestVector(0), 5)
       expect(results).toBeDefined()

@@ -43,8 +43,8 @@ describe('Distributed Caching', () => {
   })
 
   afterEach(async () => {
-    await serviceA.clear()
-    await serviceB.clear()
+    await serviceA.clearAll({ force: true })
+    await serviceB.clearAll({ force: true })
     await cleanupWorkerPools()
   })
 
@@ -118,7 +118,7 @@ describe('Distributed Caching', () => {
       const results2 = await shortCacheService.search('short cache', 5)
       expect(results2.length).toBe(1)
 
-      await shortCacheService.clear()
+      await shortCacheService.clearAll({ force: true })
     })
 
     it('should provide cache statistics for monitoring', async () => {
@@ -210,7 +210,7 @@ describe('Distributed Caching', () => {
       const cacheStats = distributedService.getCacheStats()
       expect(cacheStats.search.enabled).toBe(true)
 
-      await distributedService.clear()
+      await distributedService.clearAll({ force: true })
     })
 
     it('should maintain performance with frequent external changes', async () => {

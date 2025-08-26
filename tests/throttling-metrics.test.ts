@@ -73,7 +73,7 @@ class MockStorageAdapter extends BaseStorageAdapter {
   }
 
   async clear(): Promise<void> {
-    this.data.clear()
+    this.data.clearAll({ force: true })
   }
 
   async getStorageStatus(): Promise<any> {

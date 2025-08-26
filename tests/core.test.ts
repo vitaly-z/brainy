@@ -122,7 +122,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(data)
 
       await data.init()
-      await data.clear() // Clear any existing data
+      await data.clearAll({ force: true }) // Clear any existing data
 
       // Add vectors using helper function
       await data.add(createTestVector(0), { id: 'v1', label: 'x-axis' })
@@ -144,7 +144,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(data)
 
       await data.init()
-      await data.clear() // Clear any existing data
+      await data.clearAll({ force: true }) // Clear any existing data
 
       // Add multiple vectors
       const vectors = [
@@ -177,8 +177,8 @@ describe('Brainy Core Functionality', () => {
       await cosineData.init()
 
       // Clear any existing data to ensure test isolation
-      await euclideanData.clear()
-      await cosineData.clear()
+      await euclideanData.clearAll({ force: true })
+      await cosineData.clearAll({ force: true })
 
       const vector = createTestVector(5)
       const metadata = { id: 'test' }
@@ -294,7 +294,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(data)
 
       await data.init()
-      await data.clear() // Clear any existing data
+      await data.clearAll({ force: true }) // Clear any existing data
 
       // Search in empty database
       const results = await data.search(createTestVector(0), 1)
@@ -341,7 +341,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(db)
 
       await db.init()
-      await db.clear() // Clear any existing data
+      await db.clearAll({ force: true }) // Clear any existing data
 
       // Add known data
       await db.add('known data', { id: 'known' })
@@ -378,7 +378,7 @@ describe('Brainy Core Functionality', () => {
       activeInstances.push(data)
 
       await data.init()
-      await data.clear() // Clear any existing data
+      await data.clearAll({ force: true }) // Clear any existing data
 
       // Add some vectors (nouns)
       await data.add(createTestVector(0), { id: 'v1', label: 'x-axis' })
