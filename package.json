@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Multi-Dimensional AI Database - Vector search, graph relationships, field filtering with Triple Intelligence Engine, HNSW indexing and universal storage",
   "main": "dist/index.js",
   "module": "dist/index.js",
