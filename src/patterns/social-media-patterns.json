@@ -1,0 +1,266 @@
+{
+  "version": "2.0.0",
+  "description": "Social media and content creation patterns",
+  "patterns": [
+    {
+      "id": "social_trending",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["trending on Twitter", "viral TikTok videos", "Instagram trends 2024"],
+      "pattern": "(?:trending|viral|popular)\\s+(?:on\\s+)?(Twitter|TikTok|Instagram|YouTube|LinkedIn|Reddit|Facebook)\\s*(.+)?",
+      "template": {
+        "like": "${1} trending ${2}",
+        "where": { "domain": "social", "platform": "${1}", "type": "trending" }
+      },
+      "confidence": 0.94,
+      "frequency": "very_high"
+    },
+    {
+      "id": "social_hashtag",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["#AI hashtag", "best hashtags for Instagram", "trending hashtags today"],
+      "pattern": "(?:#(\\w+)|hashtags?\\s+(?:for\\s+)?(.+))",
+      "template": {
+        "like": "hashtag ${1}${2}",
+        "where": { "domain": "social", "type": "hashtag" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "social_influencer",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["top tech influencers", "Instagram influencers fashion", "YouTube creators gaming"],
+      "pattern": "(?:top\\s+)?(.+?)\\s+(?:influencers?|creators?|YouTubers?)\\s*(?:on\\s+(.+))?",
+      "template": {
+        "like": "${1} influencers ${2}",
+        "where": { "domain": "social", "type": "influencer" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "social_followers",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["how to get more followers", "increase Instagram followers", "buy Twitter followers"],
+      "pattern": "(?:how\\s+to\\s+)?(?:get|gain|increase|buy)\\s+(?:more\\s+)?(.+?)\\s+followers?",
+      "template": {
+        "like": "${1} followers growth",
+        "where": { "domain": "social", "type": "growth" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "social_content_ideas",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram post ideas", "TikTok video ideas", "LinkedIn content strategy"],
+      "pattern": "(.+?)\\s+(?:post|video|content|story)\\s+(?:ideas?|strategy|tips?)",
+      "template": {
+        "like": "${1} content ideas",
+        "where": { "domain": "social", "type": "content_strategy" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "social_algorithm",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram algorithm 2024", "TikTok algorithm explained", "YouTube algorithm changes"],
+      "pattern": "(Instagram|TikTok|YouTube|Twitter|LinkedIn)\\s+algorithm\\s*(.+)?",
+      "template": {
+        "like": "${1} algorithm ${2}",
+        "where": { "domain": "social", "platform": "${1}", "type": "algorithm" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "social_analytics",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram analytics tools", "track Twitter engagement", "social media metrics"],
+      "pattern": "(.+?)\\s+(?:analytics?|metrics?|insights?|engagement)\\s*(?:tools?)?",
+      "template": {
+        "like": "${1} analytics",
+        "where": { "domain": "social", "type": "analytics" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_scheduling",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["best time to post Instagram", "schedule tweets", "social media calendar"],
+      "pattern": "(?:best\\s+time\\s+to\\s+post|schedule)\\s+(.+)",
+      "template": {
+        "like": "${1} posting schedule",
+        "where": { "domain": "social", "type": "scheduling" }
+      },
+      "confidence": 0.90,
+      "frequency": "high"
+    },
+    {
+      "id": "social_bio_profile",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram bio ideas", "LinkedIn profile tips", "Twitter bio generator"],
+      "pattern": "(.+?)\\s+(?:bio|profile)\\s+(?:ideas?|tips?|generator|examples?)",
+      "template": {
+        "like": "${1} bio ideas",
+        "where": { "domain": "social", "type": "profile" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_username",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["username ideas aesthetic", "check username availability", "Instagram username generator"],
+      "pattern": "(?:username|handle)\\s+(.+)",
+      "template": {
+        "like": "username ${1}",
+        "where": { "domain": "social", "type": "username" }
+      },
+      "confidence": 0.89,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_caption",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram caption ideas", "funny captions", "caption for selfie"],
+      "pattern": "(.+?)\\s*(?:captions?|quotes?)\\s+(?:for\\s+)?(.+)?",
+      "template": {
+        "like": "${1} caption ${2}",
+        "where": { "domain": "social", "type": "caption" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "social_story_reel",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram story ideas", "how to make reels", "TikTok vs Reels"],
+      "pattern": "(?:Instagram\\s+)?(?:story|stories|reels?)\\s+(.+)",
+      "template": {
+        "like": "story reels ${1}",
+        "where": { "domain": "social", "type": "stories" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "social_monetization",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["monetize Instagram", "YouTube earnings calculator", "TikTok creator fund"],
+      "pattern": "(?:monetize|earn\\s+money|creator\\s+fund)\\s+(?:on\\s+)?(.+)",
+      "template": {
+        "like": "monetize ${1}",
+        "where": { "domain": "social", "type": "monetization" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "social_verification",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["get verified on Instagram", "Twitter blue checkmark", "verification requirements"],
+      "pattern": "(?:get\\s+)?verifi(?:ed|cation)\\s+(?:on\\s+)?(.+)",
+      "template": {
+        "like": "${1} verification",
+        "where": { "domain": "social", "type": "verification" }
+      },
+      "confidence": 0.92,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_collaboration",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram collaboration", "brand partnerships", "influencer marketing"],
+      "pattern": "(?:brand\\s+)?(?:collaboration|partnership|sponsorship)\\s+(.+)",
+      "template": {
+        "like": "${1} collaboration",
+        "where": { "domain": "social", "type": "collaboration" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_dm_messaging",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram DM not working", "Twitter DM limits", "LinkedIn message templates"],
+      "pattern": "(.+?)\\s+(?:DM|direct\\s+message|messaging)\\s*(.+)?",
+      "template": {
+        "like": "${1} messaging ${2}",
+        "where": { "domain": "social", "type": "messaging" }
+      },
+      "confidence": 0.89,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_privacy_settings",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram privacy settings", "make Twitter private", "Facebook privacy"],
+      "pattern": "(.+?)\\s+privacy\\s*(?:settings?)?",
+      "template": {
+        "like": "${1} privacy",
+        "where": { "domain": "social", "type": "privacy" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_live_streaming",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram live tips", "YouTube streaming setup", "Twitch vs YouTube"],
+      "pattern": "(.+?)\\s+(?:live|streaming|stream)\\s*(.+)?",
+      "template": {
+        "like": "${1} live streaming ${2}",
+        "where": { "domain": "social", "type": "streaming" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_filters_effects",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["Instagram filters", "TikTok effects", "Snapchat lenses"],
+      "pattern": "(.+?)\\s+(?:filters?|effects?|lenses?)\\s*(.+)?",
+      "template": {
+        "like": "${1} filters ${2}",
+        "where": { "domain": "social", "type": "filters" }
+      },
+      "confidence": 0.88,
+      "frequency": "medium"
+    },
+    {
+      "id": "social_meme_viral",
+      "category": "domain_specific",
+      "domain": "social",
+      "examples": ["trending memes", "meme generator", "viral video ideas"],
+      "pattern": "(?:trending\\s+)?(?:memes?|viral\\s+videos?)\\s*(.+)?",
+      "template": {
+        "like": "memes viral ${1}",
+        "where": { "domain": "social", "type": "meme" }
+      },
+      "confidence": 0.89,
+      "frequency": "high"
+    }
+  ]
+}

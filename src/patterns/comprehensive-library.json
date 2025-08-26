@@ -1,0 +1,2036 @@
+{
+  "version": "2.0.0",
+  "description": "Comprehensive pattern library with 120+ patterns for 90%+ coverage",
+  "metadata": {
+    "totalPatterns": 122,
+    "categories": [
+      "academic",
+      "aggregation",
+      "combined",
+      "commercial",
+      "comparative",
+      "contextual",
+      "conversational",
+      "domain",
+      "existence",
+      "filtering",
+      "informational",
+      "navigational",
+      "relational",
+      "spatial",
+      "technical",
+      "temporal",
+      "transactional"
+    ],
+    "averageConfidence": 0.8668852459016395,
+    "sources": [
+      "Original curated patterns",
+      "Additional domain patterns",
+      "Common search query research",
+      "Voice assistant patterns"
+    ]
+  },
+  "patterns": [
+    {
+      "id": "research_on",
+      "category": "academic",
+      "examples": [
+        "research on AI safety",
+        "papers about climate change",
+        "studies on COVID"
+      ],
+      "pattern": "(?:research|papers?|studies)\\s+(?:on|about)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "academic"
+        }
+      },
+      "confidence": 0.91
+    },
+    {
+      "id": "aggregation_count",
+      "category": "aggregation",
+      "examples": [
+        "count papers",
+        "number of models",
+        "how many datasets"
+      ],
+      "pattern": "(count|number of|how many) (.+)",
+      "template": {
+        "like": "${2}",
+        "aggregate": "count"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "how_many",
+      "category": "aggregation",
+      "examples": [
+        "how many papers about AI",
+        "count of documents"
+      ],
+      "pattern": "(?:how\\s+many|count\\s+of|number\\s+of)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "aggregate": "count"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "list_of_all",
+      "category": "aggregation",
+      "examples": [
+        "list of all features",
+        "all available options",
+        "complete list"
+      ],
+      "pattern": "(?:list\\s+of\\s+all|all\\s+available|complete\\s+list)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "limit": 1000
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "aggregation_average",
+      "category": "aggregation",
+      "examples": [
+        "average citations",
+        "mean accuracy",
+        "average performance"
+      ],
+      "pattern": "(average|mean) (.+)",
+      "template": {
+        "like": "${2}",
+        "aggregate": "avg"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "aggregation_sum",
+      "category": "aggregation",
+      "examples": [
+        "total citations",
+        "sum of parameters",
+        "total cost"
+      ],
+      "pattern": "(total|sum of|sum) (.+)",
+      "template": {
+        "like": "${2}",
+        "aggregate": "sum"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "aggregation_max",
+      "category": "aggregation",
+      "examples": [
+        "highest accuracy",
+        "maximum performance",
+        "largest model"
+      ],
+      "pattern": "(highest|maximum|largest|biggest) (.+)",
+      "template": {
+        "like": "${2}",
+        "aggregate": "max"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "aggregation_min",
+      "category": "aggregation",
+      "examples": [
+        "lowest error",
+        "minimum cost",
+        "smallest model"
+      ],
+      "pattern": "(lowest|minimum|smallest|least) (.+)",
+      "template": {
+        "like": "${2}",
+        "aggregate": "min"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "average_of",
+      "category": "aggregation",
+      "examples": [
+        "average citations",
+        "mean score",
+        "median value"
+      ],
+      "pattern": "(?:average|mean|median)\\s+(?:of\\s+)?(.+)",
+      "template": {
+        "like": "${1}",
+        "aggregate": "average"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "and_but_not",
+      "category": "combined",
+      "examples": [
+        "AI and ML but not deep learning",
+        "Python and Django but not Flask"
+      ],
+      "pattern": "(.+?)\\s+and\\s+(.+?)\\s+but\\s+not\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": {
+          "not": "${3}"
+        }
+      },
+      "confidence": 0.82
+    },
+    {
+      "id": "combined_complex_1",
+      "category": "combined",
+      "examples": [
+        "recent papers by Hinton with more than 50 citations"
+      ],
+      "pattern": "recent (.+) by (.+) with more than (\\d+) (.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${2}"
+        },
+        "where": {
+          "${4}": {
+            "greaterThan": "${3}"
+          }
+        },
+        "boost": "recent"
+      },
+      "confidence": 0.75
+    },
+    {
+      "id": "combined_complex_2",
+      "category": "combined",
+      "examples": [
+        "best machine learning papers from 2023 at Stanford"
+      ],
+      "pattern": "best (.+) from (\\d{4}) at (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "year": "${2}",
+          "organization": "${3}"
+        },
+        "boost": "popular"
+      },
+      "confidence": 0.75
+    },
+    {
+      "id": "combined_complex_3",
+      "category": "combined",
+      "examples": [
+        "compare tensorflow and pytorch for computer vision"
+      ],
+      "pattern": "compare (.+) and (.+) for (.+)",
+      "template": {
+        "like": [
+          "${1}",
+          "${2}",
+          "${3}"
+        ],
+        "where": {
+          "type": "comparison",
+          "domain": "${3}"
+        }
+      },
+      "confidence": 0.75
+    },
+    {
+      "id": "commercial_compare",
+      "category": "commercial",
+      "examples": [
+        "tensorflow vs pytorch",
+        "compare BERT and GPT",
+        "GPT-3 compared to GPT-4"
+      ],
+      "pattern": "(.+) (vs|versus|compared to|vs\\.) (.+)",
+      "template": {
+        "like": [
+          "${1}",
+          "${3}"
+        ],
+        "where": {
+          "type": "comparison"
+        }
+      },
+      "confidence": 0.95
+    },
+    {
+      "id": "commercial_reviews",
+      "category": "commercial",
+      "examples": [
+        "tensorflow reviews",
+        "best practices reviews",
+        "model evaluation"
+      ],
+      "pattern": "(.+) (reviews|ratings|feedback|opinions)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "review"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "commercial_best",
+      "category": "commercial",
+      "examples": [
+        "best machine learning framework",
+        "top AI models",
+        "best practices"
+      ],
+      "pattern": "(best|top|greatest|finest) (.+)",
+      "template": {
+        "like": "${2}",
+        "boost": "popular"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "commercial_top_n",
+      "category": "commercial",
+      "examples": [
+        "top 10 models",
+        "top 5 papers",
+        "best 3 frameworks"
+      ],
+      "pattern": "(top|best) (\\d+) (.+)",
+      "template": {
+        "like": "${3}",
+        "limit": "${2}",
+        "boost": "popular"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "price_cost",
+      "category": "commercial",
+      "examples": [
+        "price of AWS",
+        "cost of hosting",
+        "pricing for services"
+      ],
+      "pattern": "(?:price|cost|pricing)\\s+(?:of|for)\\s+(.+)",
+      "template": {
+        "like": "${1} pricing",
+        "where": {
+          "type": "commercial"
+        }
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "free_open_source",
+      "category": "commercial",
+      "examples": [
+        "free alternatives to",
+        "open source version",
+        "free tools for"
+      ],
+      "pattern": "(?:free|open\\s+source)\\s+(?:alternatives?\\s+to|version\\s+of|tools?\\s+for)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "license": "free"
+        }
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "commercial_alternatives",
+      "category": "commercial",
+      "examples": [
+        "tensorflow alternatives",
+        "options besides OpenAI",
+        "similar to BERT"
+      ],
+      "pattern": "(.+) (alternatives|options|similar to|like)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "alternative"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "commercial_cheapest",
+      "category": "commercial",
+      "examples": [
+        "cheapest GPU",
+        "most affordable cloud",
+        "budget options"
+      ],
+      "pattern": "(cheapest|most affordable|budget|lowest price) (.+)",
+      "template": {
+        "like": "${2}",
+        "orderBy": {
+          "price": "asc"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "commercial_pricing",
+      "category": "commercial",
+      "examples": [
+        "GPU pricing",
+        "cloud costs",
+        "model training costs"
+      ],
+      "pattern": "(.+) (pricing|price|cost|costs|rates)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "hasField": "price"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "comparative_better",
+      "category": "commercial",
+      "examples": [
+        "is BERT better than GPT",
+        "pytorch better than tensorflow"
+      ],
+      "pattern": "(is )? (.+) better than (.+)",
+      "template": {
+        "like": [
+          "${2}",
+          "${3}"
+        ],
+        "where": {
+          "type": "comparison"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "comparative_faster",
+      "category": "commercial",
+      "examples": [
+        "fastest model",
+        "quickest training",
+        "faster than BERT"
+      ],
+      "pattern": "(fastest|quickest|faster) (.+)",
+      "template": {
+        "like": "${2}",
+        "orderBy": {
+          "speed": "desc"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "comparative_more_accurate",
+      "category": "commercial",
+      "examples": [
+        "most accurate model",
+        "higher accuracy than"
+      ],
+      "pattern": "(most accurate|highest accuracy|more accurate) (.+)",
+      "template": {
+        "like": "${2}",
+        "orderBy": {
+          "accuracy": "desc"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "question_which",
+      "category": "commercial",
+      "examples": [
+        "which model is best",
+        "which framework to use"
+      ],
+      "pattern": "which (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "selection"
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "id": "comparison_vs",
+      "category": "comparative",
+      "examples": [
+        "Python vs JavaScript",
+        "React vs Vue",
+        "TensorFlow vs PyTorch"
+      ],
+      "pattern": "(.+?)\\s+vs\\.?\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "boost": "comparison"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "difference_between",
+      "category": "comparative",
+      "examples": [
+        "difference between AI and ML",
+        "what's the difference between React and Angular"
+      ],
+      "pattern": "(?:difference|differences)\\s+between\\s+(.+?)\\s+and\\s+(.+)",
+      "template": {
+        "like": "${1} ${2} comparison",
+        "boost": "comparison"
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "alternative_instead",
+      "category": "comparative",
+      "examples": [
+        "instead of React",
+        "alternative to Python",
+        "replacement for"
+      ],
+      "pattern": "(?:instead\\s+of|alternative\\s+to|replacement\\s+for|substitute\\s+for)\\s+(.+)",
+      "template": {
+        "like": "${1} alternative",
+        "boost": "comparison"
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "pros_cons",
+      "category": "comparative",
+      "examples": [
+        "pros and cons of React",
+        "advantages of Python",
+        "benefits of AI"
+      ],
+      "pattern": "(?:pros\\s+and\\s+cons|advantages?|benefits?|disadvantages?)\\s+(?:of|for)\\s+(.+)",
+      "template": {
+        "like": "${1} analysis",
+        "boost": "comparison"
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "benchmark_performance",
+      "category": "comparative",
+      "examples": [
+        "benchmark results",
+        "performance comparison",
+        "speed test"
+      ],
+      "pattern": "(?:benchmark|performance|speed\\s+test)\\s+(?:results?|comparison)?\\s*(?:for|of)?\\s*(.+)",
+      "template": {
+        "like": "${1} benchmark",
+        "where": {
+          "type": "benchmark"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "contextual_more_like",
+      "category": "contextual",
+      "examples": [
+        "more like this",
+        "similar papers",
+        "find similar"
+      ],
+      "pattern": "(more like|similar to|like) (this|that|these)",
+      "template": {
+        "similar": "__context__"
+      },
+      "confidence": 0.8
+    },
+    {
+      "id": "contextual_same_but",
+      "category": "contextual",
+      "examples": [
+        "same but newer",
+        "same query but from 2023"
+      ],
+      "pattern": "same (query |search |)but (.+)",
+      "template": {
+        "__modifier__": "${2}"
+      },
+      "confidence": 0.75
+    },
+    {
+      "id": "conversational_need",
+      "category": "conversational",
+      "examples": [
+        "I need help with Python",
+        "I want to learn React",
+        "I'm looking for AI papers"
+      ],
+      "pattern": "(?:I\\s+need|I\\s+want|I'm\\s+looking\\s+for)\\s+(.+)",
+      "template": {
+        "like": "${1}"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "conversational_can_you",
+      "category": "conversational",
+      "examples": [
+        "can you find papers",
+        "could you show me",
+        "would you search for"
+      ],
+      "pattern": "(?:can|could|would)\\s+you\\s+(?:find|show|search|get)\\s+(?:me\\s+)?(.+)",
+      "template": {
+        "like": "${1}"
+      },
+      "confidence": 0.84
+    },
+    {
+      "id": "industry_sector",
+      "category": "domain",
+      "examples": [
+        "fintech applications",
+        "healthcare AI",
+        "education technology"
+      ],
+      "pattern": "(?:fintech|healthcare|education|finance|medical|legal|retail)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "industry": "${0}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "is_there_any",
+      "category": "existence",
+      "examples": [
+        "is there any research on",
+        "are there any papers about"
+      ],
+      "pattern": "(?:is|are)\\s+there\\s+(?:any\\s+)?(.+?)\\s+(?:on|about|for)\\s+(.+)",
+      "template": {
+        "like": "${2} ${1}"
+      },
+      "confidence": 0.83
+    },
+    {
+      "id": "filter_more_than",
+      "category": "filtering",
+      "examples": [
+        "papers with more than 100 citations",
+        "models with over 1B parameters"
+      ],
+      "pattern": "(.+) with (more than|over|greater than) (\\d+) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${4}": {
+            "greaterThan": "${3}"
+          }
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "filter_less_than",
+      "category": "filtering",
+      "examples": [
+        "models with less than 1M parameters",
+        "papers with under 10 citations"
+      ],
+      "pattern": "(.+) with (less than|under|fewer than) (\\d+) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${4}": {
+            "lessThan": "${3}"
+          }
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "all_that_have",
+      "category": "filtering",
+      "examples": [
+        "all papers that have citations",
+        "all documents that contain"
+      ],
+      "pattern": "all\\s+(.+?)\\s+that\\s+(?:have|contain|include)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${2}": {
+            "exists": true
+          }
+        }
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "filter_with",
+      "category": "filtering",
+      "examples": [
+        "papers with code",
+        "models with pretrained weights",
+        "datasets with labels"
+      ],
+      "pattern": "(.+) with (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${2}": {
+            "exists": true
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "filter_without",
+      "category": "filtering",
+      "examples": [
+        "papers without code",
+        "models without training",
+        "datasets without labels"
+      ],
+      "pattern": "(.+) without (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${2}": {
+            "exists": false
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "filter_except",
+      "category": "filtering",
+      "examples": [
+        "all models except GPT",
+        "papers except reviews",
+        "everything but tutorials"
+      ],
+      "pattern": "(.+) (except|but not|excluding) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "notLike": "${3}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "filter_including",
+      "category": "filtering",
+      "examples": [
+        "papers including code",
+        "models including documentation"
+      ],
+      "pattern": "(.+) (including|with|containing) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "includes": "${3}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "filter_exactly",
+      "category": "filtering",
+      "examples": [
+        "papers with exactly 5 authors",
+        "models with 12 layers"
+      ],
+      "pattern": "(.+) with (exactly |)(\\d+) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${4}": "${3}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "with_without",
+      "category": "filtering",
+      "examples": [
+        "papers with citations",
+        "results without errors",
+        "documents with images"
+      ],
+      "pattern": "(.+?)\\s+(with|without)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "${3}": {
+            "exists": true
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "starting_with",
+      "category": "filtering",
+      "examples": [
+        "starting with A",
+        "beginning with chapter",
+        "ending with PDF"
+      ],
+      "pattern": "(.+?)\\s+(?:starting|beginning|ending)\\s+with\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "pattern": "${2}"
+        }
+      },
+      "confidence": 0.84
+    },
+    {
+      "id": "filter_only",
+      "category": "filtering",
+      "examples": [
+        "only open source models",
+        "only free datasets",
+        "papers only"
+      ],
+      "pattern": "(only )? (.+) (only)?",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "exclusive": true
+        }
+      },
+      "confidence": 0.75
+    },
+    {
+      "id": "documentation_for",
+      "category": "informational",
+      "examples": [
+        "documentation for React",
+        "docs on Python",
+        "API reference"
+      ],
+      "pattern": "(?:documentation|docs|reference|manual)\\s+(?:for|on|about)?\\s*(.+)",
+      "template": {
+        "like": "${1} documentation",
+        "where": {
+          "type": "documentation"
+        }
+      },
+      "confidence": 0.93
+    },
+    {
+      "id": "tutorial_howto",
+      "category": "informational",
+      "examples": [
+        "tutorial on machine learning",
+        "guide to Python",
+        "how to use React"
+      ],
+      "pattern": "(?:tutorial|guide|how\\s+to\\s+use)\\s+(?:on|to|for)?\\s*(.+)",
+      "template": {
+        "like": "${1} tutorial",
+        "boost": "educational"
+      },
+      "confidence": 0.92
+    },
+    {
+      "id": "getting_started",
+      "category": "informational",
+      "examples": [
+        "getting started with React",
+        "introduction to Python",
+        "beginner guide"
+      ],
+      "pattern": "(?:getting\\s+started|introduction|beginner'?s?\\s+guide)\\s+(?:with|to|for)?\\s*(.+)",
+      "template": {
+        "like": "${1} beginner",
+        "boost": "educational"
+      },
+      "confidence": 0.92
+    },
+    {
+      "id": "definition_of",
+      "category": "informational",
+      "examples": [
+        "definition of AI",
+        "what does ML mean",
+        "meaning of neural network"
+      ],
+      "pattern": "(?:definition\\s+of|what\\s+does\\s+(.+?)\\s+mean|meaning\\s+of)\\s*(.+)",
+      "template": {
+        "like": "${1}${2} definition",
+        "boost": "educational"
+      },
+      "confidence": 0.91
+    },
+    {
+      "id": "cheat_sheet",
+      "category": "informational",
+      "examples": [
+        "cheat sheet for Python",
+        "quick reference",
+        "cheatsheet React"
+      ],
+      "pattern": "(?:cheat\\s*sheet|quick\\s+reference|reference\\s+card)\\s+(?:for)?\\s*(.+)",
+      "template": {
+        "like": "${1} cheatsheet",
+        "boost": "educational"
+      },
+      "confidence": 0.91
+    },
+    {
+      "id": "info_what",
+      "category": "informational",
+      "examples": [
+        "what is machine learning",
+        "what are neural networks",
+        "what does AI mean"
+      ],
+      "pattern": "what (is|are|does) (.+)",
+      "template": {
+        "like": "${2}"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "info_definition",
+      "category": "informational",
+      "examples": [
+        "machine learning definition",
+        "AI meaning",
+        "what neural network means"
+      ],
+      "pattern": "(.+) (definition|meaning|means)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "definition"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "info_explain",
+      "category": "informational",
+      "examples": [
+        "explain backpropagation",
+        "explain how transformers work"
+      ],
+      "pattern": "explain (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "explanation"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "info_tutorial",
+      "category": "informational",
+      "examples": [
+        "tutorial on deep learning",
+        "pytorch tutorial",
+        "guide to NLP"
+      ],
+      "pattern": "(tutorial|guide|course) (on|to|for)? (.+)",
+      "template": {
+        "like": "${3}",
+        "where": {
+          "type": "tutorial"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "step_by_step",
+      "category": "informational",
+      "examples": [
+        "step by step guide",
+        "walkthrough",
+        "detailed instructions"
+      ],
+      "pattern": "(?:step\\s+by\\s+step|walkthrough|detailed\\s+instructions)\\s+(?:for|on)?\\s*(.+)",
+      "template": {
+        "like": "${1} tutorial detailed",
+        "boost": "educational"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "tell_me_about",
+      "category": "informational",
+      "examples": [
+        "tell me about machine learning",
+        "explain neural networks"
+      ],
+      "pattern": "(?:tell\\s+me\\s+about|explain|describe)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "boost": "educational"
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "use_cases",
+      "category": "informational",
+      "examples": [
+        "use cases for blockchain",
+        "applications of AI",
+        "when to use React"
+      ],
+      "pattern": "(?:use\\s+cases?|applications?|when\\s+to\\s+use)\\s+(?:for|of)?\\s*(.+)",
+      "template": {
+        "like": "${1} applications",
+        "boost": "practical"
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "advanced_expert",
+      "category": "informational",
+      "examples": [
+        "advanced Python techniques",
+        "expert guide",
+        "pro tips for"
+      ],
+      "pattern": "(?:advanced|expert|pro\\s+tips?)\\s+(?:techniques?|guide)?\\s*(?:for|on)?\\s*(.+)",
+      "template": {
+        "like": "${1} advanced",
+        "boost": "expert"
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "example_of",
+      "category": "informational",
+      "examples": [
+        "example of machine learning",
+        "sample code",
+        "demo application"
+      ],
+      "pattern": "(?:example|sample|demo)\\s+(?:of|for)?\\s*(.+)",
+      "template": {
+        "like": "${1} example",
+        "boost": "educational"
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "info_how",
+      "category": "informational",
+      "examples": [
+        "how to train a model",
+        "how does clustering work",
+        "how to implement search"
+      ],
+      "pattern": "how (to|does|do|can) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "tutorial"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "info_why",
+      "category": "informational",
+      "examples": [
+        "why use vector databases",
+        "why does overfitting occur"
+      ],
+      "pattern": "why (does|do|is|are|use) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "explanation"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "info_when",
+      "category": "informational",
+      "examples": [
+        "when did deep learning start",
+        "when was transformer invented"
+      ],
+      "pattern": "when (did|was|were|is|are) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "event"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "info_where",
+      "category": "informational",
+      "examples": [
+        "where is Stanford located",
+        "where can I find datasets"
+      ],
+      "pattern": "where (is|are|can|do) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "location"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "info_who",
+      "category": "informational",
+      "examples": [
+        "who invented transformers",
+        "who is Geoffrey Hinton"
+      ],
+      "pattern": "who (is|are|invented|created|made) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "person"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "question_can",
+      "category": "informational",
+      "examples": [
+        "can transformers handle images",
+        "can I use this for NLP"
+      ],
+      "pattern": "can (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "type": "capability"
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "id": "question_should",
+      "category": "informational",
+      "examples": [
+        "should I use tensorflow",
+        "should we implement caching"
+      ],
+      "pattern": "should (I|we|you) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "recommendation"
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "id": "nav_entity",
+      "category": "navigational",
+      "examples": [
+        "OpenAI website",
+        "Google homepage",
+        "GitHub tensorflow"
+      ],
+      "pattern": "([A-Z][\\w]+) (website|homepage|page|site)",
+      "template": {
+        "where": {
+          "name": "${1}",
+          "type": "website"
+        }
+      },
+      "confidence": 0.95
+    },
+    {
+      "id": "official_docs",
+      "category": "navigational",
+      "examples": [
+        "official React documentation",
+        "official Python site"
+      ],
+      "pattern": "official\\s+(.+?)\\s*(?:documentation|docs|site|website)?",
+      "template": {
+        "like": "${1} official",
+        "where": {
+          "official": true
+        }
+      },
+      "confidence": 0.93
+    },
+    {
+      "id": "action_find",
+      "category": "navigational",
+      "examples": [
+        "find papers about AI",
+        "search for models",
+        "look for datasets"
+      ],
+      "pattern": "(find|search for|look for) (.+)",
+      "template": {
+        "like": "${2}"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "synonym_find",
+      "category": "navigational",
+      "examples": [
+        "find machine learning papers",
+        "locate AI research",
+        "get neural network docs"
+      ],
+      "pattern": "(?:find|locate|get|fetch|retrieve)\\s+(.+)",
+      "template": {
+        "like": "${1}"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "synonym_show",
+      "category": "navigational",
+      "examples": [
+        "show me recent papers",
+        "display all results",
+        "list available options"
+      ],
+      "pattern": "(?:show\\s+me|display|list|view)\\s+(.+)",
+      "template": {
+        "like": "${1}"
+      },
+      "confidence": 0.88
+    },
+    {
+      "id": "nav_goto",
+      "category": "navigational",
+      "examples": [
+        "go to documentation",
+        "navigate to settings"
+      ],
+      "pattern": "(go to|navigate to|open|show) (.+)",
+      "template": {
+        "where": {
+          "name": "${2}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "nav_profile",
+      "category": "navigational",
+      "examples": [
+        "John Smith profile",
+        "user profile",
+        "my account"
+      ],
+      "pattern": "(.+) (profile|account|page)",
+      "template": {
+        "where": {
+          "name": "${1}",
+          "type": "profile"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "action_show",
+      "category": "navigational",
+      "examples": [
+        "show me papers",
+        "display results",
+        "list models"
+      ],
+      "pattern": "(show|display|list) (me )? (.+)",
+      "template": {
+        "like": "${3}"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "community_forum",
+      "category": "navigational",
+      "examples": [
+        "React community",
+        "Python forum",
+        "Discord server for"
+      ],
+      "pattern": "(?:community|forum|discord|slack|discussion)\\s+(?:for)?\\s*(.+)",
+      "template": {
+        "like": "${1} community",
+        "where": {
+          "type": "community"
+        }
+      },
+      "confidence": 0.84
+    },
+    {
+      "id": "relational_by_author",
+      "category": "relational",
+      "examples": [
+        "papers by Hinton",
+        "research by OpenAI",
+        "models by Google"
+      ],
+      "pattern": "(.+) by ([A-Z][\\w\\s]+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${2}"
+        }
+      },
+      "confidence": 0.95
+    },
+    {
+      "id": "relational_authored",
+      "category": "relational",
+      "examples": [
+        "papers authored by Bengio",
+        "articles written by researchers"
+      ],
+      "pattern": "(.+) (authored|written) by (.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${3}",
+          "type": "author"
+        }
+      },
+      "confidence": 0.95
+    },
+    {
+      "id": "who_created",
+      "category": "relational",
+      "examples": [
+        "who created React",
+        "who wrote this paper",
+        "who invented the internet"
+      ],
+      "pattern": "who\\s+(?:created|wrote|invented|developed|made)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "relationship": "creator"
+        }
+      },
+      "confidence": 0.92
+    },
+    {
+      "id": "relational_from_source",
+      "category": "relational",
+      "examples": [
+        "papers from Stanford",
+        "datasets from Google",
+        "models from OpenAI"
+      ],
+      "pattern": "(.+) from ([A-Z][\\w\\s]+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${2}"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "relational_created_by",
+      "category": "relational",
+      "examples": [
+        "models created by OpenAI",
+        "datasets created by Google"
+      ],
+      "pattern": "(.+) (created|made|developed|built) by (.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${3}",
+          "type": "created"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "relational_published",
+      "category": "relational",
+      "examples": [
+        "papers published by Nature",
+        "articles published in Science"
+      ],
+      "pattern": "(.+) published (by|in) (.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "from": "${3}",
+          "type": "publisher"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "similar_to",
+      "category": "relational",
+      "examples": [
+        "similar to Python",
+        "papers like this one",
+        "alternatives to React"
+      ],
+      "pattern": "(?:similar\\s+to|like|alternatives?\\s+to)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "boost": "similarity"
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "relational_related",
+      "category": "relational",
+      "examples": [
+        "papers related to transformers",
+        "research connected to NLP"
+      ],
+      "pattern": "(.+) (related to|connected to|associated with) (.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "to": "${3}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "based_on",
+      "category": "relational",
+      "examples": [
+        "based on React",
+        "built with Python",
+        "powered by"
+      ],
+      "pattern": "(?:based\\s+on|built\\s+with|powered\\s+by|using)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "connected": {
+          "technology": "${1}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "spatial_in",
+      "category": "spatial",
+      "examples": [
+        "companies in Silicon Valley",
+        "universities in Boston",
+        "labs in California"
+      ],
+      "pattern": "(.+) in ([A-Z][\\w\\s]+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "location": "${2}"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "spatial_near",
+      "category": "spatial",
+      "examples": [
+        "conferences near Boston",
+        "labs near Stanford",
+        "companies near me"
+      ],
+      "pattern": "(.+) near (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "location": {
+            "near": "${2}"
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "spatial_at",
+      "category": "spatial",
+      "examples": [
+        "researchers at MIT",
+        "papers at conference",
+        "work at Google"
+      ],
+      "pattern": "(.+) at ([A-Z][\\w]+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "organization": "${2}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "where_location",
+      "category": "spatial",
+      "examples": [
+        "where is Stanford University",
+        "where can I find documentation"
+      ],
+      "pattern": "where\\s+(?:is|are|can\\s+I\\s+find)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "location": {
+            "exists": true
+          }
+        }
+      },
+      "confidence": 0.83
+    },
+    {
+      "id": "version_specific",
+      "category": "technical",
+      "examples": [
+        "React version 18",
+        "Python 3.11",
+        "Node.js v20"
+      ],
+      "pattern": "(.+?)\\s+version\\s+(\\d+(?:\\.\\d+)*)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "version": "${2}"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "api_endpoint",
+      "category": "technical",
+      "examples": [
+        "API endpoint for users",
+        "REST API documentation",
+        "GraphQL schema"
+      ],
+      "pattern": "(?:API|REST|GraphQL)\\s+(?:endpoint|documentation|schema)\\s+(?:for)?\\s*(.+)",
+      "template": {
+        "like": "${1} API",
+        "where": {
+          "type": "api"
+        }
+      },
+      "confidence": 0.89
+    },
+    {
+      "id": "security_vulnerability",
+      "category": "technical",
+      "examples": [
+        "security issues",
+        "vulnerability in",
+        "CVE for"
+      ],
+      "pattern": "(?:security|vulnerability|CVE)\\s+(?:issues?|in|for)?\\s*(.+)",
+      "template": {
+        "like": "${1} security",
+        "where": {
+          "type": "security"
+        }
+      },
+      "confidence": 0.89
+    },
+    {
+      "id": "source_code",
+      "category": "technical",
+      "examples": [
+        "source code for React",
+        "GitHub repository",
+        "code examples"
+      ],
+      "pattern": "(?:source\\s+code|github|repository|code\\s+examples?)\\s+(?:for|of)?\\s*(.+)",
+      "template": {
+        "like": "${1} code",
+        "where": {
+          "type": "code"
+        }
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "troubleshoot_fix",
+      "category": "technical",
+      "examples": [
+        "troubleshoot Python error",
+        "fix React issue",
+        "solve problem with"
+      ],
+      "pattern": "(?:troubleshoot|fix|solve|debug|resolve)\\s+(.+?)\\s*(?:error|issue|problem|bug)?",
+      "template": {
+        "like": "${1} solution",
+        "where": {
+          "type": "troubleshooting"
+        }
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "performance_optimization",
+      "category": "technical",
+      "examples": [
+        "optimize React performance",
+        "speed up Python",
+        "improve efficiency"
+      ],
+      "pattern": "(?:optimize|speed\\s+up|improve\\s+efficiency)\\s+(?:of)?\\s*(.+?)\\s*(?:performance)?",
+      "template": {
+        "like": "${1} optimization",
+        "boost": "performance"
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "migration_upgrade",
+      "category": "technical",
+      "examples": [
+        "migrate from React 17 to 18",
+        "upgrade guide",
+        "migration path"
+      ],
+      "pattern": "(?:migrate|upgrade|migration\\s+path)\\s+(?:from\\s+)?(.+?)\\s+(?:to\\s+(.+))?",
+      "template": {
+        "like": "${1} ${2} migration",
+        "where": {
+          "type": "migration"
+        }
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "integration_with",
+      "category": "technical",
+      "examples": [
+        "integrate React with Redux",
+        "connect Python to database"
+      ],
+      "pattern": "(?:integrate|connect|interface)\\s+(.+?)\\s+(?:with|to)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2} integration",
+        "where": {
+          "type": "integration"
+        }
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "requires_needs",
+      "category": "technical",
+      "examples": [
+        "requires Python 3",
+        "needs Node.js",
+        "dependencies for"
+      ],
+      "pattern": "(?:requires?|needs?|dependencies\\s+for)\\s+(.+)",
+      "template": {
+        "like": "${1} requirements",
+        "where": {
+          "requirements": "${1}"
+        }
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "compatible_with",
+      "category": "technical",
+      "examples": [
+        "compatible with Python 3",
+        "works with React",
+        "supports Windows"
+      ],
+      "pattern": "(?:compatible\\s+with|works\\s+with|supports)\\s+(.+)",
+      "template": {
+        "like": "${1} compatibility",
+        "where": {
+          "compatibility": "${1}"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "temporal_from_year",
+      "category": "temporal",
+      "examples": [
+        "papers from 2023",
+        "research from 2022",
+        "models from last year"
+      ],
+      "pattern": "(.+) from (\\d{4})",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "year": "${2}"
+        }
+      },
+      "confidence": 0.95
+    },
+    {
+      "id": "temporal_after",
+      "category": "temporal",
+      "examples": [
+        "papers after 2020",
+        "research after January",
+        "models after GPT-3"
+      ],
+      "pattern": "(.+) after (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "greaterThan": "${2}"
+          }
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "temporal_before",
+      "category": "temporal",
+      "examples": [
+        "papers before 2020",
+        "research before transformer",
+        "models before BERT"
+      ],
+      "pattern": "(.+) before (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "lessThan": "${2}"
+          }
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "temporal_recent",
+      "category": "temporal",
+      "examples": [
+        "recent papers",
+        "latest research",
+        "new models"
+      ],
+      "pattern": "(recent|latest|new|newest) (.+)",
+      "template": {
+        "like": "${2}",
+        "boost": "recent"
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "temporal_this_period",
+      "category": "temporal",
+      "examples": [
+        "papers this year",
+        "research this month",
+        "models this week"
+      ],
+      "pattern": "(.+) this (week|month|year|quarter)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "greaterThan": "start of ${2}"
+          }
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "latest_newest",
+      "category": "temporal",
+      "examples": [
+        "latest research",
+        "newest papers",
+        "most recent updates"
+      ],
+      "pattern": "(?:latest|newest|most\\s+recent|current)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "boost": "recent"
+      },
+      "confidence": 0.89
+    },
+    {
+      "id": "last_period",
+      "category": "temporal",
+      "examples": [
+        "last week",
+        "past month",
+        "previous year"
+      ],
+      "pattern": "(?:last|past|previous)\\s+(week|month|year|day)",
+      "template": {
+        "where": {
+          "date": {
+            "after": "${1}_ago"
+          }
+        }
+      },
+      "confidence": 0.87
+    },
+    {
+      "id": "between_dates",
+      "category": "temporal",
+      "examples": [
+        "between 2020 and 2023",
+        "from January to March"
+      ],
+      "pattern": "between\\s+(\\d{4}|\\w+)\\s+(?:and|to)\\s+(\\d{4}|\\w+)",
+      "template": {
+        "where": {
+          "date": {
+            "between": [
+              "${1}",
+              "${2}"
+            ]
+          }
+        }
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "trending_popular",
+      "category": "temporal",
+      "examples": [
+        "trending topics",
+        "popular papers",
+        "hot discussions"
+      ],
+      "pattern": "(?:trending|popular|hot|viral)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "boost": "popular"
+      },
+      "confidence": 0.86
+    },
+    {
+      "id": "temporal_between",
+      "category": "temporal",
+      "examples": [
+        "papers between 2020 and 2023",
+        "research from 2021 to 2022"
+      ],
+      "pattern": "(.+) (between|from) (.+) (and|to) (.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "between": [
+              "${3}",
+              "${5}"
+            ]
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "temporal_last_n_days",
+      "category": "temporal",
+      "examples": [
+        "papers last 30 days",
+        "research last week",
+        "models last month"
+      ],
+      "pattern": "(.+) last (\\d+) (days|weeks|months|years)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "greaterThan": "${2} ${3} ago"
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "when_temporal",
+      "category": "temporal",
+      "examples": [
+        "when was Python created",
+        "when did AI start"
+      ],
+      "pattern": "when\\s+(?:was|did|were)\\s+(.+?)\\s+(?:created|started|invented|published)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "date": {
+            "exists": true
+          }
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "deprecated_obsolete",
+      "category": "temporal",
+      "examples": [
+        "deprecated features",
+        "obsolete methods",
+        "legacy code"
+      ],
+      "pattern": "(?:deprecated|obsolete|legacy|outdated)\\s+(.+)",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "status": "deprecated"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "roadmap_timeline",
+      "category": "temporal",
+      "examples": [
+        "roadmap for React",
+        "timeline of AI development",
+        "history of Python"
+      ],
+      "pattern": "(?:roadmap|timeline|history)\\s+(?:for|of)\\s+(.+)",
+      "template": {
+        "like": "${1} roadmap",
+        "boost": "timeline"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "under_development",
+      "category": "temporal",
+      "examples": [
+        "under development",
+        "coming soon",
+        "in progress"
+      ],
+      "pattern": "(?:under\\s+development|coming\\s+soon|in\\s+progress|upcoming)\\s*(.+)?",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "status": "development"
+        }
+      },
+      "confidence": 0.84
+    },
+    {
+      "id": "trans_buy",
+      "category": "transactional",
+      "examples": [
+        "buy GPU",
+        "purchase subscription",
+        "order dataset"
+      ],
+      "pattern": "(buy|purchase|order|get) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "product",
+          "available": true
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "trans_download",
+      "category": "transactional",
+      "examples": [
+        "download model",
+        "download dataset",
+        "get paper PDF"
+      ],
+      "pattern": "(download|get|fetch) (.+)",
+      "template": {
+        "like": "${2}",
+        "where": {
+          "type": "downloadable"
+        }
+      },
+      "confidence": 0.9
+    },
+    {
+      "id": "trans_subscribe",
+      "category": "transactional",
+      "examples": [
+        "subscribe to newsletter",
+        "follow updates"
+      ],
+      "pattern": "(subscribe|follow|watch) (to )? (.+)",
+      "template": {
+        "like": "${3}",
+        "where": {
+          "type": "subscription"
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "action_get",
+      "category": "transactional",
+      "examples": [
+        "get all papers",
+        "fetch datasets",
+        "retrieve models"
+      ],
+      "pattern": "(get|fetch|retrieve) (all )? (.+)",
+      "template": {
+        "like": "${3}"
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "action_download",
+      "category": "transactional",
+      "examples": [
+        "download Python",
+        "download the dataset",
+        "get the PDF"
+      ],
+      "pattern": "(?:download|get|fetch)\\s+(?:the\\s+)?(.+?)\\s*(?:pdf|file|document|dataset)?",
+      "template": {
+        "like": "${1}",
+        "where": {
+          "downloadable": true
+        }
+      },
+      "confidence": 0.85
+    },
+    {
+      "id": "action_create",
+      "category": "transactional",
+      "examples": [
+        "create new project",
+        "make a new document",
+        "generate report"
+      ],
+      "pattern": "(?:create|make|generate|build)\\s+(?:new\\s+)?(.+)",
+      "template": {
+        "like": "${1} template",
+        "boost": "tutorial"
+      },
+      "confidence": 0.82
+    }
+  ]
+}

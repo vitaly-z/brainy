@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Runtime data
+brainy-data/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# Test results
+tests/results/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Package files
+*.tgz
+
+# Private/confidential files
+PLAN.md
+INTERNAL_NOTES.md
+TODO_PRIVATE.md
+*.tar.gz
+
+# Models (downloaded at runtime)
+models/CLAUDE.md
+
+.CLAUDE.md
+
+# Development planning files (not for commit)
+PLAN.md
+
+# Backup folders
+backup-*
+backup/

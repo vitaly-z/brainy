@@ -1,0 +1,188 @@
+{
+  "name": "brainy",
+  "version": "2.0.0",
+  "description": "Multi-Dimensional AI Database - Vector search, graph relationships, field filtering with Triple Intelligence Engine, HNSW indexing and universal storage",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "brainy": "./bin/brainy.js"
+  },
+  "sideEffects": [
+    "./dist/setup.js",
+    "./dist/utils/textEncoding.js",
+    "./src/setup.ts",
+    "./src/utils/textEncoding.ts"
+  ],
+  "browser": {
+    "fs": false,
+    "fs/promises": false,
+    "path": "path-browserify",
+    "crypto": "crypto-browserify",
+    "./dist/cortex/cortex.js": "./dist/browserFramework.js"
+  },
+  "exports": {
+    ".": {
+      "browser": "./dist/browserFramework.js",
+      "node": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./setup": {
+      "import": "./dist/setup.js",
+      "types": "./dist/setup.d.ts"
+    },
+    "./types/graphTypes": {
+      "import": "./dist/types/graphTypes.js",
+      "types": "./dist/types/graphTypes.d.ts"
+    },
+    "./types/augmentations": {
+      "import": "./dist/types/augmentations.js",
+      "types": "./dist/types/augmentations.d.ts"
+    },
+    "./utils/textEncoding": {
+      "import": "./dist/utils/textEncoding.js",
+      "types": "./dist/utils/textEncoding.d.ts"
+    },
+    "./browserFramework": {
+      "import": "./dist/browserFramework.js",
+      "types": "./dist/browserFramework.d.ts"
+    },
+    "./universal": {
+      "import": "./dist/universal/index.js",
+      "types": "./dist/universal/index.d.ts"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run build:patterns && tsc",
+    "build:patterns": "tsx scripts/buildEmbeddedPatterns.ts",
+    "prepare": "npm run build",
+    "test": "npm run test:unit",
+    "test:watch": "vitest --config tests/configs/vitest.unit.config.ts",
+    "test:coverage": "vitest run --config tests/configs/vitest.unit.config.ts --coverage",
+    "test:unit": "vitest run --config tests/configs/vitest.unit.config.ts",
+    "test:integration": "NODE_OPTIONS='--max-old-space-size=32768' vitest run --config tests/configs/vitest.integration.config.ts",
+    "test:all": "npm run test:unit && npm run test:integration",
+    "test:ci-unit": "CI=true vitest run --config tests/configs/vitest.unit.config.ts",
+    "test:ci-integration": "NODE_OPTIONS='--max-old-space-size=16384' CI=true vitest run --config tests/configs/vitest.integration.config.ts",
+    "test:ci": "npm run test:ci-unit",
+    "download-models": "node scripts/download-models.cjs",
+    "models:verify": "node scripts/ensure-models.js",
+    "lint": "eslint --ext .ts,.js src/",
+    "lint:fix": "eslint --ext .ts,.js src/ --fix",
+    "format": "prettier --write \"src/**/*.{ts,js}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js}\""
+  },
+  "keywords": [
+    "ai-database",
+    "vector-database",
+    "graph-database",
+    "field-filtering",
+    "triple-intelligence",
+    "hnsw",
+    "embeddings",
+    "semantic-search",
+    "machine-learning",
+    "artificial-intelligence",
+    "data-storage",
+    "indexing",
+    "typescript"
+  ],
+  "author": "Brainy Contributors",
+  "license": "MIT",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/brainy-org/brainy",
+  "bugs": {
+    "url": "https://github.com/brainy-org/brainy/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brainy-org/brainy.git"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "bin/",
+    "scripts/download-models.cjs",
+    "scripts/ensure-models.js",
+    "scripts/prepare-models.js",
+    "brainy.png",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-replace": "^6.0.2",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@types/node": "^20.11.30",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.540.0",
+    "@huggingface/transformers": "^3.1.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^11.1.0",
+    "inquirer": "^12.9.3",
+    "ora": "^8.2.0",
+    "prompts": "^2.4.2",
+    "uuid": "^9.0.1"
+  },
+  "prettier": {
+    "arrowParens": "always",
+    "bracketSameLine": true,
+    "bracketSpacing": true,
+    "htmlWhitespaceSensitivity": "css",
+    "printWidth": 80,
+    "proseWrap": "preserve",
+    "semi": false,
+    "singleQuote": true,
+    "tabWidth": 2,
+    "trailingComma": "none",
+    "useTabs": false
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "rules": {
+      "@typescript-eslint/no-explicit-any": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          "args": "after-used",
+          "argsIgnorePattern": "^_"
+        }
+      ],
+      "semi": "off",
+      "@typescript-eslint/semi": [
+        "error",
+        "never"
+      ],
+      "no-extra-semi": "off"
+    }
+  }
+}
