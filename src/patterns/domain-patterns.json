@@ -1,0 +1,539 @@
+{
+  "version": "2.0.0",
+  "description": "Domain-specific patterns for 95%+ coverage",
+  "patterns": [
+    {
+      "id": "medical_symptoms",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["symptoms of COVID", "symptoms of diabetes", "signs of heart attack"],
+      "pattern": "(?:symptoms?|signs?)\\s+(?:of|for)\\s+(.+)",
+      "template": {
+        "like": "${1} symptoms",
+        "where": { "domain": "medical", "type": "symptoms" }
+      },
+      "confidence": 0.95,
+      "frequency": "high"
+    },
+    {
+      "id": "medical_side_effects",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["aspirin side effects", "vaccine side effects", "metformin side effects"],
+      "pattern": "(.+?)\\s+side\\s+effects?",
+      "template": {
+        "like": "${1} side effects",
+        "where": { "domain": "medical", "type": "medication" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "medical_treatment",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["treatment for depression", "cure for cancer", "therapy for anxiety"],
+      "pattern": "(?:treatment|cure|therapy|remedy)\\s+(?:for|of)\\s+(.+)",
+      "template": {
+        "like": "${1} treatment",
+        "where": { "domain": "medical", "type": "treatment" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "medical_pain",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["chest pain causes", "back pain relief", "headache remedies"],
+      "pattern": "(.+?)\\s+pain\\s+(?:causes?|relief|remedies?)",
+      "template": {
+        "like": "${1} pain",
+        "where": { "domain": "medical", "type": "pain" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "medical_test_results",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["blood test results", "MRI results meaning", "normal cholesterol levels"],
+      "pattern": "(?:(.+?)\\s+)?(?:test\\s+)?results?\\s+(?:meaning|interpretation|normal\\s+range)",
+      "template": {
+        "like": "${1} test results",
+        "where": { "domain": "medical", "type": "diagnostic" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "legal_definition",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["tort law definition", "what is habeas corpus", "felony vs misdemeanor"],
+      "pattern": "(?:what\\s+is\\s+)?(.+?)\\s+(?:definition|meaning|vs\\.?\\s+(.+))",
+      "template": {
+        "like": "${1} ${2} legal definition",
+        "where": { "domain": "legal", "type": "definition" }
+      },
+      "confidence": 0.90,
+      "frequency": "high"
+    },
+    {
+      "id": "legal_how_to_file",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["how to file bankruptcy", "file for divorce", "file a complaint"],
+      "pattern": "(?:how\\s+to\\s+)?file\\s+(?:for\\s+)?(.+)",
+      "template": {
+        "like": "file ${1} procedure",
+        "where": { "domain": "legal", "type": "filing" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "legal_jurisdiction",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["marijuana laws in California", "gun laws by state", "divorce laws in Texas"],
+      "pattern": "(.+?)\\s+laws?\\s+(?:in|by)\\s+(.+)",
+      "template": {
+        "like": "${1} laws ${2}",
+        "where": { "domain": "legal", "jurisdiction": "${2}" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "legal_statute_limitations",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["statute of limitations personal injury", "SOL for debt collection"],
+      "pattern": "statute\\s+of\\s+limitations?\\s+(?:for\\s+)?(.+)",
+      "template": {
+        "like": "${1} statute of limitations",
+        "where": { "domain": "legal", "type": "statute" }
+      },
+      "confidence": 0.93,
+      "frequency": "medium"
+    },
+    {
+      "id": "financial_stock_price",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["AAPL stock price", "Tesla share price", "GOOGL quote"],
+      "pattern": "([A-Z]{1,5})\\s+(?:stock\\s+)?(?:price|quote|shares?)",
+      "template": {
+        "like": "${1} stock price",
+        "where": { "domain": "financial", "type": "stock", "ticker": "${1}" }
+      },
+      "confidence": 0.95,
+      "frequency": "high"
+    },
+    {
+      "id": "financial_interest_rates",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["mortgage interest rates", "CD rates today", "Fed interest rate"],
+      "pattern": "(.+?)\\s+(?:interest\\s+)?rates?\\s*(?:today|current)?",
+      "template": {
+        "like": "${1} interest rates",
+        "where": { "domain": "financial", "type": "rates" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "financial_calculator",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["mortgage calculator", "loan payment calculator", "retirement calculator"],
+      "pattern": "(.+?)\\s+calculator",
+      "template": {
+        "like": "${1} calculator",
+        "where": { "domain": "financial", "type": "calculator" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "financial_tax",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["tax deductions for homeowners", "capital gains tax rate", "tax brackets 2024"],
+      "pattern": "tax\\s+(.+?)\\s+(?:for\\s+(.+)|rate|brackets?)",
+      "template": {
+        "like": "tax ${1} ${2}",
+        "where": { "domain": "financial", "type": "tax" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "financial_credit_score",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["credit score for mortgage", "improve credit score", "free credit report"],
+      "pattern": "(?:credit\\s+score|credit\\s+report)\\s+(?:for\\s+)?(.+)?",
+      "template": {
+        "like": "credit score ${1}",
+        "where": { "domain": "financial", "type": "credit" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "academic_citation",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["cite website APA", "MLA citation format", "Chicago style bibliography"],
+      "pattern": "(?:cite|citation)\\s+(.+?)\\s+(?:in\\s+)?(APA|MLA|Chicago|Harvard)",
+      "template": {
+        "like": "${1} citation ${2}",
+        "where": { "domain": "academic", "type": "citation", "style": "${2}" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "academic_publications",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["Einstein publications", "papers by Hinton", "Smith et al 2023"],
+      "pattern": "(?:(.+?)\\s+publications?|papers?\\s+by\\s+(.+))",
+      "template": {
+        "like": "${1}${2} publications",
+        "where": { "domain": "academic", "type": "publication" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "academic_peer_reviewed",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["peer reviewed articles on climate change", "scholarly articles about AI"],
+      "pattern": "(?:peer\\s+reviewed|scholarly)\\s+(?:articles?|papers?)\\s+(?:on|about)\\s+(.+)",
+      "template": {
+        "like": "${1} peer reviewed",
+        "where": { "domain": "academic", "type": "peer_reviewed" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "academic_journal_impact",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["Nature impact factor", "Science journal ranking", "PNAS impact factor"],
+      "pattern": "(.+?)\\s+(?:impact\\s+factor|journal\\s+ranking)",
+      "template": {
+        "like": "${1} impact factor",
+        "where": { "domain": "academic", "type": "journal" }
+      },
+      "confidence": 0.92,
+      "frequency": "medium"
+    },
+    {
+      "id": "ecommerce_reviews",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["iPhone 15 reviews", "best laptop reviews", "Samsung TV ratings"],
+      "pattern": "(.+?)\\s+(?:reviews?|ratings?)",
+      "template": {
+        "like": "${1} reviews",
+        "where": { "domain": "ecommerce", "type": "review" }
+      },
+      "confidence": 0.95,
+      "frequency": "high"
+    },
+    {
+      "id": "ecommerce_price_comparison",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["cheapest PS5", "best price MacBook", "lowest price Nike shoes"],
+      "pattern": "(?:cheapest|best\\s+price|lowest\\s+price)\\s+(.+)",
+      "template": {
+        "like": "${1} price",
+        "where": { "domain": "ecommerce", "sort": "price_asc" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "ecommerce_deals",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["Amazon deals today", "Black Friday sales", "coupon codes Target"],
+      "pattern": "(.+?)\\s+(?:deals?|sales?|coupon\\s+codes?)\\s*(?:today)?",
+      "template": {
+        "like": "${1} deals",
+        "where": { "domain": "ecommerce", "type": "deals" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "ecommerce_in_stock",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["PS5 in stock", "RTX 4090 availability", "iPhone 15 where to buy"],
+      "pattern": "(.+?)\\s+(?:in\\s+stock|availability|where\\s+to\\s+buy)",
+      "template": {
+        "like": "${1} availability",
+        "where": { "domain": "ecommerce", "in_stock": true }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "ecommerce_size_chart",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["Nike size chart", "ring size guide", "clothing size conversion"],
+      "pattern": "(.+?)\\s+size\\s+(?:chart|guide|conversion)",
+      "template": {
+        "like": "${1} size chart",
+        "where": { "domain": "ecommerce", "type": "sizing" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "technical_error_fix",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["error 404 fix", "blue screen of death", "kernel panic solution"],
+      "pattern": "(?:error\\s+)?(.+?)\\s+(?:fix|solution|resolve)",
+      "template": {
+        "like": "${1} fix",
+        "where": { "domain": "technical", "type": "troubleshooting" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "technical_not_working",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["WiFi not working", "printer not responding", "app won't open"],
+      "pattern": "(.+?)\\s+(?:not\\s+working|won't\\s+(?:open|start|load)|not\\s+responding)",
+      "template": {
+        "like": "${1} troubleshooting",
+        "where": { "domain": "technical", "type": "issue" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "technical_how_to_reset",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["reset iPhone", "factory reset laptop", "reset password Windows"],
+      "pattern": "(?:how\\s+to\\s+)?(?:reset|factory\\s+reset)\\s+(.+)",
+      "template": {
+        "like": "reset ${1}",
+        "where": { "domain": "technical", "type": "reset" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "technical_update",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["update Windows 11", "iOS 17 update", "Chrome latest version"],
+      "pattern": "(?:update|upgrade)\\s+(.+?)\\s*(?:to\\s+(.+))?",
+      "template": {
+        "like": "${1} update ${2}",
+        "where": { "domain": "technical", "type": "update" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "technical_driver_download",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["NVIDIA driver download", "printer driver HP", "Realtek audio driver"],
+      "pattern": "(.+?)\\s+driver\\s*(?:download)?",
+      "template": {
+        "like": "${1} driver",
+        "where": { "domain": "technical", "type": "driver" }
+      },
+      "confidence": 0.93,
+      "frequency": "medium"
+    },
+    {
+      "id": "technical_speed_up",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["speed up computer", "make phone faster", "optimize Windows"],
+      "pattern": "(?:speed\\s+up|make\\s+(.+?)\\s+faster|optimize)\\s+(.+)",
+      "template": {
+        "like": "${1}${2} optimization",
+        "where": { "domain": "technical", "type": "performance" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "medical_doctor_specialist",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["cardiologist near me", "best dermatologist", "pediatrician reviews"],
+      "pattern": "(.+?(?:ologist|ician|doctor))\\s+(?:near\\s+me|reviews?|best)",
+      "template": {
+        "like": "${1}",
+        "where": { "domain": "medical", "type": "specialist" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "medical_vaccine",
+      "category": "domain_specific",
+      "domain": "medical",
+      "examples": ["COVID vaccine side effects", "flu shot effectiveness", "vaccine schedule babies"],
+      "pattern": "(.+?)\\s+vaccine\\s+(.+)",
+      "template": {
+        "like": "${1} vaccine ${2}",
+        "where": { "domain": "medical", "type": "vaccine" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "legal_lawyer_type",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["divorce lawyer near me", "personal injury attorney", "criminal defense lawyer"],
+      "pattern": "(.+?)\\s+(?:lawyer|attorney)\\s*(?:near\\s+me)?",
+      "template": {
+        "like": "${1} lawyer",
+        "where": { "domain": "legal", "type": "attorney" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "legal_contract_template",
+      "category": "domain_specific",
+      "domain": "legal",
+      "examples": ["rental agreement template", "NDA template", "employment contract sample"],
+      "pattern": "(.+?)\\s+(?:template|sample|form)",
+      "template": {
+        "like": "${1} template",
+        "where": { "domain": "legal", "type": "template" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "financial_crypto",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["Bitcoin price", "Ethereum forecast", "buy cryptocurrency"],
+      "pattern": "(.+?)\\s+(?:price|forecast|buy|sell)",
+      "template": {
+        "like": "${1} cryptocurrency",
+        "where": { "domain": "financial", "type": "crypto" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "financial_investment_strategy",
+      "category": "domain_specific",
+      "domain": "financial",
+      "examples": ["401k investment strategy", "best ETFs 2024", "dividend investing"],
+      "pattern": "(.+?)\\s+(?:investment\\s+strategy|investing)",
+      "template": {
+        "like": "${1} investment strategy",
+        "where": { "domain": "financial", "type": "investment" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "academic_research_methodology",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["qualitative research methods", "sample size calculation", "statistical analysis"],
+      "pattern": "(.+?)\\s+(?:research\\s+methods?|methodology)",
+      "template": {
+        "like": "${1} methodology",
+        "where": { "domain": "academic", "type": "methodology" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "academic_grant_funding",
+      "category": "domain_specific",
+      "domain": "academic",
+      "examples": ["NSF grant opportunities", "research funding biology", "PhD funding"],
+      "pattern": "(.+?)\\s+(?:grant|funding)\\s*(?:opportunities)?",
+      "template": {
+        "like": "${1} funding",
+        "where": { "domain": "academic", "type": "funding" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "ecommerce_return_policy",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["Amazon return policy", "Walmart refund", "exchange policy Best Buy"],
+      "pattern": "(.+?)\\s+(?:return\\s+policy|refund|exchange)",
+      "template": {
+        "like": "${1} return policy",
+        "where": { "domain": "ecommerce", "type": "policy" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    },
+    {
+      "id": "ecommerce_warranty",
+      "category": "domain_specific",
+      "domain": "ecommerce",
+      "examples": ["Apple warranty check", "extended warranty worth it", "warranty claim Samsung"],
+      "pattern": "(.+?)\\s+warranty\\s*(.+)?",
+      "template": {
+        "like": "${1} warranty ${2}",
+        "where": { "domain": "ecommerce", "type": "warranty" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "technical_backup_restore",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["backup iPhone", "restore from backup", "cloud backup options"],
+      "pattern": "(?:backup|restore)\\s+(?:from\\s+)?(.+)",
+      "template": {
+        "like": "${1} backup",
+        "where": { "domain": "technical", "type": "backup" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "technical_compatibility",
+      "category": "domain_specific",
+      "domain": "technical",
+      "examples": ["compatible with Windows 11", "works with Mac", "supports Android"],
+      "pattern": "(?:compatible\\s+with|works\\s+with|supports?)\\s+(.+)",
+      "template": {
+        "like": "${1} compatibility",
+        "where": { "domain": "technical", "type": "compatibility" }
+      },
+      "confidence": 0.91,
+      "frequency": "medium"
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+/**
+ * Browser Environment Tests
+ * Tests Brainy functionality in browser environment as a consumer would use it
+ * @vitest-environment jsdom
+ */
+
+import { describe, it, expect, beforeAll, vi } from 'vitest'
+
+/**
+ * Helper function to create a 384-dimensional vector for testing
+ * @param primaryIndex The index to set to 1.0, all other indices will be 0.0
+ * @returns A 384-dimensional vector with a single 1.0 value at the specified index
+ */
+function createTestVector(primaryIndex: number = 0): number[] {
+  const vector = new Array(384).fill(0)
+  vector[primaryIndex % 384] = 1.0
+  return vector
+}
+
+describe('Brainy in Browser Environment', () => {
+  let brainy: any
+
+  beforeAll(async () => {
+    // Minimal browser environment setup for jsdom
+    if (typeof window !== 'undefined') {
+      Object.defineProperty(window, 'TextEncoder', {
+        writable: true,
+        value: TextEncoder
+      })
+      Object.defineProperty(window, 'TextDecoder', {
+        writable: true,
+        value: TextDecoder
+      })
+
+      // Ensure native typed arrays are available for ONNX Runtime
+      Object.defineProperty(window, 'Float32Array', {
+        writable: true,
+        value: Float32Array
+      })
+      Object.defineProperty(window, 'Int32Array', {
+        writable: true,
+        value: Int32Array
+      })
+      Object.defineProperty(window, 'Uint8Array', {
+        writable: true,
+        value: Uint8Array
+      })
+
+      // Mock Web Workers for jsdom
+      Object.defineProperty(window, 'Worker', {
+        writable: true,
+        value: vi.fn().mockImplementation(() => ({
+          postMessage: vi.fn(),
+          terminate: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn()
+        }))
+      })
+    }
+
+    // Load brainy library as a consumer would
+    brainy = await import('../dist/unified.js')
+  })
+
+  describe('Library Loading', () => {
+    it('should load brainy library successfully', () => {
+      expect(brainy).toBeDefined()
+      expect(brainy.BrainyData).toBeDefined()
+      expect(typeof brainy.BrainyData).toBe('function')
+    })
+
+    it('should detect browser environment correctly', () => {
+      expect(brainy.environment.isBrowser).toBe(true)
+      expect(brainy.environment.isNode).toBe(false)
+    })
+  })
+
+  describe('Core Functionality - Add Data and Search', () => {
+    it('should create database and add vector data', async () => {
+      const db = new brainy.BrainyData({
+        metric: 'euclidean',
+        storage: {
+          forceMemoryStorage: true
+        }
+      })
+
+      await db.init()
+
+      // Add some test vectors
+      await db.add(createTestVector(0), { id: 'item1', label: 'x-axis' })
+      await db.add(createTestVector(1), { id: 'item2', label: 'y-axis' })
+      await db.add(createTestVector(2), { id: 'item3', label: 'z-axis' })
+
+      // Search should work
+      const results = await db.search(createTestVector(0), { limit: 1 })
+      expect(results).toBeDefined()
+      expect(results.length).toBe(1)
+      expect(results[0].metadata.id).toBe('item1')
+    })
+
+    it.skip(
+      'should handle text data with embeddings',
+      async () => {
+        // Skip this test due to ONNX Runtime compatibility issues with jsdom
+        // The Node.js ONNX Runtime backend has strict Float32Array type checking
+        // that conflicts with jsdom's simulated browser environment
+        // This works fine in real browsers, just not in the jsdom test environment
+        
+        const db = new brainy.BrainyData({
+          embeddingFunction: brainy.createEmbeddingFunction(),
+          metric: 'cosine',
+          storage: {
+            forceMemoryStorage: true
+          }
+        })
+
+        await db.init()
+
+        // Add text items as a consumer would
+        await db.addItem('Hello browser world', { id: 'greeting' })
+        await db.addItem('Goodbye browser world', { id: 'farewell' })
+
+        // Search with text
+        const results = await db.search('Hi there', { limit: 1 })
+        expect(results).toBeDefined()
+        expect(results.length).toBeGreaterThan(0)
+        expect(results[0].metadata).toHaveProperty('id')
+      },
+      globalThis.testUtils?.timeout || 30000
+    )
+
+    it('should handle multiple data types', async () => {
+      const db = new brainy.BrainyData({
+        metric: 'euclidean',
+        storage: {
+          forceMemoryStorage: true
+        }
+      })
+
+      await db.init()
+
+      // Add different types of data
+      const testData = [
+        { vector: createTestVector(10), metadata: { type: 'point', name: 'A' } },
+        { vector: createTestVector(20), metadata: { type: 'point', name: 'B' } },
+        { vector: createTestVector(30), metadata: { type: 'point', name: 'C' } }
+      ]
+
+      for (const item of testData) {
+        await db.add(item.vector, item.metadata)
+      }
+
+      // Search should return relevant results
+      const results = await db.search(createTestVector(15), { limit: 2 })
+      expect(results.length).toBe(2)
+      expect(
+        results.every(
+          (r: { metadata: { type: string } }) => r.metadata.type === 'point'
+        )
+      ).toBe(true)
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should not throw with valid configuration', () => {
+      expect(() => {
+        new brainy.BrainyData({ metric: 'euclidean' })
+      }).not.toThrow()
+    })
+
+    it('should handle search on empty database', async () => {
+      const db = new brainy.BrainyData({
+        metric: 'euclidean',
+        storage: {
+          forceMemoryStorage: true
+        }
+      })
+
+      await db.init()
+
+      const results = await db.search(createTestVector(0), { limit: 5 })
+      expect(results).toBeDefined()
+      expect(Array.isArray(results)).toBe(true)
+      expect(results.length).toBe(0)
+    })
+  })
+})
