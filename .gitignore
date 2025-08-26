@@ -60,3 +60,7 @@ models/CLAUDE.md
 
 # Development planning files (not for commit)
 PLAN.md
+
+# Backup folders
+backup-*
+backup/
