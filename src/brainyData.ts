@@ -2874,6 +2874,47 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   }
 
   /**
+   * Internal method for direct HNSW vector search
+   * Used by TripleIntelligence to avoid circular dependencies
+   * @internal
+   */
+  public async _internalVectorSearch(
+    queryVectorOrData: Vector | any,
+    k: number = 10,
+    options: { metadata?: any } = {}
+  ): Promise<SearchResult<T>[]> {
+    // Generate query vector
+    const queryVector = Array.isArray(queryVectorOrData) && 
+                        typeof queryVectorOrData[0] === 'number' ?
+                        queryVectorOrData :
+                        await this.embed(queryVectorOrData)
+    
+    // Apply metadata filter if provided
+    let filterFunction: ((id: string) => Promise<boolean>) | undefined
+    if (options.metadata) {
+      const matchingIds = await this.metadataIndex?.getIdsForFilter(options.metadata) || new Set()
+      filterFunction = async (id: string) => matchingIds.has(id)
+    }
+    
+    // Direct HNSW search
+    const results = await this.index.search(queryVector, k, filterFunction)
+    
+    // Get metadata for results
+    const searchResults: SearchResult<T>[] = []
+    for (const [id, similarity] of results) {
+      const metadata = await this.getNoun(id)
+      searchResults.push({
+        id,
+        score: similarity,
+        vector: [],
+        metadata: metadata?.metadata || {} as T
+      })
+    }
+    
+    return searchResults
+  }
+  
+  /**
    * 🎯 LEGACY: Original search implementation (kept for complex cases)
    * This is the original search method, now used as fallback for edge cases
    */
