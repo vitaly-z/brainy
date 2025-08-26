@@ -98,13 +98,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/brainy-org/brainy",
+  "homepage": "https://github.com/soulcraftlabs/brainy",
   "bugs": {
-    "url": "https://github.com/brainy-org/brainy/issues"
+    "url": "https://github.com/soulcraftlabs/brainy/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brainy-org/brainy.git"
+    "url": "git+https://github.com/soulcraftlabs/brainy.git"
   },
   "files": [
     "dist/**/*.js",
