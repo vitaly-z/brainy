@@ -355,7 +355,7 @@ export class NaturalLanguageProcessor {
     for (const term of terms) {
       try {
         // Search for similar entities in the knowledge base
-        const results = await this.brain.search(term, 5)
+        const results = await this.brain.search(term, { limit: 5 })
         
         for (const result of results) {
           if (result.score > 0.8) { // High similarity threshold

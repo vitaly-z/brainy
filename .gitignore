@@ -51,17 +51,17 @@ temp/
 
 # Private/confidential files
 PLAN.md
+CLAUDE.md
 INTERNAL_NOTES.md
 TODO_PRIVATE.md
 *.tar.gz
 
 # Models (downloaded at runtime)
-models/CLAUDE.md
-
-.CLAUDE.md
+models/
 
 # Development planning files (not for commit)
 PLAN.md
+CLAUDE.md
 
 # Backup folders
 backup-*
