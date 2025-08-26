@@ -52,7 +52,7 @@ async function runExample() {
 
   // Search for similar vectors
   console.log('\nSearching for vectors similar to "cat"...')
-  const catResults = await db.search(wordEmbeddings['cat'], 3)
+  const catResults = await db.search(wordEmbeddings['cat'], { limit: 3 })
   console.log('Results:')
   for (const result of catResults) {
     const word =
@@ -66,7 +66,7 @@ async function runExample() {
 
   // Search for similar vectors
   console.log('\nSearching for vectors similar to "fish"...')
-  const fishResults = await db.search(wordEmbeddings['fish'], 3)
+  const fishResults = await db.search(wordEmbeddings['fish'], { limit: 3 })
   console.log('Results:')
   for (const result of fishResults) {
     const word =
@@ -96,7 +96,7 @@ async function runExample() {
 
   // Search again to verify shark is gone
   console.log('\nSearching for vectors similar to "fish" after deletion...')
-  const fishResultsAfterDeletion = await db.search(wordEmbeddings['fish'], 3)
+  const fishResultsAfterDeletion = await db.search(wordEmbeddings['fish'], { limit: 3 })
   console.log('Results:')
   for (const result of fishResultsAfterDeletion) {
     const word =
