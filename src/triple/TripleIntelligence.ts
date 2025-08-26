@@ -283,7 +283,9 @@ export class TripleIntelligenceEngine {
    * Vector similarity search
    */
   private async vectorSearch(query: string | Vector | any, limit?: number): Promise<any[]> {
-    return this.brain.search(query, limit || 100)
+    // CRITICAL FIX: Use _legacySearch to avoid circular dependency
+    // search() → find() → vectorSearch() must NOT call search() again!
+    return (this.brain as any)._legacySearch(query, limit || 100)
   }
   
   /**
@@ -325,7 +327,8 @@ export class TripleIntelligenceEngine {
     // Use BrainyData's advanced metadata filtering with Brain Patterns
     
     if (!where || Object.keys(where).length === 0) {
-      return this.brain.search('*', 1000) // Return all if no filter
+      // CRITICAL FIX: Use _legacySearch to avoid circular dependency
+      return (this.brain as any)._legacySearch('*', 1000) // Return all if no filter
     }
     
     // Pass Brain Patterns directly - the metadata index now supports them natively!
@@ -337,7 +340,8 @@ export class TripleIntelligenceEngine {
     //   { tags: { contains: 'javascript' } } - array contains
     
     // The metadata index handles all Brain Pattern operators natively now
-    return this.brain.search('*', 1000, { metadata: where })
+    // CRITICAL FIX: Use _legacySearch to avoid circular dependency
+    return (this.brain as any)._legacySearch('*', 1000, { metadata: where })
   }
   
   /**
