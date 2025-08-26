@@ -2876,6 +2876,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Internal method for direct HNSW vector search
    * Used by TripleIntelligence to avoid circular dependencies
+   * Note: For pure metadata filtering, use metadataIndex.getIdsForFilter() directly - it's O(log n)!
+   * This method is for vector similarity search with optional metadata filtering during search
    * @internal
    */
   public async _internalVectorSearch(
@@ -2892,7 +2894,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     // Apply metadata filter if provided
     let filterFunction: ((id: string) => Promise<boolean>) | undefined
     if (options.metadata) {
-      const matchingIds = await this.metadataIndex?.getIdsForFilter(options.metadata) || new Set()
+      const matchingIdsArray = await this.metadataIndex?.getIdsForFilter(options.metadata) || []
+      const matchingIds = new Set(matchingIdsArray)
       filterFunction = async (id: string) => matchingIds.has(id)
     }
     

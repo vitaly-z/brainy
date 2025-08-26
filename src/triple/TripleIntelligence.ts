@@ -324,24 +324,34 @@ export class TripleIntelligenceEngine {
    * Field-based filtering
    */
   private async fieldFilter(where: Record<string, any>): Promise<any[]> {
-    // Use BrainyData's advanced metadata filtering with Brain Patterns
+    // CRITICAL OPTIMIZATION: Use MetadataIndex directly for O(log n) performance!
+    // NOT vector search which would be O(n) and slow
     
     if (!where || Object.keys(where).length === 0) {
-      // Use clean internal method - return all items
-      return (this.brain as any)._internalVectorSearch('*', 1000)
+      // Return all items (should use a more efficient method)
+      const allNouns = (this.brain as any).index.getNouns()
+      return Array.from(allNouns.keys()).slice(0, 1000).map(id => ({ id, score: 1.0 }))
     }
     
-    // Pass Brain Patterns directly - the metadata index now supports them natively!
-    // Examples:
-    //   { year: 2023 } - exact match
-    //   { year: { greaterThan: 2020 } } - range query
-    //   { year: { greaterThan: 2020, lessThan: 2025 } } - range with bounds
-    //   { status: { in: ['active', 'pending'] } } - set membership
-    //   { tags: { contains: 'javascript' } } - array contains
+    // Use the MetadataIndex directly for FAST field queries!
+    // This uses B-tree indexes for O(log n) range queries
+    // and hash indexes for O(1) exact matches
+    const matchingIds = await (this.brain as any).metadataIndex?.getIdsForFilter(where) || []
     
-    // The metadata index handles all Brain Pattern operators natively now
-    // Use clean internal method with metadata filtering
-    return (this.brain as any)._internalVectorSearch('*', 1000, { metadata: where })
+    // Convert to result format with metadata
+    const results = []
+    for (const id of matchingIds.slice(0, 1000)) {
+      const noun = await (this.brain as any).getNoun(id)
+      if (noun) {
+        results.push({
+          id,
+          score: 1.0, // Field matches are binary - either match or don't
+          metadata: noun.metadata || {}
+        })
+      }
+    }
+    
+    return results
   }
   
   /**
