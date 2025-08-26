@@ -1,0 +1,487 @@
+{
+  "version": "2.0.0",
+  "description": "Programming, AI, and Tech domain patterns - HIGH PRIORITY",
+  "patterns": [
+    {
+      "id": "prog_error_message",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["TypeError cannot read property", "undefined is not a function", "NullPointerException Java"],
+      "pattern": "([A-Za-z]+Error|[A-Za-z]+Exception)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "programming", "type": "error" }
+      },
+      "confidence": 0.96,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_how_to_code",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["how to reverse string Python", "sort array JavaScript", "read file in Java"],
+      "pattern": "(?:how\\s+to\\s+)?(.+?)\\s+(?:in|using)\\s+(Python|JavaScript|Java|C\\+\\+|TypeScript|Go|Rust|Ruby|PHP|Swift|Kotlin|C#)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "programming", "language": "${2}" }
+      },
+      "confidence": 0.95,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_install_package",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["npm install react", "pip install tensorflow", "cargo add tokio"],
+      "pattern": "(?:npm|pip|yarn|cargo|gem|composer|go get|brew|apt|yum)\\s+(?:install|add|get)\\s+(.+)",
+      "template": {
+        "like": "install ${1}",
+        "where": { "domain": "programming", "type": "package_install" }
+      },
+      "confidence": 0.94,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_import_module",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["import React from react", "from sklearn import", "require module Node.js"],
+      "pattern": "(?:import|from|require|use|include)\\s+(.+?)\\s+(?:from|in)?\\s*(.+)?",
+      "template": {
+        "like": "import ${1} ${2}",
+        "where": { "domain": "programming", "type": "import" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_debug_issue",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["debug React hooks", "memory leak Java", "segmentation fault C++"],
+      "pattern": "(?:debug|fix|solve|troubleshoot)\\s+(.+?)\\s*(?:issue|problem|error|bug)?",
+      "template": {
+        "like": "debug ${1}",
+        "where": { "domain": "programming", "type": "debugging" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_best_practices",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["React best practices", "Python coding standards", "clean code JavaScript"],
+      "pattern": "(.+?)\\s+(?:best\\s+practices?|coding\\s+standards?|clean\\s+code|style\\s+guide)",
+      "template": {
+        "like": "${1} best practices",
+        "where": { "domain": "programming", "type": "best_practices" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_framework_tutorial",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["React tutorial", "Django getting started", "Spring Boot guide"],
+      "pattern": "(React|Vue|Angular|Django|Flask|Spring|Express|Rails|Laravel|Next\\.js|Nuxt|FastAPI)\\s+(?:tutorial|guide|getting\\s+started)",
+      "template": {
+        "like": "${1} tutorial",
+        "where": { "domain": "programming", "framework": "${1}" }
+      },
+      "confidence": 0.94,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_convert_code",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["convert Python to JavaScript", "JSON to XML", "SQL to MongoDB"],
+      "pattern": "(?:convert|translate|transform)\\s+(.+?)\\s+to\\s+(.+)",
+      "template": {
+        "like": "convert ${1} to ${2}",
+        "where": { "domain": "programming", "type": "conversion" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "prog_api_docs",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["OpenAI API documentation", "Stripe API reference", "REST API example"],
+      "pattern": "(.+?)\\s+API\\s+(?:documentation|reference|example|tutorial)",
+      "template": {
+        "like": "${1} API documentation",
+        "where": { "domain": "programming", "type": "api" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_git_commands",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["git merge conflict", "git rebase vs merge", "git undo commit"],
+      "pattern": "git\\s+(.+)",
+      "template": {
+        "like": "git ${1}",
+        "where": { "domain": "programming", "type": "version_control" }
+      },
+      "confidence": 0.95,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_regex_pattern",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["regex email validation", "regular expression phone number", "regex match URL"],
+      "pattern": "(?:regex|regular\\s+expression)\\s+(?:for\\s+)?(.+)",
+      "template": {
+        "like": "regex ${1}",
+        "where": { "domain": "programming", "type": "regex" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_algorithm",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["quicksort algorithm", "binary search implementation", "Dijkstra's algorithm"],
+      "pattern": "(.+?)\\s+(?:algorithm|implementation)\\s*(?:in\\s+(.+))?",
+      "template": {
+        "like": "${1} algorithm ${2}",
+        "where": { "domain": "programming", "type": "algorithm" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_data_structure",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["linked list vs array", "implement stack Python", "binary tree traversal"],
+      "pattern": "(?:implement\\s+)?(.+?)\\s*(?:data\\s+structure|vs\\.?\\s+(.+))?\\s*(?:in\\s+(.+))?",
+      "template": {
+        "like": "${1} data structure ${2} ${3}",
+        "where": { "domain": "programming", "type": "data_structure" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "ai_model_training",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["train BERT model", "fine-tune GPT", "train neural network"],
+      "pattern": "(?:train|fine-?tune)\\s+(.+?)\\s*(?:model|network)?",
+      "template": {
+        "like": "train ${1}",
+        "where": { "domain": "ai", "type": "training" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "ai_machine_learning",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["random forest sklearn", "neural network PyTorch", "CNN TensorFlow"],
+      "pattern": "(random\\s+forest|neural\\s+network|CNN|RNN|LSTM|transformer|SVM|k-?means)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "ai", "type": "ml_algorithm" }
+      },
+      "confidence": 0.92,
+      "frequency": "very_high"
+    },
+    {
+      "id": "ai_dataset",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["MNIST dataset", "ImageNet download", "COCO dataset"],
+      "pattern": "(MNIST|ImageNet|COCO|CIFAR|WikiText|GLUE|SQuAD)\\s*(?:dataset)?\\s*(.+)?",
+      "template": {
+        "like": "${1} dataset ${2}",
+        "where": { "domain": "ai", "type": "dataset" }
+      },
+      "confidence": 0.94,
+      "frequency": "high"
+    },
+    {
+      "id": "ai_metrics",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["accuracy vs precision", "F1 score calculation", "ROC curve explained"],
+      "pattern": "(accuracy|precision|recall|F1\\s+score|ROC|AUC|loss|perplexity)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "ai", "type": "metrics" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "ai_framework_comparison",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["TensorFlow vs PyTorch", "Keras or TensorFlow", "JAX vs PyTorch"],
+      "pattern": "(TensorFlow|PyTorch|Keras|JAX|MXNet|Caffe|Theano)\\s+(?:vs\\.?|or)\\s+(.+)",
+      "template": {
+        "like": "${1} vs ${2}",
+        "where": { "domain": "ai", "type": "framework_comparison" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "ai_pretrained_model",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["BERT pretrained model", "download GPT-2", "use ResNet50"],
+      "pattern": "(BERT|GPT|GPT-2|GPT-3|GPT-4|ResNet|VGG|YOLO|EfficientNet)\\s+(?:pretrained\\s+)?(?:model)?\\s*(.+)?",
+      "template": {
+        "like": "${1} pretrained ${2}",
+        "where": { "domain": "ai", "type": "pretrained_model" }
+      },
+      "confidence": 0.94,
+      "frequency": "very_high"
+    },
+    {
+      "id": "ai_nlp_task",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["sentiment analysis Python", "named entity recognition", "text classification BERT"],
+      "pattern": "(sentiment\\s+analysis|NER|named\\s+entity|text\\s+classification|summarization|translation)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "ai", "type": "nlp" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "ai_computer_vision",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["object detection YOLO", "image segmentation", "face recognition OpenCV"],
+      "pattern": "(object\\s+detection|image\\s+segmentation|face\\s+recognition|OCR|image\\s+classification)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "ai", "type": "computer_vision" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "tech_cloud_service",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["AWS S3 tutorial", "Google Cloud pricing", "Azure vs AWS"],
+      "pattern": "(AWS|Azure|GCP|Google\\s+Cloud|Heroku|DigitalOcean|Vercel|Netlify)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "cloud" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_docker_kubernetes",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["Docker compose example", "Kubernetes deployment", "dockerfile for Node.js"],
+      "pattern": "(Docker|Kubernetes|K8s|container|dockerfile|docker-compose)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "containerization" }
+      },
+      "confidence": 0.92,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_database_query",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["SQL join example", "MongoDB aggregation", "PostgreSQL vs MySQL"],
+      "pattern": "(SQL|MySQL|PostgreSQL|MongoDB|Redis|Elasticsearch|Cassandra)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "database" }
+      },
+      "confidence": 0.94,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_devops_ci_cd",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["GitHub Actions workflow", "Jenkins pipeline", "CI/CD best practices"],
+      "pattern": "(GitHub\\s+Actions|Jenkins|CircleCI|Travis|GitLab\\s+CI|CI/CD)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "devops" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "tech_security",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["SQL injection prevention", "XSS attack", "JWT authentication"],
+      "pattern": "(SQL\\s+injection|XSS|CSRF|JWT|OAuth|authentication|authorization)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "security" }
+      },
+      "confidence": 0.93,
+      "frequency": "high"
+    },
+    {
+      "id": "tech_performance",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["optimize React performance", "database indexing", "lazy loading implementation"],
+      "pattern": "(?:optimize|improve)\\s+(.+?)\\s+performance",
+      "template": {
+        "like": "${1} performance optimization",
+        "where": { "domain": "tech", "type": "performance" }
+      },
+      "confidence": 0.92,
+      "frequency": "high"
+    },
+    {
+      "id": "tech_testing",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["unit testing Jest", "integration testing", "mock API calls"],
+      "pattern": "(unit\\s+test|integration\\s+test|e2e\\s+test|mock|stub)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "testing" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_stackoverflow_pattern",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["undefined is not a function JavaScript", "cannot read property of undefined React"],
+      "pattern": "(.+?)\\s+(JavaScript|Python|Java|C\\+\\+|React|Angular|Vue)$",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "programming", "source": "stackoverflow" }
+      },
+      "confidence": 0.95,
+      "frequency": "very_high"
+    },
+    {
+      "id": "prog_vscode_extension",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["VSCode extension Python", "best VSCode themes", "VSCode shortcuts"],
+      "pattern": "(?:VSCode|VS\\s+Code)\\s+(.+)",
+      "template": {
+        "like": "VSCode ${1}",
+        "where": { "domain": "programming", "type": "ide" }
+      },
+      "confidence": 0.90,
+      "frequency": "medium"
+    },
+    {
+      "id": "ai_llm_models",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["ChatGPT API", "Claude vs GPT-4", "Llama 2 fine-tuning"],
+      "pattern": "(ChatGPT|Claude|GPT-4|Llama|Mistral|Gemini|DALL-E|Stable\\s+Diffusion)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "ai", "type": "llm" }
+      },
+      "confidence": 0.95,
+      "frequency": "very_high"
+    },
+    {
+      "id": "ai_prompt_engineering",
+      "category": "domain_specific",
+      "domain": "ai",
+      "examples": ["prompt engineering tips", "ChatGPT prompts", "system prompt examples"],
+      "pattern": "(?:prompt\\s+engineering|prompts?|system\\s+prompt)\\s+(.+)",
+      "template": {
+        "like": "prompt engineering ${1}",
+        "where": { "domain": "ai", "type": "prompt_engineering" }
+      },
+      "confidence": 0.93,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_web_framework",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["Next.js vs Gatsby", "Tailwind CSS tutorial", "Bootstrap components"],
+      "pattern": "(Next\\.js|Gatsby|Tailwind|Bootstrap|Material-UI|Chakra|Ant\\s+Design)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "web_framework" }
+      },
+      "confidence": 0.92,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_mobile_dev",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["React Native navigation", "Flutter vs React Native", "SwiftUI tutorial"],
+      "pattern": "(React\\s+Native|Flutter|SwiftUI|Kotlin|Swift|Android|iOS)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "mobile" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    },
+    {
+      "id": "prog_package_version",
+      "category": "domain_specific",
+      "domain": "programming",
+      "examples": ["React 18 features", "Python 3.11 new", "Node.js version 20"],
+      "pattern": "(.+?)\\s+(?:version\\s+)?(\\d+(?:\\.\\d+)*)\\s*(.+)?",
+      "template": {
+        "like": "${1} ${2} ${3}",
+        "where": { "domain": "programming", "version": "${2}" }
+      },
+      "confidence": 0.90,
+      "frequency": "high"
+    },
+    {
+      "id": "tech_cli_commands",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["curl POST request", "wget download file", "ssh key generation"],
+      "pattern": "(curl|wget|ssh|scp|rsync|grep|sed|awk|chmod|chown)\\s+(.+)",
+      "template": {
+        "like": "${1} command ${2}",
+        "where": { "domain": "tech", "type": "cli" }
+      },
+      "confidence": 0.92,
+      "frequency": "very_high"
+    },
+    {
+      "id": "tech_linux_admin",
+      "category": "domain_specific",
+      "domain": "tech",
+      "examples": ["Ubuntu install package", "systemd service", "cron job example"],
+      "pattern": "(Ubuntu|Debian|CentOS|Linux|systemd|cron|iptables|nginx|apache)\\s+(.+)",
+      "template": {
+        "like": "${1} ${2}",
+        "where": { "domain": "tech", "type": "sysadmin" }
+      },
+      "confidence": 0.91,
+      "frequency": "high"
+    }
+  ]
+}
