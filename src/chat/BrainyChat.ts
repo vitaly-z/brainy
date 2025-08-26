@@ -67,8 +67,8 @@ export class BrainyChat {
       // Search for the most recent chat message using Brainy's search
       const recentMessages = await this.brainy.search(
         'recent chat conversation',
-        1,
         {
+          limit: 1,
           nounTypes: [NounType.Message],
           metadata: {
             messageType: 'chat'
@@ -198,7 +198,9 @@ export class BrainyChat {
     await this.addMessage(question, 'user')
 
     // Search for relevant content using Brainy's search
-    const searchResults = await this.brainy.search(question, options?.maxSources || 5)
+    const searchResults = await this.brainy.search(question, {
+      limit: options?.maxSources || 5
+    })
 
     // Generate a template-based response
     let response = ''
@@ -242,8 +244,8 @@ export class BrainyChat {
       // Search for messages in this session using Brainy's search
       const messageNouns = await this.brainy.search(
         '', // Empty query to get all messages
-        limit,
         {
+          limit: limit,
           nounTypes: [NounType.Message],
           metadata: {
             sessionId: this.currentSessionId,
@@ -286,8 +288,8 @@ export class BrainyChat {
     try {
       const results = await this.brainy.search(
         options?.semanticSearch !== false ? query : '',
-        options?.limit || 20,
         {
+          limit: options?.limit || 20,
           nounTypes: [NounType.Message],
           metadata
         }
@@ -308,8 +310,8 @@ export class BrainyChat {
     try {
       const sessionNouns = await this.brainy.search(
         '',
-        limit,
         {
+          limit: limit,
           nounTypes: [NounType.Concept],
           metadata: {
             sessionType: 'chat'
@@ -409,8 +411,8 @@ export class BrainyChat {
     // Find previous message to create conversation flow using VerbType.Precedes
     const previousMessages = await this.brainy.search(
       '',
-      1,
       {
+        limit: 1,
         nounTypes: [NounType.Message],
         metadata: {
           sessionId: this.currentSessionId,
@@ -435,8 +437,8 @@ export class BrainyChat {
     try {
       const sessionNouns = await this.brainy.search(
         '',
-        1,
         {
+          limit: 1,
           nounTypes: [NounType.Concept],
           metadata: {
             sessionType: 'chat'
@@ -460,8 +462,8 @@ export class BrainyChat {
     try {
       const messageNouns = await this.brainy.search(
         '',
-        limit,
         {
+          limit: limit,
           nounTypes: [NounType.Message],
           metadata: {
             sessionId: sessionId,

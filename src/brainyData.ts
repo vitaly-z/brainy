@@ -3205,9 +3205,11 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     const searchK = options.cursor ? k + 20 : k // Get extra results for filtering
 
     // Perform regular search
-    const allResults = await this.search(queryVectorOrData, searchK, {
-      ...options,
-      skipCache: options.skipCache
+    const { cursor, ...searchOptions } = options
+    const allResults = await this.search(queryVectorOrData, {
+      limit: searchK,
+      nounTypes: searchOptions.nounTypes,
+      metadata: searchOptions.filter
     })
 
     let results = allResults
@@ -3469,11 +3471,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     // If no relationType is specified, use the original vector similarity search
     const k = (options.limit || 10) + 1 // Add 1 to account for the original entity
-    const searchResults = await this.search(entity.vector, k, {
-      forceEmbed: false,
-      nounTypes: options.nounTypes,
-      includeVerbs: options.includeVerbs,
-      searchMode: options.searchMode
+    const searchResults = await this.search(entity.vector, {
+      limit: k,
+      excludeDeleted: false,
+      nounTypes: options.nounTypes
     })
 
     // Filter out the original entity and limit to the requested number
@@ -5802,12 +5803,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       const queryVector = await this.embed(query)
 
       // Search using the embedded vector with metadata filtering
-      const results = await this.search(queryVector, k, {
+      const results = await this.search(queryVector, {
+        limit: k,
         nounTypes: options.nounTypes,
-        includeVerbs: options.includeVerbs,
-        searchMode: options.searchMode,
-        metadata: options.metadata,
-        forceEmbed: false // Already embedded
+        metadata: options.metadata
       })
 
       // Track search performance
@@ -6683,11 +6682,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     for (const [service, fieldNames] of Object.entries(serviceFieldMappings)) {
       for (const fieldName of fieldNames) {
         // Search using the specific field name for this service
-        const results = await this.search(searchTerm, k, {
-          searchField: fieldName,
-          service,
-          includeVerbs: options.includeVerbs,
-          searchMode: options.searchMode
+        const results = await this.search(searchTerm, {
+          limit: k
         })
 
         // Add results to the combined list
