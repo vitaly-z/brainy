@@ -546,6 +546,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private _neural?: any // Lazy loaded
   private _tripleEngine?: TripleIntelligenceEngine // Lazy loaded Triple Intelligence
   private _nlpProcessor?: any // Lazy loaded Natural Language Processor
+  private _importManager?: any // Lazy loaded Import Manager
 
   private cacheAutoConfigurator: CacheAutoConfigurator
 
@@ -6860,49 +6861,55 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Array of created IDs
    */
   public async import(
-    data: any[] | any,
+    source: any[] | any | string | Buffer,
     options?: {
-      typeHint?: NounType
-      autoDetect?: boolean
-      batchSize?: number
-      process?: 'auto' | 'guided' | 'explicit' | 'literal'
+      // Auto-detects EVERYTHING!
+      format?: 'auto' | 'json' | 'csv' | 'yaml' | 'text'  // Default: auto
+      batchSize?: number                                   // Default: 50
+      relationships?: boolean                              // Extract relationships (default: true)
     }
   ): Promise<string[]> {
-    const items = Array.isArray(data) ? data : [data]
-    const results: string[] = []
-    const batchSize = options?.batchSize || 50
-
-    // Process in batches to avoid memory issues
-    for (let i = 0; i < items.length; i += batchSize) {
-      const batch = items.slice(i, i + batchSize)
-      
-      for (const item of batch) {
-        try {
-          // Auto-detect type using semantic schema if enabled
-          let detectedType = options?.typeHint
-          if (options?.autoDetect !== false && !detectedType) {
-            detectedType = await this.detectNounType(item)
-          }
-
-          // Create metadata with detected type
-          const metadata: any = {}
-          if (detectedType) {
-            metadata.nounType = detectedType
-          }
-
-          // Import item using standard add method (process option not supported in 2.0)
-          const id = await this.addNoun(item, metadata)
-          
-          results.push(id)
-        } catch (error) {
-          prodLog.warn(`Failed to import item:`, error)
-          // Continue with next item rather than failing entire batch
-        }
-      }
+    // Lazy-load import manager for zero overhead when not used
+    if (!this._importManager) {
+      const { ImportManager } = await import('./importManager.js')
+      this._importManager = new ImportManager(this)
+      await this._importManager.init()
     }
-
-    prodLog.info(`📦 Neural import completed: ${results.length}/${items.length} items imported`)
-    return results
+    
+    // AUTO-DETECT: Is it a URL or file path?
+    if (typeof source === 'string') {
+      // URL detection
+      if (source.startsWith('http://') || source.startsWith('https://')) {
+        const result = await this._importManager.importUrl(source, options || {})
+        return result.nouns
+      }
+      
+      // File path detection
+      try {
+        const { exists } = await import('./universal/fs.js')
+        if (await exists(source)) {
+          const result = await this._importManager.importFile(source, options || {})
+          return result.nouns
+        }
+      } catch {}
+    }
+    
+    // Regular data import (objects, arrays, or raw text)
+    const result = await this._importManager.import(source, {
+      format: options?.format || 'auto',
+      batchSize: options?.batchSize || 50,
+      extractRelationships: options?.relationships !== false,
+      autoDetect: true,  // Always intelligent
+      parallel: true     // Always fast
+    })
+    
+    if (result.errors.length > 0) {
+      prodLog.warn(`Import had ${result.errors.length} errors:`, result.errors[0])
+    }
+    
+    prodLog.info(`✨ Imported ${result.stats.imported} items, ${result.stats.relationships} relationships`)
+    
+    return result.nouns
   }
 
   /**

@@ -1,7 +1,7 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "2.0.2",
-  "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 24 nouns × 40 verbs for infinite expressiveness.",
+  "version": "2.1.0",
+  "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 31 nouns × 40 verbs for infinite expressiveness.",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
