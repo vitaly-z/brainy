@@ -11,7 +11,7 @@
 
 **🧠 Brainy 2.0 - The Universal Knowledge Protocol™**
 
-**World's first Triple Intelligence™ database**—unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 24 standardized noun types × 40 verb types.
+**World's first Triple Intelligence™ database**—unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
 
 **Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language.
 
@@ -20,7 +20,7 @@
 ## 🎉 What's New in 2.0
 
 - **World's First Triple Intelligence™**: Unified vector + graph + document in ONE query
-- **Universal Knowledge Protocol**: 24 nouns × 40 verbs standardize all knowledge
+- **Universal Knowledge Protocol**: 31 nouns × 40 verbs standardize all knowledge
 - **Infinite Expressiveness**: Model ANY data with unlimited metadata
 - **API Consolidation**: 15+ methods → 2 clean APIs (`search()` and `find()`)
 - **Natural Language**: Ask questions in plain English

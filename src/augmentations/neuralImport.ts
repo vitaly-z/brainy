@@ -11,6 +11,8 @@ import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import * as fs from '../universal/fs.js'
 import * as path from '../universal/path.js'
+import { IntelligentTypeMatcher, getTypeMatcher } from './typeMatching/intelligentTypeMatcher.js'
+import { prodLog } from '../utils/logger.js'
 
 // Neural Import Analysis Types
 export interface NeuralAnalysisResult {
@@ -68,6 +70,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   
   private config: NeuralImportConfig
   private analysisCache = new Map<string, NeuralAnalysisResult>()
+  private typeMatcher: IntelligentTypeMatcher | null = null
 
   constructor(config: Partial<NeuralImportConfig> = {}) {
     super()
@@ -81,7 +84,12 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   protected async onInitialize(): Promise<void> {
-    this.log('🧠 Neural Import augmentation initialized')
+    try {
+      this.typeMatcher = await getTypeMatcher()
+      this.log('🧠 Neural Import augmentation initialized with intelligent type matching')
+    } catch (error) {
+      this.log('⚠️ Failed to initialize type matcher, falling back to heuristics', 'warn')
+    }
   }
 
   protected async onShutdown(): Promise<void> {
@@ -195,12 +203,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
       
       case 'yaml':
       case 'yml':
-        // For now, basic YAML support - in full implementation would use yaml parser
-        try {
-          return JSON.parse(content) // Placeholder
-        } catch {
-          return [{ text: content }]
-        }
+        return this.parseYAML(content)
       
       case 'txt':
       case 'text':
@@ -214,25 +217,178 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Parse CSV data
+   * Parse CSV data - handles quoted values, escaped quotes, and edge cases
    */
   private parseCSV(content: string): any[] {
-    const lines = content.split('\n').filter(line => line.trim())
+    const lines = content.split('\n')
     if (lines.length === 0) return []
     
-    const headers = lines[0].split(',').map(h => h.trim())
+    // Parse a CSV line handling quotes
+    const parseLine = (line: string): string[] => {
+      const result: string[] = []
+      let current = ''
+      let inQuotes = false
+      let i = 0
+      
+      while (i < line.length) {
+        const char = line[i]
+        const nextChar = line[i + 1]
+        
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            // Escaped quote
+            current += '"'
+            i += 2
+          } else {
+            // Toggle quote mode
+            inQuotes = !inQuotes
+            i++
+          }
+        } else if (char === ',' && !inQuotes) {
+          // Field separator
+          result.push(current.trim())
+          current = ''
+          i++
+        } else {
+          current += char
+          i++
+        }
+      }
+      
+      // Add last field
+      result.push(current.trim())
+      return result
+    }
+    
+    // Parse headers
+    const headers = parseLine(lines[0])
     const data = []
     
+    // Parse data rows
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim())
+      const line = lines[i].trim()
+      if (!line) continue // Skip empty lines
+      
+      const values = parseLine(line)
       const row: any = {}
+      
       headers.forEach((header, index) => {
-        row[header] = values[index] || ''
+        const value = values[index] || ''
+        // Try to parse numbers
+        const num = Number(value)
+        row[header] = !isNaN(num) && value !== '' ? num : value
       })
+      
       data.push(row)
     }
     
     return data
+  }
+  
+  /**
+   * Parse YAML data
+   */
+  private parseYAML(content: string): any[] {
+    try {
+      // Simple YAML parser for basic structures
+      // For full YAML support, we'd use js-yaml library
+      const lines = content.split('\n')
+      const result: any[] = []
+      let currentObject: any = null
+      let currentIndent = 0
+      
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) continue // Skip empty lines and comments
+        
+        // Calculate indentation
+        const indent = line.length - line.trimStart().length
+        
+        // Check for array item
+        if (trimmed.startsWith('- ')) {
+          const value = trimmed.substring(2).trim()
+          if (indent === 0) {
+            // Top-level array item
+            if (value.includes(':')) {
+              // Object in array
+              currentObject = {}
+              result.push(currentObject)
+              const [key, val] = value.split(':').map(s => s.trim())
+              currentObject[key] = this.parseYAMLValue(val)
+            } else {
+              result.push(this.parseYAMLValue(value))
+            }
+          } else if (currentObject) {
+            // Nested array
+            const lastKey = Object.keys(currentObject).pop()
+            if (lastKey) {
+              if (!Array.isArray(currentObject[lastKey])) {
+                currentObject[lastKey] = []
+              }
+              currentObject[lastKey].push(this.parseYAMLValue(value))
+            }
+          }
+        } else if (trimmed.includes(':')) {
+          // Key-value pair
+          const colonIndex = trimmed.indexOf(':')
+          const key = trimmed.substring(0, colonIndex).trim()
+          const value = trimmed.substring(colonIndex + 1).trim()
+          
+          if (indent === 0) {
+            // Top-level object
+            if (!currentObject) {
+              currentObject = {}
+              result.push(currentObject)
+            }
+            currentObject[key] = this.parseYAMLValue(value)
+            currentIndent = 0
+          } else if (currentObject) {
+            // Nested object
+            if (indent > currentIndent && !value) {
+              // Start of nested object
+              const lastKey = Object.keys(currentObject).pop()
+              if (lastKey) {
+                currentObject[lastKey] = { [key]: '' }
+              }
+            } else {
+              currentObject[key] = this.parseYAMLValue(value)
+            }
+            currentIndent = indent
+          }
+        }
+      }
+      
+      // If we built a single object and not an array, wrap it
+      if (result.length === 0 && currentObject) {
+        result.push(currentObject)
+      }
+      
+      return result.length > 0 ? result : [{ text: content }]
+    } catch (error) {
+      prodLog.warn('YAML parsing failed, treating as text:', error)
+      return [{ text: content }]
+    }
+  }
+  
+  /**
+   * Parse a YAML value (handle strings, numbers, booleans, null)
+   */
+  private parseYAMLValue(value: string): any {
+    if (!value || value === '~' || value === 'null') return null
+    if (value === 'true') return true
+    if (value === 'false') return false
+    
+    // Remove quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      return value.slice(1, -1)
+    }
+    
+    // Try to parse as number
+    const num = Number(value)
+    if (!isNaN(num) && value !== '') return num
+    
+    return value
   }
 
   /**
@@ -251,7 +407,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
         
         detectedEntities.push({
           originalData: item,
-          nounType: this.inferNounType(item),
+          nounType: await this.inferNounType(item),
           confidence: 0.85,
           suggestedId: String(entityId),
           reasoning: 'Detected from structured data',
@@ -259,7 +415,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
         })
         
         // Detect relationships from references
-        this.detectRelationships(item, entityId, detectedRelationships)
+        await this.detectRelationships(item, entityId, detectedRelationships)
       }
     }
     
@@ -295,32 +451,35 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Infer noun type from object structure
+   * Infer noun type from object structure using intelligent type matching
    */
-  private inferNounType(obj: any): string {
-    // Simple heuristics for type detection
-    if (obj.email || obj.username) return 'Person'
-    if (obj.title && obj.content) return 'Document'
-    if (obj.price || obj.product) return 'Product'
-    if (obj.date || obj.timestamp) return 'Event'
-    if (obj.url || obj.link) return 'Resource'
-    if (obj.lat || obj.longitude) return 'Location'
+  private async inferNounType(obj: any): Promise<string> {
+    if (!this.typeMatcher) {
+      // Initialize type matcher if not available
+      this.typeMatcher = await getTypeMatcher()
+    }
     
-    // Default fallback
-    return 'Entity'
+    const result = await this.typeMatcher.matchNounType(obj)
+    
+    // Log if confidence is low for debugging
+    if (result.confidence < 0.5) {
+      this.log(`Low confidence (${result.confidence.toFixed(2)}) for noun type: ${result.type}`, 'warn')
+    }
+    
+    return result.type
   }
 
   /**
    * Detect relationships from object references
    */
-  private detectRelationships(obj: any, sourceId: string, relationships: DetectedRelationship[]): void {
+  private async detectRelationships(obj: any, sourceId: string, relationships: DetectedRelationship[]): Promise<void> {
     // Look for reference patterns
     for (const [key, value] of Object.entries(obj)) {
       if (key.endsWith('Id') || key.endsWith('_id') || key === 'parentId' || key === 'userId') {
         relationships.push({
           sourceId,
           targetId: String(value),
-          verbType: this.inferVerbType(key),
+          verbType: await this.inferVerbType(key, obj, { id: value }),
           confidence: 0.75,
           weight: 1,
           reasoning: `Reference detected in field: ${key}`,
@@ -335,7 +494,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
             relationships.push({
               sourceId,
               targetId: String(targetId),
-              verbType: this.inferVerbType(key),
+              verbType: await this.inferVerbType(key, obj, { id: targetId }),
               confidence: 0.7,
               weight: 1,
               reasoning: `Array reference in field: ${key}`,
@@ -348,21 +507,22 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Infer verb type from field name
+   * Infer verb type from field name using intelligent type matching
    */
-  private inferVerbType(fieldName: string): string {
-    const normalized = fieldName.toLowerCase()
+  private async inferVerbType(fieldName: string, sourceObj?: any, targetObj?: any): Promise<string> {
+    if (!this.typeMatcher) {
+      // Initialize type matcher if not available
+      this.typeMatcher = await getTypeMatcher()
+    }
     
-    if (normalized.includes('parent')) return 'childOf'
-    if (normalized.includes('user')) return 'belongsTo'
-    if (normalized.includes('author')) return 'authoredBy'
-    if (normalized.includes('owner')) return 'ownedBy'
-    if (normalized.includes('creator')) return 'createdBy'
-    if (normalized.includes('member')) return 'memberOf'
-    if (normalized.includes('tag')) return 'taggedWith'
-    if (normalized.includes('category')) return 'categorizedAs'
+    const result = await this.typeMatcher.matchVerbType(sourceObj, targetObj, fieldName)
     
-    return 'relatedTo'
+    // Log if confidence is low for debugging
+    if (result.confidence < 0.5) {
+      this.log(`Low confidence (${result.confidence.toFixed(2)}) for verb type: ${result.type}`, 'warn')
+    }
+    
+    return result.type
   }
 
   /**

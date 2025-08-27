@@ -8,7 +8,7 @@
 
 Brainy's **Noun-Verb Taxonomy** achieves **universal coverage** of all human knowledge through **infinite expressiveness**:
 
-- **24 Noun Types × 40 Verb Types = 960 Base Combinations**
+- **31 Noun Types × 40 Verb Types = 1,240 Base Combinations**
 - **Unlimited Metadata Fields = ∞ Domain Specificity**  
 - **Multi-hop Graph Traversals = ∞ Relationship Complexity**
 - **Result: Can Model ANY Data in ANY Industry**
@@ -95,7 +95,7 @@ await brain.sync.jira({
 
 Like **HTTP** became the protocol for the web and **TCP/IP** for the internet, Brainy's noun-verb taxonomy is becoming the **Universal Knowledge Protocol**:
 
-- **Learn Once**: Developers learn 24 nouns + 40 verbs, not 1000s of schemas
+- **Learn Once**: Developers learn 31 nouns + 40 verbs, not 1000s of schemas
 - **Build Anywhere**: Tools built for one domain work in others
 - **Share Everything**: Knowledge graphs are universally shareable
 - **Compose Freely**: Augmentations compose without conflicts
@@ -574,7 +574,7 @@ const results = await brain.find("similar users who purchased similar products")
 
 The Noun-Verb taxonomy is designed to represent **all human knowledge** through a comprehensive set of types that can be combined infinitely.
 
-### Complete Noun Types (24 Types)
+### Complete Noun Types (31 Types)
 
 #### Core Entity Types (6)
 
@@ -746,7 +746,7 @@ await brain.addNoun("Website Redesign", {
 })
 ```
 
-#### Descriptive Types (6)
+#### Descriptive Types (7)
 
 ##### 19. **Process** - Workflows and procedures
 ```typescript
@@ -775,30 +775,99 @@ await brain.addNoun("Admin Role", {
 })
 ```
 
-##### 22. **Relationship** - Abstract relationships
+##### 22. **Topic** - Subjects or themes
 ```typescript
-await brain.addNoun("Partnership Agreement", {
-  type: "relationship",
-  parties: ["CompanyA", "CompanyB"],
-  terms: "5 years"
+await brain.addNoun("Machine Learning", {
+  type: "topic",
+  field: "AI",
+  popularity: "high"
 })
 ```
 
-##### 23. **Property** - Attributes or characteristics
+##### 23. **Language** - Languages or linguistic entities
 ```typescript
-await brain.addNoun("Color Scheme", {
-  type: "property",
-  values: ["#000", "#FFF"],
-  applies_to: "theme"
+await brain.addNoun("English", {
+  type: "language",
+  iso_code: "en",
+  speakers_millions: 1500
 })
 ```
 
-##### 24. **Custom** - User-defined types
+##### 24. **Currency** - Monetary units
 ```typescript
-await brain.addNoun("Industry-Specific Entity", {
-  type: "custom",
-  subtype: "medical_device",
-  fda_approved: true
+await brain.addNoun("US Dollar", {
+  type: "currency",
+  symbol: "$",
+  code: "USD"
+})
+```
+
+##### 25. **Measurement** - Metrics or quantities
+```typescript
+await brain.addNoun("Temperature Reading", {
+  type: "measurement",
+  value: 23.5,
+  unit: "celsius"
+})
+```
+
+#### Scientific/Research Types (2)
+
+##### 26. **Hypothesis** - Scientific theories and propositions
+```typescript
+await brain.addNoun("String Theory", {
+  type: "hypothesis",
+  field: "physics",
+  status: "unproven"
+})
+```
+
+##### 27. **Experiment** - Studies and research trials
+```typescript
+await brain.addNoun("Clinical Trial XYZ", {
+  type: "experiment",
+  phase: 3,
+  participants: 1000
+})
+```
+
+#### Legal/Regulatory Types (2)
+
+##### 28. **Contract** - Legal agreements and terms
+```typescript
+await brain.addNoun("Service Agreement", {
+  type: "contract",
+  duration: "2 years",
+  value: 100000
+})
+```
+
+##### 29. **Regulation** - Laws and compliance requirements
+```typescript
+await brain.addNoun("GDPR", {
+  type: "regulation",
+  jurisdiction: "EU",
+  category: "data protection"
+})
+```
+
+#### Technical Infrastructure Types (2)
+
+##### 30. **Interface** - APIs and protocols
+```typescript
+await brain.addNoun("REST API", {
+  type: "interface",
+  version: "v2",
+  endpoints: 45
+})
+```
+
+##### 31. **Resource** - Infrastructure and compute assets
+```typescript
+await brain.addNoun("Database Server", {
+  type: "resource",
+  capacity: "1TB",
+  availability: "99.9%"
 })
 ```
 
