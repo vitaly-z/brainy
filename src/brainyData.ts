@@ -35,6 +35,16 @@ import {
 import { getAugmentationVersion } from './utils/version.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
 import { MetadataIndexManager, MetadataIndexConfig } from './utils/metadataIndex.js'
+import { 
+  createNamespacedMetadata, 
+  updateNamespacedMetadata, 
+  markDeleted, 
+  markRestored, 
+  isDeleted,
+  getUserMetadata,
+  DELETED_FIELD
+} from './utils/metadataNamespace.js'
+import { PeriodicCleanup, CleanupConfig, CleanupStats } from './utils/periodicCleanup.js'
 import { NounType, VerbType, GraphNoun } from './types/graphTypes.js'
 import {
   ServerSearchConduitAugmentation,
@@ -510,6 +520,13 @@ export interface BrainyDataConfig {
    * Default: false (enabled automatically for distributed setups)
    */
   health?: boolean
+
+  /**
+   * Periodic cleanup configuration for old soft-deleted items
+   * Automatically removes soft-deleted items after a specified age to prevent memory buildup
+   * Default: enabled with 1 hour max age and 15 minute cleanup interval
+   */
+  cleanup?: Partial<CleanupConfig>
 }
 
 export class BrainyData<T = any> implements BrainyDataInterface<T> {
@@ -549,6 +566,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private _importManager?: any // Lazy loaded Import Manager
 
   private cacheAutoConfigurator: CacheAutoConfigurator
+
+  // Periodic cleanup for soft-deleted items
+  private periodicCleanup: PeriodicCleanup | null = null
 
   // Timeout and retry configuration
   private timeoutConfig: BrainyDataConfig['timeouts'] = {}
@@ -984,6 +1004,52 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     if (this.loggingConfig?.verbose) {
       console.log('🚀 New augmentation system initialized successfully')
+    }
+
+    // Initialize periodic cleanup system
+    await this.initializePeriodicCleanup()
+  }
+
+  /**
+   * Initialize periodic cleanup system for old soft-deleted items
+   * SAFETY-CRITICAL: Coordinates with both HNSW and metadata indexes
+   */
+  private async initializePeriodicCleanup(): Promise<void> {
+    if (!this.storage) {
+      throw new Error('Cannot initialize periodic cleanup: storage not available')
+    }
+
+    // Skip cleanup if in read-only or frozen mode
+    if (this.readOnly || this.frozen) {
+      if (this.loggingConfig?.verbose) {
+        console.log('🧹 Periodic cleanup disabled: database is read-only or frozen')
+      }
+      return
+    }
+
+    // Get cleanup config with safe defaults
+    const cleanupConfig: Partial<CleanupConfig> = this.config.cleanup || {}
+    
+    // Create cleanup system with all required dependencies
+    this.periodicCleanup = new PeriodicCleanup(
+      this.storage,
+      this.hnswIndex,
+      this.metadataIndex, // Can be null, cleanup will handle gracefully
+      {
+        enabled: cleanupConfig.enabled !== false, // Enabled by default
+        maxAge: cleanupConfig.maxAge || 60 * 60 * 1000, // 1 hour default
+        batchSize: cleanupConfig.batchSize || 100, // 100 items per batch
+        cleanupInterval: cleanupConfig.cleanupInterval || 15 * 60 * 1000 // 15 minutes
+      }
+    )
+
+    // Start cleanup if enabled
+    if (this.periodicCleanup && cleanupConfig.enabled !== false) {
+      this.periodicCleanup.start()
+      
+      if (this.loggingConfig?.verbose) {
+        console.log('🧹 Periodic cleanup system initialized and started')
+      }
     }
   }
 
@@ -2174,45 +2240,41 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             graphNoun.updatedAt = timestamp
           }
 
-          // Create a copy of the metadata without modifying the original
-          let metadataToSave = metadata
-          if (metadata && typeof metadata === 'object') {
-            // Always make a copy without adding the ID
-            metadataToSave = { ...metadata }
+          // Create properly namespaced metadata for new items
+          let metadataToSave = createNamespacedMetadata(metadata)
 
-            // Add domain metadata if distributed mode is enabled
-            if (this.domainDetector) {
-              // First check if domain is already in metadata
-              if ((metadataToSave as any).domain) {
-                // Domain already specified, keep it
-                const domainInfo =
-                  this.domainDetector.detectDomain(metadataToSave)
+          // Add domain metadata if distributed mode is enabled
+          if (this.domainDetector) {
+            // First check if domain is already in metadata
+            if ((metadataToSave as any).domain) {
+              // Domain already specified, keep it
+              const domainInfo =
+                this.domainDetector.detectDomain(metadataToSave)
+              if (domainInfo.domainMetadata) {
+                ;(metadataToSave as any).domainMetadata =
+                  domainInfo.domainMetadata
+              }
+            } else {
+              // Try to detect domain from the data
+              const dataToAnalyze = Array.isArray(vectorOrData)
+                ? metadata
+                : vectorOrData
+              const domainInfo =
+                this.domainDetector.detectDomain(dataToAnalyze)
+              if (domainInfo.domain) {
+                ;(metadataToSave as any).domain = domainInfo.domain
                 if (domainInfo.domainMetadata) {
                   ;(metadataToSave as any).domainMetadata =
                     domainInfo.domainMetadata
                 }
-              } else {
-                // Try to detect domain from the data
-                const dataToAnalyze = Array.isArray(vectorOrData)
-                  ? metadata
-                  : vectorOrData
-                const domainInfo =
-                  this.domainDetector.detectDomain(dataToAnalyze)
-                if (domainInfo.domain) {
-                  ;(metadataToSave as any).domain = domainInfo.domain
-                  if (domainInfo.domainMetadata) {
-                    ;(metadataToSave as any).domainMetadata =
-                      domainInfo.domainMetadata
-                  }
-                }
               }
             }
+          }
 
-            // Add partition information if distributed mode is enabled
-            if (this.partitioner) {
-              const partition = this.partitioner.getPartition(id)
-              ;(metadataToSave as any).partition = partition
-            }
+          // Add partition information if distributed mode is enabled
+          if (this.partitioner) {
+            const partition = this.partitioner.getPartition(id)
+            ;(metadataToSave as any).partition = partition
           }
 
           await this.storage!.saveMetadata(id, metadataToSave)
@@ -3108,10 +3170,11 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       // This preserves pure vector searches without metadata
       if (metadataFilter && Object.keys(metadataFilter).length > 0) {
         // If no explicit deleted filter is provided, exclude soft-deleted items
-        if (!metadataFilter.deleted && !metadataFilter.anyOf) {
+        // Use namespaced field for O(1) performance
+        if (!metadataFilter['_brainy.deleted'] && !metadataFilter.anyOf) {
           metadataFilter = {
             ...metadataFilter,
-            deleted: { notEquals: true }
+            ['_brainy.deleted']: false  // O(1) positive match instead of notEquals
           }
         }
       }
@@ -3364,7 +3427,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         const metadata = result.metadata as Record<string, any>
         
         // Exclude deleted items from search results (soft delete)
-        if (metadata.deleted === true) {
+        // Check namespaced field
+        if (metadata._brainy?.deleted === true) {
           return false
         }
         
@@ -4151,9 +4215,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         }
       }
 
-      // Create complete verb metadata separately
-      // Merge original metadata with system metadata to preserve neural enhancements
-      const verbMetadata = {
+      // Create complete verb metadata with proper namespace
+      // First combine user metadata with verb-specific metadata
+      const userAndVerbMetadata = {
         sourceId: sourceId,
         targetId: targetId,
         source: sourceId,
@@ -4173,6 +4237,9 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         ...(options.metadata || {}),
         data: options.metadata // Also store in data field for backwards compatibility
       }
+      
+      // Now wrap with namespace for internal fields
+      const verbMetadata = createNamespacedMetadata(userAndVerbMetadata)
 
       // Add to index
       await this.index.addItem({ id, vector: verbVector })
@@ -4273,6 +4340,12 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         console.warn(
           `Verb ${id} found but no metadata - creating minimal GraphVerb`
         )
+      } else if (isDeleted(metadata)) {
+        // Check if verb is soft-deleted
+        return null
+      }
+      
+      if (!metadata) {
         // Return minimal GraphVerb if metadata is missing
         return {
           id: hnswVerb.id,
@@ -4574,7 +4647,6 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     id: string,
     options: {
       service?: string // The service that is deleting the data
-      hard?: boolean   // If true, permanently delete. Default: false (soft delete)
     } = {}
   ): Promise<boolean> {
     await this.ensureInitialized()
@@ -4583,54 +4655,75 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     this.checkReadOnly()
 
     try {
-      // PERFORMANCE: Use soft delete by default for O(log n) filtering
-      // The MetadataIndex can efficiently filter out deleted items
-      if (!options.hard) {
-        // Soft delete: Just mark as deleted in metadata
-        try {
-          await this.storage!.saveVerbMetadata(id, {
-            deleted: true,
-            deletedAt: new Date().toISOString(),
-            deletedBy: options.service || '2.0-api'
-          })
-          
-          // Update MetadataIndex for O(log n) filtering
-          if (this.metadataIndex) {
-            await this.metadataIndex.updateIndex(id, { deleted: true })
-          }
-          
-          return true
-        } catch (error) {
-          // If verb doesn't exist, return false (not an error)
+      // CONSISTENT: Always use soft delete for graph integrity and recoverability
+      // The MetadataIndex efficiently filters out deleted items with O(1) performance
+      try {
+        const existing = await this.storage!.getVerb(id)
+        if (!existing || !existing.metadata) {
+          // Verb doesn't exist, return false (not an error)
           return false
         }
-      }
-      
-      // Hard delete path (explicit request only)
-      const existingMetadata = await this.storage!.getVerbMetadata(id)
-      
-      // Remove from index
-      const removed = this.index.removeItem(id)
-      if (!removed) {
+
+        const updatedMetadata = markDeleted(existing.metadata)
+        await this.storage!.saveVerbMetadata(id, updatedMetadata)
+        
+        // Update MetadataIndex for O(1) filtering
+        if (this.metadataIndex) {
+          await this.metadataIndex.removeFromIndex(id, existing.metadata)
+          await this.metadataIndex.addToIndex(id, updatedMetadata)
+        }
+        
+        return true
+      } catch (error) {
+        // If verb doesn't exist, return false (not an error)
         return false
       }
-
-      // Remove from metadata index
-      if (this.index && existingMetadata) {
-        await this.metadataIndex?.removeFromIndex?.(id, existingMetadata)
-      }
-
-      // Remove from storage
-      await this.storage!.deleteVerb(id)
-
-      // Track deletion statistics
-      const service = this.getServiceName(options)
-      await this.storage!.decrementStatistic('verb', service)
-
-      return true
     } catch (error) {
       console.error(`Failed to delete verb ${id}:`, error)
       throw new Error(`Failed to delete verb ${id}: ${error}`)
+    }
+  }
+
+  /**
+   * Restore a soft-deleted verb (complement to consistent soft delete)
+   * @param id The verb ID to restore
+   * @param options Options for the restore operation
+   * @returns Promise<boolean> True if restored, false if not found or not deleted
+   */
+  public async restoreVerb(
+    id: string,
+    options: {
+      service?: string // The service that is restoring the data  
+    } = {}
+  ): Promise<boolean> {
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    try {
+      const existing = await this.storage!.getVerb(id)
+      if (!existing || !existing.metadata) {
+        return false // Verb doesn't exist
+      }
+
+      if (!isDeleted(existing.metadata)) {
+        return false // Verb not deleted, nothing to restore
+      }
+
+      const restoredMetadata = markRestored(existing.metadata)
+      await this.storage!.saveVerbMetadata(id, restoredMetadata)
+      
+      // Update MetadataIndex
+      if (this.metadataIndex) {
+        await this.metadataIndex.removeFromIndex(id, existing.metadata)
+        await this.metadataIndex.addToIndex(id, restoredMetadata)
+      }
+      
+      return true
+    } catch (error) {
+      console.error(`Failed to restore verb ${id}:`, error)
+      throw new Error(`Failed to restore verb ${id}: ${error}`)
     }
   }
 
@@ -7442,8 +7535,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       if (metadata === null) {
         metadata = {}
       } else if (typeof metadata === 'object') {
-        // Check if this item is soft-deleted
-        if ((metadata as any).deleted === true) {
+        // Check if this item is soft-deleted using namespace
+        if (isDeleted(metadata as any)) {
           // Return null for soft-deleted items to match expected API behavior
           return null
         }
@@ -7503,21 +7596,108 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       }
 
       // For 2.0 API safety, we default to soft delete
-      // Soft delete: just mark as deleted - metadata filter will exclude from search
+      // Soft delete: mark as deleted using namespace for O(1) filtering
       try {
-        await this.updateNounMetadata(actualId, { 
-          deleted: true, 
-          deletedAt: new Date().toISOString(),
-          deletedBy: '2.0-api'
-        } as T)
+        const existing = await this.getNoun(actualId)
+        if (!existing) {
+          // Item doesn't exist, return false (per API contract)
+          return false
+        }
+        
+        if (existing.metadata) {
+          // Directly save the metadata with deleted flag set
+          const metadata: any = existing.metadata
+          const metadataWithNamespace = metadata._brainy 
+            ? metadata 
+            : createNamespacedMetadata(metadata)
+          const updatedMetadata = markDeleted(metadataWithNamespace)
+          
+          // Save to storage
+          await this.storage!.saveMetadata(actualId, updatedMetadata)
+          
+          // CRITICAL: Update the metadata index for O(1) soft delete filtering
+          if (this.metadataIndex) {
+            // Remove old metadata from index
+            await this.metadataIndex.removeFromIndex(actualId, metadataWithNamespace)
+            // Add updated metadata with deleted flag
+            await this.metadataIndex.addToIndex(actualId, updatedMetadata)
+          }
+        }
         return true
       } catch (error) {
-        // If item doesn't exist, return false (delete of non-existent item is not an error)
+        // If an actual error occurs, return false
         return false
       }
     } catch (error) {
       console.error(`Failed to delete vector ${id}:`, error)
       throw new Error(`Failed to delete vector ${id}: ${error}`)
+    }
+  }
+
+  /**
+   * Restore a soft-deleted noun (complement to consistent soft delete)
+   * @param id The noun ID to restore
+   * @returns Promise<boolean> True if restored, false if not found or not deleted
+   */
+  public async restoreNoun(id: string): Promise<boolean> {
+    // Validate id parameter first, before any other logic
+    if (id === null || id === undefined) {
+      throw new Error('ID cannot be null or undefined')
+    }
+
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    try {
+      // Handle content text vs ID resolution (same as deleteNoun)
+      let actualId = id
+
+      if (!this.index.getNouns().has(id)) {
+        // Try to find a noun with matching text content
+        for (const [nounId, noun] of this.index.getNouns().entries()) {
+          if (noun.metadata?.text === id) {
+            actualId = nounId
+            break
+          }
+        }
+      }
+
+      const existing = await this.getNoun(actualId)
+      if (!existing) {
+        return false // Noun doesn't exist
+      }
+
+      if (!existing.metadata) {
+        return false // No metadata
+      }
+      
+      // Ensure metadata has namespace structure before checking if deleted
+      const metadata = existing.metadata as any
+      const metadataWithNamespace = metadata._brainy 
+        ? metadata as any
+        : createNamespacedMetadata(getUserMetadata(metadata))
+        
+      if (!isDeleted(metadataWithNamespace as any)) {
+        return false // Noun not deleted, nothing to restore
+      }
+
+      // Restore the noun using the namespace-aware metadata
+      const restoredMetadata = markRestored(metadataWithNamespace as any)
+      
+      // Save to storage
+      await this.storage!.saveMetadata(actualId, restoredMetadata)
+      
+      // Update the metadata index
+      if (this.metadataIndex) {
+        await this.metadataIndex.removeFromIndex(actualId, metadataWithNamespace)
+        await this.metadataIndex.addToIndex(actualId, restoredMetadata)
+      }
+      return true
+    } catch (error) {
+      console.error(`Failed to restore noun ${id}:`, error)
+      throw new Error(`Failed to restore noun ${id}: ${error}`)
     }
   }
   
@@ -7590,12 +7770,15 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         }
         
         // Merge metadata if both existing and new metadata exist
-        let finalMetadata = metadata
+        let finalMetadata: any = metadata
         if (metadata && existingMetadata) {
           finalMetadata = { ...existingMetadata, ...metadata }
         } else if (!metadata && existingMetadata) {
           finalMetadata = existingMetadata
         }
+        
+        // Update metadata while preserving namespaces
+        finalMetadata = updateNamespacedMetadata(existingMetadata || {}, finalMetadata)
         
         // Update the noun with new data and vector
         const updatedNoun: HNSWNoun = {
@@ -7663,8 +7846,20 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         throw new Error(`Vector with ID ${id} does not exist`)
       }
 
+      // Get existing metadata to preserve namespaces
+      const existing = await this.storage!.getMetadata(id) || {}
+      
+      // Update metadata while preserving namespace structure
+      const metadataToSave = updateNamespacedMetadata(existing, metadata)
+      
       // Save updated metadata to storage
-      await this.storage!.saveMetadata(id, metadata)
+      await this.storage!.saveMetadata(id, metadataToSave)
+      
+      // Update metadata index for efficient filtering
+      if (this.metadataIndex) {
+        await this.metadataIndex.removeFromIndex(id, existing)
+        await this.metadataIndex.addToIndex(id, metadataToSave)
+      }
 
       // Invalidate search cache since metadata has changed
       this.cache?.invalidateOnDataChange('update')
@@ -7842,12 +8037,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       processedQuery.offset = offset
     }
     
-    // Apply soft-delete filtering if needed
+    // Add soft-delete filter using POSITIVE match (O(1) hash lookup)
+    // We use _brainy.deleted to avoid conflicts with user metadata
     if (excludeDeleted) {
       if (!processedQuery.where) {
         processedQuery.where = {}
       }
-      processedQuery.where.deleted = { notEquals: true }
+      // Use namespaced field for O(1) hash lookup in metadata index
+      processedQuery.where['_brainy.deleted'] = false // or { equals: false }
     }
     
     // Apply mode-specific optimizations

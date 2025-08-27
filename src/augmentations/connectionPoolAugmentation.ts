@@ -41,6 +41,7 @@ interface QueuedRequest {
 export class ConnectionPoolAugmentation extends BaseAugmentation {
   name = 'ConnectionPool'
   timing = 'around' as const
+  metadata = 'none' as const  // Connection pooling doesn't access metadata
   operations = ['storage'] as ('storage')[]
   priority = 95 // Very high priority for storage operations
   

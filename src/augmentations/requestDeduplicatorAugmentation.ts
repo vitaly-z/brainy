@@ -22,6 +22,7 @@ interface DeduplicatorConfig {
 export class RequestDeduplicatorAugmentation extends BaseAugmentation {
   name = 'RequestDeduplicator'
   timing = 'around' as const
+  metadata = 'none' as const  // Doesn't access metadata
   operations = ['search', 'searchText', 'searchByNounTypes', 'findSimilar', 'get'] as ('search' | 'searchText' | 'searchByNounTypes' | 'findSimilar' | 'get')[]
   priority = 50 // Performance optimization
   

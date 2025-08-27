@@ -31,6 +31,7 @@ export interface CacheConfig {
 export class CacheAugmentation extends BaseAugmentation {
   readonly name = 'cache'
   readonly timing = 'around' as const
+  readonly metadata = 'none' as const  // Cache doesn't access metadata
   operations = ['search', 'add', 'delete', 'clear', 'all'] as ('search' | 'add' | 'delete' | 'clear' | 'all')[]
   readonly priority = 50 // Mid-priority, runs after data operations
 

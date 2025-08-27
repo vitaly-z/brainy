@@ -66,6 +66,10 @@ interface ScoringMetrics {
 export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   name = 'IntelligentVerbScoring'
   timing = 'around' as const
+  readonly metadata = {
+    reads: ['type', 'verb', 'source', 'target'] as string[],
+    writes: ['weight', 'confidence', 'intelligentScoring'] as string[]
+  }  // Adds scoring metadata to verbs
   operations = ['addVerb', 'relate'] as ('addVerb' | 'relate')[]
   priority = 10 // Enhancement feature - runs after core operations
   

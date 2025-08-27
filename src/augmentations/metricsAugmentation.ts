@@ -32,6 +32,7 @@ export interface MetricsConfig {
  * - Zero-config with smart defaults
  */
 export class MetricsAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata for metrics
   readonly name = 'metrics'
   readonly timing = 'after' as const
   operations = ['add', 'search', 'delete', 'clear', 'all'] as ('add' | 'search' | 'delete' | 'clear' | 'all')[]

@@ -54,6 +54,7 @@ export interface EntityMapping {
  * Optimized for streaming data scenarios like Bluesky firehose processing
  */
 export class EntityRegistryAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata to register entities
   readonly name = 'entity-registry'
   readonly description = 'Fast external-ID to internal-UUID mapping for streaming data'
   readonly timing: 'before' | 'after' | 'around' | 'replace' = 'before'
@@ -469,6 +470,7 @@ export class EntityRegistryAugmentation extends BaseAugmentation {
 
 // Hook into Brainy's add operations to automatically register entities
 export class AutoRegisterEntitiesAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata for auto-registration
   readonly name = 'auto-register-entities'
   readonly description = 'Automatically register entities in the registry when added'
   readonly timing: 'before' | 'after' | 'around' | 'replace' = 'after'
