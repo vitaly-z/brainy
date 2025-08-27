@@ -57,6 +57,7 @@ interface ConnectedClient {
 export class APIServerAugmentation extends BaseAugmentation {
   readonly name = 'api-server'
   readonly timing = 'after' as const
+  readonly metadata = 'readonly' as const  // API server reads metadata to serve data
   readonly operations = ['all'] as ('all')[]
   readonly priority = 5  // Low priority, runs after other augmentations
   

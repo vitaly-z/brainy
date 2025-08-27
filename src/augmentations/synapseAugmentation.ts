@@ -32,6 +32,10 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
   readonly timing = 'after' as const
   readonly operations = ['all'] as ('all')[]
   readonly priority = 10
+  readonly metadata = {
+    reads: '*' as '*',  // Needs to read for syncing
+    writes: ['_synapse', '_syncedAt'] as string[]
+  }  // Adds synapse tracking metadata
   
   // Synapse-specific properties
   abstract readonly synapseId: string

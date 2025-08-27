@@ -31,6 +31,7 @@ export interface IndexConfig {
  * - Zero-config with smart defaults
  */
 export class IndexAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata to build indexes
   readonly name = 'index'
   readonly timing = 'after' as const
   operations = ['add', 'updateMetadata', 'delete', 'clear', 'all'] as ('add' | 'updateMetadata' | 'delete' | 'clear' | 'all')[]

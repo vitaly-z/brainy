@@ -255,24 +255,29 @@ export class TripleIntelligenceEngine {
           break
           
         case 'vector':
-          if (candidates.length === 0) {
-            // Initial vector search
+          // CRITICAL: If we have a previous step that returned 0 candidates, 
+          // we must respect that and not do a fresh search
+          if (candidates.length === 0 && plan.steps[0].type === 'vector') {
+            // This is the first step - do initial vector search
             const results = await this.vectorSearch(query.like || query.similar!, query.limit)
             candidates = results
-          } else {
-            // Vector search within candidates
+          } else if (candidates.length > 0) {
+            // Vector search within existing candidates
             candidates = await this.vectorSearchWithin(query.like || query.similar!, candidates)
           }
+          // If candidates.length === 0 and this isn't the first step, keep empty candidates
           break
           
         case 'graph':
-          if (candidates.length === 0) {
-            // Initial graph traversal
+          // CRITICAL: Same logic as vector - respect empty candidates from previous steps
+          if (candidates.length === 0 && plan.steps[0].type === 'graph') {
+            // This is the first step - do initial graph traversal
             candidates = await this.graphTraversal(query.connected!)
-          } else {
-            // Graph expansion from candidates
+          } else if (candidates.length > 0) {
+            // Graph expansion from existing candidates
             candidates = await this.graphExpand(candidates, query.connected!)
           }
+          // If candidates.length === 0 and this isn't the first step, keep empty candidates
           break
           
         case 'fusion':
@@ -341,7 +346,15 @@ export class TripleIntelligenceEngine {
     // Use the MetadataIndex directly for FAST field queries!
     // This uses B-tree indexes for O(log n) range queries
     // and hash indexes for O(1) exact matches
-    const matchingIds = await (this.brain as any).metadataIndex?.getIdsForFilter(where) || []
+    const metadataIndex = (this.brain as any).metadataIndex
+    
+    // Check if metadata index is properly initialized
+    if (!metadataIndex || typeof metadataIndex.getIdsForFilter !== 'function') {
+      // Fallback to manual filtering - slower but works
+      return this.manualMetadataFilter(where)
+    }
+    
+    const matchingIds = await metadataIndex.getIdsForFilter(where) || []
     
     // Convert to result format with metadata
     const results = []
@@ -351,6 +364,29 @@ export class TripleIntelligenceEngine {
         results.push({
           id,
           score: 1.0, // Field matches are binary - either match or don't
+          metadata: noun.metadata || {}
+        })
+      }
+    }
+    
+    return results
+  }
+  
+  /**
+   * Fallback manual metadata filtering when index is not available
+   */
+  private async manualMetadataFilter(where: Record<string, any>): Promise<any[]> {
+    const { matchesMetadataFilter } = await import('../utils/metadataFilter.js')
+    const results = []
+    
+    // Get all nouns and manually filter them
+    const allNouns = (this.brain as any).index.getNouns()
+    
+    for (const [id, noun] of Array.from(allNouns.entries() as Iterable<[string, any]>).slice(0, 1000)) {
+      if (noun && matchesMetadataFilter(noun.metadata || {}, where)) {
+        results.push({
+          id,
+          score: 1.0,
           metadata: noun.metadata || {}
         })
       }

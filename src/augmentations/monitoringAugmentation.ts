@@ -33,6 +33,7 @@ export interface MonitoringConfig {
  * - Zero-config with smart defaults
  */
 export class MonitoringAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata for monitoring
   readonly name = 'monitoring'
   readonly timing = 'after' as const
   operations = ['search', 'add', 'delete', 'all'] as ('search' | 'add' | 'delete' | 'all')[]

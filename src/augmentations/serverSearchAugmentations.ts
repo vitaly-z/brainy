@@ -23,6 +23,7 @@ import { BrainyDataInterface } from '../types/brainyDataInterface.js'
 export class ServerSearchConduitAugmentation extends BaseAugmentation {
   readonly name = 'server-search-conduit'
   readonly timing = 'after' as const
+  readonly metadata = 'readonly' as const  // Reads metadata to sync with server
   operations = ['addNoun', 'delete', 'addVerb'] as ('addNoun' | 'delete' | 'addVerb')[]
   readonly priority = 20
   private localDb: BrainyDataInterface | null = null
@@ -377,6 +378,7 @@ export class ServerSearchConduitAugmentation extends BaseAugmentation {
 export class ServerSearchActivationAugmentation extends BaseAugmentation {
   readonly name = 'server-search-activation'
   readonly timing = 'after' as const
+  readonly metadata = 'readonly' as const  // Reads metadata for server activation
   operations = ['search', 'addNoun'] as ('search' | 'addNoun')[]
   readonly priority = 20
   
