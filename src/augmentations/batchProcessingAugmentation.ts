@@ -44,6 +44,7 @@ interface BatchMetrics {
 }
 
 export class BatchProcessingAugmentation extends BaseAugmentation {
+  readonly metadata = 'readonly' as const  // Reads metadata for batching decisions
   name = 'BatchProcessing'
   timing = 'around' as const
   operations = ['add', 'addNoun', 'addVerb', 'saveNoun', 'saveVerb', 'storage'] as ('add' | 'addNoun' | 'addVerb' | 'saveNoun' | 'saveVerb' | 'storage')[]

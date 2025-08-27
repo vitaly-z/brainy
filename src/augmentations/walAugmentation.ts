@@ -38,6 +38,7 @@ interface WALConfig {
 export class WALAugmentation extends BaseAugmentation {
   name = 'WAL'
   timing = 'around' as const
+  metadata = 'readonly' as const  // Reads metadata for logging/recovery
   operations = ['addNoun', 'addVerb', 'saveNoun', 'saveVerb', 'updateMetadata', 'delete', 'deleteVerb', 'clear'] as ('addNoun' | 'addVerb' | 'saveNoun' | 'saveVerb' | 'updateMetadata' | 'delete' | 'deleteVerb' | 'clear')[]
   priority = 100 // Critical system operation - highest priority
   

@@ -14,6 +14,7 @@ import { StorageAdapter } from '../coreTypes.js'
  */
 export abstract class StorageAugmentation extends BaseAugmentation implements BrainyAugmentation {
   readonly timing = 'replace' as const
+  readonly metadata = 'none' as const  // Storage doesn't directly access metadata
   operations = ['storage'] as ('storage')[]  // Make mutable for TypeScript compatibility
   readonly priority = 100 // High priority for storage
   

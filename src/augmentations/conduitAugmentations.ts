@@ -21,6 +21,7 @@ export interface WebSocketConnection {
  */
 abstract class BaseConduitAugmentation extends BaseAugmentation {
   readonly timing = 'after' as const  // Conduits run after operations to sync
+  readonly metadata = 'readonly' as const  // Conduits read metadata to pass to external systems
   readonly operations = ['addNoun', 'delete', 'addVerb'] as ('addNoun' | 'delete' | 'addVerb')[]
   readonly priority = 20  // Medium-low priority
   

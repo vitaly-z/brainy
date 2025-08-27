@@ -65,6 +65,10 @@ export interface NeuralImportConfig {
 export class NeuralImportAugmentation extends BaseAugmentation {
   readonly name = 'neural-import'
   readonly timing = 'before' as const  // Process data before storage
+  readonly metadata = {
+    reads: '*' as '*',  // Needs to read data for analysis
+    writes: ['_neuralProcessed', '_neuralConfidence', '_detectedEntities', '_detectedRelationships', '_neuralInsights', 'nounType', 'verbType'] as string[]
+  }  // Enriches metadata with neural analysis
   operations = ['add', 'addNoun', 'addVerb', 'all'] as ('add' | 'addNoun' | 'addVerb' | 'all')[]  // Use 'all' to catch batch operations
   readonly priority = 80  // High priority for data processing
   

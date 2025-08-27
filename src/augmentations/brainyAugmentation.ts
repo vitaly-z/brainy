@@ -12,6 +12,15 @@
  * - StreamingPipeline: Enables unlimited data processing
  */
 
+/**
+ * Metadata access declaration for augmentations
+ */
+export interface MetadataAccess {
+  reads?: string[] | '*'      // Fields to read, or '*' for all
+  writes?: string[] | '*'     // Fields to write, or '*' for all  
+  namespace?: string           // Optional: custom namespace like '_myAug'
+}
+
 export interface BrainyAugmentation {
   /**
    * Unique identifier for the augmentation
@@ -26,6 +35,14 @@ export interface BrainyAugmentation {
    * - 'replace': Replace the main operation entirely
    */
   timing: 'before' | 'after' | 'around' | 'replace'
+  
+  /**
+   * Metadata access contract - REQUIRED
+   * - 'none': No metadata access at all
+   * - 'readonly': Can read any metadata but cannot write
+   * - MetadataAccess: Specific fields to read/write
+   */
+  metadata: 'none' | 'readonly' | MetadataAccess
   
   /**
    * Which operations this augmentation applies to
@@ -125,6 +142,7 @@ export interface AugmentationContext {
 export abstract class BaseAugmentation implements BrainyAugmentation {
   abstract name: string
   abstract timing: 'before' | 'after' | 'around' | 'replace'
+  abstract metadata: 'none' | 'readonly' | MetadataAccess
   abstract operations: (
     // Data Operations
     | 'add' | 'addNoun' | 'addVerb' 

@@ -519,6 +519,38 @@ export class MetadataIndexManager {
   }
 
   /**
+   * Get all IDs in the index
+   */
+  async getAllIds(): Promise<string[]> {
+    // Collect all unique IDs from all index entries
+    const allIds = new Set<string>()
+    
+    // First, add all IDs from the in-memory cache
+    for (const entry of this.indexCache.values()) {
+      entry.ids.forEach(id => allIds.add(id))
+    }
+    
+    // If storage has a method to get all nouns, use it as the source of truth
+    // This ensures we include items that might not be indexed yet
+    if (this.storage && typeof (this.storage as any).getNouns === 'function') {
+      try {
+        const result = await (this.storage as any).getNouns({ 
+          pagination: { limit: 100000 } 
+        })
+        if (result && result.items) {
+          result.items.forEach((item: any) => {
+            if (item.id) allIds.add(item.id)
+          })
+        }
+      } catch (e) {
+        // Fall back to using only indexed IDs
+      }
+    }
+    
+    return Array.from(allIds)
+  }
+
+  /**
    * Get IDs for a specific field-value combination with caching
    */
   async getIds(field: string, value: any): Promise<string[]> {
@@ -781,6 +813,25 @@ export class MetadataIndexManager {
                 }
                 fieldResults = Array.from(allIds)
               }
+              break
+            
+            // Negation operators
+            case 'notEquals':
+            case 'isNot':
+            case 'ne':
+              // For notEquals, we need all IDs EXCEPT those matching the value
+              // This is especially important for soft delete: deleted !== true
+              // should include items without a deleted field
+              
+              // First, get all IDs in the database
+              const allItemIds = await this.getAllIds()
+              
+              // Then get IDs that match the value we want to exclude
+              const excludeIds = await this.getIds(field, operand)
+              const excludeSet = new Set(excludeIds)
+              
+              // Return all IDs except those to exclude
+              fieldResults = allItemIds.filter(id => !excludeSet.has(id))
               break
           }
         }

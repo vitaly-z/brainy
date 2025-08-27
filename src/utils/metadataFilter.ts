@@ -95,7 +95,12 @@ function matchesQuery(value: any, query: any): boolean {
       case 'notEquals':
       case 'isNot':
       case 'ne':
+        // Special handling: if value is undefined and operand is not undefined,
+        // they are not equal (so the condition passes)
+        // This ensures items without a 'deleted' field match 'deleted !== true'
         if (value === operand) return false
+        // If value is undefined and operand is not, they're not equal (pass)
+        // If both are undefined, they're equal (fail, handled above)
         break
         
       // Comparison operators
