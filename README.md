@@ -9,18 +9,24 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
-**🧠 Brainy 2.0 - Zero-Configuration AI Database with Triple Intelligence™**
+**🧠 Brainy 2.0 - The Universal Knowledge Protocol™**
 
-The industry's first truly zero-configuration AI database that combines vector similarity, metadata filtering, and graph relationships with O(log n) performance. Production-ready with 3ms search latency, 220 pre-computed NLP patterns, and only 24MB memory footprint.
+**World's first Triple Intelligence™ database**—unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 24 standardized noun types × 40 verb types.
+
+**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language.
+
+**Build once, integrate everywhere.** O(log n) performance, 3ms search latency, 24MB memory footprint.
 
 ## 🎉 What's New in 2.0
 
-- **Triple Intelligence™**: Unified Vector + Metadata + Graph queries in one API
+- **World's First Triple Intelligence™**: Unified vector + graph + document in ONE query
+- **Universal Knowledge Protocol**: 24 nouns × 40 verbs standardize all knowledge
+- **Infinite Expressiveness**: Model ANY data with unlimited metadata
 - **API Consolidation**: 15+ methods → 2 clean APIs (`search()` and `find()`)
 - **Natural Language**: Ask questions in plain English
 - **Zero Configuration**: Works instantly, no setup required
 - **O(log n) Performance**: Binary search on sorted indices
-- **220+ NLP Patterns**: Pre-computed for instant understanding
+- **Perfect Interoperability**: All tools and AI models speak the same language
 - **Universal Compatibility**: Node.js, Browser, Edge, Workers
 
 ## ⚡ Quick Start
@@ -35,29 +41,53 @@ import { BrainyData } from 'brainy'
 const brain = new BrainyData()
 await brain.init()
 
-// Add data with automatic embedding
-await brain.addNoun("JavaScript is a programming language", { 
+// Add entities (nouns) with automatic embedding
+const jsId = await brain.addNoun("JavaScript is a programming language", { 
   type: "language", 
-  year: 1995 
+  year: 1995,
+  paradigm: "multi-paradigm"
 })
 
-// Natural language search
-const results = await brain.find("programming languages from the 90s")
+const nodeId = await brain.addNoun("Node.js runtime environment", {
+  type: "runtime",
+  year: 2009,
+  platform: "server-side"
+})
 
-// Vector similarity with metadata filtering
-const filtered = await brain.search("JavaScript", {
-  metadata: { type: "language" },
-  limit: 5
+// Create relationships (verbs) between entities
+await brain.addVerb(nodeId, jsId, "executes", {
+  since: 2009,
+  performance: "high"
+})
+
+// Natural language search with graph relationships
+const results = await brain.find("programming languages used by server runtimes")
+
+// Triple Intelligence: vector + metadata + relationships
+const filtered = await brain.find({
+  like: "JavaScript",                    // Vector similarity
+  where: { type: "language" },           // Metadata filtering  
+  connected: { from: nodeId, depth: 1 }  // Graph relationships
 })
 ```
 
 ## 🚀 Key Features
 
-### Triple Intelligence Engine
-Combines three search paradigms in one unified API:
+### World's First Triple Intelligence™ Engine
+**The breakthrough that enables the Universal Knowledge Protocol:**
 - **Vector Search**: Semantic similarity with HNSW indexing
-- **Metadata Filtering**: O(log n) field lookups with binary search  
-- **Graph Relationships**: Navigate connected knowledge
+- **Graph Relationships**: Navigate connected knowledge like Neo4j
+- **Document Filtering**: MongoDB-style queries with O(log n) performance
+- **Unified in ONE API**: No separate queries, no complex joins
+- **First to solve this**: Others do vector OR graph OR document—we do ALL
+
+### Universal Knowledge Protocol with Infinite Expressiveness
+**Enabled by Triple Intelligence, standardized for everyone:**
+- **24 Noun Types × 40 Verb Types**: 960 base combinations
+- **∞ Expressiveness**: Unlimited metadata = model ANY data
+- **One Language**: All tools, augmentations, AI models speak the same types
+- **Perfect Interoperability**: Move data between any Brainy instance
+- **No Schema Lock-in**: Evolve without migrations
 
 ### Natural Language Understanding
 ```javascript
@@ -108,17 +138,26 @@ const results = await brain.find({
 
 ### CRUD Operations
 ```javascript
-// Create
+// Create entities (nouns)
 const id = await brain.addNoun(data, metadata)
+
+// Create relationships (verbs)
+const verbId = await brain.addVerb(sourceId, targetId, "relationType", {
+  strength: 0.9,
+  bidirectional: false
+})
 
 // Read
 const item = await brain.getNoun(id)
+const verb = await brain.getVerb(verbId)
 
 // Update
 await brain.updateNoun(id, newData, newMetadata)
+await brain.updateVerb(verbId, newMetadata)
 
 // Delete
 await brain.deleteNoun(id)
+await brain.deleteVerb(verbId)
 
 // Bulk operations
 await brain.import(arrayOfData)
@@ -127,16 +166,35 @@ const exported = await brain.export({ format: 'json' })
 
 ## 🎯 Use Cases
 
-### Knowledge Management
+### Knowledge Management with Relationships
 ```javascript
-// Store and search documentation
-await brain.addNoun(documentContent, {
+// Store documentation with rich relationships
+const apiGuide = await brain.addNoun("REST API Guide", {
   title: "API Guide",
   category: "documentation",
   version: "2.0"
 })
 
-const docs = await brain.find("API documentation for version 2")
+const author = await brain.addNoun("Jane Developer", {
+  type: "person",
+  role: "tech-lead"
+})
+
+const project = await brain.addNoun("E-commerce Platform", {
+  type: "project",
+  status: "active"
+})
+
+// Create knowledge graph
+await brain.addVerb(author, apiGuide, "authored", { 
+  date: "2024-03-15" 
+})
+await brain.addVerb(apiGuide, project, "documents", { 
+  coverage: "complete" 
+})
+
+// Query the knowledge graph naturally
+const docs = await brain.find("documentation authored by tech leads for active projects")
 ```
 
 ### Semantic Search
@@ -148,17 +206,35 @@ const similar = await brain.search(existingContent, {
 })
 ```
 
-### AI Memory Layer
+### AI Memory Layer with Context
 ```javascript
-// Store conversation context
-await brain.addNoun(userMessage, {
-  userId: "123",
+// Store conversation with relationships
+const userId = await brain.addNoun("User 123", {
+  type: "user",
+  tier: "premium"
+})
+
+const messageId = await brain.addNoun(userMessage, {
+  type: "message",
   timestamp: Date.now(),
   session: "abc"
 })
 
-// Retrieve relevant context
-const context = await brain.find(`previous conversations with user 123`)
+const topicId = await brain.addNoun("Product Support", {
+  type: "topic",
+  category: "support"
+})
+
+// Link conversation elements
+await brain.addVerb(userId, messageId, "sent")
+await brain.addVerb(messageId, topicId, "about")
+
+// Retrieve context with relationships
+const context = await brain.find({
+  where: { type: "message" },
+  connected: { from: userId, type: "sent" },
+  like: "previous product issues"
+})
 ```
 
 ## 💾 Storage Options
@@ -272,6 +348,42 @@ Key changes:
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+## 🧠 The Universal Knowledge Protocol Explained
+
+### How We Achieved The Impossible
+
+**Triple Intelligence™** makes us the **world's first** to unify three database paradigms:
+1. **Vector databases** (Pinecone, Weaviate) - semantic similarity
+2. **Graph databases** (Neo4j, ArangoDB) - relationships  
+3. **Document databases** (MongoDB, Elasticsearch) - metadata filtering
+
+**One API to rule them all.** Others make you choose. We unified them.
+
+### The Math of Infinite Expressiveness
+
+```
+24 Nouns × 40 Verbs × ∞ Metadata × Triple Intelligence = Universal Protocol
+```
+
+- **960 base combinations** from standardized types
+- **∞ domain specificity** via unlimited metadata
+- **∞ relationship depth** via graph traversal
+- **= Model ANYTHING**: From quantum physics to social networks
+
+### Why This Changes Everything
+
+**Like HTTP for the web, Brainy for knowledge:**
+- All augmentations compose perfectly - same noun-verb language
+- All AI models share knowledge - GPT, Claude, Llama all understand
+- All tools integrate seamlessly - no translation layers
+- All data flows freely - perfect portability
+
+**The Vision**: One protocol. All knowledge. Every tool. Any AI.
+
+**Proven across industries**: Healthcare, Finance, Manufacturing, Education, Legal, Retail, Government, and beyond.
+
+[→ See the Mathematical Proof & Full Taxonomy](docs/architecture/noun-verb-taxonomy.md)
+
 ## 📖 Documentation
 
 - [Getting Started Guide](docs/guides/getting-started.md)
@@ -279,6 +391,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - [Architecture Overview](docs/architecture/overview.md)
 - [Natural Language Guide](docs/guides/natural-language.md)
 - [Triple Intelligence](docs/architecture/triple-intelligence.md)
+- [Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)
 
 ## 🏢 Enterprise & Cloud
 
