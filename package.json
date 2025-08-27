@@ -58,8 +58,10 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "npm run build:patterns && tsc",
+    "build": "npm run build:patterns:if-needed && tsc",
     "build:patterns": "tsx scripts/buildEmbeddedPatterns.ts",
+    "build:patterns:if-needed": "node scripts/check-patterns.js || npm run build:patterns",
+    "build:patterns:force": "npm run build:patterns",
     "prepare": "npm run build",
     "test": "npm run test:unit",
     "test:watch": "vitest --config tests/configs/vitest.unit.config.ts",
