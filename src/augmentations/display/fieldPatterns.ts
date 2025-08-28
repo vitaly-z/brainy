@@ -119,21 +119,12 @@ export const UNIVERSAL_FIELD_PATTERNS: FieldPattern[] = [
   {
     fields: ['tags', 'keywords', 'labels', 'categories'],
     displayField: 'tags',
-    confidence: 0.85,
-    transform: (value: any) => {
-      if (Array.isArray(value)) return value
-      if (typeof value === 'string') {
-        // Handle comma-separated, semicolon-separated, or space-separated tags
-        return value.split(/[,;]\s*|\s+/).filter(Boolean)
-      }
-      return []
-    }
+    confidence: 0.85
   },
   {
     fields: ['topics', 'subjects', 'themes'],
     displayField: 'tags',
-    confidence: 0.8,
-    transform: (value: any) => Array.isArray(value) ? value : [String(value || '')]
+    confidence: 0.8
   }
 ]
 
@@ -163,8 +154,7 @@ export const TYPE_SPECIFIC_PATTERNS: Record<string, FieldPattern[]> = {
     {
       fields: ['phone', 'phoneNumber', 'mobile', 'cell'],
       displayField: 'tags',
-      confidence: 0.6,
-      transform: () => ['contact', 'person']
+      confidence: 0.6
     }
   ],
   
@@ -189,15 +179,7 @@ export const TYPE_SPECIFIC_PATTERNS: Record<string, FieldPattern[]> = {
     {
       fields: ['employees', 'size', 'headcount'],
       displayField: 'tags',
-      confidence: 0.6,
-      transform: (value: any) => {
-        const size = parseInt(String(value || '0'))
-        if (size > 10000) return ['enterprise', 'large']
-        if (size > 1000) return ['large', 'corporation']
-        if (size > 100) return ['medium', 'company']
-        if (size > 10) return ['small', 'business']
-        return ['startup', 'small']
-      }
+      confidence: 0.6
     }
   ],
   
@@ -250,18 +232,7 @@ export const TYPE_SPECIFIC_PATTERNS: Record<string, FieldPattern[]> = {
     {
       fields: ['priority', 'urgency', 'importance'],
       displayField: 'tags',
-      confidence: 0.7,
-      transform: (value: any, context: FieldComputationContext) => {
-        const { metadata } = context
-        const tags = ['task']
-        const priority = String(value || 'medium').toLowerCase()
-        
-        tags.push(priority)
-        if (metadata.status) tags.push(String(metadata.status).toLowerCase())
-        if (metadata.assignee) tags.push('assigned')
-        
-        return tags
-      }
+      confidence: 0.7
     }
   ]
 }
