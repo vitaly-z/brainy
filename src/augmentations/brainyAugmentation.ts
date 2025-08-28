@@ -109,6 +109,30 @@ export interface BrainyAugmentation {
    * Optional: Cleanup when BrainyData is destroyed
    */
   shutdown?(): Promise<void>
+  
+  /**
+   * Optional: Computed fields this augmentation provides
+   * Used for discovery, TypeScript support, and API documentation
+   */
+  computedFields?: {
+    [namespace: string]: {
+      [field: string]: {
+        type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+        description: string
+        confidence?: number
+      }
+    }
+  }
+  
+  /**
+   * Optional: Compute fields for a result entity
+   * Called when user accesses getDisplay(), getSchema(), etc.
+   * 
+   * @param result - The result entity (VectorDocument, GraphVerb, etc.)
+   * @param namespace - The namespace being requested ('display', 'schema', etc.)
+   * @returns Computed fields for the namespace
+   */
+  computeFields?(result: any, namespace: string): Promise<Record<string, any>> | Record<string, any>
 }
 
 /**
@@ -204,6 +228,27 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   protected async onShutdown(): Promise<void> {
     // Default: no-op
   }
+  
+  /**
+   * Optional computed fields declaration (override in subclasses)
+   */
+  computedFields?: {
+    [namespace: string]: {
+      [field: string]: {
+        type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+        description: string
+        confidence?: number
+      }
+    }
+  }
+  
+  /**
+   * Optional computed fields implementation (override in subclasses)
+   * @param result The result entity
+   * @param namespace The requested namespace
+   * @returns Computed fields for the namespace
+   */
+  computeFields?(result: any, namespace: string): Promise<Record<string, any>> | Record<string, any>
   
   /**
    * Log a message with the augmentation name

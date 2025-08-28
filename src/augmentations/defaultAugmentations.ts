@@ -14,6 +14,7 @@ import { CacheAugmentation } from './cacheAugmentation.js'
 import { IndexAugmentation } from './indexAugmentation.js'
 import { MetricsAugmentation } from './metricsAugmentation.js'
 import { MonitoringAugmentation } from './monitoringAugmentation.js'
+import { UniversalDisplayAugmentation } from './universalDisplayAugmentation.js'
 
 /**
  * Create default augmentations for zero-config operation
@@ -28,6 +29,7 @@ export function createDefaultAugmentations(
     index?: boolean | Record<string, any>
     metrics?: boolean | Record<string, any>
     monitoring?: boolean | Record<string, any>
+    display?: boolean | Record<string, any>
   } = {}
 ): BaseAugmentation[] {
   const augmentations: BaseAugmentation[] = []
@@ -48,6 +50,12 @@ export function createDefaultAugmentations(
   if (config.metrics !== false) {
     const metricsConfig = typeof config.metrics === 'object' ? config.metrics : {}
     augmentations.push(new MetricsAugmentation(metricsConfig))
+  }
+
+  // Display augmentation (AI-powered intelligent display fields)
+  if (config.display !== false) {
+    const displayConfig = typeof config.display === 'object' ? config.display : {}
+    augmentations.push(new UniversalDisplayAugmentation(displayConfig))
   }
 
   // Monitoring augmentation (was HealthMonitor)
@@ -104,5 +112,12 @@ export const AugmentationHelpers = {
    */
   getMonitoring(brain: BrainyData): MonitoringAugmentation | null {
     return getAugmentation<MonitoringAugmentation>(brain, 'monitoring')
+  },
+
+  /**
+   * Get display augmentation
+   */
+  getDisplay(brain: BrainyData): UniversalDisplayAugmentation | null {
+    return getAugmentation<UniversalDisplayAugmentation>(brain, 'display')
   }
 }
