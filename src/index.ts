@@ -50,6 +50,9 @@ export {
   getStatistics
 }
 
+// Export version utilities
+export { getBrainyVersion } from './utils/version.js'
+
 // Export embedding functionality
 import {
   UniversalSentenceEncoder,
