@@ -104,7 +104,7 @@ export class IntelligentComputationEngine {
       }
 
       // 🟡 FALLBACK PATH: Use heuristic patterns for verbs
-      return await this.computeVerbWithHeuristics(verb)
+      return await this.computeWithHeuristics(verb, 'verb')
 
     } catch (error) {
       console.warn('Verb display computation failed, using minimal fallback:', error)
@@ -166,7 +166,7 @@ export class IntelligentComputationEngine {
   private async computeVerbWithAI(verb: GraphVerb): Promise<ComputedDisplayFields> {
     
     // 🧠 USE YOUR EXISTING VERB TYPE DETECTION
-    const typeResult = await this.typeMatcher!.matchVerbType(verb)
+    const typeResult = await this.typeMatcher!.matchVerbType(verb, 0.7)
     
     // Create verb computation context
     const context: FieldComputationContext = {

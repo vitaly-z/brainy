@@ -53,7 +53,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
     reads: '*',           // Read all user data for intelligent analysis
     writes: ['_display']  // Cache computed fields in isolated namespace
   }
-  operations = ['get', 'search', 'findSimilar', 'getVerb', 'addNoun', 'addVerb'] as const
+  operations = ['get', 'search', 'findSimilar', 'getVerb' as any, 'addNoun', 'addVerb'] as any
 
   // Computed fields declaration for TypeScript support and discovery
   computedFields = {
@@ -72,7 +72,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
   private displayCache: DisplayCache
   private requestDeduplicator: RequestDeduplicator
   private config: DisplayConfig
-  private context: AugmentationContext | null = null
+  protected context: AugmentationContext | undefined
 
   constructor(config: Partial<DisplayConfig> = {}) {
     super()
@@ -84,7 +84,6 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
       lazyComputation: true,
       batchSize: 50,
       confidenceThreshold: 0.7,
-      customIcons: {},
       customFieldMappings: {},
       priorityFields: {},
       debugMode: false,
@@ -430,7 +429,6 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
   lazyComputation: true,
   batchSize: 50,
   confidenceThreshold: 0.7,
-  customIcons: {},
   customFieldMappings: {},
   priorityFields: {},
   debugMode: false
