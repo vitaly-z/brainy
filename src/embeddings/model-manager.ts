@@ -1,54 +1,48 @@
 /**
  * Model Manager - Ensures transformer models are available at runtime
  * 
- * Strategy:
- * 1. Check local cache first
- * 2. Try GitHub releases (our backup)
- * 3. Fall back to Hugging Face
- * 4. Future: CDN at models.soulcraft.com
+ * Strategy (in order):
+ * 1. Check local cache first (instant)
+ * 2. Try Soulcraft CDN (fastest when available) 
+ * 3. Try GitHub release tar.gz with extraction (reliable backup)
+ * 4. Fall back to Hugging Face (always works)
+ * 
+ * NO USER CONFIGURATION REQUIRED - Everything is automatic!
  */
 
 import { existsSync } from 'fs'
-import { mkdir, writeFile, readFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
 import { join, dirname } from 'path'
 import { env } from '@huggingface/transformers'
-import { createHash } from 'crypto'
 
 // Model sources in order of preference
 const MODEL_SOURCES = {
-  // GitHub Release - our controlled backup
-  github: 'https://github.com/soulcraftlabs/brainy/releases/download/models-v1/all-MiniLM-L6-v2.tar.gz',
+  // CDN - Fastest when available (currently active)
+  cdn: {
+    host: 'https://models.soulcraft.com/models',
+    pathTemplate: '{model}/', // e.g., Xenova/all-MiniLM-L6-v2/
+    testFile: 'config.json' // File to test availability
+  },
   
-  // Future CDN - fastest option when available
-  cdn: 'https://models.soulcraft.com/brainy/all-MiniLM-L6-v2.tar.gz',
+  // GitHub Release - tar.gz fallback (already exists and works)
+  githubRelease: {
+    tarUrl: 'https://github.com/soulcraftlabs/brainy/releases/download/models-v1/all-MiniLM-L6-v2.tar.gz'
+  },
   
-  // Original Hugging Face - fallback
-  huggingface: 'default' // Uses transformers.js default
-}
-
-// Expected model files and their hashes
-const MODEL_MANIFEST = {
-  'Xenova/all-MiniLM-L6-v2': {
-    files: {
-      'onnx/model.onnx': {
-        size: 90555481,
-        sha256: null // Will be computed from actual model
-      },
-      'tokenizer.json': {
-        size: 711661,
-        sha256: null
-      },
-      'config.json': {
-        size: 650,
-        sha256: null
-      },
-      'tokenizer_config.json': {
-        size: 366,
-        sha256: null
-      }
-    }
+  // Original Hugging Face - final fallback (always works)
+  huggingface: {
+    host: 'https://huggingface.co',
+    pathTemplate: '{model}/resolve/{revision}/' // Default transformers.js pattern
   }
 }
+
+// Model verification files - minimal set needed for transformers.js
+const MODEL_FILES = [
+  'config.json',
+  'tokenizer.json',
+  'tokenizer_config.json',
+  'onnx/model.onnx'
+]
 
 export class ModelManager {
   private static instance: ModelManager
@@ -93,12 +87,16 @@ export class ModelManager {
       return true
     }
     
-    const modelPath = join(this.modelsPath, ...modelName.split('/'))
+    // Configure transformers.js environment
+    env.cacheDir = this.modelsPath
+    env.allowLocalModels = true
+    env.useFSCache = true
     
     // Check if model already exists locally
-    if (await this.verifyModelFiles(modelPath, modelName)) {
+    const modelPath = join(this.modelsPath, ...modelName.split('/'))
+    if (await this.verifyModelFiles(modelPath)) {
       console.log('✅ Models found in cache:', modelPath)
-      this.configureTransformers(modelPath)
+      env.allowRemoteModels = false // Use local only
       this.isInitialized = true
       return true
     }
@@ -106,101 +104,122 @@ export class ModelManager {
     // Try to download from our sources
     console.log('📥 Downloading transformer models...')
     
-    // Try GitHub first (our backup)
-    if (await this.downloadFromGitHub(modelName)) {
+    // Try CDN first (fastest when available)
+    if (await this.tryModelSource('Soulcraft CDN', MODEL_SOURCES.cdn, modelName)) {
       this.isInitialized = true
       return true
     }
     
-    // Try CDN (when available)
-    if (await this.downloadFromCDN(modelName)) {
+    // Try GitHub release with tar.gz extraction (reliable backup)
+    if (await this.downloadAndExtractFromGitHub(modelName)) {
       this.isInitialized = true
       return true
     }
     
-    // Fall back to Hugging Face (default transformers.js behavior)
+    // Fall back to Hugging Face (always works)
     console.log('⚠️ Using Hugging Face fallback for models')
+    env.remoteHost = MODEL_SOURCES.huggingface.host
+    env.remotePathTemplate = MODEL_SOURCES.huggingface.pathTemplate
     env.allowRemoteModels = true
     this.isInitialized = true
     return true
   }
   
-  private async verifyModelFiles(modelPath: string, modelName: string): Promise<boolean> {
-    const manifest = (MODEL_MANIFEST as any)[modelName]
-    if (!manifest) return false
-    
-    for (const [filePath, info] of Object.entries(manifest.files)) {
-      const fullPath = join(modelPath, filePath)
+  private async verifyModelFiles(modelPath: string): Promise<boolean> {
+    // Check if essential model files exist
+    for (const file of MODEL_FILES) {
+      const fullPath = join(modelPath, file)
       if (!existsSync(fullPath)) {
         return false
       }
-      
-      // Optionally verify size
-      if (process.env.VERIFY_MODEL_SIZE === 'true') {
-        const stats = await import('fs').then(fs => 
-          fs.promises.stat(fullPath)
-        )
-        if (stats.size !== (info as any).size) {
-          console.warn(`⚠️ Model file size mismatch: ${filePath}`)
-          return false
-        }
-      }
     }
-    
     return true
   }
   
-  private async downloadFromGitHub(modelName: string): Promise<boolean> {
+  private async tryModelSource(name: string, source: { host: string, pathTemplate: string, testFile?: string }, modelName: string): Promise<boolean> {
     try {
-      const url = MODEL_SOURCES.github
-      console.log('📥 Downloading from GitHub releases...')
+      console.log(`📥 Trying ${name}...`)
+      
+      // Test if the source is accessible by trying to fetch a test file
+      const testFile = source.testFile || 'config.json'
+      const modelPath = source.pathTemplate.replace('{model}', modelName).replace('{revision}', 'main')
+      const testUrl = `${source.host}/${modelPath}${testFile}`
+      
+      const response = await fetch(testUrl).catch(() => null)
+      
+      if (response && response.ok) {
+        console.log(`✅ ${name} is available`)
+        
+        // Configure transformers.js to use this source
+        env.remoteHost = source.host
+        env.remotePathTemplate = source.pathTemplate
+        env.allowRemoteModels = true
+        
+        // The model will be downloaded automatically by transformers.js when needed
+        return true
+      } else {
+        console.log(`⚠️ ${name} not available (${response?.status || 'unreachable'})`)
+        return false
+      }
+    } catch (error) {
+      console.log(`⚠️ ${name} check failed:`, (error as Error).message)
+      return false
+    }
+  }
+  
+  
+  private async downloadAndExtractFromGitHub(modelName: string): Promise<boolean> {
+    try {
+      console.log('📥 Trying GitHub Release (tar.gz)...')
       
       // Download tar.gz file
-      const response = await fetch(url)
+      const response = await fetch(MODEL_SOURCES.githubRelease.tarUrl)
       if (!response.ok) {
-        throw new Error(`GitHub download failed: ${response.status}`)
+        console.log(`⚠️ GitHub Release not available (${response.status})`)
+        return false
       }
       
+      // Since we can't use tar-stream, we'll use Node's built-in child_process
+      // to extract using system tar command (available on all Unix systems)
       const buffer = await response.arrayBuffer()
+      const modelPath = join(this.modelsPath, ...modelName.split('/'))
       
-      // Extract tar.gz (would need tar library in production)
-      // For now, return false to fall back to other methods
-      console.log('⚠️ GitHub model extraction not yet implemented')
-      return false
+      // Create model directory
+      await mkdir(modelPath, { recursive: true })
       
-    } catch (error) {
-      console.log('⚠️ GitHub download failed:', (error as Error).message)
-      return false
-    }
-  }
-  
-  private async downloadFromCDN(modelName: string): Promise<boolean> {
-    try {
-      const url = MODEL_SOURCES.cdn
-      console.log('📥 Downloading from Soulcraft CDN...')
+      // Write tar.gz to temp file and extract
+      const tempFile = join(this.modelsPath, 'temp-model.tar.gz')
+      await writeFile(tempFile, Buffer.from(buffer))
       
-      // Try to fetch from CDN
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`CDN download failed: ${response.status}`)
+      // Extract using system tar command
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+      
+      try {
+        // Extract and strip the first directory component
+        await execAsync(`tar -xzf ${tempFile} -C ${modelPath} --strip-components=1`, {
+          cwd: this.modelsPath
+        })
+        
+        // Clean up temp file
+        const { unlink } = await import('fs/promises')
+        await unlink(tempFile)
+        
+        console.log('✅ GitHub Release models extracted and cached locally')
+        
+        // Configure to use local models now
+        env.allowRemoteModels = false
+        return true
+      } catch (extractError) {
+        console.log('⚠️ Tar extraction failed, trying alternative method')
+        return false
       }
       
-      // Would extract files here
-      console.log('⚠️ CDN not yet available')
-      return false
-      
     } catch (error) {
-      console.log('⚠️ CDN download failed:', (error as Error).message)
+      console.log('⚠️ GitHub Release download failed:', (error as Error).message)
       return false
     }
-  }
-  
-  private configureTransformers(modelPath: string): void {
-    // Configure transformers.js to use our local models
-    env.localModelPath = dirname(modelPath)
-    env.allowRemoteModels = false
-    
-    console.log('🔧 Configured transformers.js to use local models')
   }
   
   /**
