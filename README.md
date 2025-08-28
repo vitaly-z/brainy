@@ -294,6 +294,66 @@ brainy chat
 brainy export --format json > backup.json
 ```
 
+## 🧠 Neural API - Advanced AI Features
+
+Brainy includes a powerful Neural API for advanced semantic analysis:
+
+### Clustering & Analysis
+```javascript
+// Access via brain.neural
+const neural = brain.neural
+
+// Automatic semantic clustering
+const clusters = await neural.clusters()
+// Returns groups of semantically similar items
+
+// Cluster with options
+const clusters = await neural.clusters({
+  algorithm: 'kmeans',     // or 'hierarchical', 'sample'
+  maxClusters: 5,          // Maximum number of clusters
+  threshold: 0.8           // Similarity threshold
+})
+
+// Calculate similarity between any items
+const similarity = await neural.similar('item1', 'item2')
+// Returns 0-1 score
+
+// Find nearest neighbors
+const neighbors = await neural.neighbors('item-id', 10)
+
+// Build semantic hierarchy
+const hierarchy = await neural.hierarchy('item-id')
+
+// Detect outliers
+const outliers = await neural.outliers(0.3)
+
+// Generate visualization data for D3/Cytoscape
+const vizData = await neural.visualize({
+  maxNodes: 100,
+  dimensions: 3,
+  algorithm: 'force'
+})
+```
+
+### Real-World Examples
+```javascript
+// Group customer feedback into themes
+const feedbackClusters = await neural.clusters()
+for (const cluster of feedbackClusters) {
+  console.log(`Theme: ${cluster.label}`)
+  console.log(`Items: ${cluster.members.length}`)
+}
+
+// Find related documents
+const docId = await brain.addNoun("Machine learning guide")
+const similar = await neural.neighbors(docId, 5)
+// Returns 5 most similar documents
+
+// Detect anomalies in data
+const anomalies = await neural.outliers(0.2)
+console.log(`Found ${anomalies.length} outliers`)
+```
+
 ## 🔌 Augmentations
 
 Extend Brainy with powerful augmentations:
