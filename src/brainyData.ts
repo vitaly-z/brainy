@@ -8309,7 +8309,13 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     enabled: boolean
     description: string
   }> {
-    return augmentationPipeline.listAugmentationsWithStatus()
+    // Use the real augmentation registry instead of deprecated pipeline
+    return this.augmentations.getInfo().map(aug => ({
+      name: aug.name,
+      type: aug.category, // Map category to type for backward compatibility
+      enabled: aug.enabled,
+      description: aug.description
+    }))
   }
 
   /**

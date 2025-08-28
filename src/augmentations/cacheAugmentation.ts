@@ -35,6 +35,10 @@ export class CacheAugmentation extends BaseAugmentation {
   operations = ['search', 'add', 'delete', 'clear', 'all'] as ('search' | 'add' | 'delete' | 'clear' | 'all')[]
   readonly priority = 50 // Mid-priority, runs after data operations
 
+  // Augmentation metadata
+  readonly category = 'core' as const
+  readonly description = 'Transparent search result caching with automatic invalidation'
+
   private searchCache: SearchCache<GraphNoun> | null = null
   private config: CacheConfig
 

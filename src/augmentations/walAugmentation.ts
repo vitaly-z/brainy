@@ -41,6 +41,10 @@ export class WALAugmentation extends BaseAugmentation {
   metadata = 'readonly' as const  // Reads metadata for logging/recovery
   operations = ['addNoun', 'addVerb', 'saveNoun', 'saveVerb', 'updateMetadata', 'delete', 'deleteVerb', 'clear'] as ('addNoun' | 'addVerb' | 'saveNoun' | 'saveVerb' | 'updateMetadata' | 'delete' | 'deleteVerb' | 'clear')[]
   priority = 100 // Critical system operation - highest priority
+
+  // Augmentation metadata
+  readonly category = 'internal' as const
+  readonly description = 'Write-ahead logging for durability and crash recovery'
   
   private config: Required<WALConfig>
   private currentLogId: string

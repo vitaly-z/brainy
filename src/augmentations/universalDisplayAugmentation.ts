@@ -55,6 +55,10 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
   }
   operations = ['get', 'search', 'findSimilar', 'getVerb' as any, 'addNoun', 'addVerb'] as any
 
+  // Augmentation metadata
+  readonly category = 'core' as const
+  readonly description = 'AI-powered intelligent display fields for enhanced data visualization'
+
   // Computed fields declaration for TypeScript support and discovery
   computedFields = {
     display: {

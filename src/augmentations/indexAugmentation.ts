@@ -37,6 +37,10 @@ export class IndexAugmentation extends BaseAugmentation {
   operations = ['add', 'updateMetadata', 'delete', 'clear', 'all'] as ('add' | 'updateMetadata' | 'delete' | 'clear' | 'all')[]
   readonly priority = 60 // Run after data operations
 
+  // Augmentation metadata
+  readonly category = 'core' as const
+  readonly description = 'Fast metadata field indexing for O(1) filtering and lookups'
+
   private metadataIndex: MetadataIndexManager | null = null
   private config: IndexConfig
   private flushTimer: NodeJS.Timeout | null = null

@@ -72,11 +72,10 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   }  // Adds scoring metadata to verbs
   operations = ['addVerb', 'relate'] as ('addVerb' | 'relate')[]
   priority = 10 // Enhancement feature - runs after core operations
-  
-  // Add enabled property for backward compatibility
-  get enabled(): boolean {
-    return this.config.enabled
-  }
+
+  // Augmentation metadata
+  readonly category = 'premium' as const
+  readonly description = 'AI-powered intelligent scoring for relationship strength analysis'
   
   private config: Required<VerbScoringConfig>
   private relationshipStats: Map<string, RelationshipMetrics> = new Map()
@@ -121,6 +120,9 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
       maxWeight: config.maxWeight ?? 1.0,
       baseWeight: config.baseWeight ?? 0.5
     }
+    
+    // Set enabled property based on config
+    this.enabled = this.config.enabled
   }
   
   protected async onInitialize(): Promise<void> {
