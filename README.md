@@ -71,6 +71,18 @@ const filtered = await brain.find({
 })
 ```
 
+## 📋 System Requirements
+
+**Node.js Version:** 22 LTS or later (recommended)
+
+- ✅ **Node.js 22 LTS** - Fully supported and recommended for production
+- ✅ **Node.js 20 LTS** - Compatible (maintenance mode)
+- ❌ **Node.js 24** - Not supported (known ONNX runtime compatibility issues)
+
+> **Important:** Brainy uses ONNX runtime for AI embeddings. Node.js 24 has known compatibility issues that cause crashes during inference operations. We recommend Node.js 22 LTS for maximum stability.
+
+If using nvm: `nvm use` (we provide a `.nvmrc` file)
+
 ## 🚀 Key Features
 
 ### World's First Triple Intelligence™ Engine
