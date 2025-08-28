@@ -447,7 +447,7 @@ export interface BrainyDataConfig {
   intelligentVerbScoring?: {
     /**
      * Whether to enable intelligent verb scoring
-     * Default: false (off by default)
+     * Default: true (enabled by default for better relationship quality)
      */
     enabled?: boolean
 
@@ -883,14 +883,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       maxSize: 1000
     }))
     
-    // Priority 10: Enhancement features  
+    // Priority 10: Core relationship quality features  
     const intelligentVerbAugmentation = new IntelligentVerbScoringAugmentation(
-      this.config.intelligentVerbScoring || { enabled: false }
+      this.config.intelligentVerbScoring || { enabled: true }
     )
     this.augmentations.register(intelligentVerbAugmentation)
     
-    // Store reference if intelligent verb scoring is enabled
-    if (this.config.intelligentVerbScoring?.enabled) {
+    // Store reference if intelligent verb scoring is enabled (enabled by default)
+    if (this.config.intelligentVerbScoring?.enabled !== false) {
       this.intelligentVerbScoring = intelligentVerbAugmentation.getScoring()
     }
   }
