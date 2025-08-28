@@ -188,6 +188,11 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   )[]
   abstract priority: number
   
+  // Metadata for augmentation listing and management
+  category: 'internal' | 'core' | 'premium' | 'community' | 'external' = 'core'
+  description: string = ''
+  enabled: boolean = true
+  
   protected context?: AugmentationContext
   protected isInitialized = false
   
@@ -346,6 +351,30 @@ export class AugmentationRegistry {
    */
   getAll(): BrainyAugmentation[] {
     return [...this.augmentations]
+  }
+  
+  /**
+   * Get augmentation info for listing
+   */
+  getInfo(): Array<{
+    name: string
+    type: string
+    enabled: boolean
+    description: string
+    category: string
+    priority: number
+  }> {
+    return this.augmentations.map(aug => {
+      const baseAug = aug as any
+      return {
+        name: aug.name,
+        type: baseAug.category || 'core',
+        enabled: baseAug.enabled !== false,
+        description: baseAug.description || `${aug.name} augmentation`,
+        category: baseAug.category || 'core',
+        priority: aug.priority
+      }
+    })
   }
   
   /**
