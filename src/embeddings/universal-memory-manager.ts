@@ -33,13 +33,17 @@ export class UniversalMemoryManager {
   private maxEmbeddings: number
   
   constructor() {
-    // Choose strategy based on environment
+    // CRITICAL FIX: Never use worker threads with ONNX Runtime
+    // Worker threads cause HandleScope V8 API errors due to isolate issues
+    // Always use direct embedding on main thread for ONNX compatibility
+    
     if (isServerless) {
       this.strategy = 'serverless-restart'
       this.maxEmbeddings = 50  // Restart frequently in serverless
     } else if (isNode && !isBrowser) {
-      this.strategy = 'node-worker'
-      this.maxEmbeddings = 100 // Worker can handle more
+      // CHANGED: Use direct strategy instead of node-worker to avoid V8 isolate issues
+      this.strategy = 'node-direct'
+      this.maxEmbeddings = 200 // Main thread can handle more with single model instance
     } else if (isBrowser) {
       this.strategy = 'browser-dispose'
       this.maxEmbeddings = 25  // Browser memory is limited
@@ -49,6 +53,7 @@ export class UniversalMemoryManager {
     }
     
     console.log(`🧠 Universal Memory Manager: Using ${this.strategy} strategy`)
+    console.log('✅ UNIVERSAL: Memory-safe embedding system initialized')
   }
   
   async getEmbeddingFunction(): Promise<EmbeddingFunction> {
@@ -84,8 +89,8 @@ export class UniversalMemoryManager {
     }
     
     switch (this.strategy) {
-      case 'node-worker':
-        await this.initNodeWorker()
+      case 'node-direct':
+        await this.initNodeDirect()
         break
         
       case 'serverless-restart':
@@ -101,18 +106,12 @@ export class UniversalMemoryManager {
     }
   }
   
-  private async initNodeWorker(): Promise<void> {
+  private async initNodeDirect(): Promise<void> {
     if (isNode) {
-      try {
-        // Try to use worker threads if available
-        const { workerEmbeddingManager } = await import('./worker-manager.js')
-        this.embeddingFunction = workerEmbeddingManager
-        console.log('✅ Using Node.js worker threads for embeddings')
-      } catch (error) {
-        console.warn('⚠️ Worker threads not available, falling back to direct embedding')
-        console.warn('Error:', error instanceof Error ? error.message : String(error))
-        await this.initDirect()
-      }
+      // CRITICAL: Use direct embedding to avoid worker thread V8 isolate issues
+      // This prevents HandleScope errors and ensures single model instance
+      console.log('✅ Using Node.js direct embedding (main thread - ONNX compatible)')
+      await this.initDirect()
     }
   }
   
