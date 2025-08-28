@@ -61,6 +61,200 @@ const initBrainy = async () => {
   return new BrainyData()
 }
 
+/**
+ * Enhanced result formatting using display augmentation
+ * @param {any} result - The result object from search/get/find
+ * @param {number} index - Result index for numbering
+ * @returns {Promise<string>} Formatted result string
+ */
+const formatResultWithDisplay = async (result, index) => {
+  try {
+    // Check if result has display capabilities (enhanced by display augmentation)
+    if (result.getDisplay && typeof result.getDisplay === 'function') {
+      const displayFields = await result.getDisplay()
+      
+      // Format with enhanced display fields (clean, no icons)
+      let output = colors.primary(`\n${index + 1}. ${displayFields.title}`)
+      
+      if (displayFields.type) {
+        output += colors.dim(` (${displayFields.type})`)
+      }
+      
+      if (result.score) {
+        output += colors.info(`\n   🎯 Relevance: ${(result.score * 100).toFixed(1)}%`)
+      }
+      
+      if (result.fusionScore) {
+        output += colors.info(`\n   🧠 AI Score: ${(result.fusionScore * 100).toFixed(1)}%`)
+      }
+      
+      if (displayFields.description && displayFields.description !== displayFields.title) {
+        output += colors.info(`\n   📄 ${displayFields.description}`)
+      }
+      
+      if (displayFields.tags && displayFields.tags.length > 0) {
+        output += colors.cyan(`\n   🏷️  ${displayFields.tags.join(', ')}`)
+      }
+      
+      // Show relationship info for verbs
+      if (displayFields.relationship) {
+        output += colors.yellow(`\n   🔗 ${displayFields.relationship}`)
+      }
+      
+      // Show metadata only if there's additional useful info
+      if (result.metadata && Object.keys(result.metadata).length > 0) {
+        const filteredMetadata = Object.fromEntries(
+          Object.entries(result.metadata).filter(([key]) => 
+            !key.startsWith('_') && !['type', 'title', 'description', 'icon'].includes(key)
+          )
+        )
+        if (Object.keys(filteredMetadata).length > 0) {
+          output += colors.dim(`\n   📝 ${JSON.stringify(filteredMetadata)}`)
+        }
+      }
+      
+      return output
+    }
+  } catch (error) {
+    // Fallback silently to basic formatting if display augmentation fails
+  }
+  
+  // Fallback: Basic formatting without display augmentation
+  let output = colors.primary(`\n${index + 1}. ${result.content || result.id}`)
+  
+  if (result.score) {
+    output += colors.info(`\n   Relevance: ${(result.score * 100).toFixed(1)}%`)
+  }
+  
+  if (result.fusionScore) {
+    output += colors.info(`\n   AI Score: ${(result.fusionScore * 100).toFixed(1)}%`)
+  }
+  
+  if (result.type) {
+    output += colors.info(`\n   Type: ${result.type}`)
+  }
+  
+  if (result.metadata && Object.keys(result.metadata).length > 0) {
+    output += colors.dim(`\n   Metadata: ${JSON.stringify(result.metadata)}`)
+  }
+  
+  return output
+}
+
+/**
+ * Enhanced single item formatting for get command
+ * @param {any} item - The item object
+ * @param {string} format - Output format (json, table, plain)
+ * @returns {Promise<string>} Formatted item string
+ */
+const formatItemWithDisplay = async (item, format = 'plain') => {
+  if (format === 'json') {
+    return JSON.stringify(item, null, 2)
+  }
+  
+  try {
+    // Check if item has display capabilities
+    if (item.getDisplay && typeof item.getDisplay === 'function') {
+      const displayFields = await item.getDisplay()
+      
+      if (format === 'table') {
+        const table = new Table({
+          head: [colors.brain('Property'), colors.brain('Value')],
+          style: { head: [], border: [] }
+        })
+        
+        table.push(['ID', colors.primary(item.id)])
+        table.push(['Title', colors.primary(displayFields.title)])
+        table.push(['Type', colors.info(displayFields.type)])
+        table.push(['Description', colors.info(displayFields.description)])
+        
+        if (displayFields.tags && displayFields.tags.length > 0) {
+          table.push(['Tags', colors.cyan(displayFields.tags.join(', '))])
+        }
+        
+        if (displayFields.relationship) {
+          table.push(['Relationship', colors.yellow(displayFields.relationship)])
+        }
+        
+        if (item.content && item.content !== displayFields.title) {
+          table.push(['Content', colors.dim(item.content)])
+        }
+        
+        // Add non-internal metadata
+        if (item.metadata) {
+          Object.entries(item.metadata).forEach(([key, value]) => {
+            if (!key.startsWith('_') && !['type', 'title', 'description', 'icon'].includes(key)) {
+              table.push([key, colors.dim(JSON.stringify(value))])
+            }
+          })
+        }
+        
+        return table.toString()
+      } else {
+        // Plain format with display enhancement
+        let output = colors.primary(`ID: ${item.id}`)
+        output += colors.primary(`\nTitle: ${displayFields.title}`)
+        output += colors.info(`\nType: ${displayFields.type}`)
+        output += colors.info(`\nDescription: ${displayFields.description}`)
+        
+        if (displayFields.tags && displayFields.tags.length > 0) {
+          output += colors.cyan(`\nTags: ${displayFields.tags.join(', ')}`)
+        }
+        
+        if (displayFields.relationship) {
+          output += colors.yellow(`\nRelationship: ${displayFields.relationship}`)
+        }
+        
+        if (item.content && item.content !== displayFields.title) {
+          output += colors.dim(`\nOriginal Content: ${item.content}`)
+        }
+        
+        // Show additional metadata
+        if (item.metadata) {
+          const additionalMetadata = Object.fromEntries(
+            Object.entries(item.metadata).filter(([key]) => 
+              !key.startsWith('_') && !['type', 'title', 'description', 'icon'].includes(key)
+            )
+          )
+          if (Object.keys(additionalMetadata).length > 0) {
+            output += colors.dim(`\nAdditional Metadata: ${JSON.stringify(additionalMetadata, null, 2)}`)
+          }
+        }
+        
+        return output
+      }
+    }
+  } catch (error) {
+    // Fallback silently to basic formatting
+  }
+  
+  // Fallback: Basic formatting
+  if (format === 'table') {
+    const table = new Table({
+      head: [colors.brain('Property'), colors.brain('Value')],
+      style: { head: [], border: [] }
+    })
+    
+    table.push(['ID', colors.primary(item.id)])
+    table.push(['Content', colors.info(item.content || 'N/A')])
+    if (item.metadata) {
+      Object.entries(item.metadata).forEach(([key, value]) => {
+        table.push([key, colors.dim(JSON.stringify(value))])
+      })
+    }
+    return table.toString()
+  } else {
+    let output = colors.primary(`ID: ${item.id}`)
+    if (item.content) {
+      output += colors.info(`\nContent: ${item.content}`)
+    }
+    if (item.metadata && Object.keys(item.metadata).length > 0) {
+      output += colors.info(`\nMetadata: ${JSON.stringify(item.metadata, null, 2)}`)
+    }
+    return output
+  }
+}
+
 const wrapAction = (fn) => {
   return async (...args) => {
     try {
@@ -675,18 +869,12 @@ program
     }
     
     console.log(colors.success(`✅ Found ${results.length} intelligent results:`))
-    results.forEach((result, i) => {
-      console.log(colors.primary(`\n${i + 1}. ${result.content || result.id}`))
-      if (result.score) {
-        console.log(colors.info(`   Relevance: ${(result.score * 100).toFixed(1)}%`))
-      }
-      if (result.fusionScore) {
-        console.log(colors.info(`   AI Score: ${(result.fusionScore * 100).toFixed(1)}%`))
-      }
-      if (result.metadata && Object.keys(result.metadata).length > 0) {
-        console.log(colors.dim(`   Metadata: ${JSON.stringify(result.metadata)}`))
-      }
-    })
+    
+    // Use enhanced formatting with display augmentation
+    for (let i = 0; i < results.length; i++) {
+      const formattedResult = await formatResultWithDisplay(results[i], i)
+      console.log(formattedResult)
+    }
   }))
 
 // Command 4: SEARCH - Triple-power search  
@@ -777,15 +965,12 @@ program
     }
     
     console.log(colors.success(`✅ Found ${results.length} results:`))
-    results.forEach((result, i) => {
-      console.log(colors.primary(`\n${i + 1}. ${result.content}`))
-      if (result.score) {
-        console.log(colors.info(`   Relevance: ${(result.score * 100).toFixed(1)}%`))
-      }
-      if (result.type) {
-        console.log(colors.info(`   Type: ${result.type}`))
-      }
-    })
+    
+    // Use enhanced formatting with display augmentation
+    for (let i = 0; i < results.length; i++) {
+      const formattedResult = await formatResultWithDisplay(results[i], i)
+      console.log(formattedResult)
+    }
   }))
 
 // Command 4: GET - Retrieve specific data by ID
@@ -793,6 +978,7 @@ program
   .command('get [id]')
   .description('Get a specific item by ID')
   .option('-f, --format <format>', 'Output format (json, table, plain)', 'plain')
+  .option('--display-debug', 'Show debug information about display augmentation')
   .action(wrapAction(async (id, options) => {
     if (!id) {
       console.log(colors.primary('🔍 Interactive Get Mode'))
@@ -826,31 +1012,52 @@ program
       return
     }
     
-    if (options.format === 'json') {
-      console.log(JSON.stringify(item, null, 2))
-    } else if (options.format === 'table') {
-      const table = new Table({
-        head: [colors.brain('Property'), colors.brain('Value')],
-        style: { head: [], border: [] }
-      })
+    // Show display debug information if requested
+    if (options.displayDebug) {
+      console.log(colors.primary('🔍 Display Augmentation Debug Information'))
+      console.log('=' .repeat(50))
       
-      table.push(['ID', colors.primary(item.id)])
-      table.push(['Content', colors.info(item.content || 'N/A')])
-      if (item.metadata) {
-        Object.entries(item.metadata).forEach(([key, value]) => {
-          table.push([key, colors.dim(JSON.stringify(value))])
-        })
+      try {
+        if (item.getDisplay && typeof item.getDisplay === 'function') {
+          console.log(colors.success('✅ Display augmentation active'))
+          
+          const displayFields = await item.getDisplay()
+          console.log(colors.info('\n🎨 Computed Display Fields:'))
+          Object.entries(displayFields).forEach(([key, value]) => {
+            console.log(colors.cyan(`  ${key}: ${JSON.stringify(value)}`))
+          })
+          
+          // Show available fields
+          if (item.getAvailableFields && typeof item.getAvailableFields === 'function') {
+            const availableFields = item.getAvailableFields('display')
+            console.log(colors.info('\n📋 Available Display Fields:'))
+            availableFields.forEach(field => {
+              console.log(colors.dim(`  - ${field}`))
+            })
+          }
+          
+          // Show augmentation info
+          if (item.getAvailableAugmentations && typeof item.getAvailableAugmentations === 'function') {
+            const augs = item.getAvailableAugmentations()
+            console.log(colors.info('\n🔌 Available Augmentations:'))
+            augs.forEach(aug => {
+              console.log(colors.dim(`  - ${aug}`))
+            })
+          }
+        } else {
+          console.log(colors.warning('⚠️ Display augmentation not active or not enhanced'))
+          console.log(colors.dim('   Item does not have getDisplay() method'))
+        }
+      } catch (error) {
+        console.log(colors.error(`❌ Display debug error: ${error.message}`))
       }
-      console.log(table.toString())
-    } else {
-      console.log(colors.primary(`ID: ${item.id}`))
-      if (item.content) {
-        console.log(colors.info(`Content: ${item.content}`))
-      }
-      if (item.metadata && Object.keys(item.metadata).length > 0) {
-        console.log(colors.info(`Metadata: ${JSON.stringify(item.metadata, null, 2)}`))
-      }
+      
+      console.log('\n' + '=' .repeat(50))
     }
+    
+    // Use enhanced formatting with display augmentation
+    const formattedItem = await formatItemWithDisplay(item, options.format)
+    console.log(formattedItem)
   }))
 
 // Command 5: UPDATE - Update existing data
@@ -875,9 +1082,21 @@ program
       
       if (recent.length > 0) {
         console.log(colors.cyan('Recent items:'))
-        recent.forEach((item, i) => {
-          console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
-        })
+        
+        // Enhanced display for recent items
+        for (let i = 0; i < Math.min(recent.length, 10); i++) {
+          const item = recent[i]
+          try {
+            if (item.getDisplay && typeof item.getDisplay === 'function') {
+              const displayFields = await item.getDisplay()
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${displayFields.title}`))
+            } else {
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
+            }
+          } catch {
+            console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
+          }
+        }
         console.log()
       }
       
@@ -953,9 +1172,21 @@ program
       
       if (recent.length > 0) {
         console.log(colors.cyan('Recent items:'))
-        recent.forEach((item, i) => {
-          console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
-        })
+        
+        // Enhanced display for recent items
+        for (let i = 0; i < Math.min(recent.length, 10); i++) {
+          const item = recent[i]
+          try {
+            if (item.getDisplay && typeof item.getDisplay === 'function') {
+              const displayFields = await item.getDisplay()
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${displayFields.title}`))
+            } else {
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
+            }
+          } catch {
+            console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 50)}...`))
+          }
+        }
         console.log()
       }
       
@@ -1150,9 +1381,21 @@ program
         const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
         if (recent.length > 0) {
           console.log(colors.cyan('Recent items (source):'))
-          recent.forEach((item, i) => {
-            console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
-          })
+          
+          // Enhanced display for recent items
+          for (let i = 0; i < Math.min(recent.length, 10); i++) {
+            const item = recent[i]
+            try {
+              if (item.getDisplay && typeof item.getDisplay === 'function') {
+                const displayFields = await item.getDisplay()
+                console.log(colors.info(`  ${i + 1}. ${displayFields.icon} ${item.id} - ${displayFields.title}`))
+              } else {
+                console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
+              }
+            } catch {
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
+            }
+          }
           console.log()
         }
         
@@ -1202,9 +1445,21 @@ program
         const recent = await brainyInstance.search('*', { limit: 10, sortBy: 'timestamp' })
         if (recent.length > 0) {
           console.log(colors.cyan('\nRecent items (target):'))
-          recent.forEach((item, i) => {
-            console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
-          })
+          
+          // Enhanced display for recent items
+          for (let i = 0; i < Math.min(recent.length, 10); i++) {
+            const item = recent[i]
+            try {
+              if (item.getDisplay && typeof item.getDisplay === 'function') {
+                const displayFields = await item.getDisplay()
+                console.log(colors.info(`  ${i + 1}. ${displayFields.icon} ${item.id} - ${displayFields.title}`))
+              } else {
+                console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
+              }
+            } catch {
+              console.log(colors.info(`  ${i + 1}. ${item.id} - ${item.content?.substring(0, 40)}...`))
+            }
+          }
           console.log()
         }
         
@@ -1365,16 +1620,39 @@ program
       
       // Active Augmentations
       console.log(colors.primary('🔌 Active Augmentations'))
-      const augmentations = cortex.getAllAugmentations()
-      if (augmentations.length === 0) {
-        console.log(colors.warning('  No augmentations currently active'))
-      } else {
-        augmentations.forEach(aug => {
+      try {
+        // Check for display augmentation specifically
+        const displayAugmentation = (brainy as any).augmentations?.get('display')
+        if (displayAugmentation) {
+          console.log(colors.success(`  ✅ display - Universal Display Augmentation`))
+          console.log(colors.info(`     🎨 AI-powered titles and descriptions`))
+          
+          // Get display augmentation stats if available
+          if (displayAugmentation.getStats) {
+            const stats = displayAugmentation.getStats()
+            if (stats.totalComputations > 0) {
+              console.log(colors.dim(`     📊 ${stats.totalComputations} computations, ${(stats.cacheHitRatio * 100).toFixed(1)}% cache hit rate`))
+            }
+          }
+        }
+        
+        // Show other augmentations
+        const otherAugs = (brainy as any).augmentations ? 
+          Array.from((brainy as any).augmentations.values()).filter((aug: any) => aug.name !== 'display') :
+          []
+        
+        otherAugs.forEach((aug: any) => {
           console.log(colors.success(`  ✅ ${aug.name}`))
-          if (aug.description) {
-            console.log(colors.info(`     ${aug.description}`))
+          if (aug.version) {
+            console.log(colors.info(`     v${aug.version} - ${aug.description || 'No description'}`))
           }
         })
+        
+        if (!displayAugmentation && otherAugs.length === 0) {
+          console.log(colors.warning('  No augmentations currently active'))
+        }
+      } catch (error) {
+        console.log(colors.warning('  Augmentation status unavailable'))
       }
       console.log()
       
