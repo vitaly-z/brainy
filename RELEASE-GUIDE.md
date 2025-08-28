@@ -1,19 +1,31 @@
 # Brainy Release Guide
 
-## Version Numbering Rules (Semantic Versioning)
+## Standard Semantic Versioning (Industry Guidelines)
 
-### For Brainy, we follow this pattern:
+### Official SemVer 2.0.0 says:
+- **MAJOR**: Incompatible API changes (breaking changes)
+- **MINOR**: Add functionality in backwards compatible manner
+- **PATCH**: Backwards compatible bug fixes
+
+## Our Approach for Brainy (More Conservative)
+
+### We intentionally diverge from strict SemVer:
 - **PATCH (2.3.0 → 2.3.1)**: Bug fixes, internal improvements, dependency updates
-- **MINOR (2.3.0 → 2.4.0)**: New features, enhancements, non-breaking changes
-- **MAJOR (2.x.x → 3.0.0)**: ONLY when we completely change the API
+- **MINOR (2.3.0 → 2.4.0)**: New features, API changes, enhancements
+- **MAJOR (3.0.0)**: Reserved for strategic platform shifts (manual decision)
 
-## IMPORTANT: Breaking Changes ≠ Major Version
+### Why We Do This:
+1. **User Trust**: Major versions signal huge changes and scare users
+2. **Adoption**: People hesitate to upgrade major versions
+3. **Flexibility**: We can evolve the API without version explosion
+4. **Industry Practice**: Many successful projects (React, Vue) do this
 
-**BREAKING CHANGE in commit messages triggers MAJOR version bumps!**
-- DO NOT use "BREAKING CHANGE" unless users need to rewrite their code
-- Internal changes (like removing tar-stream) are NOT breaking changes
-- API additions are NOT breaking changes
-- Performance improvements are NOT breaking changes
+## CRITICAL: Never Use "BREAKING CHANGE" 
+
+**"BREAKING CHANGE" in commits = Automatic major version = BAD!**
+- Even if removing methods, just use `feat:` or `refactor:`
+- Major versions are MANUAL decisions: `npm run release:major`
+- Most API changes can be handled gracefully in minor versions
 
 ## Commit Message Guidelines
 
