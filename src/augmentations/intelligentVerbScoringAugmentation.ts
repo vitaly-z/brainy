@@ -74,7 +74,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   priority = 10 // Enhancement feature - runs after core operations
 
   // Augmentation metadata
-  readonly category = 'premium' as const
+  readonly category = 'core' as const
   readonly description = 'AI-powered intelligent scoring for relationship strength analysis'
   
   private config: Required<VerbScoringConfig>
