@@ -2,15 +2,32 @@
  * Version utilities for Brainy
  */
 
-// Package version - this should be updated during the build process
-const BRAINY_VERSION = '0.41.0'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Get package.json path relative to this file
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const packageJsonPath = join(__dirname, '../../package.json')
+
+let cachedVersion: string | null = null
 
 /**
  * Get the current Brainy package version
  * @returns The current version string
  */
 export function getBrainyVersion(): string {
-  return BRAINY_VERSION
+  if (!cachedVersion) {
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
+      cachedVersion = packageJson.version
+    } catch {
+      // Fallback version if package.json can't be read
+      cachedVersion = '2.7.1'
+    }
+  }
+  return cachedVersion!
 }
 
 /**
