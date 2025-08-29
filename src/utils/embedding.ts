@@ -108,9 +108,9 @@ export class TransformerEmbedding implements EmbeddingModel {
     if (options.localFilesOnly !== undefined) {
       // 1. Explicit option takes highest priority
       localFilesOnly = options.localFilesOnly
-    } else if (process.env.BRAINY_ALLOW_REMOTE_MODELS !== undefined) {
-      // 2. Environment variable override
-      localFilesOnly = process.env.BRAINY_ALLOW_REMOTE_MODELS !== 'true'
+    } else if (process.env.BRAINY_ALLOW_REMOTE_MODELS === 'false') {
+      // 2. Environment variable explicitly disables remote models
+      localFilesOnly = true
     } else if (process.env.NODE_ENV === 'development') {
       // 3. Development mode allows remote models
       localFilesOnly = false
