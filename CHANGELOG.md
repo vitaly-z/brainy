@@ -5,6 +5,15 @@ All notable changes to Brainy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.4] - 2025-08-29
+
+### Fixed
+- Use fp32 models consistently everywhere to ensure compatibility
+- Changed default dtype from q8 to fp32 across all embedding implementations
+- Ensures the exact same model (model.onnx) is used everywhere
+- Prevents 404 errors when looking for quantized models that don't exist on CDN
+- Maintains data compatibility across all Brainy instances
+
 ## [2.7.3] - 2025-08-29
 
 ### Fixed
