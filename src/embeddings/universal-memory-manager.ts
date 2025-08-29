@@ -139,7 +139,7 @@ export class UniversalMemoryManager {
       
       this.embeddingFunction = new TransformerEmbedding({
         verbose: false,
-        dtype: 'fp32',
+        precision: 'fp32',
         localFilesOnly: process.env.BRAINY_ALLOW_REMOTE_MODELS !== 'true'
       })
       
