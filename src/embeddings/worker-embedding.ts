@@ -16,7 +16,7 @@ async function initModel(): Promise<void> {
   if (!model) {
     model = new TransformerEmbedding({
       verbose: false,
-      dtype: 'q8',
+      dtype: 'fp32',
       localFilesOnly: process.env.BRAINY_ALLOW_REMOTE_MODELS !== 'true'
     })
     await model.init()

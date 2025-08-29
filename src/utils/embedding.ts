@@ -128,7 +128,7 @@ export class TransformerEmbedding implements EmbeddingModel {
       verbose: this.verbose,
       cacheDir: options.cacheDir || './models',
       localFilesOnly: localFilesOnly,
-      dtype: options.dtype || 'q8',  // Changed from fp32 to q8 for 75% memory reduction
+      dtype: options.dtype || 'fp32',  // Use fp32 by default as quantized models aren't available on CDN
       device: options.device || 'auto'
     }
     
@@ -262,7 +262,7 @@ export class TransformerEmbedding implements EmbeddingModel {
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
-        dtype: this.options.dtype || 'q8',  // Use quantized model for lower memory
+        dtype: this.options.dtype || 'fp32',  // Use fp32 model as quantized models aren't available on CDN
         // CRITICAL: ONNX memory optimizations
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena
