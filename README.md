@@ -29,15 +29,17 @@
 - **Perfect Interoperability**: All tools and AI models speak the same language
 - **Universal Compatibility**: Node.js, Browser, Edge, Workers
 
-## ⚡ Quick Start
+## ⚡ Quick Start - Zero Configuration
 
 ```bash
 npm install @soulcraft/brainy
 ```
 
+### 🎯 **True Zero Configuration**
 ```javascript
-import { BrainyData } from 'brainy'
+import { BrainyData } from '@soulcraft/brainy'
 
+// Just this - auto-detects everything!
 const brain = new BrainyData()
 await brain.init()
 
@@ -109,11 +111,41 @@ await brain.find("Popular JavaScript libraries similar to Vue")
 await brain.find("Documentation about authentication from last month")
 ```
 
-### Zero Configuration Philosophy
-- **No API keys required** - Built-in embedding models
-- **No external dependencies** - Everything included
-- **No complex setup** - Works instantly
-- **Smart defaults** - Optimized out of the box
+### 🎯 Zero Configuration Philosophy
+Brainy 2.9+ automatically configures **everything**:
+
+```javascript
+import { BrainyData, PresetName } from '@soulcraft/brainy'
+
+// 1. Pure zero-config - detects everything
+const brain = new BrainyData()
+
+// 2. Environment presets (strongly typed)
+const devBrain = new BrainyData(PresetName.DEVELOPMENT)     // Memory + verbose
+const prodBrain = new BrainyData(PresetName.PRODUCTION)      // Disk + optimized
+const miniBrain = new BrainyData(PresetName.MINIMAL)         // Q8 + minimal features
+
+// 3. Distributed architecture presets
+const writer = new BrainyData(PresetName.WRITER)             // Write-only instance
+const reader = new BrainyData(PresetName.READER)             // Read-only + caching
+const ingestion = new BrainyData(PresetName.INGESTION_SERVICE) // High-throughput
+const searchAPI = new BrainyData(PresetName.SEARCH_API)      // Low-latency search
+
+// 4. Custom zero-config (type-safe)
+const customBrain = new BrainyData({
+  mode: 'production',
+  model: 'fp32',        // or 'q8', 'auto'
+  storage: 'cloud',     // or 'memory', 'disk', 'auto'
+  features: ['core', 'search', 'cache']
+})
+```
+
+**What's Auto-Detected:**
+- **Storage**: S3/GCS/R2 → Filesystem → Memory (priority order)
+- **Models**: FP32 vs Q8 based on memory/performance  
+- **Features**: Minimal → Default → Full based on environment
+- **Memory**: Optimal cache sizes and batching
+- **Performance**: Threading, chunking, indexing strategies
 
 ### Production Performance
 - **3ms average search** - Lightning fast queries
@@ -121,29 +153,40 @@ await brain.find("Documentation about authentication from last month")
 - **Worker-based embeddings** - Non-blocking operations
 - **Automatic caching** - Intelligent result caching
 
-### Performance Optimization
+### 🎛️ Advanced Configuration (When Needed)
 
-**Q8 Quantized Models** - 75% smaller, faster loading (v2.8.0+)
+Most users **never need this** - zero-config handles everything. For advanced use cases:
 
 ```javascript
-// Default: Full precision (fp32) - maximum compatibility
-const brain = new BrainyData()
+// Model precision control (auto-detected by default)
+const brain = new BrainyData({
+  model: 'fp32'  // Full precision - max compatibility
+})
+const fastBrain = new BrainyData({
+  model: 'q8'    // Quantized - 75% smaller, 99% accuracy  
+})
 
-// Optimized: Quantized models (q8) - 75% smaller, 99% accuracy  
-const brainOptimized = new BrainyData({
-  embeddingOptions: { dtype: 'q8' }
+// Storage control (auto-detected by default)
+const memoryBrain = new BrainyData({ storage: 'memory' })     // RAM only
+const diskBrain = new BrainyData({ storage: 'disk' })         // Local filesystem  
+const cloudBrain = new BrainyData({ storage: 'cloud' })       // S3/GCS/R2
+
+// Legacy full config (still supported)
+const legacyBrain = new BrainyData({
+  storage: { forceMemoryStorage: true },
+  embeddingOptions: { precision: 'fp32' }
 })
 ```
 
 **Model Comparison:**
-- **FP32 (default)**: 90MB, 100% accuracy, maximum compatibility
-- **Q8 (optional)**: 23MB, ~99% accuracy, faster loading
+- **FP32**: 90MB, 100% accuracy, maximum compatibility
+- **Q8**: 23MB, ~99% accuracy, faster loading, smaller memory
 
 **When to use Q8:**
-- ✅ New projects where size/speed matters
 - ✅ Memory-constrained environments  
+- ✅ Faster startup required
 - ✅ Mobile or edge deployments
-- ❌ Existing projects with FP32 data (incompatible embeddings)
+- ❌ Existing FP32 datasets (incompatible embeddings)
 
 **Air-gap deployment:**
 ```bash

@@ -15,6 +15,34 @@ import { BrainyData, BrainyDataConfig } from './brainyData.js'
 export { BrainyData }
 export type { BrainyDataConfig }
 
+// Export zero-configuration types and enums
+export {
+  // Preset names
+  PresetName,
+  // Model configuration
+  ModelPrecision,
+  // Storage configuration  
+  StorageOption,
+  // Feature configuration
+  FeatureSet,
+  // Distributed roles
+  DistributedRole,
+  // Categories
+  PresetCategory,
+  // Config type
+  BrainyZeroConfig,
+  // Extensibility
+  StorageProvider,
+  registerStorageAugmentation,
+  registerPresetAugmentation,
+  // Preset utilities
+  getPreset,
+  isValidPreset,
+  getPresetsByCategory,
+  getAllPresetNames,
+  getPresetDescription
+} from './config/index.js'
+
 // Export Cortex (the orchestrator)
 export { 
   Cortex, 
