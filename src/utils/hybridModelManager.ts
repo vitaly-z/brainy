@@ -104,7 +104,7 @@ class HybridModelManager {
       // Smart configuration based on environment
       let options: TransformerEmbeddingOptions = {
         verbose: !isTest && !isServerless,
-        dtype: 'fp32',
+        precision: 'fp32',  // Use clearer precision parameter
         device: 'cpu'
       }
 
@@ -113,7 +113,7 @@ class HybridModelManager {
         options = {
           ...options,
           localFilesOnly: forceLocalOnly || false, // Respect environment variable
-          dtype: 'fp32',
+          precision: 'fp32',
           device: 'cpu',
           verbose: false
         }
@@ -121,7 +121,7 @@ class HybridModelManager {
         options = {
           ...options,
           localFilesOnly: forceLocalOnly || true, // Default true for serverless, but respect env
-          dtype: 'fp32',
+          precision: 'fp32',
           device: 'cpu',
           verbose: false
         }
@@ -129,7 +129,7 @@ class HybridModelManager {
         options = {
           ...options,
           localFilesOnly: forceLocalOnly || true, // Default true for docker, but respect env
-          dtype: 'fp32',
+          precision: 'fp32',
           device: 'auto',
           verbose: false
         }
@@ -138,7 +138,7 @@ class HybridModelManager {
         options = {
           ...options,
           localFilesOnly: forceLocalOnly || false, // Respect environment variable for tests
-          dtype: 'fp32',
+          precision: 'fp32',
           device: 'cpu',
           verbose: false
         }
@@ -146,7 +146,7 @@ class HybridModelManager {
         options = {
           ...options,
           localFilesOnly: forceLocalOnly || false, // Respect environment variable for default node
-          dtype: 'fp32',
+          precision: 'fp32',
           device: 'auto',
           verbose: true
         }
@@ -201,7 +201,7 @@ class HybridModelManager {
       { ...options, localFilesOnly: false, verbose: true, source: 'fallback-verbose' },
       
       // 3. Last resort: basic configuration
-      { verbose: false, dtype: 'fp32' as const, device: 'cpu' as const, localFilesOnly: false, source: 'last-resort' }
+      { verbose: false, precision: 'fp32' as const, device: 'cpu' as const, localFilesOnly: false, source: 'last-resort' }
     ]
 
     let lastError: Error | null = null

@@ -7,6 +7,8 @@ import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
 import { executeInThread } from './workerUtils.js'
 import { isBrowser } from './environment.js'
 import { ModelManager } from '../embeddings/model-manager.js'
+import { join } from 'path'
+import { existsSync } from 'fs'
 // @ts-ignore - Transformers.js is now the primary embedding library
 import { pipeline, env } from '@huggingface/transformers'
 
@@ -82,8 +84,8 @@ export interface TransformerEmbeddingOptions {
   cacheDir?: string
   /** Force local files only (no downloads) */
   localFilesOnly?: boolean
-  /** Quantization setting (fp32, fp16, q8, q4) */
-  dtype?: 'fp32' | 'fp16' | 'q8' | 'q4'
+  /** Model precision: 'q8' = 75% smaller quantized model, 'fp32' = full precision (default) */
+  precision?: 'fp32' | 'q8'
   /** Device to run inference on - 'auto' detects best available */
   device?: 'auto' | 'cpu' | 'webgpu' | 'cuda' | 'gpu'
 }
@@ -128,12 +130,12 @@ export class TransformerEmbedding implements EmbeddingModel {
       verbose: this.verbose,
       cacheDir: options.cacheDir || './models',
       localFilesOnly: localFilesOnly,
-      dtype: options.dtype || 'fp32',  // CRITICAL: fp32 default for backward compatibility
+      precision: options.precision || 'fp32',  // Clean and clear!
       device: options.device || 'auto'
     }
     
     // ULTRA-CAREFUL: Runtime warnings for q8 usage
-    if (this.options.dtype === 'q8') {
+    if (this.options.precision === 'q8') {
       const confirmed = process.env.BRAINY_Q8_CONFIRMED === 'true'
       if (!confirmed && this.verbose) {
         console.warn('🚨 Q8 MODEL WARNING:')
@@ -146,7 +148,7 @@ export class TransformerEmbedding implements EmbeddingModel {
     }
     
     if (this.verbose) {
-      this.logger('log', `Embedding config: dtype=${this.options.dtype}, localFilesOnly=${localFilesOnly}, model=${this.options.model}`)
+      this.logger('log', `Embedding config: precision=${this.options.precision}, localFilesOnly=${localFilesOnly}, model=${this.options.model}`)
     }
 
     // Configure transformers.js environment
@@ -273,21 +275,40 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       // Check model availability and select appropriate variant
       const available = modelManager.getAvailableModels(this.options.model)
-      const actualType = modelManager.getBestAvailableModel(this.options.dtype as 'fp32' | 'q8', this.options.model)
+      let actualType = modelManager.getBestAvailableModel(this.options.precision as 'fp32' | 'q8', this.options.model)
       
       if (!actualType) {
         throw new Error(`No model variants available for ${this.options.model}. Run 'npm run download-models' to download models.`)
       }
       
-      if (actualType !== this.options.dtype) {
-        this.logger('log', `Using ${actualType} model (${this.options.dtype} not available)`)
+      if (actualType !== this.options.precision) {
+        this.logger('log', `Using ${actualType} model (${this.options.precision} not available)`)
+      }
+      
+      // CRITICAL FIX: Control which model file transformers.js loads
+      // When both model.onnx and model_quantized.onnx exist, transformers.js defaults to model.onnx
+      // We need to explicitly control this based on the precision setting
+      
+      // Set environment to control model selection BEFORE creating pipeline
+      if (actualType === 'q8') {
+        // For Q8, we want to use the quantized model
+        // transformers.js v3 doesn't have a direct flag, so we need to work around this
+        
+        // HACK: Temporarily modify the model file preference
+        // This forces transformers.js to look for model_quantized.onnx first
+        const originalModelFileName = (env as any).onnxModelFileName
+        (env as any).onnxModelFileName = 'model_quantized'
+        
+        this.logger('log', '🎯 Selecting Q8 quantized model (75% smaller)')
+      } else {
+        this.logger('log', '📦 Using FP32 model (full precision)')
       }
       
       // Load the feature extraction pipeline with memory optimizations
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
-        dtype: actualType,  // Use the actual available model type
+        // Remove the quantized flag - it doesn't work in transformers.js v3
         // CRITICAL: ONNX memory optimizations
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena
@@ -309,6 +330,18 @@ export class TransformerEmbedding implements EmbeddingModel {
       }
       
       try {
+        // For Q8 models, we need to explicitly specify the model file
+        if (actualType === 'q8') {
+          // Check if quantized model exists
+          const modelPath = join(cacheDir, this.options.model, 'onnx', 'model_quantized.onnx')
+          if (existsSync(modelPath)) {
+            this.logger('log', '✅ Q8 model found locally')
+          } else {
+            this.logger('warn', '⚠️ Q8 model not found, will fall back to FP32')
+            actualType = 'fp32' // Fall back to fp32
+          }
+        }
+        
         this.extractor = await pipeline('feature-extraction', this.options.model, pipelineOptions)
       } catch (gpuError: any) {
         // Fallback to CPU if GPU initialization fails

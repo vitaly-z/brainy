@@ -113,7 +113,7 @@ export class LightweightEmbedder {
       console.log('⚠️ Loading ONNX model for complex text...')
       const { TransformerEmbedding } = await import('../utils/embedding.js')
       this.onnxEmbedder = new TransformerEmbedding({ 
-        dtype: 'fp32',
+        precision: 'fp32',
         verbose: false 
       })
       await this.onnxEmbedder.init()
