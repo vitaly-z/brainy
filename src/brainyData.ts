@@ -34,6 +34,7 @@ import {
 } from './utils/index.js'
 import { getAugmentationVersion } from './utils/version.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
+import { enforceNodeVersion } from './utils/nodeVersionCheck.js'
 import { MetadataIndexManager, MetadataIndexConfig } from './utils/metadataIndex.js'
 import { 
   createNamespacedMetadata, 
@@ -545,6 +546,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   private allowDirectReads: boolean
   private storageConfig: BrainyDataConfig['storage'] = {}
   private config: BrainyDataConfig
+  private rawConfig: any // Raw config input for zero-config processing
   private useOptimizedIndex: boolean = false
   private _dimensions: number
   private loggingConfig: BrainyDataConfig['logging'] = { verbose: true }
@@ -664,21 +666,37 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
   /**
    * Create a new vector database
+   * @param config - Zero-config string ('production', 'development', 'minimal'), 
+   *                 simplified config object, or legacy full config
    */
-  constructor(config: BrainyDataConfig = {}) {
-    // Store config
-    this.config = config
+  constructor(config: BrainyDataConfig | string | any = {}) {
+    // Enforce Node.js version requirement for ONNX stability
+    if (typeof process !== 'undefined' && process.version) {
+      enforceNodeVersion()
+    }
+    
+    // Store raw config for processing in init()
+    this.rawConfig = config
+    
+    // For now, process as legacy config if it's an object
+    // The actual zero-config processing will happen in init() since it's async
+    if (typeof config === 'object') {
+      this.config = config
+    } else {
+      // String preset or simplified config - use minimal defaults for now
+      this.config = {}
+    }
     
     // Set dimensions to fixed value of 384 (all-MiniLM-L6-v2 dimension)
     this._dimensions = 384
 
     // Set distance function
-    this.distanceFunction = config.distanceFunction || cosineDistance
+    this.distanceFunction = this.config.distanceFunction || cosineDistance
 
     // Always use the optimized HNSW index implementation
     // Configure HNSW with disk-based storage when a storage adapter is provided
-    const hnswConfig = config.hnsw || {}
-    if (config.storageAdapter) {
+    const hnswConfig = this.config.hnsw || {}
+    if (this.config.storageAdapter) {
       hnswConfig.useDiskBasedIndex = true
     }
 
@@ -690,41 +708,41 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     this.useOptimizedIndex = false
 
     // Set storage if provided, otherwise it will be initialized in init()
-    this.storage = config.storageAdapter || null
+    this.storage = this.config.storageAdapter || null
 
     // Store logging configuration
-    if (config.logging !== undefined) {
+    if (this.config.logging !== undefined) {
       this.loggingConfig = {
         ...this.loggingConfig,
-        ...config.logging
+        ...this.config.logging
       }
     }
 
     // Set embedding function if provided, otherwise create one with the appropriate verbose setting
-    if (config.embeddingFunction) {
-      this.embeddingFunction = config.embeddingFunction
+    if (this.config.embeddingFunction) {
+      this.embeddingFunction = this.config.embeddingFunction
     } else {
       this.embeddingFunction = defaultEmbeddingFunction
     }
 
     // Set persistent storage request flag
     this.requestPersistentStorage =
-      config.storage?.requestPersistentStorage || false
+      this.config.storage?.requestPersistentStorage || false
 
     // Set read-only flag
-    this.readOnly = config.readOnly || false
+    this.readOnly = this.config.readOnly || false
 
     // Set frozen flag (defaults to false to allow optimizations in readOnly mode)
-    this.frozen = config.frozen || false
+    this.frozen = this.config.frozen || false
 
     // Set lazy loading in read-only mode flag
-    this.lazyLoadInReadOnlyMode = config.lazyLoadInReadOnlyMode || false
+    this.lazyLoadInReadOnlyMode = this.config.lazyLoadInReadOnlyMode || false
 
     // Set write-only flag
-    this.writeOnly = config.writeOnly || false
+    this.writeOnly = this.config.writeOnly || false
 
     // Set allowDirectReads flag
-    this.allowDirectReads = config.allowDirectReads || false
+    this.allowDirectReads = this.config.allowDirectReads || false
 
     // Validate that readOnly and writeOnly are not both true
     if (this.readOnly && this.writeOnly) {
@@ -732,27 +750,27 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     // Set default service name if provided
-    if (config.defaultService) {
-      this.defaultService = config.defaultService
+    if (this.config.defaultService) {
+      this.defaultService = this.config.defaultService
     }
 
     // Store storage configuration for later use in init()
-    this.storageConfig = config.storage || {}
+    this.storageConfig = this.config.storage || {}
 
     // Store timeout and retry configuration
-    this.timeoutConfig = config.timeouts || {}
-    this.retryConfig = config.retryPolicy || {}
+    this.timeoutConfig = this.config.timeouts || {}
+    this.retryConfig = this.config.retryPolicy || {}
 
     // Store remote server configuration if provided
-    if (config.remoteServer) {
-      this.remoteServerConfig = config.remoteServer
+    if (this.config.remoteServer) {
+      this.remoteServerConfig = this.config.remoteServer
     }
 
     // Initialize real-time update configuration if provided
-    if (config.realtimeUpdates) {
+    if (this.config.realtimeUpdates) {
       this.realtimeUpdateConfig = {
         ...this.realtimeUpdateConfig,
-        ...config.realtimeUpdates
+        ...this.config.realtimeUpdates
       }
     }
 
@@ -774,23 +792,23 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     // Override defaults with user-provided configuration if available
-    if (config.cache) {
+    if (this.config.cache) {
       this.cacheConfig = {
         ...this.cacheConfig,
-        ...config.cache
+        ...this.config.cache
       }
     }
 
     // Store distributed configuration
-    if (config.distributed) {
-      if (typeof config.distributed === 'boolean') {
+    if (this.config.distributed) {
+      if (typeof this.config.distributed === 'boolean') {
         // Auto-mode enabled
         this.distributedConfig = {
           enabled: true
         }
       } else {
         // Explicit configuration
-        this.distributedConfig = config.distributed
+        this.distributedConfig = this.config.distributed
       }
     }
 
@@ -951,17 +969,29 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         }
       }
       
-      // Check if specific storage is configured
+      // Check if specific storage is configured (legacy and new formats)
       if (storageOptions.s3Storage || storageOptions.r2Storage || 
           storageOptions.gcsStorage || storageOptions.forceMemoryStorage ||
-          storageOptions.forceFileSystemStorage) {
-        // Create storage from config
-        const { createStorage } = await import('./storage/storageFactory.js')
-        this.storage = await createStorage(storageOptions as any)
+          storageOptions.forceFileSystemStorage || 
+          typeof storageOptions === 'string') {
         
-        // Wrap in augmentation for consistency
-        const wrapper = new DynamicStorageAugmentation(this.storage)
-        this.augmentations.register(wrapper)
+        // Handle string storage types (new zero-config)
+        if (typeof storageOptions === 'string') {
+          const { createAutoStorageAugmentation } = await import('./augmentations/storageAugmentations.js')
+          // For now, use auto-detection - TODO: extend to support preferred types
+          const autoAug = await createAutoStorageAugmentation({
+            rootDirectory: './brainy-data'
+          })
+          this.augmentations.register(autoAug)
+        } else {
+          // Legacy object config
+          const { createStorage } = await import('./storage/storageFactory.js')
+          this.storage = await createStorage(storageOptions as any)
+          
+          // Wrap in augmentation for consistency
+          const wrapper = new DynamicStorageAugmentation(this.storage)
+          this.augmentations.register(wrapper)
+        }
       } else {
         // Zero-config: auto-select based on environment
         const autoAug = await createAutoStorageAugmentation({
@@ -1608,6 +1638,40 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     this.isInitializing = true
+    
+    // Process zero-config if needed
+    if (this.rawConfig !== undefined) {
+      try {
+        const { applyZeroConfig } = await import('./config/index.js')
+        const processedConfig = await applyZeroConfig(this.rawConfig)
+        
+        // Apply processed config if it's different from raw
+        if (processedConfig !== this.rawConfig) {
+          // Log if verbose
+          if (processedConfig.logging?.verbose) {
+            console.log('🤖 Zero-config applied successfully')
+          }
+          
+          // Update config with processed values
+          this.config = processedConfig
+          
+          // Update relevant properties from processed config
+          this.storageConfig = processedConfig.storage || {}
+          this.loggingConfig = processedConfig.logging || { verbose: false }
+          
+          // Update embedding function if precision was specified
+          if (processedConfig.embeddingOptions?.precision) {
+            const { createEmbeddingFunctionWithPrecision } = await import('./config/index.js')
+            this.embeddingFunction = await createEmbeddingFunctionWithPrecision(
+              processedConfig.embeddingOptions.precision
+            )
+          }
+        }
+      } catch (error) {
+        console.warn('Zero-config processing failed, using defaults:', error)
+        // Continue with existing config
+      }
+    }
     
     // CRITICAL: Initialize universal memory manager ONLY for default embedding function
     // This preserves custom embedding functions (like test mocks)

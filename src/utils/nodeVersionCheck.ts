@@ -1,0 +1,81 @@
+/**
+ * Node.js Version Compatibility Check
+ * 
+ * Brainy requires Node.js 22.x LTS for maximum stability with ONNX Runtime.
+ * This prevents V8 HandleScope locking issues in worker threads.
+ */
+
+export interface VersionInfo {
+  current: string
+  major: number
+  isSupported: boolean
+  recommendation: string
+}
+
+/**
+ * Check if the current Node.js version is supported
+ */
+export function checkNodeVersion(): VersionInfo {
+  const nodeVersion = process.version
+  const majorVersion = parseInt(nodeVersion.split('.')[0].substring(1))
+  
+  const versionInfo: VersionInfo = {
+    current: nodeVersion,
+    major: majorVersion,
+    isSupported: majorVersion === 22,
+    recommendation: 'Node.js 22.x LTS'
+  }
+  
+  return versionInfo
+}
+
+/**
+ * Enforce Node.js version requirement with helpful error messaging
+ */
+export function enforceNodeVersion(): void {
+  const versionInfo = checkNodeVersion()
+  
+  if (!versionInfo.isSupported) {
+    const errorMessage = [
+      '🚨 BRAINY COMPATIBILITY ERROR',
+      '━'.repeat(50),
+      `❌ Current Node.js: ${versionInfo.current}`,
+      `✅ Required: ${versionInfo.recommendation}`,
+      '',
+      '💡 Quick Fix:',
+      '  nvm install 22 && nvm use 22',
+      '  npm install',
+      '',
+      '📖 Why Node.js 22?',
+      '  • Maximum ONNX Runtime stability',
+      '  • Prevents V8 threading crashes',
+      '  • Optimal zero-config performance',
+      '',
+      '🔗 More info: https://github.com/soulcraftlabs/brainy#node-version',
+      '━'.repeat(50)
+    ].join('\n')
+    
+    throw new Error(errorMessage)
+  }
+}
+
+/**
+ * Soft warning for version issues (non-blocking)
+ */
+export function warnNodeVersion(): boolean {
+  const versionInfo = checkNodeVersion()
+  
+  if (!versionInfo.isSupported) {
+    console.warn([
+      '⚠️  BRAINY VERSION WARNING',
+      `   Current: ${versionInfo.current}`,
+      `   Recommended: ${versionInfo.recommendation}`,
+      '   Consider upgrading for best stability',
+      ''
+    ].join('\n'))
+    
+    return false
+  }
+  
+  return true
+}

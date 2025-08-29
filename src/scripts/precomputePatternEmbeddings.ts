@@ -28,8 +28,8 @@ async function precomputeEmbeddings() {
   
   // Initialize Brainy with minimal config
   const brain = new BrainyData({
-    storage: { forceMemoryStorage: true },
-    logging: { verbose: false }
+    storage: 'memory',
+    verbose: false
   })
   
   await brain.init()

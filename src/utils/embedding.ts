@@ -17,9 +17,10 @@ import { pipeline, env } from '@huggingface/transformers'
 if (typeof process !== 'undefined' && process.env) {
   process.env.ORT_DISABLE_MEMORY_ARENA = '1'
   process.env.ORT_DISABLE_MEMORY_PATTERN = '1'
-  // Also limit ONNX thread count for more predictable memory usage
-  process.env.ORT_INTRA_OP_NUM_THREADS = '2'
-  process.env.ORT_INTER_OP_NUM_THREADS = '2'
+  // Force single-threaded operation for maximum stability (Node.js 24 compatibility)
+  process.env.ORT_INTRA_OP_NUM_THREADS = '1'    // Single thread for operators
+  process.env.ORT_INTER_OP_NUM_THREADS = '1'    // Single thread for sessions
+  process.env.ORT_NUM_THREADS = '1'             // Additional safety override
 }
 
 /**
@@ -111,7 +112,7 @@ export class TransformerEmbedding implements EmbeddingModel {
       // 1. Explicit option takes highest priority
       localFilesOnly = options.localFilesOnly
     } else if (process.env.BRAINY_ALLOW_REMOTE_MODELS === 'false') {
-      // 2. Environment variable explicitly disables remote models
+      // 2. Environment variable explicitly disables remote models (legacy support)
       localFilesOnly = true
     } else if (process.env.NODE_ENV === 'development') {
       // 3. Development mode allows remote models
@@ -313,9 +314,9 @@ export class TransformerEmbedding implements EmbeddingModel {
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena
           enableMemPattern: false,   // Disable memory pattern optimization
-          interOpNumThreads: 2,      // Limit thread count
-          intraOpNumThreads: 2,      // Limit parallelism
-          graphOptimizationLevel: 'all'
+          interOpNumThreads: 1,      // Force single thread for V8 stability
+          intraOpNumThreads: 1,      // Force single thread for V8 stability
+          graphOptimizationLevel: 'disabled'  // Disable threading optimizations
         }
       }
       
@@ -367,8 +368,8 @@ export class TransformerEmbedding implements EmbeddingModel {
               // Both local and remote failed - throw comprehensive error
               const errorMsg = `Failed to load embedding model "${this.options.model}". ` +
                               `Local models not found and remote download failed. ` +
-                              `To fix: 1) Set BRAINY_ALLOW_REMOTE_MODELS=true, ` +
-                              `2) Run "npm run download-models", or ` +
+                              `To fix: 1) Run "npm run download-models", ` +
+                              `2) Check your internet connection, or ` +
                               `3) Use a custom embedding function.`
               throw new Error(errorMsg)
             }
