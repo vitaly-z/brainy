@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "2.7.4",
+  "version": "2.8.0",
   "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 31 nouns × 40 verbs for infinite expressiveness.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -73,6 +73,9 @@
     "test:ci-integration": "NODE_OPTIONS='--max-old-space-size=16384' CI=true vitest run --config tests/configs/vitest.integration.config.ts",
     "test:ci": "npm run test:ci-unit",
     "download-models": "node scripts/download-models.cjs",
+    "download-models:fp32": "node scripts/download-models.cjs fp32",
+    "download-models:q8": "node scripts/download-models.cjs q8",
+    "download-models:both": "node scripts/download-models.cjs",
     "models:verify": "node scripts/ensure-models.js",
     "lint": "eslint --ext .ts,.js src/",
     "lint:fix": "eslint --ext .ts,.js src/ --fix",

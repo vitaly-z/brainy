@@ -5,12 +5,29 @@
 ### ✅ Development (Zero Config)
 ```typescript
 const brain = new BrainyData()
-await brain.init() // Downloads automatically
+await brain.init() // Downloads automatically (FP32 default)
+```
+
+### ⚡ Development (Optimized - v2.8.0+)
+```typescript
+// 75% smaller models, 99% accuracy
+const brain = new BrainyData({
+  embeddingOptions: { dtype: 'q8' }
+})
+await brain.init()
 ```
 
 ### 🐳 Docker Production
 ```dockerfile
+# Both models (recommended)
 RUN npm run download-models
+
+# Or FP32 only (compatibility)
+RUN npm run download-models:fp32
+
+# Or Q8 only (space-constrained)
+RUN npm run download-models:q8
+
 ENV BRAINY_ALLOW_REMOTE_MODELS=false
 ```
 
@@ -60,24 +77,42 @@ export BRAINY_ALLOW_REMOTE_MODELS=false
 |----------|--------|---------|
 | `BRAINY_ALLOW_REMOTE_MODELS` | `true`/`false` | Allow/block downloads |
 | `BRAINY_MODELS_PATH` | `./models` | Model storage path |
+| `BRAINY_Q8_CONFIRMED` | `true`/`false` | Silence Q8 compatibility warnings |
 | `NODE_ENV` | `production` | Environment detection |
 
 ## 📦 Model Info
 
+### FP32 (Default)
 - **Model**: All-MiniLM-L6-v2 
 - **Dimensions**: 384 (fixed)
-- **Size**: ~80MB download, ~330MB uncompressed
-- **Location**: `./models/Xenova/all-MiniLM-L6-v2/`
+- **Size**: 90MB
+- **Accuracy**: 100% (baseline)
+- **Location**: `./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx`
+
+### Q8 (Optional - v2.8.0+)
+- **Model**: All-MiniLM-L6-v2 (quantized)
+- **Dimensions**: 384 (same)
+- **Size**: 23MB (75% smaller!)
+- **Accuracy**: ~99% (minimal loss)
+- **Location**: `./models/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx`
+
+**⚠️ Important**: FP32 and Q8 create different embeddings and are incompatible!
 
 ## ✅ Verification Commands
 
 ```bash
-# Check models exist
+# Check FP32 model exists
 ls ./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx
+
+# Check Q8 model exists  
+ls ./models/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx
 
 # Test offline mode
 BRAINY_ALLOW_REMOTE_MODELS=false npm test
 
-# Download fresh models
+# Download fresh models (both)
 rm -rf ./models && npm run download-models
+
+# Download specific model variant
+rm -rf ./models && npm run download-models:q8
 ```
