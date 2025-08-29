@@ -5,6 +5,13 @@ All notable changes to Brainy will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.3] - 2025-08-29
+
+### Fixed
+- Allow automatic model downloads without requiring BRAINY_ALLOW_REMOTE_MODELS environment variable
+- Models now download automatically when not present locally
+- Fixed environment variable check to only block downloads when explicitly set to 'false'
+
 ## [2.0.0] - 2025-08-26
 
 ### 🎉 Major Release - Triple Intelligence™ Engine
