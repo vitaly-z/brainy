@@ -36,13 +36,17 @@ const MODEL_SOURCES = {
   }
 }
 
-// Model verification files - minimal set needed for transformers.js
-const MODEL_FILES = [
+// Model verification files - BOTH fp32 and q8 variants
+const REQUIRED_FILES = [
   'config.json',
   'tokenizer.json',
-  'tokenizer_config.json',
-  'onnx/model.onnx'
+  'tokenizer_config.json'
 ]
+
+const MODEL_VARIANTS = {
+  fp32: 'onnx/model.onnx',
+  q8: 'onnx/model_quantized.onnx'
+}
 
 export class ModelManager {
   private static instance: ModelManager
@@ -126,14 +130,53 @@ export class ModelManager {
   }
   
   private async verifyModelFiles(modelPath: string): Promise<boolean> {
-    // Check if essential model files exist
-    for (const file of MODEL_FILES) {
+    // Check if essential files exist
+    for (const file of REQUIRED_FILES) {
       const fullPath = join(modelPath, file)
       if (!existsSync(fullPath)) {
         return false
       }
     }
-    return true
+    // At least one model variant must exist (fp32 or q8)
+    const fp32Exists = existsSync(join(modelPath, MODEL_VARIANTS.fp32))
+    const q8Exists = existsSync(join(modelPath, MODEL_VARIANTS.q8))
+    return fp32Exists || q8Exists
+  }
+  
+  /**
+   * Check which model variants are available locally
+   */
+  public getAvailableModels(modelName: string = 'Xenova/all-MiniLM-L6-v2'): { fp32: boolean, q8: boolean } {
+    const modelPath = join(this.modelsPath, modelName)
+    return {
+      fp32: existsSync(join(modelPath, MODEL_VARIANTS.fp32)),
+      q8: existsSync(join(modelPath, MODEL_VARIANTS.q8))
+    }
+  }
+  
+  /**
+   * Get the best available model variant based on preference and availability
+   */
+  public getBestAvailableModel(preferredType: 'fp32' | 'q8' = 'fp32', modelName: string = 'Xenova/all-MiniLM-L6-v2'): 'fp32' | 'q8' | null {
+    const available = this.getAvailableModels(modelName)
+    
+    // If preferred type is available, use it
+    if (available[preferredType]) {
+      return preferredType
+    }
+    
+    // Otherwise fall back to what's available
+    if (preferredType === 'q8' && available.fp32) {
+      console.warn('⚠️ Q8 model requested but not available, falling back to FP32')
+      return 'fp32'
+    }
+    
+    if (preferredType === 'fp32' && available.q8) {
+      console.warn('⚠️ FP32 model requested but not available, falling back to Q8')  
+      return 'q8'
+    }
+    
+    return null
   }
   
   private async tryModelSource(name: string, source: { host: string, pathTemplate: string, testFile?: string }, modelName: string): Promise<boolean> {

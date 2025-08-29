@@ -128,12 +128,25 @@ export class TransformerEmbedding implements EmbeddingModel {
       verbose: this.verbose,
       cacheDir: options.cacheDir || './models',
       localFilesOnly: localFilesOnly,
-      dtype: options.dtype || 'fp32',  // Use fp32 by default as quantized models aren't available on CDN
+      dtype: options.dtype || 'fp32',  // CRITICAL: fp32 default for backward compatibility
       device: options.device || 'auto'
     }
     
+    // ULTRA-CAREFUL: Runtime warnings for q8 usage
+    if (this.options.dtype === 'q8') {
+      const confirmed = process.env.BRAINY_Q8_CONFIRMED === 'true'
+      if (!confirmed && this.verbose) {
+        console.warn('🚨 Q8 MODEL WARNING:')
+        console.warn('   • Q8 creates different embeddings than fp32')  
+        console.warn('   • Q8 is incompatible with existing fp32 data')
+        console.warn('   • Only use q8 for new projects or when explicitly migrating')
+        console.warn('   • Set BRAINY_Q8_CONFIRMED=true to silence this warning')
+        console.warn('   • Q8 model is 75% smaller but may have slightly reduced accuracy')
+      }
+    }
+    
     if (this.verbose) {
-      this.logger('log', `Embedding config: localFilesOnly=${localFilesOnly}, model=${this.options.model}, cacheDir=${this.options.cacheDir}`)
+      this.logger('log', `Embedding config: dtype=${this.options.dtype}, localFilesOnly=${localFilesOnly}, model=${this.options.model}`)
     }
 
     // Configure transformers.js environment
@@ -258,11 +271,23 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       const startTime = Date.now()
       
+      // Check model availability and select appropriate variant
+      const available = modelManager.getAvailableModels(this.options.model)
+      const actualType = modelManager.getBestAvailableModel(this.options.dtype as 'fp32' | 'q8', this.options.model)
+      
+      if (!actualType) {
+        throw new Error(`No model variants available for ${this.options.model}. Run 'npm run download-models' to download models.`)
+      }
+      
+      if (actualType !== this.options.dtype) {
+        this.logger('log', `Using ${actualType} model (${this.options.dtype} not available)`)
+      }
+      
       // Load the feature extraction pipeline with memory optimizations
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
-        dtype: this.options.dtype || 'fp32',  // Use fp32 model as quantized models aren't available on CDN
+        dtype: actualType,  // Use the actual available model type
         // CRITICAL: ONNX memory optimizations
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena

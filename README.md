@@ -121,6 +121,37 @@ await brain.find("Documentation about authentication from last month")
 - **Worker-based embeddings** - Non-blocking operations
 - **Automatic caching** - Intelligent result caching
 
+### Performance Optimization
+
+**Q8 Quantized Models** - 75% smaller, faster loading (v2.8.0+)
+
+```javascript
+// Default: Full precision (fp32) - maximum compatibility
+const brain = new BrainyData()
+
+// Optimized: Quantized models (q8) - 75% smaller, 99% accuracy  
+const brainOptimized = new BrainyData({
+  embeddingOptions: { dtype: 'q8' }
+})
+```
+
+**Model Comparison:**
+- **FP32 (default)**: 90MB, 100% accuracy, maximum compatibility
+- **Q8 (optional)**: 23MB, ~99% accuracy, faster loading
+
+**When to use Q8:**
+- ✅ New projects where size/speed matters
+- ✅ Memory-constrained environments  
+- ✅ Mobile or edge deployments
+- ❌ Existing projects with FP32 data (incompatible embeddings)
+
+**Air-gap deployment:**
+```bash
+npm run download-models        # Both models (recommended)
+npm run download-models:q8     # Q8 only (space-constrained)
+npm run download-models:fp32   # FP32 only (compatibility)
+```
+
 ## 📚 Core API
 
 ### `search()` - Vector Similarity
