@@ -60,6 +60,9 @@ INTERNAL_NOTES.md
 TODO_PRIVATE.md
 *.tar.gz
 
+# Strategy and planning documents (private)
+.strategy/
+
 # Models (downloaded at runtime)
 models/
 models-cache/
