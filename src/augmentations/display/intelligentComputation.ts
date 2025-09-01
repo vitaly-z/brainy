@@ -2,7 +2,7 @@
  * Universal Display Augmentation - Intelligent Computation Engine
  * 
  * Leverages existing Brainy AI infrastructure for intelligent field computation:
- * - IntelligentTypeMatcher for semantic type detection
+ * - BrainyTypes for semantic type detection
  * - Neural Import patterns for field analysis  
  * - JSON processing utilities for field extraction
  * - Existing NounType/VerbType taxonomy (31+40 types)
@@ -15,7 +15,7 @@ import type {
   DisplayConfig
 } from './types.js'
 import type { VectorDocument, GraphVerb } from '../../coreTypes.js'
-import { IntelligentTypeMatcher, getTypeMatcher } from '../typeMatching/intelligentTypeMatcher.js'
+import { BrainyTypes, getBrainyTypes } from '../typeMatching/brainyTypes.js'
 import { getNounIcon, getVerbIcon } from './iconMappings.js'
 import { 
   getFieldPatterns, 
@@ -31,7 +31,7 @@ import { NounType, VerbType } from '../../types/graphTypes.js'
  * Coordinates AI-powered analysis with fallback heuristics
  */
 export class IntelligentComputationEngine {
-  private typeMatcher: IntelligentTypeMatcher | null = null
+  private typeMatcher: BrainyTypes | null = null
   private config: DisplayConfig
   private initialized = false
 
@@ -47,7 +47,7 @@ export class IntelligentComputationEngine {
 
     try {
       // 🧠 LEVERAGE YOUR EXISTING AI INFRASTRUCTURE
-      this.typeMatcher = await getTypeMatcher()
+      this.typeMatcher = await getBrainyTypes()
       if (this.typeMatcher) {
         console.log('🎨 Display computation engine initialized with AI intelligence')
       } else {
@@ -118,7 +118,7 @@ export class IntelligentComputationEngine {
   }
 
   /**
-   * AI-powered computation using your existing IntelligentTypeMatcher
+   * AI-powered computation using your existing BrainyTypes
    * @param data Entity data/metadata
    * @param entityType Type of entity (noun/verb)
    * @param options Additional options

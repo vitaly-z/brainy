@@ -1,5 +1,5 @@
 /**
- * Intelligent Type Matcher - Uses embeddings for semantic type detection
+ * BrainyTypes - Intelligent type detection using semantic embeddings
  * 
  * This module uses our existing TransformerEmbedding and similarity functions
  * to intelligently match data to our 31 noun types and 40 verb types.
@@ -139,9 +139,9 @@ export interface TypeMatchResult {
 }
 
 /**
- * Intelligent Type Matcher using semantic embeddings
+ * BrainyTypes - Intelligent type detection for nouns and verbs
  */
-export class IntelligentTypeMatcher {
+export class BrainyTypes {
   private embedder: TransformerEmbedding
   private nounEmbeddings: Map<string, Vector> = new Map()
   private verbEmbeddings: Map<string, Vector> = new Map()
@@ -520,15 +520,15 @@ export class IntelligentTypeMatcher {
 /**
  * Singleton instance for efficient reuse
  */
-let globalMatcher: IntelligentTypeMatcher | null = null
+let globalInstance: BrainyTypes | null = null
 
 /**
- * Get or create the global type matcher instance
+ * Get or create the global BrainyTypes instance
  */
-export async function getTypeMatcher(): Promise<IntelligentTypeMatcher> {
-  if (!globalMatcher) {
-    globalMatcher = new IntelligentTypeMatcher()
-    await globalMatcher.init()
+export async function getBrainyTypes(): Promise<BrainyTypes> {
+  if (!globalInstance) {
+    globalInstance = new BrainyTypes()
+    await globalInstance.init()
   }
-  return globalMatcher
+  return globalInstance
 }

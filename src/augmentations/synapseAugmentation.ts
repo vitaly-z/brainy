@@ -265,7 +265,7 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
           
           // Store original content with neural metadata
           if (typeof content === 'string') {
-            await this.context.brain.add(content, {
+            await this.context.brain.addNoun(content, 'Content', {
               ...enrichedMetadata,
               _neuralProcessed: true,
               _neuralConfidence: neuralResult.data.confidence,
@@ -283,10 +283,10 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
     
     // Fallback to basic storage
     if (typeof content === 'string') {
-      await this.context.brain.add(content, enrichedMetadata)
+      await this.context.brain.addNoun(content, 'Content', enrichedMetadata)
     } else {
       // For structured data, store as JSON
-      await this.context.brain.add(JSON.stringify(content), enrichedMetadata)
+      await this.context.brain.addNoun(JSON.stringify(content), 'Content', enrichedMetadata)
     }
   }
   

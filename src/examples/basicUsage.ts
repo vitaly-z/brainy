@@ -43,7 +43,11 @@ async function runExample() {
   // Add vectors to the database
   const ids: Record<string, string> = {}
   for (const [word, vector] of Object.entries(wordEmbeddings)) {
-    ids[word] = await db.addNoun(vector, metadata[word as keyof typeof metadata])
+    // Determine noun type based on the metadata
+    const meta = metadata[word as keyof typeof metadata]
+    const nounType = meta.type === 'mammal' || meta.type === 'bird' || meta.type === 'fish' ? 'Thing' : 'Content'
+    
+    ids[word] = await db.addNoun(vector, nounType, meta)
 
     console.log(`Added "${word}" with ID: ${ids[word]}`)
   }

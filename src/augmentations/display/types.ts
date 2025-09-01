@@ -114,7 +114,7 @@ export interface FieldComputationContext {
 }
 
 /**
- * Type matching result from IntelligentTypeMatcher
+ * Type matching result from BrainyTypes
  */
 export interface TypeMatchResult {
   type: string

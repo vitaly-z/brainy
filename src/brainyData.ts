@@ -47,6 +47,10 @@ import {
 } from './utils/metadataNamespace.js'
 import { PeriodicCleanup, CleanupConfig, CleanupStats } from './utils/periodicCleanup.js'
 import { NounType, VerbType, GraphNoun } from './types/graphTypes.js'
+import { 
+  validateNounType, 
+  validateVerbType 
+} from './utils/typeValidation.js'
 import {
   ServerSearchConduitAugmentation,
   createServerSearchAugmentations
@@ -184,6 +188,7 @@ export interface BrainyDataConfig {
    * This improves startup performance for large datasets
    */
   lazyLoadInReadOnlyMode?: boolean
+
 
   /**
    * Set the database to write-only mode
@@ -671,7 +676,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    */
   constructor(config: BrainyDataConfig | string | any = {}) {
     // Enforce Node.js version requirement for ONNX stability
-    if (typeof process !== 'undefined' && process.version) {
+    if (typeof process !== 'undefined' && process.version && !process.env.BRAINY_SKIP_VERSION_CHECK) {
       enforceNodeVersion()
     }
     
@@ -2054,383 +2059,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
   }
 
-  /**
-   * Add data to the database with intelligent processing
-   * 
-   * @param vectorOrData Vector or data to add
-   * @param metadata Optional metadata to associate with the data
-   * @param options Additional options for processing
-   * @returns The ID of the added data
-   * 
-   * @example
-   * // Auto mode - intelligently decides processing
-   * await brainy.add("Customer feedback: Great product!")
-   * 
-   * @example  
-   * // Explicit literal mode for sensitive data
-   * await brainy.add("API_KEY=secret123", null, { process: 'literal' })
-   * 
-   * @example
-   * // Force neural processing
-   * await brainy.add("John works at Acme Corp", null, { process: 'neural' })
-   */
-  public async add(
-    vectorOrData: Vector | any,
-    metadata?: T,
-    options: {
-      forceEmbed?: boolean // Force using the embedding function even if input is a vector
-      addToRemote?: boolean // Whether to also add to the remote server if connected
-      id?: string // Optional ID to use instead of generating a new one
-      service?: string // The service that is inserting the data
-      process?: 'auto' | 'literal' | 'neural' // Processing mode (default: 'auto')
-    } = {}
-  ): Promise<string> {
-    await this.ensureInitialized()
 
-    // Check if database is in read-only mode
-    this.checkReadOnly()
-
-    // Validate input is not null or undefined
-    if (vectorOrData === null || vectorOrData === undefined) {
-      throw new Error('Input cannot be null or undefined')
-    }
-
-    try {
-      let vector: Vector
-
-      // First validate if input is an array but contains non-numeric values
-      if (Array.isArray(vectorOrData)) {
-        for (let i = 0; i < vectorOrData.length; i++) {
-          if (typeof vectorOrData[i] !== 'number') {
-            throw new Error('Vector contains non-numeric values')
-          }
-        }
-      }
-
-      // Check if input is already a vector
-      if (Array.isArray(vectorOrData) && !options.forceEmbed) {
-        // Input is already a vector (and we've validated it contains only numbers)
-        vector = vectorOrData
-      } else {
-        // Input needs to be vectorized
-        try {
-          // Check if input is a JSON object and process it specially
-          if (
-            typeof vectorOrData === 'object' &&
-            vectorOrData !== null &&
-            !Array.isArray(vectorOrData)
-          ) {
-            // Process JSON object for better vectorization
-            const preparedText = prepareJsonForVectorization(vectorOrData, {
-              // Prioritize common name/title fields if they exist
-              priorityFields: [
-                'name',
-                'title',
-                'company',
-                'organization',
-                'description',
-                'summary'
-              ]
-            })
-            vector = await this.embeddingFunction(preparedText)
-
-            // IMPORTANT: When an object is passed as data and no metadata is provided,
-            // use the object AS the metadata too. This is expected behavior for the API.
-            // Users can pass either:
-            // 1. addNoun(string, metadata) - vectorize string, store metadata
-            // 2. addNoun(object) - vectorize object text, store object as metadata
-            // 3. addNoun(object, metadata) - vectorize object text, store provided metadata
-            if (!metadata) {
-              metadata = vectorOrData as T
-            }
-
-            // Track field names for this JSON document
-            const service = this.getServiceName(options)
-            if (this.storage) {
-              await this.storage.trackFieldNames(vectorOrData, service)
-            }
-          } else {
-            // Use standard embedding for non-JSON data
-            vector = await this.embeddingFunction(vectorOrData)
-          }
-        } catch (embedError) {
-          throw new Error(`Failed to vectorize data: ${embedError}`)
-        }
-      }
-
-      // Check if vector is defined
-      if (!vector) {
-        throw new Error('Vector is undefined or null')
-      }
-
-      // Validate vector dimensions
-      if (vector.length !== this._dimensions) {
-        throw new Error(
-          `Vector dimension mismatch: expected ${this._dimensions}, got ${vector.length}`
-        )
-      }
-
-      // Use ID from options if it exists, otherwise from metadata, otherwise generate a new UUID
-      const id =
-        options.id ||
-        (metadata && typeof metadata === 'object' && 'id' in metadata
-          ? (metadata as any).id
-          : uuidv4())
-
-      // Check for existing noun (both write-only and normal modes)
-      let existingNoun: HNSWNoun | undefined
-      if (options.id) {
-        try {
-          if (this.writeOnly) {
-            // In write-only mode, check storage directly
-            existingNoun =
-              (await this.storage!.getNoun(options.id)) ?? undefined
-          } else {
-            // In normal mode, check index first, then storage
-            existingNoun = this.index.getNouns().get(options.id)
-            if (!existingNoun) {
-              existingNoun =
-                (await this.storage!.getNoun(options.id)) ?? undefined
-            }
-          }
-
-          if (existingNoun) {
-            // Check if existing noun is a placeholder
-            const existingMetadata = await this.storage!.getMetadata(options.id)
-            const isPlaceholder =
-              existingMetadata &&
-              typeof existingMetadata === 'object' &&
-              (existingMetadata as any).isPlaceholder
-
-            if (isPlaceholder) {
-              // Replace placeholder with real data
-              if (this.loggingConfig?.verbose) {
-                console.log(
-                  `Replacing placeholder noun ${options.id} with real data`
-                )
-              }
-            } else {
-              // Real noun already exists, update it
-              if (this.loggingConfig?.verbose) {
-                console.log(`Updating existing noun ${options.id}`)
-              }
-            }
-          }
-        } catch (storageError) {
-          // Item doesn't exist, continue with add operation
-        }
-      }
-
-      let noun: HNSWNoun
-
-      // In write-only mode, skip index operations since index is not loaded
-      if (this.writeOnly) {
-        // Create noun object directly without adding to index
-        noun = {
-          id,
-          vector,
-          connections: new Map(),
-          level: 0, // Default level for new nodes
-          metadata: undefined // Will be set separately
-        }
-      } else {
-        // Normal mode: Add to HNSW index first
-        await this.hnswIndex.addItem({ id, vector, metadata })
-
-        // Get the noun from the HNSW index
-        const indexNoun = this.hnswIndex.getNouns().get(id)
-        if (!indexNoun) {
-          throw new Error(`Failed to retrieve newly created noun with ID ${id}`)
-        }
-        noun = indexNoun
-      }
-
-      // Save noun to storage using augmentation system
-      await this.augmentations.execute('saveNoun', { noun, options }, async () => {
-        await this.storage!.saveNoun(noun)
-        const service = this.getServiceName(options)
-        await this.storage!.incrementStatistic('noun', service)
-      })
-
-      // Save metadata if provided and not empty
-      if (metadata !== undefined) {
-        // Skip saving if metadata is an empty object
-        if (
-          metadata &&
-          typeof metadata === 'object' &&
-          Object.keys(metadata).length === 0
-        ) {
-          // Don't save empty metadata
-          // Explicitly save null to ensure no metadata is stored
-          await this.storage!.saveMetadata(id, null)
-        } else {
-          // Validate noun type if metadata is for a GraphNoun
-          if (metadata && typeof metadata === 'object' && 'noun' in metadata) {
-            const nounType = (metadata as unknown as GraphNoun).noun
-
-            // Check if the noun type is valid
-            const isValidNounType = Object.values(NounType).includes(nounType)
-
-            if (!isValidNounType) {
-              console.warn(
-                `Invalid noun type: ${nounType}. Falling back to GraphNoun.`
-              )
-              // Set a default noun type
-              ;(metadata as unknown as GraphNoun).noun = NounType.Concept
-            }
-
-            // Ensure createdBy field is populated for GraphNoun
-            const service = options.service || this.getCurrentAugmentation()
-            const graphNoun = metadata as unknown as GraphNoun
-
-            // Only set createdBy if it doesn't exist or is being explicitly updated
-            if (!graphNoun.createdBy || options.service) {
-              graphNoun.createdBy = getAugmentationVersion(service)
-            }
-
-            // Update timestamps
-            const now = new Date()
-            const timestamp = {
-              seconds: Math.floor(now.getTime() / 1000),
-              nanoseconds: (now.getTime() % 1000) * 1000000
-            }
-
-            // Set createdAt if it doesn't exist
-            if (!graphNoun.createdAt) {
-              graphNoun.createdAt = timestamp
-            }
-
-            // Always update updatedAt
-            graphNoun.updatedAt = timestamp
-          }
-
-          // Create properly namespaced metadata for new items
-          let metadataToSave = createNamespacedMetadata(metadata)
-
-          // Add domain metadata if distributed mode is enabled
-          if (this.domainDetector) {
-            // First check if domain is already in metadata
-            if ((metadataToSave as any).domain) {
-              // Domain already specified, keep it
-              const domainInfo =
-                this.domainDetector.detectDomain(metadataToSave)
-              if (domainInfo.domainMetadata) {
-                ;(metadataToSave as any).domainMetadata =
-                  domainInfo.domainMetadata
-              }
-            } else {
-              // Try to detect domain from the data
-              const dataToAnalyze = Array.isArray(vectorOrData)
-                ? metadata
-                : vectorOrData
-              const domainInfo =
-                this.domainDetector.detectDomain(dataToAnalyze)
-              if (domainInfo.domain) {
-                ;(metadataToSave as any).domain = domainInfo.domain
-                if (domainInfo.domainMetadata) {
-                  ;(metadataToSave as any).domainMetadata =
-                    domainInfo.domainMetadata
-                }
-              }
-            }
-          }
-
-          // Add partition information if distributed mode is enabled
-          if (this.partitioner) {
-            const partition = this.partitioner.getPartition(id)
-            ;(metadataToSave as any).partition = partition
-          }
-
-          await this.storage!.saveMetadata(id, metadataToSave)
-
-          // Update metadata index (write-only mode should build indices!)
-          if (this.index && !this.frozen) {
-            await this.metadataIndex?.addToIndex?.(id, metadataToSave)
-          }
-
-          // Track metadata statistics
-          const metadataService = this.getServiceName(options)
-          await this.storage!.incrementStatistic('metadata', metadataService)
-
-          // Track content type if it's a GraphNoun
-          if (
-            metadataToSave &&
-            typeof metadataToSave === 'object' &&
-            'noun' in metadataToSave
-          ) {
-            this.metrics.trackContentType(
-              (metadataToSave as any).noun
-            )
-          }
-
-          // Track update timestamp (handled by metrics augmentation)
-        }
-      }
-
-      // Update HNSW index size with actual index size
-      const indexSize = this.index.size()
-      await this.storage!.updateHnswIndexSize(indexSize)
-
-      // Update health metrics if in distributed mode
-      if (this.monitoring) {
-        const vectorCount = await this.getNounCount()
-        this.monitoring.updateVectorCount(vectorCount)
-      }
-
-      // If addToRemote is true and we're connected to a remote server, add to remote as well
-      if (options.addToRemote && this.isConnectedToRemoteServer()) {
-        try {
-          await this.addToRemote(id, vector, metadata)
-        } catch (remoteError) {
-          console.warn(
-            `Failed to add to remote server: ${remoteError}. Continuing with local add.`
-          )
-        }
-      }
-
-      // Invalidate search cache since data has changed
-      this.cache?.invalidateOnDataChange('add')
-
-      // Determine processing mode
-      const processingMode = options.process || 'auto'
-      let shouldProcessNeurally = false
-      
-      if (processingMode === 'neural') {
-        shouldProcessNeurally = true
-      } else if (processingMode === 'auto') {
-        // Auto-detect whether to use neural processing
-        shouldProcessNeurally = this.shouldAutoProcessNeurally(vectorOrData, metadata)
-      }
-      // 'literal' mode means no neural processing
-      
-      // 🧠 AI Processing (Neural Import) - Based on processing mode
-      if (shouldProcessNeurally) {
-        try {
-          // Execute augmentation pipeline for data processing
-          // Note: Augmentations will be called via this.augmentations.execute during the actual add operation
-          // This replaces the legacy SENSE pipeline
-          
-          if (this.loggingConfig?.verbose) {
-            console.log(`🧠 AI processing completed for data: ${id}`)
-          }
-        } catch (processingError) {
-          // Don't fail the add operation if processing fails
-          console.warn(`🧠 AI processing failed for ${id}:`, processingError)
-        }
-      }
-
-      return id
-    } catch (error) {
-      console.error('Failed to add vector:', error)
-
-      // Track error in health monitor
-      if (this.monitoring) {
-        this.monitoring.recordRequest(0, true)
-      }
-
-      throw new Error(`Failed to add vector: ${error}`)
-    }
-  }
 
   // REMOVED: addItem() - Use addNoun() instead (cleaner 2.0 API)
 
@@ -2488,14 +2117,15 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Array of IDs for the added items
    */
   /**
-   * Add multiple nouns in batch
-   * @param items Array of nouns to add
+   * Add multiple nouns in batch with required types
+   * @param items Array of nouns to add (all must have types)
    * @param options Batch processing options
    * @returns Array of generated IDs
    */
   public async addNouns(
     items: Array<{
       vectorOrData: Vector | any
+      nounType: NounType | string // Always required
       metadata?: T
     }>,
     options: {
@@ -2509,6 +2139,30 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
     // Check if database is in read-only mode
     this.checkReadOnly()
+
+    // Validate all types upfront for better error handling
+    const invalidItems: number[] = []
+    
+    items.forEach((item, index) => {
+      if (!item.nounType || typeof item.nounType !== 'string') {
+        invalidItems.push(index)
+      } else {
+        // Validate the type is valid
+        try {
+          validateNounType(item.nounType)
+        } catch (error) {
+          invalidItems.push(index)
+        }
+      }
+    })
+    
+    if (invalidItems.length > 0) {
+      throw new Error(
+        `Type validation failed for ${invalidItems.length} items at indices: ${invalidItems.slice(0, 5).join(', ')}${invalidItems.length > 5 ? '...' : ''}\n` +
+        'All items must have valid noun types.\n' +
+        'Example: { vectorOrData: "data", nounType: NounType.Content, metadata: {...} }'
+      )
+    }
 
     // Default concurrency to 4 if not specified
     const concurrency = options.concurrency || 4
@@ -2528,12 +2182,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         // Separate items that are already vectors from those that need embedding
         const vectorItems: Array<{
           vectorOrData: Vector
+          nounType: NounType | string
           metadata?: T
           index: number
         }> = []
 
         const textItems: Array<{
           text: string
+          nounType: NounType | string
           metadata?: T
           index: number
         }> = []
@@ -2548,6 +2204,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             // Item is already a vector
             vectorItems.push({
               vectorOrData: item.vectorOrData,
+              nounType: item.nounType,
               metadata: item.metadata,
               index
             })
@@ -2555,6 +2212,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             // Item is text that needs embedding
             textItems.push({
               text: item.vectorOrData,
+              nounType: item.nounType,
               metadata: item.metadata,
               index
             })
@@ -2564,6 +2222,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             const textRepresentation = String(item.vectorOrData)
             textItems.push({
               text: textRepresentation,
+              nounType: item.nounType,
               metadata: item.metadata,
               index
             })
@@ -2571,8 +2230,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
         })
 
         // Process vector items (already embedded)
-        const vectorPromises = vectorItems.map((item) =>
-          this.addNoun(item.vectorOrData, item.metadata)
+        const vectorPromises = vectorItems.map((item) => 
+          this.addNoun(item.vectorOrData, item.nounType!, item.metadata)
         )
 
         // Process text items in a single batch embedding operation
@@ -2585,8 +2244,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
           const embeddings = await batchEmbed(texts)
 
           // Add each item with its embedding
-          textPromises = textItems.map((item, i) =>
-            this.addNoun(embeddings[i], item.metadata)
+          textPromises = textItems.map((item, i) => 
+            this.addNoun(embeddings[i], item.nounType!, item.metadata)
           )
         }
 
@@ -2609,13 +2268,14 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
 
   /**
    * Add multiple vectors or data items to both local and remote databases
-   * @param items Array of items to add
+   * @param items Array of items to add (with required types)
    * @param options Additional options
    * @returns Array of IDs for the added items
    */
   public async addBatchToBoth(
     items: Array<{
       vectorOrData: Vector | any
+      nounType: NounType | string // Required
       metadata?: T
     }>,
     options: {
@@ -6487,8 +6147,13 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
             }
           }
 
+          // Extract type from metadata or default to Content
+          const nounType = (noun.metadata && typeof noun.metadata === 'object' && 'noun' in noun.metadata) 
+            ? (noun.metadata as any).noun 
+            : NounType.Content
+          
           // Add the noun with its vector and metadata (custom ID not supported)
-          await this.addNoun(noun.vector, noun.metadata)
+          await this.addNoun(noun.vector, nounType, noun.metadata)
           nounsRestored++
         } catch (error) {
           console.error(`Failed to restore noun ${noun.id}:`, error)
@@ -6681,8 +6346,8 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
           }
         }
 
-        // Add the noun
-        const id = await this.addNoun(metadata.description, metadata as T)
+        // Add the noun with explicit type
+        const id = await this.addNoun(metadata.description, nounType, metadata as T)
         nounIds.push(id)
       }
 
@@ -6918,8 +6583,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     // Use simple text for vectorization
     const searchableText = `Configuration setting for ${key}`
 
-    await this.addNoun(searchableText, {
-      nounType: NounType.State,
+    await this.addNoun(searchableText, NounType.State, {
       configKey: key,
       configValue: configValue,
       encrypted: !!options?.encrypt,
@@ -7078,18 +6742,370 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    * @returns Created noun ID
    */
   /**
-   * Add a noun to the database
+   * Add a noun to the database with required type
    * Clean 2.0 API - primary method for adding data
    * 
    * @param vectorOrData Vector array or data to embed
-   * @param metadata Metadata to store with the noun
+   * @param nounType Required noun type (one of 31 types)  
+   * @param metadata Optional metadata object
    * @returns The generated ID
    */
   public async addNoun(
     vectorOrData: Vector | any,
-    metadata?: T
+    nounType: NounType | string,
+    metadata?: T,
+    options: {
+      forceEmbed?: boolean // Force using the embedding function even if input is a vector
+      addToRemote?: boolean // Whether to also add to the remote server if connected
+      id?: string // Optional ID to use instead of generating a new one
+      service?: string // The service that is inserting the data
+      process?: 'auto' | 'literal' | 'neural' // Processing mode (default: 'auto')
+    } = {}
   ): Promise<string> {
-    return await this.add(vectorOrData, metadata)
+    // Validate noun type
+    const validatedType = validateNounType(nounType)
+    
+    // Enrich metadata with validated type
+    let enrichedMetadata = {
+      ...metadata,
+      noun: validatedType
+    } as T
+
+    await this.ensureInitialized()
+
+    // Check if database is in read-only mode
+    this.checkReadOnly()
+
+    // Validate input is not null or undefined
+    if (vectorOrData === null || vectorOrData === undefined) {
+      throw new Error('Input cannot be null or undefined')
+    }
+
+    try {
+      let vector: Vector
+
+      if (Array.isArray(vectorOrData)) {
+        for (let i = 0; i < vectorOrData.length; i++) {
+          if (typeof vectorOrData[i] !== 'number') {
+            throw new Error('Vector contains non-numeric values')
+          }
+        }
+      }
+
+      // Check if input is already a vector
+      if (Array.isArray(vectorOrData) && !options.forceEmbed) {
+        // Input is already a vector (and we've validated it contains only numbers)
+        vector = vectorOrData
+      } else {
+        // Input needs to be vectorized
+        try {
+          // Check if input is a JSON object and process it specially
+          if (
+            typeof vectorOrData === 'object' &&
+            vectorOrData !== null &&
+            !Array.isArray(vectorOrData)
+          ) {
+            // Process JSON object for better vectorization
+            const preparedText = prepareJsonForVectorization(vectorOrData, {
+              // Prioritize common name/title fields if they exist
+              priorityFields: [
+                'name',
+                'title',
+                'company',
+                'organization',
+                'description',
+                'summary'
+              ]
+            })
+            vector = await this.embeddingFunction(preparedText)
+
+            // IMPORTANT: When an object is passed as data and no metadata is provided,
+            // use the object AS the metadata too. This is expected behavior for the API.
+            // Users can pass either:
+            // 1. addNoun(string, metadata) - vectorize string, store metadata
+            // 2. addNoun(object) - vectorize object text, store object as metadata
+            // 3. addNoun(object, metadata) - vectorize object text, store provided metadata
+            if (!enrichedMetadata || Object.keys(enrichedMetadata).length === 1) { // Only has 'noun' key
+              enrichedMetadata = { ...vectorOrData, noun: validatedType } as T
+            }
+
+            // Track field names for this JSON document
+            const service = this.getServiceName(options)
+            if (this.storage) {
+              await this.storage.trackFieldNames(vectorOrData, service)
+            }
+          } else {
+            // Use standard embedding for non-JSON data
+            vector = await this.embeddingFunction(vectorOrData)
+          }
+        } catch (embedError) {
+          throw new Error(`Failed to vectorize data: ${embedError}`)
+        }
+      }
+
+      // Check if vector is defined
+      if (!vector) {
+        throw new Error('Vector is undefined or null')
+      }
+
+      // Validate vector dimensions
+      if (vector.length !== this._dimensions) {
+        throw new Error(
+          `Vector dimension mismatch: expected ${this._dimensions}, got ${vector.length}`
+        )
+      }
+
+      // Use ID from options if it exists, otherwise from metadata, otherwise generate a new UUID
+      const id =
+        options.id ||
+        (enrichedMetadata && typeof enrichedMetadata === 'object' && 'id' in enrichedMetadata
+          ? (enrichedMetadata as any).id
+          : uuidv4())
+
+      // Check for existing noun (both write-only and normal modes)
+      let existingNoun: HNSWNoun | undefined
+      if (options.id) {
+        try {
+          if (this.writeOnly) {
+            // In write-only mode, check storage directly
+            existingNoun =
+              (await this.storage!.getNoun(options.id)) ?? undefined
+          } else {
+            // In normal mode, check index first, then storage
+            existingNoun = this.index.getNouns().get(options.id)
+            if (!existingNoun) {
+              existingNoun =
+                (await this.storage!.getNoun(options.id)) ?? undefined
+            }
+          }
+
+          if (existingNoun) {
+            // Check if existing noun is a placeholder
+            const existingMetadata = await this.storage!.getMetadata(options.id)
+            const isPlaceholder =
+              existingMetadata &&
+              typeof existingMetadata === 'object' &&
+              (existingMetadata as any).isPlaceholder
+
+            if (isPlaceholder) {
+              // Replace placeholder with real data
+              if (this.loggingConfig?.verbose) {
+                console.log(
+                  `Replacing placeholder noun ${options.id} with real data`
+                )
+              }
+            } else {
+              // Real noun already exists, update it
+              if (this.loggingConfig?.verbose) {
+                console.log(`Updating existing noun ${options.id}`)
+              }
+            }
+          }
+        } catch (storageError) {
+          // Item doesn't exist, continue with add operation
+        }
+      }
+
+      let noun: HNSWNoun
+
+      // In write-only mode, skip index operations since index is not loaded
+      if (this.writeOnly) {
+        // Create noun object directly without adding to index
+        noun = {
+          id,
+          vector,
+          connections: new Map(),
+          level: 0, // Default level for new nodes
+          metadata: undefined // Will be set separately
+        }
+      } else {
+        // Normal mode: Add to HNSW index first
+        await this.hnswIndex.addItem({ id, vector, metadata: enrichedMetadata })
+
+        // Get the noun from the HNSW index
+        const indexNoun = this.hnswIndex.getNouns().get(id)
+        if (!indexNoun) {
+          throw new Error(`Failed to retrieve newly created noun with ID ${id}`)
+        }
+        noun = indexNoun
+      }
+
+      // Save noun to storage using augmentation system
+      await this.augmentations.execute('saveNoun', { noun, options }, async () => {
+        await this.storage!.saveNoun(noun)
+        const service = this.getServiceName(options)
+        await this.storage!.incrementStatistic('noun', service)
+      })
+
+      // Save metadata if provided and not empty
+      if (enrichedMetadata !== undefined) {
+        // Skip saving if metadata is an empty object
+        if (
+          enrichedMetadata &&
+          typeof enrichedMetadata === 'object' &&
+          Object.keys(enrichedMetadata).length === 0
+        ) {
+          // Don't save empty metadata
+          // Explicitly save null to ensure no metadata is stored
+          await this.storage!.saveMetadata(id, null)
+        } else {
+          // Validate noun type if metadata is for a GraphNoun
+          if (enrichedMetadata && typeof enrichedMetadata === 'object' && 'noun' in enrichedMetadata) {
+            const nounType = (enrichedMetadata as unknown as GraphNoun).noun
+
+            // Check if the noun type is valid
+            const isValidNounType = Object.values(NounType).includes(nounType)
+
+            if (!isValidNounType) {
+              console.warn(
+                `Invalid noun type: ${nounType}. Falling back to GraphNoun.`
+              )
+              // Set a default noun type
+              ;(enrichedMetadata as unknown as GraphNoun).noun = NounType.Concept
+            }
+
+            // Ensure createdBy field is populated for GraphNoun
+            const service = options.service || this.getCurrentAugmentation()
+            const graphNoun = enrichedMetadata as unknown as GraphNoun
+
+            // Only set createdBy if it doesn't exist or is being explicitly updated
+            if (!graphNoun.createdBy || options.service) {
+              graphNoun.createdBy = getAugmentationVersion(service)
+            }
+
+            // Update timestamps
+            const now = new Date()
+            const timestamp = {
+              seconds: Math.floor(now.getTime() / 1000),
+              nanoseconds: (now.getTime() % 1000) * 1000000
+            }
+
+            // Set createdAt if it doesn't exist
+            if (!graphNoun.createdAt) {
+              graphNoun.createdAt = timestamp
+            }
+
+            // Always update updatedAt
+            graphNoun.updatedAt = timestamp
+          }
+
+          // Create properly namespaced metadata for new items
+          let metadataToSave = createNamespacedMetadata(enrichedMetadata)
+
+          // Add domain metadata if distributed mode is enabled
+          if (this.domainDetector) {
+            // First check if domain is already in metadata
+            if ((metadataToSave as any).domain) {
+              // Domain already specified, keep it
+              const domainInfo =
+                this.domainDetector.detectDomain(metadataToSave)
+              if (domainInfo.domainMetadata) {
+                ;(metadataToSave as any).domainMetadata =
+                  domainInfo.domainMetadata
+              }
+            } else {
+              // Try to detect domain from the data
+              const dataToAnalyze = Array.isArray(vectorOrData)
+                ? enrichedMetadata
+                : vectorOrData
+              const domainInfo =
+                this.domainDetector.detectDomain(dataToAnalyze)
+              if (domainInfo.domain) {
+                ;(metadataToSave as any).domain = domainInfo.domain
+                if (domainInfo.domainMetadata) {
+                  ;(metadataToSave as any).domainMetadata =
+                    domainInfo.domainMetadata
+                }
+              }
+            }
+          }
+
+          // Add partition information if distributed mode is enabled
+          if (this.partitioner) {
+            const partition = this.partitioner.getPartition(id)
+            ;(metadataToSave as any).partition = partition
+          }
+
+          await this.storage!.saveMetadata(id, metadataToSave)
+
+          // Update metadata index (write-only mode should build indices!)
+          if (this.index && !this.frozen) {
+            await this.metadataIndex?.addToIndex?.(id, metadataToSave)
+          }
+
+          // Track metadata statistics
+          const metadataService = this.getServiceName(options)
+          await this.storage!.incrementStatistic('metadata', metadataService)
+
+          // Content type tracking removed - metrics system not initialized
+
+          // Track update timestamp (handled by metrics augmentation)
+        }
+      }
+
+      // Update HNSW index size with actual index size
+      const indexSize = this.index.size()
+      await this.storage!.updateHnswIndexSize(indexSize)
+
+      // Update health metrics if in distributed mode
+      if (this.monitoring) {
+        const vectorCount = await this.getNounCount()
+        this.monitoring.updateVectorCount(vectorCount)
+      }
+
+      // If addToRemote is true and we're connected to a remote server, add to remote as well
+      if (options.addToRemote && this.isConnectedToRemoteServer()) {
+        try {
+          await this.addToRemote(id, vector, enrichedMetadata)
+        } catch (remoteError) {
+          console.warn(
+            `Failed to add to remote server: ${remoteError}. Continuing with local add.`
+          )
+        }
+      }
+
+      // Invalidate search cache since data has changed
+      this.cache?.invalidateOnDataChange('add')
+
+      // Determine processing mode
+      const processingMode = options.process || 'auto'
+      let shouldProcessNeurally = false
+      
+      if (processingMode === 'neural') {
+        shouldProcessNeurally = true
+      } else if (processingMode === 'auto') {
+        // Auto-detect whether to use neural processing
+        shouldProcessNeurally = this.shouldAutoProcessNeurally(vectorOrData, enrichedMetadata)
+      }
+      // 'literal' mode means no neural processing
+      
+      // 🧠 AI Processing (Neural Import) - Based on processing mode
+      if (shouldProcessNeurally) {
+        try {
+          // Execute augmentation pipeline for data processing
+          // Note: Augmentations will be called via this.augmentations.execute during the actual add operation
+          // This replaces the legacy SENSE pipeline
+          
+          if (this.loggingConfig?.verbose) {
+            console.log(`🧠 AI processing completed for data: ${id}`)
+          }
+        } catch (processingError) {
+          // Don't fail the add operation if processing fails
+          console.warn(`🧠 AI processing failed for ${id}:`, processingError)
+        }
+      }
+
+      return id
+    } catch (error) {
+      console.error('Failed to add vector:', error)
+
+      // Track error in health monitor
+      if (this.monitoring) {
+        this.monitoring.recordRequest(0, true)
+      }
+
+      throw new Error(`Failed to add vector: ${error}`)
+    }
   }
 
   /**
@@ -7516,11 +7532,11 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }
 
     // Store coordination plan in _system directory
-    await this.addNoun({
+    await this.addNoun('Cortex coordination plan', NounType.Process, {
       id: '_system/coordination',
       type: 'cortex_coordination',
-      metadata: coordinationPlan
-    })
+      ...coordinationPlan
+    } as T)
 
     prodLog.info('📋 Storage migration coordination plan created')
     prodLog.info('All services will automatically detect and execute the migration')

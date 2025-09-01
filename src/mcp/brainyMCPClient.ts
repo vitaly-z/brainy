@@ -122,7 +122,7 @@ export class BrainyMCPClient {
     // Store in Brainy for persistent memory
     if (this.brainy && message.type === 'message') {
       try {
-        await this.brainy.add({
+        await this.brainy.addNoun({
           text: `${message.from}: ${JSON.stringify(message.data)}`,
           metadata: {
             messageId: message.id,
@@ -132,7 +132,7 @@ export class BrainyMCPClient {
             type: message.type,
             event: message.event
           }
-        })
+        }, 'Message')
       } catch (error) {
         console.error('Error storing message in Brainy:', error)
       }
@@ -145,10 +145,10 @@ export class BrainyMCPClient {
       // Store history in Brainy
       if (this.brainy) {
         for (const histMsg of message.data.history) {
-          await this.brainy.add({
+          await this.brainy.addNoun({
             text: `${histMsg.from}: ${JSON.stringify(histMsg.data)}`,
             metadata: histMsg
-          })
+          }, 'Message')
         }
       }
     }

@@ -666,7 +666,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Save verb metadata to storage
    */
-  public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
     const fileName = `${id}.json`
@@ -703,7 +703,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Save noun metadata to storage
    */
-  public async saveNounMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
     const fileName = `${id}.json`

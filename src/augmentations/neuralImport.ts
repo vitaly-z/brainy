@@ -11,7 +11,7 @@ import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import * as fs from '../universal/fs.js'
 import * as path from '../universal/path.js'
-import { IntelligentTypeMatcher, getTypeMatcher } from './typeMatching/intelligentTypeMatcher.js'
+import { BrainyTypes, getBrainyTypes } from './typeMatching/brainyTypes.js'
 import { prodLog } from '../utils/logger.js'
 
 // Neural Import Analysis Types
@@ -74,7 +74,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   
   private config: NeuralImportConfig
   private analysisCache = new Map<string, NeuralAnalysisResult>()
-  private typeMatcher: IntelligentTypeMatcher | null = null
+  private typeMatcher: BrainyTypes | null = null
 
   constructor(config: Partial<NeuralImportConfig> = {}) {
     super()
@@ -89,7 +89,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
 
   protected async onInitialize(): Promise<void> {
     try {
-      this.typeMatcher = await getTypeMatcher()
+      this.typeMatcher = await getBrainyTypes()
       this.log('🧠 Neural Import augmentation initialized with intelligent type matching')
     } catch (error) {
       this.log('⚠️ Failed to initialize type matcher, falling back to heuristics', 'warn')
@@ -460,7 +460,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   private async inferNounType(obj: any): Promise<string> {
     if (!this.typeMatcher) {
       // Initialize type matcher if not available
-      this.typeMatcher = await getTypeMatcher()
+      this.typeMatcher = await getBrainyTypes()
     }
     
     const result = await this.typeMatcher.matchNounType(obj)
@@ -516,7 +516,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   private async inferVerbType(fieldName: string, sourceObj?: any, targetObj?: any): Promise<string> {
     if (!this.typeMatcher) {
       // Initialize type matcher if not available
-      this.typeMatcher = await getTypeMatcher()
+      this.typeMatcher = await getBrainyTypes()
     }
     
     const result = await this.typeMatcher.matchVerbType(sourceObj, targetObj, fieldName)

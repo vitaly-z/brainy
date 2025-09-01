@@ -12,7 +12,7 @@ const brain = new BrainyData()  // Zero config!
 await brain.init()
 
 // Add data (text auto-embeds!)
-await brain.addNoun('The future of AI is here')
+await brain.addNoun('The future of AI is here', 'content')
 
 // Search with Triple Intelligence
 const results = await brain.find({
@@ -322,9 +322,9 @@ const articles = await brain.find({
 ### Creating Knowledge Graphs
 ```typescript
 // Add entities
-const ai = await brain.addNoun('Artificial Intelligence')
-const ml = await brain.addNoun('Machine Learning')
-const dl = await brain.addNoun('Deep Learning')
+const ai = await brain.addNoun('Artificial Intelligence', 'concept')
+const ml = await brain.addNoun('Machine Learning', 'concept')
+const dl = await brain.addNoun('Deep Learning', 'concept')
 
 // Create relationships
 await brain.addVerb(ml, ai, 'subset_of')

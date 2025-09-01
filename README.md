@@ -44,13 +44,13 @@ const brain = new BrainyData()
 await brain.init()
 
 // Add entities (nouns) with automatic embedding
-const jsId = await brain.addNoun("JavaScript is a programming language", { 
+const jsId = await brain.addNoun("JavaScript is a programming language", 'concept', { 
   type: "language", 
   year: 1995,
   paradigm: "multi-paradigm"
 })
 
-const nodeId = await brain.addNoun("Node.js runtime environment", {
+const nodeId = await brain.addNoun("Node.js runtime environment", 'concept', {
   type: "runtime",
   year: 2009,
   platform: "server-side"
@@ -225,7 +225,7 @@ const results = await brain.find({
 ### CRUD Operations
 ```javascript
 // Create entities (nouns)
-const id = await brain.addNoun(data, metadata)
+const id = await brain.addNoun(data, nounType, metadata)
 
 // Create relationships (verbs)
 const verbId = await brain.addVerb(sourceId, targetId, "relationType", {
@@ -255,18 +255,18 @@ const exported = await brain.export({ format: 'json' })
 ### Knowledge Management with Relationships
 ```javascript
 // Store documentation with rich relationships
-const apiGuide = await brain.addNoun("REST API Guide", {
+const apiGuide = await brain.addNoun("REST API Guide", 'document', {
   title: "API Guide",
   category: "documentation",
   version: "2.0"
 })
 
-const author = await brain.addNoun("Jane Developer", {
+const author = await brain.addNoun("Jane Developer", 'person', {
   type: "person",
   role: "tech-lead"
 })
 
-const project = await brain.addNoun("E-commerce Platform", {
+const project = await brain.addNoun("E-commerce Platform", 'project', {
   type: "project",
   status: "active"
 })
@@ -295,18 +295,18 @@ const similar = await brain.search(existingContent, {
 ### AI Memory Layer with Context
 ```javascript
 // Store conversation with relationships
-const userId = await brain.addNoun("User 123", {
+const userId = await brain.addNoun("User 123", 'user', {
   type: "user",
   tier: "premium"
 })
 
-const messageId = await brain.addNoun(userMessage, {
+const messageId = await brain.addNoun(userMessage, 'message', {
   type: "message",
   timestamp: Date.now(),
   session: "abc"
 })
 
-const topicId = await brain.addNoun("Product Support", {
+const topicId = await brain.addNoun("Product Support", 'topic', {
   type: "topic",
   category: "support"
 })
@@ -431,7 +431,7 @@ for (const cluster of feedbackClusters) {
 }
 
 // Find related documents
-const docId = await brain.addNoun("Machine learning guide")
+const docId = await brain.addNoun("Machine learning guide", 'document')
 const similar = await neural.neighbors(docId, 5)
 // Returns 5 most similar documents
 

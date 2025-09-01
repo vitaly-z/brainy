@@ -8,6 +8,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import { readFileSync, writeFileSync } from 'fs'
 import { BrainyData } from '../../brainyData.js'
+import { BrainyTypes, NounType, VerbType } from '../../index.js'
 
 interface CoreOptions {
   verbose?: boolean
@@ -85,12 +86,36 @@ export const coreCommands = {
         metadata.id = options.id
       }
       
+      // Determine noun type
+      let nounType: NounType
       if (options.type) {
-        metadata.type = options.type
+        // Validate provided type
+        if (!BrainyTypes.isValidNoun(options.type)) {
+          spinner.fail(`Invalid noun type: ${options.type}`)
+          console.log(chalk.dim('Run "brainy types --noun" to see valid types'))
+          process.exit(1)
+        }
+        nounType = options.type as NounType
+      } else {
+        // Use AI to suggest type
+        spinner.text = 'Detecting type with AI...'
+        const suggestion = await BrainyTypes.suggestNoun(
+          typeof text === 'string' ? { content: text, ...metadata } : text
+        )
+        
+        if (suggestion.confidence < 0.6) {
+          spinner.fail('Could not determine type with confidence')
+          console.log(chalk.yellow(`Suggestion: ${suggestion.type} (${(suggestion.confidence * 100).toFixed(1)}%)`)))
+          console.log(chalk.dim('Use --type flag to specify explicitly'))
+          process.exit(1)
+        }
+        
+        nounType = suggestion.type as NounType
+        spinner.text = `Using detected type: ${nounType}`
       }
       
-      // Smart detection by default
-      const result = await brain.add(text, metadata)
+      // Add with explicit type
+      const result = await brain.addNoun(text, nounType, metadata)
       
       spinner.succeed('Added successfully')
       
@@ -312,13 +337,28 @@ export const coreCommands = {
         const batch = items.slice(i, i + batchSize)
         
         for (const item of batch) {
+          let content: string
+          let metadata: any = {}
+          
           if (typeof item === 'string') {
-            await brain.add(item)
+            content = item
           } else if (item.content || item.text) {
-            await brain.add(item.content || item.text, item.metadata || item)
+            content = item.content || item.text
+            metadata = item.metadata || item
           } else {
-            await brain.add(JSON.stringify(item), { originalData: item })
+            content = JSON.stringify(item)
+            metadata = { originalData: item }
           }
+          
+          // Use AI to detect type for each item
+          const suggestion = await BrainyTypes.suggestNoun(
+            typeof content === 'string' ? { content, ...metadata } : content
+          )
+          
+          // Use suggested type or default to Content if low confidence
+          const nounType = suggestion.confidence >= 0.5 ? suggestion.type : NounType.Content
+          
+          await brain.addNoun(content, nounType as NounType, metadata)
           imported++
         }
         

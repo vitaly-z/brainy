@@ -64,8 +64,8 @@ const id = await brain.addNoun("The quick brown fox jumps over the lazy dog", {
 console.log(`Added noun with ID: ${id}`)
 
 // Add relationships (verbs) between entities
-const sourceId = await brain.addNoun("John Smith")
-const targetId = await brain.addNoun("TechCorp")
+const sourceId = await brain.addNoun("John Smith", 'person')
+const targetId = await brain.addNoun("TechCorp", 'organization')
 await brain.addVerb(sourceId, targetId, "works_at", {
   position: "Engineer",
   since: "2024"
@@ -140,8 +140,8 @@ const interactionId = await brain.addNoun("user viewed product", {
 })
 
 // Create relationships between users and products
-const userId = await brain.addNoun("user123")
-const productId = await brain.addNoun("product456")
+const userId = await brain.addNoun("user123", 'user')
+const productId = await brain.addNoun("product456", 'product')
 await brain.addVerb(userId, productId, "viewed", {
   timestamp: Date.now()
 })

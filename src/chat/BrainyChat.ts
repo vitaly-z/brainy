@@ -110,8 +110,8 @@ export class BrainyChat {
       }
     }
 
-    // Store session using BrainyData add() method
-    await this.brainy.add(
+    // Store session using BrainyData addNoun() method
+    await this.brainy.addNoun(
       {
         sessionType: 'chat',
         title: title || `Chat Session ${new Date().toLocaleDateString()}`,
@@ -120,9 +120,9 @@ export class BrainyChat {
         messageCount: session.messageCount,
         participants: session.participants
       },
+      NounType.Concept,  // Chat sessions are concepts
       {
         id: sessionId,
-        nounType: NounType.Concept,
         sessionType: 'chat'
       }
     )
@@ -157,8 +157,8 @@ export class BrainyChat {
       metadata
     }
 
-    // Store message using BrainyData add() method
-    await this.brainy.add(
+    // Store message using BrainyData addNoun() method
+    await this.brainy.addNoun(
       {
         messageType: 'chat',
         content,
@@ -167,9 +167,9 @@ export class BrainyChat {
         timestamp: timestamp.toISOString(),
         ...metadata
       },
+      NounType.Message,  // Chat messages are Message type
       {
         id: messageId,
-        nounType: NounType.Message,
         messageType: 'chat',
         sessionId: this.currentSessionId!,
         speaker
@@ -352,14 +352,14 @@ export class BrainyChat {
 
     try {
       // Since BrainyData doesn't have update, add an archive marker
-      await this.brainy.add(
+      await this.brainy.addNoun(
         {
           archivedSessionId: sessionId,
           archivedAt: new Date().toISOString(),
           action: 'archive'
         },
+        NounType.State,  // Archive markers are State
         {
-          nounType: NounType.State,
           sessionId,
           archived: true
         }

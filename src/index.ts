@@ -450,14 +450,22 @@ export type {
 // Export type utility functions
 import { getNounTypes, getVerbTypes, getNounTypeMap, getVerbTypeMap } from './utils/typeUtils.js'
 
+// Export BrainyTypes for complete type management
+import { BrainyTypes, TypeSuggestion, suggestType } from './utils/brainyTypes.js'
+
 export { 
   NounType, 
   VerbType,
   getNounTypes,
   getVerbTypes,
   getNounTypeMap,
-  getVerbTypeMap
+  getVerbTypeMap,
+  // BrainyTypes - complete type management
+  BrainyTypes,
+  suggestType
 }
+
+export type { TypeSuggestion }
 
 // Export MCP (Model Control Protocol) components
 import {

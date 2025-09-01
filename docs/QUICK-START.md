@@ -34,10 +34,10 @@ That's it! No configuration needed. Brainy automatically:
 
 ```javascript
 // Add a simple string
-await brain.addNoun("JavaScript is a versatile programming language")
+await brain.addNoun("JavaScript is a versatile programming language", 'concept')
 
 // Add with metadata
-await brain.addNoun("React is a JavaScript library", {
+await brain.addNoun("React is a JavaScript library", 'concept', {
   type: "library",
   category: "frontend",
   popularity: "high"
@@ -48,7 +48,7 @@ await brain.addNoun({
   title: "Introduction to TypeScript",
   content: "TypeScript adds static typing to JavaScript",
   author: "John Doe"
-}, {
+}, 'document', {
   type: "article",
   date: "2024-01-15"
 })
