@@ -89,7 +89,7 @@ import { EntityRegistryAugmentation, AutoRegisterEntitiesAugmentation } from './
 import { createDefaultAugmentations } from './augmentations/defaultAugmentations.js'
 // import { RealtimeStreamingAugmentation } from './augmentations/realtimeStreamingAugmentation.js'
 import { IntelligentVerbScoringAugmentation } from './augmentations/intelligentVerbScoringAugmentation.js'
-import { NeuralAPI } from './neural/neuralAPI.js'
+import { ImprovedNeuralAPI } from './neural/improvedNeuralAPI.js'
 import { TripleIntelligenceEngine, TripleQuery, TripleResult } from './triple/TripleIntelligence.js'
 
 export interface BrainyDataConfig {
@@ -567,7 +567,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Neural similarity API for semantic operations
    */
-  private _neural?: any // Lazy loaded
+  private _neural?: ImprovedNeuralAPI // Lazy loaded
   private _tripleEngine?: TripleIntelligenceEngine // Lazy loaded Triple Intelligence
   private _nlpProcessor?: any // Lazy loaded Natural Language Processor
   private _importManager?: any // Lazy loaded Import Manager
@@ -4347,10 +4347,24 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
     }>
   ): Promise<string[]> {
     const ids: string[] = []
-    for (const verb of verbs) {
-      const id = await this.addVerb(verb.source, verb.target, verb.type as VerbType, verb.metadata)
-      ids.push(id)
+    const chunkSize = 10 // Conservative chunk size for parallel processing
+    
+    // Process verbs in parallel chunks to improve performance
+    for (let i = 0; i < verbs.length; i += chunkSize) {
+      const chunk = verbs.slice(i, i + chunkSize)
+      
+      // Process chunk in parallel
+      const chunkPromises = chunk.map(verb => 
+        this.addVerb(verb.source, verb.target, verb.type as VerbType, verb.metadata)
+      )
+      
+      // Wait for all in chunk to complete
+      const chunkIds = await Promise.all(chunkPromises)
+      
+      // Maintain order by adding chunk results
+      ids.push(...chunkIds)
     }
+    
     return ids
   }
   
@@ -4361,9 +4375,22 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    */
   public async deleteVerbs(ids: string[]): Promise<boolean[]> {
     const results: boolean[] = []
-    for (const id of ids) {
-      results.push(await this.deleteVerb(id))
+    const chunkSize = 10 // Conservative chunk size for parallel processing
+    
+    // Process deletions in parallel chunks to improve performance
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      
+      // Process chunk in parallel
+      const chunkPromises = chunk.map(id => this.deleteVerb(id))
+      
+      // Wait for all in chunk to complete
+      const chunkResults = await Promise.all(chunkPromises)
+      
+      // Maintain order by adding chunk results
+      results.push(...chunkResults)
     }
+    
     return results
   }
   
@@ -7788,9 +7815,22 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
    */
   public async deleteNouns(ids: string[]): Promise<boolean[]> {
     const results: boolean[] = []
-    for (const id of ids) {
-      results.push(await this.deleteNoun(id))
+    const chunkSize = 10 // Conservative chunk size for parallel processing
+    
+    // Process deletions in parallel chunks to improve performance
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      
+      // Process chunk in parallel
+      const chunkPromises = chunk.map(id => this.deleteNoun(id))
+      
+      // Wait for all in chunk to complete
+      const chunkResults = await Promise.all(chunkPromises)
+      
+      // Maintain order by adding chunk results
+      results.push(...chunkResults)
     }
+    
     return results
   }
   
@@ -8001,7 +8041,7 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   get neural() {
     if (!this._neural) {
       // Create the unified Neural API instance
-      this._neural = new NeuralAPI(this)
+      this._neural = new ImprovedNeuralAPI(this)
     }
     return this._neural
   }
@@ -8010,30 +8050,37 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   /**
    * Simple similarity check (shorthand for neural.similar)
    */
-  async similar(a: any, b: any): Promise<number> {
-    return this.neural.similar(a, b)
+  async similar(a: any, b: any, options?: any): Promise<number> {
+    const result = await this.neural.similar(a, b, options)
+    // Always return simple number for main class shortcut
+    return typeof result === 'object' ? result.score : result
   }
   
   /**
    * Get semantic clusters (shorthand for neural.clusters)
    */
-  async clusters(options?: any): Promise<any[]> {
-    return this.neural.clusters(options)
+  async clusters(items?: any, options?: any): Promise<any[]> {
+    // Support both (items, options) and (options) patterns
+    if (typeof items === 'object' && !Array.isArray(items) && options === undefined) {
+      // First argument is options object
+      return this.neural.clusters(items)
+    }
+    // Standard (items, options) pattern
+    if (options) {
+      return this.neural.clusters({ ...options, items })
+    }
+    return this.neural.clusters(items)
   }
   
   /**
    * Get related items (shorthand for neural.neighbors)
    */
-  async related(id: string, limit?: number): Promise<any[]> {
-    const result = await this.neural.neighbors(id, { limit })
-    return result.neighbors
-  }
-  
-  /**
-   * Get visualization data (shorthand for neural.visualize)
-   */
-  async visualize(options?: any): Promise<any> {
-    return this.neural.visualize(options)
+  async related(id: string, options?: any): Promise<any[]> {
+    const limit = typeof options === 'number' ? options : options?.limit
+    const fullOptions = typeof options === 'number' ? { limit } : options
+    
+    const result = await this.neural.neighbors(id, fullOptions)
+    return result.neighbors || []
   }
 
   /**
