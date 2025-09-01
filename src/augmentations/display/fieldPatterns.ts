@@ -255,7 +255,7 @@ export function getFieldPatterns(entityType: 'noun' | 'verb', specificType?: str
 
 /**
  * Priority fields for different entity types (for AI analysis)
- * Used by the IntelligentTypeMatcher and neural processing
+ * Used by the BrainyTypes and neural processing
  */
 export const TYPE_PRIORITY_FIELDS: Record<string, string[]> = {
   [NounType.Person]: [

@@ -22,11 +22,11 @@ export interface BrainyDataInterface<T = unknown> {
   /**
    * Add a noun (entity with vector and metadata) to the database
    * @param data Text string or vector representation (will auto-embed strings)
+   * @param nounType Required noun type (one of 31 types)
    * @param metadata Optional metadata to associate with the noun
-   * @param options Optional configuration including custom ID
    * @returns The ID of the added noun
    */
-  addNoun(data: string | Vector, metadata?: T, options?: { id?: string; [key: string]: any }): Promise<string>
+  addNoun(data: string | Vector, nounType: string, metadata?: T): Promise<string>
 
   /**
    * Search for text in the database

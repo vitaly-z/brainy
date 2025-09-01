@@ -531,9 +531,9 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Save noun metadata to storage
+   * Save noun metadata to storage (internal implementation)
    */
-  public async saveNounMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
     this.nounMetadata.set(id, JSON.parse(JSON.stringify(metadata)))
   }
 
@@ -550,9 +550,9 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Save verb metadata to storage
+   * Save verb metadata to storage (internal implementation)
    */
-  public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
     this.verbMetadata.set(id, JSON.parse(JSON.stringify(metadata)))
   }
 

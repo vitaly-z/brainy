@@ -1880,7 +1880,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Save verb metadata to storage
    */
-  public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
     try {
@@ -1970,7 +1970,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Save noun metadata to storage
    */
-  public async saveNounMetadata(id: string, metadata: any): Promise<void> {
+  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
     try {

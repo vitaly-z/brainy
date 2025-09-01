@@ -5,6 +5,8 @@
 
 import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../coreTypes.js'
 import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
+import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
+import { NounType, VerbType } from '../types/graphTypes.js'
 
 // Common directory/prefix names
 // Option A: Entity-Based Directory Structure
@@ -81,6 +83,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async saveNoun(noun: HNSWNoun): Promise<void> {
     await this.ensureInitialized()
+    // Validate noun type before saving - storage boundary protection
+    const metadata = await this.getNounMetadata(noun.id)
+    if (metadata?.noun) {
+      validateNounType(metadata.noun)
+    }
     return this.saveNoun_internal(noun)
   }
 
@@ -115,6 +122,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async saveVerb(verb: GraphVerb): Promise<void> {
     await this.ensureInitialized()
+    
+    // Validate verb type before saving - storage boundary protection
+    if (verb.verb) {
+      validateVerbType(verb.verb)
+    }
     
     // Extract the lightweight HNSWVerb data
     const hnswVerb: HNSWVerb = {
@@ -635,7 +647,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Save noun metadata to storage
    * This method should be implemented by each specific adapter
    */
-  public abstract saveNounMetadata(id: string, metadata: any): Promise<void>
+  public async saveNounMetadata(id: string, metadata: any): Promise<void> {
+    // Validate noun type in metadata - storage boundary protection
+    if (metadata?.noun) {
+      validateNounType(metadata.noun)
+    }
+    return this.saveNounMetadata_internal(id, metadata)
+  }
+
+  /**
+   * Internal method for saving noun metadata
+   * This method should be implemented by each specific adapter
+   */
+  protected abstract saveNounMetadata_internal(id: string, metadata: any): Promise<void>
 
   /**
    * Get noun metadata from storage
@@ -647,7 +671,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Save verb metadata to storage
    * This method should be implemented by each specific adapter
    */
-  public abstract saveVerbMetadata(id: string, metadata: any): Promise<void>
+  public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
+    // Validate verb type in metadata - storage boundary protection
+    if (metadata?.verb) {
+      validateVerbType(metadata.verb)
+    }
+    return this.saveVerbMetadata_internal(id, metadata)
+  }
+
+  /**
+   * Internal method for saving verb metadata
+   * This method should be implemented by each specific adapter
+   */
+  protected abstract saveVerbMetadata_internal(id: string, metadata: any): Promise<void>
 
   /**
    * Get verb metadata from storage

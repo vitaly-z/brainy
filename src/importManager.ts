@@ -12,7 +12,7 @@
 
 import { NounType, VerbType } from './types/graphTypes.js'
 import { NeuralImportAugmentation } from './augmentations/neuralImport.js'
-import { IntelligentTypeMatcher } from './augmentations/typeMatching/intelligentTypeMatcher.js'
+import { BrainyTypes } from './augmentations/typeMatching/brainyTypes.js'
 import * as fs from './universal/fs.js'
 import * as path from './universal/path.js'
 import { prodLog } from './utils/logger.js'
@@ -54,7 +54,7 @@ export interface ImportResult {
 
 export class ImportManager {
   private neuralImport: NeuralImportAugmentation
-  private typeMatcher: IntelligentTypeMatcher | null = null
+  private typeMatcher: BrainyTypes | null = null
   private brain: any // BrainyData instance
   
   constructor(brain: any) {
@@ -84,8 +84,8 @@ export class ImportManager {
     await this.neuralImport.initialize(context as any)
     
     // Get type matcher
-    const { getTypeMatcher } = await import('./augmentations/typeMatching/intelligentTypeMatcher.js')
-    this.typeMatcher = await getTypeMatcher()
+    const { getBrainyTypes } = await import('./augmentations/typeMatching/brainyTypes.js')
+    this.typeMatcher = await getBrainyTypes()
   }
   
   /**

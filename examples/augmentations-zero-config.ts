@@ -25,7 +25,7 @@ async function main() {
   await brain.init()
   
   // Use Brainy normally - augmentations work transparently
-  await brain.add("Hello world", { type: "greeting" })
+  await brain.addNoun("Hello world", 'Content', { type: "greeting" })
   
   // Batch operations automatically optimized
   await brain.addBatch([

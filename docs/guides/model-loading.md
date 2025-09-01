@@ -302,7 +302,7 @@ const response = await openai.embeddings.create({
 // After: Local Brainy embeddings
 const brain = new BrainyData()
 await brain.init() // One-time setup
-const id = await brain.add("Your text") // Embedded automatically
+const id = await brain.addNoun("Your text", 'content') // Embedded automatically
 ```
 
 ### From Sentence Transformers
