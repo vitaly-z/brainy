@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { BrainyData } from '../src/index.js'
-import { NeuralAPI } from '../src/neural/neuralAPI.js'
+import { ImprovedNeuralAPI } from '../src/neural/improvedNeuralAPI.js'
 
 describe('Neural Clustering and Analysis', () => {
   let db: BrainyData | null = null
-  let neural: NeuralAPI | null = null
+  let neural: ImprovedNeuralAPI | null = null
   
   // Helper to create test vectors with semantic meaning
   const createTestVector = (seed: number = 0, category: 'tech' | 'food' | 'travel' = 'tech') => {
@@ -17,7 +17,7 @@ describe('Neural Clustering and Analysis', () => {
   beforeEach(async () => {
     db = new BrainyData()
     await db.init()
-    neural = new NeuralAPI(db)
+    neural = new ImprovedNeuralAPI(db)
   })
   
   afterEach(async () => {
@@ -44,19 +44,19 @@ describe('Neural Clustering and Analysis', () => {
     })
     
     it('should calculate similarity between IDs', async () => {
-      const similarity = await neural!.similarity('tech1', 'tech2')
+      const similarity = await neural!.similar('tech1', 'tech2')
       
       expect(typeof similarity).toBe('number')
       expect(similarity).toBeGreaterThan(0)
       expect(similarity).toBeLessThanOrEqual(1)
       
       // Tech items should be more similar to each other
-      const crossCategorySim = await neural!.similarity('tech1', 'food1')
+      const crossCategorySim = await neural!.similar('tech1', 'food1')
       expect(similarity).toBeGreaterThan(crossCategorySim)
     })
     
     it('should calculate similarity between text strings', async () => {
-      const similarity = await neural!.similarity(
+      const similarity = await neural!.similar(
         'JavaScript programming',
         'TypeScript development'
       )
@@ -69,14 +69,14 @@ describe('Neural Clustering and Analysis', () => {
       const vector1 = createTestVector(10, 'tech')
       const vector2 = createTestVector(11, 'tech')
       
-      const similarity = await neural!.similarity(vector1, vector2)
+      const similarity = await neural!.similar(vector1, vector2)
       
       expect(typeof similarity).toBe('number')
       expect(similarity).toBeGreaterThan(0.8) // Similar vectors
     })
     
     it('should return detailed similarity result when requested', async () => {
-      const result = await neural!.similarity('tech1', 'tech2', { detailed: true })
+      const result = await neural!.similar('tech1', 'tech2', { detailed: true })
       
       expect(typeof result).toBe('object')
       if (typeof result === 'object') {
@@ -333,12 +333,12 @@ describe('Neural Clustering and Analysis', () => {
       
       // First calculation
       const start1 = performance.now()
-      const sim1 = await neural!.similarity('item1', 'item2')
+      const sim1 = await neural!.similar('item1', 'item2')
       const time1 = performance.now() - start1
       
       // Second calculation (should be cached)
       const start2 = performance.now()
-      const sim2 = await neural!.similarity('item1', 'item2')
+      const sim2 = await neural!.similar('item1', 'item2')
       const time2 = performance.now() - start2
       
       expect(sim1).toBe(sim2)
@@ -368,12 +368,12 @@ describe('Neural Clustering and Analysis', () => {
   
   describe('Error Handling', () => {
     it('should handle invalid IDs gracefully', async () => {
-      const similarity = await neural!.similarity('nonexistent1', 'nonexistent2')
+      const similarity = await neural!.similar('nonexistent1', 'nonexistent2')
       expect(similarity).toBe(0) // Should return 0 for non-existent items
     })
     
     it('should handle empty clustering gracefully', async () => {
-      const emptyNeural = new NeuralAPI(db!)
+      const emptyNeural = new ImprovedNeuralAPI(db!)
       const clusters = await emptyNeural.clusters()
       
       expect(Array.isArray(clusters)).toBe(true)
