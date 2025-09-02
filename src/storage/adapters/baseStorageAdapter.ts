@@ -145,24 +145,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     nextCursor?: string
   }>
 
-  /**
-   * Count total number of nouns (optional)
-   * WARNING: Implementations should be efficient for large datasets.
-   * Consider caching counts or using database COUNT operations.
-   * @param filter Optional filter criteria
-   * @returns Promise that resolves to the count
-   */
-  countNouns?(filter?: any): Promise<number>
-
-  /**
-   * Count total number of verbs (optional)
-   * WARNING: Implementations should be efficient for large datasets.
-   * Consider caching counts or using database COUNT operations.
-   * @param filter Optional filter criteria
-   * @returns Promise that resolves to the count
-   */
-  countVerbs?(filter?: any): Promise<number>
-
   // Statistics cache
   protected statisticsCache: StatisticsData | null = null
 
