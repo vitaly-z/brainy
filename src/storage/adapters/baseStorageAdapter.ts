@@ -147,6 +147,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
   /**
    * Count total number of nouns (optional)
+   * WARNING: Implementations should be efficient for large datasets.
+   * Consider caching counts or using database COUNT operations.
    * @param filter Optional filter criteria
    * @returns Promise that resolves to the count
    */
@@ -154,6 +156,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
   /**
    * Count total number of verbs (optional)
+   * WARNING: Implementations should be efficient for large datasets.
+   * Consider caching counts or using database COUNT operations.
    * @param filter Optional filter criteria
    * @returns Promise that resolves to the count
    */
