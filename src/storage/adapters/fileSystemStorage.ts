@@ -942,10 +942,16 @@ export class FileSystemStorage extends BaseStorage {
   protected async getVerbsBySource_internal(
     sourceId: string
   ): Promise<GraphVerb[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn('getVerbsBySource_internal is deprecated and not efficiently supported in new storage pattern')
-    return []
+    console.log(`[DEBUG] getVerbsBySource_internal called for sourceId: ${sourceId}`)
+    
+    // Use the working pagination method with source filter
+    const result = await this.getVerbsWithPagination({
+      limit: 10000,
+      filter: { sourceId: [sourceId] }
+    })
+    
+    console.log(`[DEBUG] Found ${result.items.length} verbs for source ${sourceId}`)
+    return result.items
   }
 
   /**
@@ -954,20 +960,32 @@ export class FileSystemStorage extends BaseStorage {
   protected async getVerbsByTarget_internal(
     targetId: string
   ): Promise<GraphVerb[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn('getVerbsByTarget_internal is deprecated and not efficiently supported in new storage pattern')
-    return []
+    console.log(`[DEBUG] getVerbsByTarget_internal called for targetId: ${targetId}`)
+    
+    // Use the working pagination method with target filter
+    const result = await this.getVerbsWithPagination({
+      limit: 10000,
+      filter: { targetId: [targetId] }
+    })
+    
+    console.log(`[DEBUG] Found ${result.items.length} verbs for target ${targetId}`)
+    return result.items
   }
 
   /**
    * Get verbs by type
    */
   protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn('getVerbsByType_internal is deprecated and not efficiently supported in new storage pattern')
-    return []
+    console.log(`[DEBUG] getVerbsByType_internal called for type: ${type}`)
+    
+    // Use the working pagination method with type filter
+    const result = await this.getVerbsWithPagination({
+      limit: 10000,
+      filter: { verbType: [type] }
+    })
+    
+    console.log(`[DEBUG] Found ${result.items.length} verbs for type ${type}`)
+    return result.items
   }
 
   /**
@@ -1031,9 +1049,24 @@ export class FileSystemStorage extends BaseStorage {
           // Get metadata which contains the actual verb information
           const metadata = await this.getVerbMetadata(id)
           
-          // If no metadata exists, skip this verb (it's incomplete)
+          // If no metadata exists, try to reconstruct basic metadata from filename
           if (!metadata) {
-            console.warn(`Verb ${id} has no metadata, skipping`)
+            console.warn(`Verb ${id} has no metadata, trying to create minimal verb`)
+            
+            // Create minimal GraphVerb without full metadata
+            const minimalVerb: GraphVerb = {
+              id: edge.id,
+              vector: edge.vector,
+              connections: edge.connections || new Map(),
+              sourceId: 'unknown',
+              targetId: 'unknown', 
+              source: 'unknown',
+              target: 'unknown',
+              type: 'relationship',
+              verb: 'relatedTo'
+            }
+            
+            verbs.push(minimalVerb)
             continue
           }
           

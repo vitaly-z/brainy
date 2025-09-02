@@ -4317,6 +4317,34 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
   }
 
   /**
+   * Get all verbs associated with a specific noun (both as source and target)
+   * @param nounId The ID of the noun
+   * @returns Array of verbs where the noun is either source or target
+   */
+  public async getVerbsForNoun(nounId: string): Promise<GraphVerb[]> {
+    await this.ensureInitialized()
+
+    try {
+      // Get verbs where this noun is the source
+      const sourceVerbs = await this.getVerbsBySource(nounId)
+      // Get verbs where this noun is the target  
+      const targetVerbs = await this.getVerbsByTarget(nounId)
+      
+      // Combine and deduplicate (in case a verb somehow appears in both - shouldn't happen but safety first)
+      const verbMap = new Map<string, GraphVerb>()
+      
+      for (const verb of [...sourceVerbs, ...targetVerbs]) {
+        verbMap.set(verb.id, verb)
+      }
+      
+      return Array.from(verbMap.values())
+    } catch (error) {
+      console.error(`Failed to get verbs for noun ${nounId}:`, error)
+      throw error
+    }
+  }
+
+  /**
    * Delete a verb
    * @param id The ID of the verb to delete
    * @param options Additional options
