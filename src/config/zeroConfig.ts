@@ -78,7 +78,7 @@ const PRESETS = {
   },
   development: {
     storage: 'memory' as const,
-    model: 'fp32' as const,
+    model: 'q8' as const,  // Q8 is now the default for all presets
     features: 'full' as const,
     verbose: true
   },

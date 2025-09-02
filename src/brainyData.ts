@@ -1678,21 +1678,10 @@ export class BrainyData<T = any> implements BrainyDataInterface<T> {
       }
     }
     
-    // CRITICAL: Initialize universal memory manager ONLY for default embedding function
-    // This preserves custom embedding functions (like test mocks)
-    if (typeof this.embeddingFunction === 'function' && this.embeddingFunction === defaultEmbeddingFunction) {
-      try {
-        const { universalMemoryManager } = await import('./embeddings/universal-memory-manager.js')
-        this.embeddingFunction = await universalMemoryManager.getEmbeddingFunction()
-        console.log('✅ UNIVERSAL: Memory-safe embedding system initialized')
-      } catch (error) {
-        console.error('🚨 CRITICAL: Universal memory manager initialization failed!')
-        console.error('Falling back to standard embedding with potential memory issues.')
-        console.warn('Consider reducing usage or restarting process periodically.')
-        // Continue with default function - better than crashing
-      }
-    } else if (this.embeddingFunction !== defaultEmbeddingFunction) {
-      console.log('✅ CUSTOM: Using custom embedding function (test or production override)')
+    // The embedding function is already set (either custom or default)
+    // EmbeddingManager handles all initialization internally
+    if (this.embeddingFunction !== defaultEmbeddingFunction) {
+      console.log('✅ Using custom embedding function')
     }
 
     try {

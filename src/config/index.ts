@@ -13,6 +13,15 @@ export {
   logModelConfig
 } from './modelAutoConfig.js'
 
+// Model precision manager
+export {
+  ModelPrecisionManager,
+  getModelPrecision,
+  setModelPrecision,
+  lockModelPrecision,
+  validateModelPrecision
+} from './modelPrecisionManager.js'
+
 // Storage configuration
 export { 
   autoDetectStorage, 
