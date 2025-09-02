@@ -1023,22 +1023,49 @@ export class FileSystemStorage extends BaseStorage {
         const id = file.replace('.json', '')
         
         try {
-          // Read the verb data
+          // Read the verb data (HNSWVerb stored as edge)
           const filePath = path.join(this.verbsDir, file)
           const data = await fs.promises.readFile(filePath, 'utf-8')
           const edge = JSON.parse(data)
           
-          // Also try to get metadata if it exists
+          // Get metadata which contains the actual verb information
           const metadata = await this.getVerbMetadata(id)
           
-          // Convert to GraphVerb format
+          // If no metadata exists, skip this verb (it's incomplete)
+          if (!metadata) {
+            console.warn(`Verb ${id} has no metadata, skipping`)
+            continue
+          }
+          
+          // Convert connections Map to proper format if needed
+          let connections = edge.connections
+          if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
+            const connectionsMap = new Map<number, Set<string>>()
+            for (const [level, nodeIds] of Object.entries(connections)) {
+              connectionsMap.set(Number(level), new Set(nodeIds as string[]))
+            }
+            connections = connectionsMap
+          }
+          
+          // Properly reconstruct GraphVerb from HNSWVerb + metadata
           const verb: GraphVerb = {
             id: edge.id,
-            source: metadata?.source || '',
-            target: metadata?.target || '',
-            type: metadata?.type || 'relationship',
-            ...(metadata || {})
-          } as GraphVerb
+            vector: edge.vector,  // Include the vector field!
+            connections: connections,
+            sourceId: metadata.sourceId || metadata.source,
+            targetId: metadata.targetId || metadata.target,
+            source: metadata.source || metadata.sourceId,
+            target: metadata.target || metadata.targetId,
+            verb: metadata.verb || metadata.type,
+            type: metadata.type || metadata.verb,
+            weight: metadata.weight,
+            metadata: metadata.metadata || metadata,
+            data: metadata.data,
+            createdAt: metadata.createdAt,
+            updatedAt: metadata.updatedAt,
+            createdBy: metadata.createdBy,
+            embedding: metadata.embedding || edge.vector
+          }
           
           // Apply filters if provided
           if (options.filter) {
@@ -1047,19 +1074,22 @@ export class FileSystemStorage extends BaseStorage {
             // Check verbType filter
             if (filter.verbType) {
               const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
-              if (!types.includes(verb.type || '')) continue
+              const verbType = verb.type || verb.verb
+              if (verbType && !types.includes(verbType)) continue
             }
             
             // Check sourceId filter
             if (filter.sourceId) {
               const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-              if (!sources.includes(verb.source || '')) continue
+              const sourceId = verb.sourceId || verb.source
+              if (!sourceId || !sources.includes(sourceId)) continue
             }
             
             // Check targetId filter
             if (filter.targetId) {
               const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
-              if (!targets.includes(verb.target || '')) continue
+              const targetId = verb.targetId || verb.target
+              if (!targetId || !targets.includes(targetId)) continue
             }
             
             // Check service filter
