@@ -152,9 +152,34 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       embedding: verb.embedding
     }
     
-    // Save both the HNSWVerb and metadata
-    await this.saveVerb_internal(hnswVerb)
-    await this.saveVerbMetadata(verb.id, metadata)
+    // Save both the HNSWVerb and metadata atomically
+    try {
+      console.log(`[DEBUG] Saving verb ${verb.id}: sourceId=${verb.sourceId}, targetId=${verb.targetId}`)
+      
+      // Save the HNSWVerb first
+      await this.saveVerb_internal(hnswVerb)
+      console.log(`[DEBUG] Successfully saved HNSWVerb file for ${verb.id}`)
+      
+      // Then save the metadata
+      await this.saveVerbMetadata(verb.id, metadata)
+      console.log(`[DEBUG] Successfully saved metadata file for ${verb.id}`)
+      
+    } catch (error) {
+      console.error(`[ERROR] Failed to save verb ${verb.id}:`, error)
+      
+      // Attempt cleanup - remove verb file if metadata failed
+      try {
+        const verbExists = await this.getVerb_internal(verb.id)
+        if (verbExists) {
+          console.log(`[CLEANUP] Attempting to remove orphaned verb file ${verb.id}`)
+          await this.deleteVerb_internal(verb.id)
+        }
+      } catch (cleanupError) {
+        console.error(`[ERROR] Failed to cleanup orphaned verb ${verb.id}:`, cleanupError)
+      }
+      
+      throw new Error(`Failed to save verb ${verb.id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**

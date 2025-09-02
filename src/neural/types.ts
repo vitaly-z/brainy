@@ -22,6 +22,28 @@ export interface SemanticCluster {
   level?: number
 }
 
+export interface ClusterEdge {
+  id: string
+  source: string
+  target: string
+  type: string
+  weight?: number
+  isInterCluster: boolean
+  sourceCluster?: string
+  targetCluster?: string
+}
+
+export interface EnhancedSemanticCluster extends SemanticCluster {
+  intraClusterEdges: ClusterEdge[]
+  interClusterEdges: ClusterEdge[]
+  relationshipSummary: {
+    totalEdges: number
+    intraClusterEdges: number
+    interClusterEdges: number
+    edgeTypes: Record<string, number>
+  }
+}
+
 export interface DomainCluster extends SemanticCluster {
   domain: string
   domainConfidence: number

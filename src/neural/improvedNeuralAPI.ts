@@ -26,6 +26,8 @@ import {
   TemporalCluster,
   ExplainableCluster,
   ConfidentCluster,
+  EnhancedSemanticCluster,
+  ClusterEdge,
   SimilarityOptions,
   SimilarityResult,
   NeighborOptions,
@@ -481,6 +483,190 @@ export class ImprovedNeuralAPI {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new ClusteringError(`Failed to update clusters: ${errorMessage}`, { newItems, options })
+    }
+  }
+
+  /**
+   * Enhanced clustering with relationship analysis using verbs
+   * Returns clusters with intra-cluster and inter-cluster relationship information
+   * 
+   * Scalable for millions of nodes - uses efficient batching and filtering
+   */
+  async clustersWithRelationships(
+    input?: string | string[] | ClusteringOptions,
+    options?: { batchSize?: number; maxRelationships?: number }
+  ): Promise<EnhancedSemanticCluster[]> {
+    const startTime = performance.now()
+    const batchSize = options?.batchSize || 1000
+    const maxRelationships = options?.maxRelationships || 10000
+    let processedCount = 0
+    
+    try {
+      // Get basic clusters first
+      const basicClusters = await this.clusters(input)
+      if (basicClusters.length === 0) {
+        return []
+      }
+      
+      // Build member lookup for O(1) cluster membership checking
+      const memberToClusterMap = new Map<string, string>()
+      const clusterMap = new Map<string, SemanticCluster>()
+      
+      for (const cluster of basicClusters) {
+        clusterMap.set(cluster.id, cluster)
+        for (const memberId of cluster.members) {
+          memberToClusterMap.set(memberId, cluster.id)
+        }
+      }
+      
+      // Initialize cluster edge collections
+      const clusterEdges = new Map<string, {
+        intra: ClusterEdge[]
+        inter: ClusterEdge[]
+        edgeTypes: Record<string, number>
+      }>()
+      
+      for (const cluster of basicClusters) {
+        clusterEdges.set(cluster.id, {
+          intra: [],
+          inter: [],
+          edgeTypes: {}
+        })
+      }
+      
+      // Process verbs in batches to handle millions of relationships efficiently
+      let hasMoreVerbs = true
+      let offset = 0
+      
+      while (hasMoreVerbs && processedCount < maxRelationships) {
+        // Get batch of verbs using proper pagination API
+        const verbResult = await this.brain.getVerbs({
+          pagination: { 
+            offset: offset,
+            limit: batchSize
+          }
+        })
+        const verbBatch = verbResult.data
+        
+        if (verbBatch.length === 0) {
+          hasMoreVerbs = false
+          break
+        }
+        
+        // Process this batch
+        for (const verb of verbBatch) {
+          if (processedCount >= maxRelationships) break
+          
+          const sourceClusterId = memberToClusterMap.get(verb.sourceId)
+          const targetClusterId = memberToClusterMap.get(verb.targetId)
+          
+          // Skip verbs that don't involve any clustered nodes
+          if (!sourceClusterId && !targetClusterId) continue
+          
+          const edgeWeight = this._calculateEdgeWeight(verb)
+          const edgeType = verb.verb || verb.type || 'relationship'
+          
+          if (sourceClusterId && targetClusterId) {
+            if (sourceClusterId === targetClusterId) {
+              // Intra-cluster relationship
+              const edges = clusterEdges.get(sourceClusterId)!
+              edges.intra.push({
+                id: verb.id,
+                source: verb.sourceId,
+                target: verb.targetId,
+                type: edgeType,
+                weight: edgeWeight,
+                isInterCluster: false,
+                sourceCluster: sourceClusterId,
+                targetCluster: sourceClusterId
+              })
+              edges.edgeTypes[edgeType] = (edges.edgeTypes[edgeType] || 0) + 1
+            } else {
+              // Inter-cluster relationship
+              const sourceEdges = clusterEdges.get(sourceClusterId)!
+              const targetEdges = clusterEdges.get(targetClusterId)!
+              
+              const edge: ClusterEdge = {
+                id: verb.id,
+                source: verb.sourceId,
+                target: verb.targetId,
+                type: edgeType,
+                weight: edgeWeight,
+                isInterCluster: true,
+                sourceCluster: sourceClusterId,
+                targetCluster: targetClusterId
+              }
+              
+              sourceEdges.inter.push(edge)
+              // Don't duplicate - target cluster will see this as incoming
+              sourceEdges.edgeTypes[edgeType] = (sourceEdges.edgeTypes[edgeType] || 0) + 1
+            }
+          } else {
+            // One-way relationship to/from cluster
+            const clusterId = sourceClusterId || targetClusterId!
+            const edges = clusterEdges.get(clusterId)!
+            
+            edges.inter.push({
+              id: verb.id,
+              source: verb.sourceId,
+              target: verb.targetId,
+              type: edgeType,
+              weight: edgeWeight,
+              isInterCluster: true,
+              sourceCluster: sourceClusterId || 'external',
+              targetCluster: targetClusterId || 'external'
+            })
+            edges.edgeTypes[edgeType] = (edges.edgeTypes[edgeType] || 0) + 1
+          }
+          
+          processedCount++
+        }
+        
+        offset += batchSize
+        
+        // Memory management: if we have too many edges, break early
+        const totalEdges = Array.from(clusterEdges.values())
+          .reduce((sum, edges) => sum + edges.intra.length + edges.inter.length, 0)
+        
+        if (totalEdges >= maxRelationships) {
+          console.warn(`Relationship analysis stopped at ${totalEdges} edges to maintain performance`)
+          break
+        }
+        
+        // Check if we got fewer verbs than batch size (end of data)
+        if (verbBatch.length < batchSize) {
+          hasMoreVerbs = false
+        }
+      }
+      
+      // Build enhanced clusters
+      const enhancedClusters: EnhancedSemanticCluster[] = []
+      
+      for (const cluster of basicClusters) {
+        const edges = clusterEdges.get(cluster.id)!
+        
+        enhancedClusters.push({
+          ...cluster,
+          intraClusterEdges: edges.intra,
+          interClusterEdges: edges.inter,
+          relationshipSummary: {
+            totalEdges: edges.intra.length + edges.inter.length,
+            intraClusterEdges: edges.intra.length,
+            interClusterEdges: edges.inter.length,
+            edgeTypes: edges.edgeTypes
+          }
+        })
+      }
+      
+      this._trackPerformance('clustersWithRelationships', startTime, processedCount, 'enhanced-scalable')
+      return enhancedClusters
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new ClusteringError(`Failed to perform relationship-aware clustering: ${errorMessage}`, {
+        input: typeof input === 'object' ? JSON.stringify(input) : input,
+        processedCount: processedCount || 0
+      })
     }
   }
 
@@ -2716,6 +2902,34 @@ The items were grouped using ${algorithm} clustering. What is the most appropria
 
   private async _calculateSimilarity(id1: string, id2: string): Promise<number> {
     return await this.similar(id1, id2) as number
+  }
+
+  private _calculateEdgeWeight(verb: any): number {
+    // Calculate edge weight based on verb properties
+    let weight = 1.0
+    
+    // Factor in connection strength if available
+    if (verb.connections && verb.connections instanceof Map) {
+      const connectionCount = verb.connections.size
+      weight += Math.log(connectionCount + 1) * 0.1
+    }
+    
+    // Factor in verb type significance
+    const significantVerbs = ['caused', 'created', 'contains', 'implements', 'extends']
+    if (verb.verb && significantVerbs.includes(verb.verb.toLowerCase())) {
+      weight += 0.3
+    }
+    
+    // Factor in recency if available
+    if (verb.metadata?.createdAt) {
+      const now = Date.now()
+      const created = new Date(verb.metadata.createdAt).getTime()
+      const daysSinceCreated = (now - created) / (1000 * 60 * 60 * 24)
+      // Newer relationships get slight boost
+      weight += Math.max(0, (30 - daysSinceCreated) / 100)
+    }
+    
+    return Math.min(weight, 3.0) // Cap at 3.0
   }
 
   private _sortNeighbors(neighbors: Neighbor[], sortBy: 'similarity' | 'importance' | 'recency'): void {
