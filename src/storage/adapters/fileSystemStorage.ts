@@ -971,6 +971,123 @@ export class FileSystemStorage extends BaseStorage {
   }
 
   /**
+   * Get verbs with pagination
+   * This method reads verb files from the filesystem and returns them with pagination
+   */
+  public async getVerbsWithPagination(options: {
+    limit?: number
+    cursor?: string
+    filter?: {
+      verbType?: string | string[]
+      sourceId?: string | string[]
+      targetId?: string | string[]
+      service?: string | string[]
+      metadata?: Record<string, any>
+    }
+  } = {}): Promise<{
+    items: GraphVerb[]
+    totalCount?: number
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    await this.ensureInitialized()
+    
+    const limit = options.limit || 100
+    const startIndex = options.cursor ? parseInt(options.cursor, 10) : 0
+    
+    try {
+      // List all verb files in the verbs directory
+      const files = await fs.promises.readdir(this.verbsDir)
+      const verbFiles = files.filter((f: string) => f.endsWith('.json'))
+      
+      // Sort files for consistent ordering
+      verbFiles.sort()
+      
+      // Calculate pagination
+      const totalCount = verbFiles.length
+      const endIndex = Math.min(startIndex + limit, totalCount)
+      const hasMore = endIndex < totalCount
+      
+      // Load the requested page of verbs
+      const verbs: GraphVerb[] = []
+      
+      for (let i = startIndex; i < endIndex; i++) {
+        const file = verbFiles[i]
+        const id = file.replace('.json', '')
+        
+        try {
+          // Read the verb data
+          const filePath = path.join(this.verbsDir, file)
+          const data = await fs.promises.readFile(filePath, 'utf-8')
+          const edge = JSON.parse(data)
+          
+          // Also try to get metadata if it exists
+          const metadata = await this.getVerbMetadata(id)
+          
+          // Convert to GraphVerb format
+          const verb: GraphVerb = {
+            id: edge.id,
+            source: metadata?.source || '',
+            target: metadata?.target || '',
+            type: metadata?.type || 'relationship',
+            ...(metadata || {})
+          } as GraphVerb
+          
+          // Apply filters if provided
+          if (options.filter) {
+            const filter = options.filter
+            
+            // Check verbType filter
+            if (filter.verbType) {
+              const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
+              if (!types.includes(verb.type || '')) continue
+            }
+            
+            // Check sourceId filter
+            if (filter.sourceId) {
+              const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
+              if (!sources.includes(verb.source || '')) continue
+            }
+            
+            // Check targetId filter
+            if (filter.targetId) {
+              const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
+              if (!targets.includes(verb.target || '')) continue
+            }
+            
+            // Check service filter
+            if (filter.service && metadata?.service) {
+              const services = Array.isArray(filter.service) ? filter.service : [filter.service]
+              if (!services.includes(metadata.service)) continue
+            }
+          }
+          
+          verbs.push(verb)
+        } catch (error) {
+          console.warn(`Failed to read verb ${id}:`, error)
+        }
+      }
+      
+      return {
+        items: verbs,
+        totalCount,
+        hasMore,
+        nextCursor: hasMore ? String(endIndex) : undefined
+      }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        // Verbs directory doesn't exist yet
+        return {
+          items: [],
+          totalCount: 0,
+          hasMore: false
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
    * Delete a verb from storage
    */
   protected async deleteVerb_internal(id: string): Promise<void> {

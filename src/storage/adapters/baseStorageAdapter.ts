@@ -101,6 +101,64 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     nextCursor?: string
   }>
 
+  /**
+   * Get nouns with pagination (internal implementation)
+   * This method should be implemented by storage adapters to support efficient pagination
+   * @param options Pagination options
+   * @returns Promise that resolves to a paginated result of nouns
+   */
+  getNounsWithPagination?(options: {
+    limit?: number
+    cursor?: string
+    filter?: {
+      nounType?: string | string[]
+      service?: string | string[]
+      metadata?: Record<string, any>
+    }
+  }): Promise<{
+    items: any[]
+    totalCount?: number
+    hasMore: boolean
+    nextCursor?: string
+  }>
+
+  /**
+   * Get verbs with pagination (internal implementation)
+   * This method should be implemented by storage adapters to support efficient pagination
+   * @param options Pagination options
+   * @returns Promise that resolves to a paginated result of verbs
+   */
+  getVerbsWithPagination?(options: {
+    limit?: number
+    cursor?: string
+    filter?: {
+      verbType?: string | string[]
+      sourceId?: string | string[]
+      targetId?: string | string[]
+      service?: string | string[]
+      metadata?: Record<string, any>
+    }
+  }): Promise<{
+    items: any[]
+    totalCount?: number
+    hasMore: boolean
+    nextCursor?: string
+  }>
+
+  /**
+   * Count total number of nouns (optional)
+   * @param filter Optional filter criteria
+   * @returns Promise that resolves to the count
+   */
+  countNouns?(filter?: any): Promise<number>
+
+  /**
+   * Count total number of verbs (optional)
+   * @param filter Optional filter criteria
+   * @returns Promise that resolves to the count
+   */
+  countVerbs?(filter?: any): Promise<number>
+
   // Statistics cache
   protected statisticsCache: StatisticsData | null = null
 
