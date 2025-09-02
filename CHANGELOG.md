@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.14.0](https://github.com/soulcraftlabs/brainy/compare/v2.13.0...v2.14.0) (2025-09-02)
+
+
+### Features
+
+* implement clean embedding architecture with Q8/FP32 precision control ([b55c454](https://github.com/soulcraftlabs/brainy/commit/b55c454))
+
 ## [2.13.0](https://github.com/soulcraftlabs/brainy/compare/v2.12.0...v2.13.0) (2025-09-02)
+
+
+### Features
+
+* implement comprehensive neural clustering system ([7345e53](https://github.com/soulcraftlabs/brainy/commit/7345e53))
+* implement comprehensive type safety system with BrainyTypes API ([0f4ab52](https://github.com/soulcraftlabs/brainy/commit/0f4ab52))
 
 ## [2.10.0](https://github.com/soulcraftlabs/brainy/compare/v2.9.0...v2.10.0) (2025-08-29)
 
