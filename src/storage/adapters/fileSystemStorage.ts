@@ -997,6 +997,8 @@ export class FileSystemStorage extends BaseStorage {
     
     try {
       // List all verb files in the verbs directory
+      // Note: For very large directories (millions of files), this could be memory-intensive
+      // Future optimization: Use fs.opendir() for streaming directory reads
       const files = await fs.promises.readdir(this.verbsDir)
       const verbFiles = files.filter((f: string) => f.endsWith('.json'))
       
@@ -1007,6 +1009,11 @@ export class FileSystemStorage extends BaseStorage {
       const totalCount = verbFiles.length
       const endIndex = Math.min(startIndex + limit, totalCount)
       const hasMore = endIndex < totalCount
+      
+      // Safety check for large datasets
+      if (totalCount > 100000) {
+        console.warn(`Large verb dataset detected (${totalCount} verbs). Consider using a database for better performance.`)
+      }
       
       // Load the requested page of verbs
       const verbs: GraphVerb[] = []
