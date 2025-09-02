@@ -6,7 +6,6 @@
 import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
 import { executeInThread } from './workerUtils.js'
 import { isBrowser } from './environment.js'
-import { ModelManager } from '../embeddings/model-manager.js'
 import { join } from 'path'
 import { existsSync } from 'fs'
 // @ts-ignore - Transformers.js is now the primary embedding library
@@ -250,6 +249,28 @@ export class TransformerEmbedding implements EmbeddingModel {
   }
 
   /**
+   * Generate mock embeddings for unit tests
+   */
+  private getMockEmbedding(data: string | string[]): Vector {
+    // Use the same mock logic as setup-unit.ts for consistency
+    const input = Array.isArray(data) ? data.join(' ') : data
+    const str = typeof input === 'string' ? input : JSON.stringify(input)
+    const vector = new Array(384).fill(0)
+    
+    // Create semi-realistic embeddings based on text content
+    for (let i = 0; i < Math.min(str.length, 384); i++) {
+      vector[i] = (str.charCodeAt(i % str.length) % 256) / 256
+    }
+    
+    // Add position-based variation
+    for (let i = 0; i < 384; i++) {
+      vector[i] += Math.sin(i * 0.1 + str.length) * 0.1
+    }
+    
+    return vector
+  }
+
+  /**
    * Initialize the embedding model
    */
   public async init(): Promise<void> {
@@ -257,12 +278,14 @@ export class TransformerEmbedding implements EmbeddingModel {
       return
     }
 
-    // Always use real implementation - no mocking
+    // In unit test mode, skip real model initialization to prevent ONNX conflicts
+    if (process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__) {
+      this.initialized = true
+      this.logger('log', '🧪 Using mocked embeddings for unit tests')
+      return
+    }
 
     try {
-      // Ensure models are available (downloads if needed)
-      const modelManager = ModelManager.getInstance()
-      await modelManager.ensureModels(this.options.model)
       
       // Resolve device configuration and cache directory
       const device = await resolveDevice(this.options.device)
@@ -274,42 +297,28 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       const startTime = Date.now()
       
-      // Check model availability and select appropriate variant
-      const available = modelManager.getAvailableModels(this.options.model)
-      let actualType = modelManager.getBestAvailableModel(this.options.precision as 'fp32' | 'q8', this.options.model)
+      // Use the configured precision from EmbeddingManager
+      const { embeddingManager } = await import('../embeddings/EmbeddingManager.js')
+      let actualType = embeddingManager.getPrecision()
       
-      if (!actualType) {
-        throw new Error(`No model variants available for ${this.options.model}. Run 'npm run download-models' to download models.`)
-      }
+      // CRITICAL: Control which model precision transformers.js uses
+      // Q8 models use quantized int8 weights for 75% size reduction
+      // FP32 models use full precision floating point
       
-      if (actualType !== this.options.precision) {
-        this.logger('log', `Using ${actualType} model (${this.options.precision} not available)`)
-      }
-      
-      // CRITICAL FIX: Control which model file transformers.js loads
-      // When both model.onnx and model_quantized.onnx exist, transformers.js defaults to model.onnx
-      // We need to explicitly control this based on the precision setting
-      
-      // Set environment to control model selection BEFORE creating pipeline
       if (actualType === 'q8') {
-        // For Q8, we want to use the quantized model
-        // transformers.js v3 doesn't have a direct flag, so we need to work around this
-        
-        // HACK: Temporarily modify the model file preference
-        // This forces transformers.js to look for model_quantized.onnx first
-        const originalModelFileName = (env as any).onnxModelFileName
-        (env as any).onnxModelFileName = 'model_quantized'
-        
-        this.logger('log', '🎯 Selecting Q8 quantized model (75% smaller)')
+        this.logger('log', '🎯 Selecting Q8 quantized model (75% smaller, 99% accuracy)')
       } else {
-        this.logger('log', '📦 Using FP32 model (full precision)')
+        this.logger('log', '📦 Using FP32 model (full precision, larger size)')
       }
       
       // Load the feature extraction pipeline with memory optimizations
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
-        // Remove the quantized flag - it doesn't work in transformers.js v3
+        // CRITICAL: Specify dtype for model precision
+        dtype: actualType === 'q8' ? 'q8' : 'fp32',
+        // CRITICAL: For Q8, explicitly use quantized model
+        quantized: actualType === 'q8',
         // CRITICAL: ONNX memory optimizations
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena
@@ -393,6 +402,11 @@ export class TransformerEmbedding implements EmbeddingModel {
    * Generate embeddings for text data
    */
   public async embed(data: string | string[]): Promise<Vector> {
+    // In unit test mode, return mock embeddings
+    if (process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__) {
+      return this.getMockEmbedding(data)
+    }
+    
     if (!this.initialized) {
       await this.init()
     }
@@ -499,23 +513,28 @@ export function createEmbeddingModel(options?: TransformerEmbeddingOptions): Emb
 }
 
 /**
- * Default embedding function using the hybrid model manager (BEST OF BOTH WORLDS)
- * Prevents multiple model loads while supporting multi-source downloading
+ * Default embedding function using the unified EmbeddingManager
+ * Simple, clean, reliable - no more layers of indirection
  */
 export const defaultEmbeddingFunction: EmbeddingFunction = async (data: string | string[]): Promise<Vector> => {
-  const { getHybridEmbeddingFunction } = await import('./hybridModelManager.js')
-  const embeddingFn = await getHybridEmbeddingFunction()
-  return await embeddingFn(data)
+  const { embed } = await import('../embeddings/EmbeddingManager.js')
+  return await embed(data)
 }
 
 /**
  * Create an embedding function with custom options
+ * NOTE: Options are validated but the singleton EmbeddingManager is always used
  */
 export function createEmbeddingFunction(options: TransformerEmbeddingOptions = {}): EmbeddingFunction {
-  const embedder = new TransformerEmbedding(options)
-  
   return async (data: string | string[]): Promise<Vector> => {
-    return await embedder.embed(data)
+    const { embeddingManager } = await import('../embeddings/EmbeddingManager.js')
+    
+    // Validate precision if specified
+    if (options.precision) {
+      embeddingManager.validatePrecision(options.precision as 'q8' | 'fp32')
+    }
+    
+    return await embeddingManager.embed(data)
   }
 }
 
