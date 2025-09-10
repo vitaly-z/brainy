@@ -3,7 +3,7 @@
  * Provides better error classification and handling
  */
 
-export type BrainyErrorType = 'TIMEOUT' | 'NETWORK' | 'STORAGE' | 'NOT_FOUND' | 'RETRY_EXHAUSTED'
+export type BrainyErrorType = 'TIMEOUT' | 'NETWORK' | 'STORAGE' | 'NOT_FOUND' | 'RETRY_EXHAUSTED' | 'VALIDATION'
 
 /**
  * Custom error class for Brainy operations
@@ -100,6 +100,17 @@ export class BrainyError extends Error {
     }
 
     /**
+     * Create a validation error
+     */
+    static validation(parameter: string, constraint: string, value?: any): BrainyError {
+        return new BrainyError(
+            `Invalid ${parameter}: ${constraint}`,
+            'VALIDATION',
+            false
+        )
+    }
+
+    /**
      * Check if an error is retryable
      */
     static isRetryable(error: Error): boolean {
@@ -171,6 +182,15 @@ export class BrainyError extends Error {
             message.includes('does not exist')
         ) {
             return BrainyError.notFound(operation || 'resource')
+        }
+
+        if (
+            message.includes('invalid') ||
+            message.includes('validation') ||
+            message.includes('cannot be null') ||
+            message.includes('must be')
+        ) {
+            return new BrainyError(error.message, 'VALIDATION', false, error)
         }
 
         // Default to storage error for unclassified errors

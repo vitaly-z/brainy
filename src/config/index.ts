@@ -75,7 +75,7 @@ export {
 
 /**
  * Main zero-config processor
- * This is what BrainyData will call
+ * This is what Brainy will call
  */
 export async function applyZeroConfig(input?: string | any): Promise<any> {
   // Handle legacy config (full object) by detecting known legacy properties

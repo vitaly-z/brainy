@@ -74,3 +74,15 @@ CLAUDE.md
 # Backup folders
 backup-*
 backup/
+
+# Internal documentation
+docs/internal/
+
+# Cache files
+*.cache
+
+# Log files (redundant but explicit)
+*.log
+
+# Temporary files (redundant but explicit)
+*.tmp

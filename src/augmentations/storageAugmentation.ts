@@ -21,8 +21,8 @@ export abstract class StorageAugmentation extends BaseAugmentation implements Br
   protected storageAdapter: StorageAdapter | null = null
   
   // Storage augmentations must provide their name via readonly property
-  constructor() {
-    super()
+  constructor(config?: any) {
+    super(config)
   }
   
   /**

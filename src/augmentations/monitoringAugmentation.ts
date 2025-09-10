@@ -1,7 +1,7 @@
 /**
  * Monitoring Augmentation - Optional Health & Performance Monitoring
  * 
- * Replaces the hardcoded HealthMonitor in BrainyData with an optional augmentation.
+ * Replaces the hardcoded HealthMonitor in Brainy with an optional augmentation.
  * Provides health checks, performance monitoring, and distributed system tracking.
  * 
  * Zero-config: Automatically enabled for distributed deployments
@@ -36,12 +36,12 @@ export class MonitoringAugmentation extends BaseAugmentation {
   readonly metadata = 'readonly' as const  // Reads metadata for monitoring
   readonly name = 'monitoring'
   readonly timing = 'after' as const
-  operations = ['search', 'add', 'delete', 'all'] as ('search' | 'add' | 'delete' | 'all')[]
+  operations = ['search', 'find', 'similar', 'add', 'update', 'delete', 'relate', 'unrelate', 'all'] as ('search' | 'find' | 'similar' | 'add' | 'update' | 'delete' | 'relate' | 'unrelate' | 'all')[]
   readonly priority = 30 // Low priority, observability layer
 
   private healthMonitor: HealthMonitor | null = null
   private configManager: ConfigManager | null = null
-  private config: MonitoringConfig
+  protected config: MonitoringConfig
   private requestStartTimes = new Map<string, number>()
 
   constructor(config: MonitoringConfig = {}) {

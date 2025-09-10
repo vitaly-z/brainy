@@ -131,7 +131,7 @@ export interface LODConfig {
  * Neural API - Unified best-of-both implementation
  */
 export class NeuralAPI {
-  private brain: any // BrainyData instance
+  private brain: any // Brainy instance
   private similarityCache: Map<string, number> = new Map()
   private clusterCache: Map<string, any> = new Map() // Enhanced for enterprise
   private hierarchyCache: Map<string, SemanticHierarchy> = new Map()

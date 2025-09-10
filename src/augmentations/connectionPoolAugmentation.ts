@@ -21,18 +21,20 @@ interface ConnectionPoolConfig {
 
 interface PooledConnection {
   id: string
-  connection: any
+  connection: any  // Actual storage client (S3, R2, etc)
   isIdle: boolean
   lastUsed: number
   healthScore: number
   activeRequests: number
+  requestCount: number  // Total requests handled
 }
 
-interface QueuedRequest {
+interface QueuedRequest<T = any> {
   id: string
   operation: string
   params: any
-  resolver: (value: any) => void
+  executor: () => Promise<T>
+  resolver: (value: T) => void
   rejector: (error: Error) => void
   timestamp: number
   priority: number
@@ -45,9 +47,9 @@ export class ConnectionPoolAugmentation extends BaseAugmentation {
   operations = ['storage'] as ('storage')[]
   priority = 95 // Very high priority for storage operations
   
-  private config: Required<ConnectionPoolConfig>
+  protected config: Required<ConnectionPoolConfig>
   private connections: Map<string, PooledConnection> = new Map()
-  private requestQueue: QueuedRequest[] = []
+  private requestQueue: QueuedRequest<any>[] = []
   private healthCheckInterval?: NodeJS.Timeout
   private storageType: string = 'unknown'
   private stats = {
@@ -180,12 +182,12 @@ export class ConnectionPoolAugmentation extends BaseAugmentation {
     }
     
     // Try to get available connection immediately
-    const connection = this.getAvailableConnection()
-    if (connection) {
+    const connection = await this.getOrCreateConnection()
+    if (connection && connection.isIdle) {
       return this.executeWithConnection(connection, operation, executor)
     }
     
-    // Queue the request
+    // Queue the request with the actual executor
     return this.queueRequest(operation, params, executor, priority)
   }
   
@@ -244,10 +246,11 @@ export class ConnectionPoolAugmentation extends BaseAugmentation {
     priority: number
   ): Promise<T> {
     return new Promise((resolve, reject) => {
-      const request: QueuedRequest = {
+      const request: QueuedRequest<T> = {
         id: `req_${Date.now()}_${Math.random()}`,
         operation,
         params,
+        executor,  // Store the actual executor function
         resolver: resolve,
         rejector: reject,
         timestamp: Date.now(),
@@ -285,13 +288,10 @@ export class ConnectionPoolAugmentation extends BaseAugmentation {
     const request = this.requestQueue.shift()!
     this.stats.queuedRequests--
     
-    // Execute queued request
-    this.executeWithConnection(connection, request.operation, async () => {
-      // This is a bit tricky - we need to reconstruct the executor
-      // In practice, we'd need to store the actual executor function
-      // For now, we'll resolve with a placeholder
-      return {} as any
-    }).then(request.resolver).catch(request.rejector)
+    // Execute queued request with the REAL executor
+    this.executeWithConnection(connection, request.operation, request.executor)
+      .then(request.resolver)
+      .catch(request.rejector)
   }
   
   private async initializeConnectionPool(): Promise<void> {
@@ -304,17 +304,50 @@ export class ConnectionPoolAugmentation extends BaseAugmentation {
   private async createConnection(): Promise<PooledConnection> {
     const connectionId = `conn_${Date.now()}_${Math.random()}`
     
+    // Create actual connection based on storage type
+    const actualConnection = await this.createStorageConnection()
+    
     const connection: PooledConnection = {
       id: connectionId,
-      connection: null, // In real implementation, create actual connection
+      connection: actualConnection,
       isIdle: true,
       lastUsed: Date.now(),
       healthScore: 100,
-      activeRequests: 0
+      activeRequests: 0,
+      requestCount: 0
     }
     
     this.connections.set(connectionId, connection)
     this.stats.totalConnections++
+    
+    return connection
+  }
+  
+  private async createStorageConnection(): Promise<any> {
+    // For cloud storage, reuse the existing storage instance
+    // Connection pooling in this context means managing concurrent requests
+    // not creating multiple storage instances (which would be wasteful)
+    const storage = this.context?.storage
+    if (!storage) {
+      throw new Error('Storage not available for connection pooling')
+    }
+    
+    // Return a connection wrapper that tracks usage
+    return {
+      storage,
+      created: Date.now(),
+      requestCount: 0
+    }
+  }
+  
+  private async getOrCreateConnection(): Promise<PooledConnection | null> {
+    // Try to get an available connection
+    let connection = this.getAvailableConnection()
+    
+    // If no connection available and under max, create new one
+    if (!connection && this.connections.size < this.config.maxConnections) {
+      connection = await this.createConnection()
+    }
     
     return connection
   }

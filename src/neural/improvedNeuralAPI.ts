@@ -90,7 +90,7 @@ interface ItemWithMetadata {
 }
 
 export class ImprovedNeuralAPI {
-  private brain: any // BrainyData instance
+  private brain: any // Brainy instance
   private config: NeuralAPIConfig
   
   // Caching for performance
@@ -1758,18 +1758,23 @@ export class ImprovedNeuralAPI {
     const items = await Promise.all(
       itemIds.map(async id => {
         const noun = await this.brain.getNoun(id)
+        if (!noun) {
+          return null
+        }
         return {
           id,
-          vector: noun?.vector || [],
-          metadata: noun?.data || {},
-          nounType: noun?.noun || 'concept',
-          label: noun?.label || id,
-          data: noun?.data
-        }
+          vector: noun.vector || [],
+          metadata: noun.metadata || {},
+          nounType: noun.metadata?.noun || noun.metadata?.nounType || 'content',
+          label: noun.metadata?.label || noun.metadata?.data || id,
+          data: noun.metadata
+        } as ItemWithMetadata
       })
     )
     
-    return items.filter(item => item.vector.length > 0)
+    return items.filter((item): item is ItemWithMetadata => 
+      item !== null
+    )
   }
   
   /**
@@ -1797,10 +1802,13 @@ export class ImprovedNeuralAPI {
       return []
     }
     
-    // Use a simple approach: get recent items or sample
-    // In practice, this could be optimized with pagination
-    const items = await this.brain.getRecent(Math.min(stats.totalNodes, 10000))
-    return items.map((item: any) => item.id)
+    // Get nouns with pagination (limit to 10000 for performance)
+    const limit = Math.min(stats.totalNodes, 10000)
+    const result = await this.brain.getNouns({
+      pagination: { limit }
+    })
+    
+    return result.map((item: any) => item.id).filter((id: any) => id)
   }
 
   private async _getTotalItemCount(): Promise<number> {
@@ -1997,7 +2005,9 @@ export class ImprovedNeuralAPI {
       })
     )
     
-    return items.filter(item => item.vector.length > 0)
+    return items.filter((item): item is {id: string, vector: number[]} => 
+      item !== null && item.vector.length > 0
+    )
   }
   
   /**
@@ -2849,7 +2859,19 @@ The items were grouped using ${algorithm} clustering. What is the most appropria
 
   private _calculateDomainConfidence(cluster: SemanticCluster, domainItems: any[]): number {
     // Calculate how well this cluster represents the domain
-    return 0.8 // Placeholder
+    // Based on cluster density and coherence
+    const density = cluster.members.length / (cluster.members.length + 10) // Normalize
+    const coherence = cluster.cohesion || 0.5 // Use cluster's cohesion if available
+    
+    // Domain relevance: what fraction of cluster members are from this domain
+    const domainMemberCount = cluster.members.filter(id => 
+      domainItems.some(item => item.id === id)
+    ).length
+    const domainRelevance = cluster.members.length > 0 
+      ? domainMemberCount / cluster.members.length 
+      : 0
+    
+    return (density * 0.3 + coherence * 0.3 + domainRelevance * 0.4) // Weighted average
   }
 
   private async _findCrossDomainMembers(cluster: SemanticCluster, threshold: number): Promise<string[]> {

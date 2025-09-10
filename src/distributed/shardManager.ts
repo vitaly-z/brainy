@@ -245,6 +245,54 @@ export class ShardManager extends EventEmitter {
   }
 
   /**
+   * Get nodes responsible for a shard
+   */
+  getNodesForShard(shardId: string): string[] {
+    const shard = this.shards.get(shardId)
+    if (!shard) return []
+    
+    // Return primary node and replicas
+    const nodes = this.hashRing.getNodes(shardId, this.replicationFactor)
+    return nodes
+  }
+
+  /**
+   * Get total number of shards
+   */
+  getTotalShards(): number {
+    return this.shardCount
+  }
+
+  /**
+   * Update shard assignment to a new node
+   */
+  updateShardAssignment(shardId: string, newNodeId: string): void {
+    const shard = this.shards.get(shardId)
+    if (!shard) {
+      throw new Error(`Shard ${shardId} not found`)
+    }
+    
+    // Remove from old node
+    if (shard.nodeId) {
+      const oldNodeShards = this.nodeToShards.get(shard.nodeId)
+      if (oldNodeShards) {
+        oldNodeShards.delete(shardId)
+      }
+    }
+    
+    // Add to new node
+    shard.nodeId = newNodeId
+    const newNodeShards = this.nodeToShards.get(newNodeId)
+    if (newNodeShards) {
+      newNodeShards.add(shardId)
+    } else {
+      this.nodeToShards.set(newNodeId, new Set([shardId]))
+    }
+    
+    this.emit('shardReassigned', { shardId, newNodeId })
+  }
+
+  /**
    * Get shard ID for a key
    */
   private getShardId(key: string): string {
@@ -287,12 +335,24 @@ export class ShardManager extends EventEmitter {
   }
 
   /**
-   * Get all shards for a node
+   * Get shard assignment for all shards
    */
-  getShardsForNode(nodeId: string): string[] {
-    return Array.from(this.nodeToShards.get(nodeId) || [])
+  getShardAssignments(): ShardAssignment[] {
+    const assignments: ShardAssignment[] = []
+    
+    for (const [shardId, shard] of this.shards) {
+      if (shard.nodeId) {
+        assignments.push({
+          shardId,
+          nodeId: shard.nodeId,
+          replicas: this.hashRing.getNodes(shardId, this.replicationFactor).slice(1)
+        })
+      }
+    }
+    
+    return assignments
   }
-
+  
   /**
    * Get shard statistics
    */

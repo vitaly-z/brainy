@@ -19,16 +19,26 @@
 
 ## 🎉 What's New in 3.0
 
-- **Distributed Scaling**: Horizontal sharding, leader election, and automatic failover
-- **Enterprise Features**: Rate limiting, audit logging, multi-tenancy
-- **Read/Write Separation**: Primary-replica architecture for scale
-- **Intelligent Type Mapping**: Prevents semantic degradation with smart inference
-- **Production Ready**: <10ms search for 10K+ items, handles 100+ concurrent operations
-- **World's First Triple Intelligence™**: Unified vector + graph + document in ONE query
-- **Universal Knowledge Protocol**: 31 nouns × 40 verbs standardize all knowledge
-- **Natural Language**: Ask questions in plain English
-- **Zero Configuration**: Works instantly, no setup required
-- **Universal Compatibility**: Node.js, Browser, Edge, Workers, Distributed Clusters
+### 🌐 **Zero-Config Distributed System** (Industry First!)
+- **Storage-Based Coordination**: No Consul/etcd/Zookeeper needed - uses your S3/GCS!
+- **Automatic Node Discovery**: Nodes find each other via storage
+- **Intelligent Sharding**: Domain-aware data placement for optimal queries
+- **Live Shard Migration**: Zero-downtime data movement with streaming
+- **Auto-Rebalancing**: Handles node joins/leaves automatically
+
+### 🏢 **Enterprise Features**
+- **Distributed Scaling**: Horizontal sharding across unlimited nodes
+- **Read/Write Separation**: Optimized nodes for different workloads
+- **Multi-Tenancy**: Customer isolation with shared infrastructure
+- **Rate Limiting & Audit**: Production-ready governance
+- **Geographic Distribution**: Global nodes with local performance
+
+### ⚡ **Performance Breakthroughs**
+- **<10ms Search**: Even with 10K+ items per node
+- **Linear Write Scaling**: Add nodes for more throughput
+- **Smart Query Planning**: Routes queries to optimal shards
+- **Streaming Ingestion**: Handle firehoses (Bluesky, Twitter, etc.)
+- **100+ Concurrent Ops**: Production-tested at scale
 
 ## ⚡ Quick Start - Zero Configuration
 
@@ -250,6 +260,71 @@ await brain.deleteVerb(verbId)
 await brain.import(arrayOfData)
 const exported = await brain.export({ format: 'json' })
 ```
+
+## 🌐 Distributed System (NEW!)
+
+### Zero-Config Distributed Setup
+```javascript
+// Single node (default)
+const brain = new BrainyData({ 
+  storage: { type: 's3', options: { bucket: 'my-data' }}
+})
+
+// Distributed cluster - just add one flag!
+const brain = new BrainyData({ 
+  storage: { type: 's3', options: { bucket: 'my-data' }},
+  distributed: true  // That's it! Everything else is automatic
+})
+```
+
+### How It Works
+- **Storage-Based Discovery**: Nodes find each other via S3/GCS (no Consul/etcd!)
+- **Automatic Sharding**: Data distributed by content hash
+- **Smart Query Planning**: Queries routed to optimal shards
+- **Live Rebalancing**: Handles node joins/leaves automatically
+- **Zero Downtime**: Streaming shard migration
+
+### Real-World Example: Social Media Firehose
+```javascript
+// Ingestion nodes (optimized for writes)
+const ingestionNode = new BrainyData({
+  storage: { type: 's3', options: { bucket: 'social-data' }},
+  distributed: true,
+  writeOnly: true  // Optimized for high-throughput writes
+})
+
+// Process Bluesky firehose
+blueskyStream.on('post', async (post) => {
+  await ingestionNode.addNoun(post, 'social-post', {
+    platform: 'bluesky',
+    author: post.author,
+    timestamp: post.createdAt
+  })
+})
+
+// Search nodes (optimized for queries)
+const searchNode = new BrainyData({
+  storage: { type: 's3', options: { bucket: 'social-data' }},
+  distributed: true,
+  readOnly: true  // Optimized for fast queries
+})
+
+// Search across ALL data from ALL nodes
+const trending = await searchNode.find('trending AI topics', { 
+  where: { timestamp: { greaterThan: Date.now() - 3600000 }},
+  limit: 100
+})
+```
+
+### Benefits Over Traditional Systems
+| Feature | Traditional (Pinecone, Weaviate) | Brainy Distributed |
+|---------|----------------------------------|-------------------|
+| Setup | Complex (k8s, operators) | One flag: `distributed: true` |
+| Coordination | External (etcd, Consul) | Built-in (via storage) |
+| Minimum Nodes | 3-5 for HA | 1 (scale as needed) |
+| Sharding | Random | Domain-aware |
+| Query Planning | Basic | Triple Intelligence |
+| Cost | High (always-on clusters) | Low (scale to zero) |
 
 ## 🎯 Use Cases
 

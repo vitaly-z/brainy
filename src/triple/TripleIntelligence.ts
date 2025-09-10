@@ -6,8 +6,8 @@
  */
 
 import { Vector, SearchResult } from '../coreTypes.js'
-import { HNSWIndex } from '../hnsw/hnswIndex.js'
-import { BrainyData } from '../brainyData.js'
+import type { Brainy } from '../brainy.js'
+import type { TripleIntelligenceAPI } from '../types/apiTypes.js'
 
 export interface TripleQuery {
   // Vector/Semantic search
@@ -71,11 +71,13 @@ export interface QueryStep {
  * Unifies vector, graph, and field search into one beautiful API
  */
 export class TripleIntelligenceEngine {
-  private brain: BrainyData
+  private brain: Brainy<any>
+  private api: TripleIntelligenceAPI
   private planCache = new Map<string, QueryPlan>()
   
-  constructor(brain: BrainyData) {
+  constructor(brain: Brainy<any>) {
     this.brain = brain
+    this.api = brain.getTripleIntelligenceAPI()
     // Query history removed - unnecessary complexity for minimal gain
   }
   
@@ -121,7 +123,7 @@ export class TripleIntelligenceEngine {
   }
   
   /**
-   * Generate optimal execution plan based on query shape
+   * Generate optimal execution plan based on query shape and statistics
    */
   private async optimizeQuery(query: TripleQuery): Promise<QueryPlan> {
     // Short-circuit optimization for single-signal queries
@@ -144,58 +146,229 @@ export class TripleIntelligenceEngine {
         }]
       }
     }
+    
     // Check cache first
     const cacheKey = JSON.stringify(query)
     if (this.planCache.has(cacheKey)) {
       return this.planCache.get(cacheKey)!
     }
     
-    // Multiple operations - optimize
-    let plan: QueryPlan
+    // Get real statistics for cost-based optimization
+    const stats = await this.api.getStatistics()
     
-    if (hasField && this.isSelectiveFilter(query.where!)) {
-      // Start with field filter if it's selective
-      plan = {
-        startWith: 'field',
-        canParallelize: false,
-        estimatedCost: 2,
-        steps: [
-          { type: 'field', operation: 'filter', estimated: 50 },
-          { type: hasVector ? 'vector' : 'graph', operation: 'search', estimated: 200 },
-          { type: 'fusion', operation: 'rank', estimated: 50 }
-        ]
-      }
-    } else if (hasVector && hasGraph) {
-      // Parallelize vector and graph for speed
-      plan = {
-        startWith: 'vector',
-        canParallelize: true,
-        estimatedCost: 3,
-        steps: [
-          { type: 'vector', operation: 'search', estimated: 150 },
-          { type: 'graph', operation: 'traverse', estimated: 150 },
-          { type: 'field', operation: 'filter', estimated: 50 },
-          { type: 'fusion', operation: 'rank', estimated: 100 }
-        ]
-      }
-    } else {
-      // Default progressive plan
-      plan = {
-        startWith: 'vector',
-        canParallelize: false,
-        estimatedCost: 2,
-        steps: [
-          { type: 'vector', operation: 'search', estimated: 150 },
-          { type: hasGraph ? 'graph' : 'field', operation: 'filter', estimated: 100 },
-          { type: 'fusion', operation: 'rank', estimated: 50 }
-        ]
-      }
-    }
+    // Calculate costs for each operation
+    const costs = await this.calculateOperationCosts(query, stats)
     
-    // Query history removed - use default plan
+    // Build optimal plan based on actual costs
+    const plan = this.buildOptimalPlan(query, costs, stats)
     
     this.planCache.set(cacheKey, plan)
     return plan
+  }
+  
+  /**
+   * Calculate real costs for each operation based on statistics
+   */
+  private async calculateOperationCosts(
+    query: TripleQuery, 
+    stats: any
+  ): Promise<{vector: number, graph: number, field: number}> {
+    const costs = {
+      vector: Infinity,
+      graph: Infinity,
+      field: Infinity
+    }
+    
+    // Vector search cost - O(log n) with HNSW
+    if (query.like || query.similar) {
+      // HNSW search complexity: O(log n) * ef
+      const ef = 200 // exploration factor
+      costs.vector = Math.log2(stats.totalCount) * ef
+    }
+    
+    // Graph traversal cost - depends on connectivity
+    if (query.connected) {
+      const depth = query.connected.maxDepth || query.connected.depth || 2
+      // Assume average branching factor of 10
+      const branchingFactor = 10
+      costs.graph = Math.pow(branchingFactor, depth)
+    }
+    
+    // Field filter cost - depends on selectivity
+    if (query.where) {
+      const selectivity = await this.estimateFieldSelectivity(query.where, stats)
+      costs.field = stats.totalCount * selectivity
+      
+      // If we have an index, cost is O(log n)
+      if (this.api.hasMetadataIndex()) {
+        costs.field = Math.log2(stats.totalCount) + costs.field
+      }
+    }
+    
+    return costs
+  }
+  
+  /**
+   * Estimate selectivity of field filters
+   */
+  private async estimateFieldSelectivity(
+    where: Record<string, any>,
+    stats: any
+  ): Promise<number> {
+    let selectivity = 1.0
+    
+    for (const [field, condition] of Object.entries(where)) {
+      const fieldStats = stats.fieldStats[field]
+      if (!fieldStats) {
+        // Unknown field - assume 10% selectivity
+        selectivity *= 0.1
+        continue
+      }
+      
+      if (typeof condition === 'object' && condition !== null) {
+        // Handle operators
+        if ('$eq' in condition) {
+          // Equality - 1/cardinality
+          selectivity *= 1.0 / (fieldStats.cardinality || 100)
+        } else if ('$gt' in condition || '$gte' in condition) {
+          // Range query - estimate based on distribution
+          const threshold = condition.$gt || condition.$gte
+          if (typeof threshold === 'number' && fieldStats.type === 'number') {
+            const range = fieldStats.max - fieldStats.min
+            const remainingRange = fieldStats.max - threshold
+            selectivity *= remainingRange / range
+          } else {
+            selectivity *= 0.3 // Default for non-numeric
+          }
+        } else if ('$lt' in condition || '$lte' in condition) {
+          // Range query - estimate based on distribution
+          const threshold = condition.$lt || condition.$lte
+          if (typeof threshold === 'number' && fieldStats.type === 'number') {
+            const range = fieldStats.max - fieldStats.min
+            const remainingRange = threshold - fieldStats.min
+            selectivity *= remainingRange / range
+          } else {
+            selectivity *= 0.3 // Default for non-numeric
+          }
+        } else if ('$in' in condition) {
+          // IN query
+          selectivity *= condition.$in.length / (fieldStats.cardinality || 100)
+        }
+      } else {
+        // Direct equality
+        selectivity *= 1.0 / (fieldStats.cardinality || 100)
+      }
+    }
+    
+    return Math.max(0.0001, Math.min(1.0, selectivity))
+  }
+  
+  /**
+   * Build optimal execution plan based on costs
+   */
+  private buildOptimalPlan(
+    query: TripleQuery,
+    costs: {vector: number, graph: number, field: number},
+    stats: any
+  ): QueryPlan {
+    const hasVector = !!(query.like || query.similar)
+    const hasGraph = !!(query.connected)
+    const hasField = !!(query.where && Object.keys(query.where).length > 0)
+    
+    // Find the most selective operation
+    const sortedOps = Object.entries(costs)
+      .filter(([op]) => {
+        return (op === 'vector' && hasVector) ||
+               (op === 'graph' && hasGraph) ||
+               (op === 'field' && hasField)
+      })
+      .sort((a, b) => a[1] - b[1])
+    
+    // If the most selective operation filters out > 99%, start with it
+    const mostSelective = sortedOps[0]
+    if (mostSelective && mostSelective[1] < stats.totalCount * 0.01) {
+      // Progressive plan - start with most selective
+      return {
+        startWith: mostSelective[0] as 'vector' | 'graph' | 'field',
+        canParallelize: false,
+        estimatedCost: mostSelective[1],
+        steps: this.buildProgressiveSteps(sortedOps, query)
+      }
+    }
+    
+    // If operations have similar costs, parallelize
+    if (sortedOps.length > 1) {
+      const ratio = sortedOps[1][1] / sortedOps[0][1]
+      if (ratio < 10) {
+        // Costs are within 10x - parallelize
+        return {
+          startWith: sortedOps[0][0] as 'vector' | 'graph' | 'field',
+          canParallelize: true,
+          estimatedCost: Math.max(...sortedOps.map(op => op[1])),
+          steps: this.buildParallelSteps(sortedOps, query)
+        }
+      }
+    }
+    
+    // Default progressive plan
+    return {
+      startWith: sortedOps[0][0] as 'vector' | 'graph' | 'field',
+      canParallelize: false,
+      estimatedCost: sortedOps.reduce((sum, op) => sum + op[1], 0),
+      steps: this.buildProgressiveSteps(sortedOps, query)
+    }
+  }
+  
+  /**
+   * Build progressive execution steps
+   */
+  private buildProgressiveSteps(
+    sortedOps: Array<[string, number]>,
+    query: TripleQuery
+  ): QueryStep[] {
+    const steps: QueryStep[] = []
+    
+    for (const [op, cost] of sortedOps) {
+      steps.push({
+        type: op as 'vector' | 'graph' | 'field',
+        operation: op === 'vector' ? 'search' : op === 'graph' ? 'traverse' : 'filter',
+        estimated: Math.round(cost)
+      })
+    }
+    
+    // Add fusion step if multiple operations
+    if (steps.length > 1) {
+      steps.push({
+        type: 'fusion',
+        operation: 'rank',
+        estimated: Math.round(sortedOps.length * 50)
+      })
+    }
+    
+    return steps
+  }
+  
+  /**
+   * Build parallel execution steps
+   */
+  private buildParallelSteps(
+    sortedOps: Array<[string, number]>,
+    query: TripleQuery
+  ): QueryStep[] {
+    const steps: QueryStep[] = sortedOps.map(([op, cost]) => ({
+      type: op as 'vector' | 'graph' | 'field',
+      operation: op === 'vector' ? 'search' : op === 'graph' ? 'traverse' : 'filter',
+      estimated: Math.round(cost)
+    }))
+    
+    // Always add fusion for parallel execution
+    steps.push({
+      type: 'fusion',
+      operation: 'rank',
+      estimated: Math.round(sortedOps.length * 100)
+    })
+    
+    return steps
   }
   
   /**
@@ -275,7 +448,7 @@ export class TripleIntelligenceEngine {
             candidates = await this.graphTraversal(query.connected!)
           } else if (candidates.length > 0) {
             // Graph expansion from existing candidates
-            candidates = await this.graphExpand(candidates, query.connected!)
+            candidates = await this.graphExpand(candidates)
           }
           // If candidates.length === 0 and this isn't the first step, keep empty candidates
           break
@@ -293,17 +466,15 @@ export class TripleIntelligenceEngine {
    * Vector similarity search
    */
   private async vectorSearch(query: string | Vector | any, limit?: number): Promise<any[]> {
-    // Use clean internal vector search to avoid circular dependency
+    // Use clean internal vector search API to avoid circular dependency
     // This is the proper architecture: find() uses internal methods, not public search()
-    return (this.brain as any)._internalVectorSearch(query, limit || 100)
+    return this.api.vectorSearch(query, limit || 100)
   }
   
   /**
    * Graph traversal
    */
   private async graphTraversal(connected: any): Promise<any[]> {
-    const results: any[] = []
-    
     // Get starting nodes
     const startNodes = connected.from ? 
       (Array.isArray(connected.from) ? connected.from : [connected.from]) :
@@ -311,96 +482,256 @@ export class TripleIntelligenceEngine {
       (Array.isArray(connected.to) ? connected.to : [connected.to]) :
       []
     
-    // Traverse graph
-    for (const nodeId of startNodes) {
-      // Get verbs connected to this node (both as source and target)
-      const [sourceVerbs, targetVerbs] = await Promise.all([
-        this.brain.getVerbsBySource(nodeId),
-        this.brain.getVerbsByTarget(nodeId)
-      ])
-      const allVerbs = [...sourceVerbs, ...targetVerbs]
-      const connections = allVerbs.map((v: any) => ({
-        id: v.targetId === nodeId ? v.sourceId : v.targetId,
-        type: v.type,
-        score: v.weight || 0.5
-      }))
-      results.push(...connections)
+    // Use the API for graph traversal
+    const options = {
+      start: startNodes,
+      type: connected.type,
+      direction: connected.direction || 'both' as 'in' | 'out' | 'both',
+      maxDepth: connected.maxDepth || connected.depth || 2
     }
     
-    return results
+    const results = await this.api.graphTraversal(options)
+    
+    // Convert to expected format
+    return results.map(r => ({
+      id: r.id,
+      type: connected.type || 'relates_to',
+      score: r.score
+    }))
   }
   
   /**
-   * Field-based filtering
+   * Field-based filtering using MetadataIndex for O(log n) performance
+   * NO FALLBACKS - Requires proper where clause and MetadataIndex
    */
   private async fieldFilter(where: Record<string, any>): Promise<any[]> {
-    // CRITICAL OPTIMIZATION: Use MetadataIndex directly for O(log n) performance!
-    // NOT vector search which would be O(n) and slow
-    
+    // Require a valid where clause - no empty queries allowed
     if (!where || Object.keys(where).length === 0) {
-      // Return all items (should use a more efficient method)
-      const allNouns = (this.brain as any).index.getNouns()
-      return Array.from(allNouns.keys()).slice(0, 1000).map(id => ({ id, score: 1.0 }))
+      throw new Error(
+        'Field filter requires a where clause. ' +
+        'For retrieving all items, use a different query type or specify explicit criteria.'
+      )
     }
     
-    // Use the MetadataIndex directly for FAST field queries!
-    // This uses B-tree indexes for O(log n) range queries
-    // and hash indexes for O(1) exact matches
-    const metadataIndex = (this.brain as any).metadataIndex
-    
-    // Check if metadata index is properly initialized
-    if (!metadataIndex || typeof metadataIndex.getIdsForFilter !== 'function') {
-      // Fallback to manual filtering - slower but works
-      return this.manualMetadataFilter(where)
+    // Verify MetadataIndex is available
+    if (!this.api.hasMetadataIndex || !this.api.hasMetadataIndex()) {
+      throw new Error(
+        'MetadataIndex not available - cannot perform O(log n) field queries. ' +
+        'Initialize Brainy with enableMetadataIndex: true'
+      )
     }
     
-    const matchingIds = await metadataIndex.getIdsForFilter(where) || []
+    // Use the MetadataIndex for O(log n) performance
+    // This uses B-tree indexes for range queries and hash indexes for exact matches
+    const startTime = performance.now()
+    const matchingIds = await this.api.metadataQuery(where)
     
-    // Convert to result format with metadata
+    // Verify we got results from the fast path
+    if (!matchingIds) {
+      throw new Error('MetadataIndex query failed - no fallback allowed')
+    }
+    
+    // Track performance metrics
+    const queryTime = performance.now() - startTime
+    const expectedTime = Math.log2(1000000) * 5 // Assume max 1M items, 5ms per log operation
+    if (queryTime > expectedTime * 2) {
+      console.warn(
+        `Field filter performance warning: ${queryTime.toFixed(2)}ms > expected ${expectedTime.toFixed(2)}ms`
+      )
+    }
+    
+    // Convert matching IDs to result format with full entities
     const results = []
-    for (const id of matchingIds.slice(0, 1000)) {
-      const noun = await (this.brain as any).getNoun(id)
-      if (noun) {
-        results.push({
-          id,
-          score: 1.0, // Field matches are binary - either match or don't
-          metadata: noun.metadata || {}
-        })
+    const idsArray = Array.from(matchingIds)
+    
+    // Process results in batches for efficiency
+    const batchSize = 100
+    for (let i = 0; i < Math.min(idsArray.length, 1000); i += batchSize) {
+      const batch = idsArray.slice(i, i + batchSize)
+      const entities = await Promise.all(
+        batch.map(id => this.api.getEntity(id))
+      )
+      
+      for (let j = 0; j < entities.length; j++) {
+        const entity = entities[j]
+        if (entity) {
+          results.push({
+            id: batch[j],
+            score: 1.0, // Field matches are binary
+            entity,
+            metadata: entity.metadata || {}
+          })
+        }
       }
     }
     
     return results
   }
   
+
+  
   /**
-   * Fallback manual metadata filtering when index is not available
+   * Execute a single signal query directly
    */
-  private async manualMetadataFilter(where: Record<string, any>): Promise<any[]> {
-    const { matchesMetadataFilter } = await import('../utils/metadataFilter.js')
-    const results = []
+  private async executeSingleSignal(query: TripleQuery, signalType: string): Promise<any[]> {
+    switch (signalType) {
+      case 'vector':
+        return this.vectorSearch(query.like || query.similar, query.limit)
+      case 'graph':
+        return this.graphTraversal(query.connected!)
+      case 'field':
+        return this.fieldFilter(query.where!)
+      default:
+        throw new Error(`Unknown signal type: ${signalType}`)
+    }
+  }
+  
+  /**
+   * Expand graph connections from existing candidates
+   */
+  private async graphExpand(candidates: any[]): Promise<any[]> {
+    const expanded: any[] = []
+    const visited = new Set<string>()
     
-    // Get all nouns and manually filter them
-    const allNouns = (this.brain as any).index.getNouns()
+    // For each candidate, find its graph neighbors
+    for (const candidate of candidates) {
+      const id = candidate.id || candidate
+      if (visited.has(id)) continue
+      visited.add(id)
+      
+      // Get connections for this node
+      const [sourceVerbs, targetVerbs] = await Promise.all([
+        this.api.getVerbsBySource(id),
+        this.api.getVerbsByTarget(id)
+      ])
+      
+      // Add the original candidate
+      expanded.push(candidate)
+      
+      // Add connected nodes
+      for (const verb of sourceVerbs) {
+        if (!visited.has(verb.targetId)) {
+          const entity = await this.api.getEntity(verb.targetId)
+          if (entity) {
+            expanded.push({
+              id: verb.targetId,
+              score: (candidate.score || 1.0) * 0.8, // Decay score by distance
+              entity,
+              metadata: entity.metadata
+            })
+          }
+        }
+      }
+      
+      for (const verb of targetVerbs) {
+        if (!visited.has(verb.sourceId)) {
+          const entity = await this.api.getEntity(verb.sourceId)
+          if (entity) {
+            expanded.push({
+              id: verb.sourceId,
+              score: (candidate.score || 1.0) * 0.8, // Decay score by distance
+              entity,
+              metadata: entity.metadata
+            })
+          }
+        }
+      }
+    }
     
-    for (const [id, noun] of Array.from(allNouns.entries() as Iterable<[string, any]>).slice(0, 1000)) {
-      if (noun && matchesMetadataFilter(noun.metadata || {}, where)) {
-        results.push({
-          id,
-          score: 1.0,
-          metadata: noun.metadata || {}
+    return expanded
+  }
+  
+  /**
+   * Vector search within existing candidates
+   */
+  private async vectorSearchWithin(query: string | Vector | any, candidates: any[]): Promise<any[]> {
+    // Get the query vector
+    const queryVector = typeof query === 'string' ? 
+      (await this.api.vectorSearch(query, 1))[0]?.entity?.vector : 
+      query
+    
+    if (!queryVector) return candidates
+    
+    // Score each candidate by vector similarity
+    const scored = []
+    for (const candidate of candidates) {
+      const entity = candidate.entity || await this.api.getEntity(candidate.id)
+      if (entity && entity.vector) {
+        const similarity = this.cosineSimilarity(queryVector, entity.vector)
+        scored.push({
+          ...candidate,
+          score: similarity,
+          entity
         })
       }
     }
     
-    return results
+    // Sort by similarity and return
+    return scored.sort((a, b) => b.score - a.score)
   }
   
   /**
-   * Fusion ranking combines all signals
+   * Apply field filter to existing candidates
+   */
+  private applyFieldFilter(candidates: any[], where: Record<string, any>): any[] {
+    return candidates.filter(candidate => {
+      const metadata = candidate.metadata || candidate.entity?.metadata || {}
+      return this.matchesFilter(metadata, where)
+    })
+  }
+  
+  /**
+   * Check if metadata matches filter conditions
+   */
+  private matchesFilter(metadata: any, where: Record<string, any>): boolean {
+    for (const [field, condition] of Object.entries(where)) {
+      const value = metadata[field]
+      
+      if (typeof condition === 'object' && condition !== null) {
+        // Handle operators
+        if ('$eq' in condition && value !== condition.$eq) return false
+        if ('$ne' in condition && value === condition.$ne) return false
+        if ('$gt' in condition && !(value > condition.$gt)) return false
+        if ('$gte' in condition && !(value >= condition.$gte)) return false
+        if ('$lt' in condition && !(value < condition.$lt)) return false
+        if ('$lte' in condition && !(value <= condition.$lte)) return false
+        if ('$in' in condition && !condition.$in.includes(value)) return false
+        if ('$nin' in condition && condition.$nin.includes(value)) return false
+      } else {
+        // Direct equality
+        if (value !== condition) return false
+      }
+    }
+    return true
+  }
+  
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
+    let dotProduct = 0
+    let normA = 0
+    let normB = 0
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i]
+      normA += a[i] * a[i]
+      normB += b[i] * b[i]
+    }
+    
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
+  }
+  
+  /**
+   * Fusion ranking using Reciprocal Rank Fusion (RRF)
+   * This is the same algorithm used by Google and Elasticsearch
    */
   private fusionRank(resultSets: any[][], query: TripleQuery): TripleResult[] {
-    // PERFORMANCE CRITICAL: When metadata filters are present, use INTERSECTION not UNION
-    // This ensures O(log n) performance with millions of items
+    // RRF constant - 60 is empirically proven optimal
+    const k = 60
+    
+    // Calculate dynamic weights based on query
+    const weights = this.calculateSignalWeights(query)
     
     // Determine which result sets we have based on query
     let vectorResultsIdx = -1
@@ -410,10 +741,7 @@ export class TripleIntelligenceEngine {
     
     if (query.like || query.similar) {
       vectorResultsIdx = currentIdx++
-    }
-    if (query.connected) {
-      graphResultsIdx = currentIdx++
-    }
+  }
     if (query.where) {
       metadataResultsIdx = currentIdx++
     }
@@ -423,9 +751,7 @@ export class TripleIntelligenceEngine {
       const metadataResults = resultSets[metadataResultsIdx]
       
       // CRITICAL: If metadata filter returned no results, entire query should return empty
-      // This ensures correct behavior for non-matching filters
       if (metadataResults.length === 0) {
-        // Return empty results immediately
         return []
       }
       
@@ -439,181 +765,164 @@ export class TripleIntelligenceEngine {
       }
     }
     
-    // Combine and deduplicate results
-    const allResults = new Map<string, TripleResult>()
+    // Build fusion scores using RRF
+    const fusionScores = new Map<string, {
+      entity: any,
+      vectorScore: number,
+      graphScore: number,
+      fieldScore: number,
+      rrfScore: number,
+      fusionScore: number,
+      metadata: any
+    }>()
     
-    // Need to capture indices for closure
-    const vectorIdx = vectorResultsIdx
-    const graphIdx = graphResultsIdx
-    const metadataIdx = metadataResultsIdx
-    
-    // Process each result set
-    resultSets.forEach((results, index) => {
-      const weight = 1.0 / resultSets.length
+    // Process each result set with RRF
+    resultSets.forEach((results, setIndex) => {
+      // Determine signal type
+      let signalType: 'vector' | 'graph' | 'field'
+      let weight = 1.0
       
-      results.forEach(r => {
-        const id = r.id || r
+      if (setIndex === vectorResultsIdx) {
+        signalType = 'vector'
+        weight = weights.vector
+      } else if (setIndex === graphResultsIdx) {
+        signalType = 'graph'
+        weight = weights.graph
+      } else if (setIndex === metadataResultsIdx) {
+        signalType = 'field'
+        weight = weights.field
+      } else {
+        return // Skip unknown signal types
+      }
+      
+      // Apply RRF to each result
+      results.forEach((result, rank) => {
+        const id = result.id || result
         
-        if (!allResults.has(id)) {
-          allResults.set(id, {
-            ...r,
-            id,
+        // Calculate RRF score: 1 / (k + rank + 1)
+        const rrfScore = weight * (1.0 / (k + rank + 1))
+        
+        if (!fusionScores.has(id)) {
+          fusionScores.set(id, {
+            entity: result.entity || result,
             vectorScore: 0,
             graphScore: 0,
             fieldScore: 0,
-            fusionScore: 0
+            rrfScore: 0,
+            fusionScore: 0,
+            metadata: result.metadata || {}
           })
         }
         
-        const result = allResults.get(id)!
+        const fusion = fusionScores.get(id)!
         
-        // Assign scores based on source (using the indices we calculated)
-        if (index === vectorIdx) {
-          result.vectorScore = r.score || 1.0
-        } else if (index === graphIdx) {
-          result.graphScore = r.score || 1.0
-        } else if (index === metadataIdx) {
-          result.fieldScore = r.score || 1.0
+        // Track individual signal scores
+        if (signalType === 'vector') {
+          fusion.vectorScore = result.score || 1.0
+        } else if (signalType === 'graph') {
+          fusion.graphScore = result.score || 1.0
+        } else if (signalType === 'field') {
+          fusion.fieldScore = result.score || 1.0
         }
+        
+        // Accumulate RRF score
+        fusion.rrfScore += rrfScore
       })
     })
     
-    // Calculate fusion scores
-    const results = Array.from(allResults.values())
-    results.forEach(r => {
-      // Weighted combination of signals
-      const vectorWeight = (query.like || query.similar) ? 0.4 : 0
-      const graphWeight = query.connected ? 0.3 : 0
-      const fieldWeight = query.where ? 0.3 : 0
-      
-      // Normalize weights
-      const totalWeight = vectorWeight + graphWeight + fieldWeight
-      
-      if (totalWeight > 0) {
-        r.fusionScore = (
-          (r.vectorScore || 0) * vectorWeight +
-          (r.graphScore || 0) * graphWeight +
-          (r.fieldScore || 0) * fieldWeight
-        ) / totalWeight
-      } else {
-        r.fusionScore = r.score || 0
-      }
-    })
+    // Convert to results array
+    const results: TripleResult[] = Array.from(fusionScores.entries()).map(([id, fusion]) => ({
+      id,
+      entity: fusion.entity,
+      score: fusion.rrfScore, // Use RRF score as primary score
+      vector: fusion.entity?.vector || new Float32Array(0), // Include vector for SearchResult compatibility
+      vectorScore: fusion.vectorScore,
+      graphScore: fusion.graphScore,
+      fieldScore: fusion.fieldScore,
+      fusionScore: fusion.rrfScore, // RRF score is the fusion score
+      metadata: fusion.metadata
+    }))
     
-    // Sort by fusion score
+    // Sort by fusion score (descending)
     results.sort((a, b) => b.fusionScore - a.fusionScore)
     
-    return results
-  }
-  
-  /**
-   * Check if a filter is selective enough to use first
-   */
-  private isSelectiveFilter(where: Record<string, any>): boolean {
-    // Heuristic: filters with exact matches or small ranges are selective
-    for (const [key, value] of Object.entries(where)) {
-      if (typeof value === 'object' && value !== null) {
-        // Check for operators that are selective
-        if (value.equals || value.is || value.oneOf) {
-          return true
-        }
-        if (value.between && Array.isArray(value.between)) {
-          const [min, max] = value.between
-          if (typeof min === 'number' && typeof max === 'number') {
-            // Small numeric range is selective
-            if ((max - min) / Math.max(Math.abs(min), Math.abs(max), 1) < 0.1) {
-              return true
-            }
-          }
-        }
-      } else {
-        // Exact match is selective
-        return true
-      }
+    // Apply offset and limit
+    let final = results
+    if (query.offset && query.offset > 0) {
+      final = final.slice(query.offset)
     }
-    return false
-  }
-  
-  /**
-   * Apply field filter to existing candidates
-   */
-  private applyFieldFilter(candidates: any[], where: Record<string, any>): any[] {
-    return candidates.filter(c => {
-      for (const [key, condition] of Object.entries(where)) {
-        const value = c.metadata?.[key] ?? c[key]
-        
-        if (typeof condition === 'object' && condition !== null) {
-          // Handle operators
-          for (const [op, operand] of Object.entries(condition)) {
-            if (!this.checkCondition(value, op, operand)) {
-              return false
-            }
-          }
-        } else {
-          // Direct equality
-          if (value !== condition) {
-            return false
-          }
-        }
-      }
-      return true
-    })
-  }
-  
-  /**
-   * Check a single condition
-   */
-  private checkCondition(value: any, operator: string, operand: any): boolean {
-    switch (operator) {
-      case 'equals':
-      case 'is':
-        return value === operand
-      case 'greaterThan':
-        return value > operand
-      case 'lessThan':
-        return value < operand
-      case 'oneOf':
-        return Array.isArray(operand) && operand.includes(value)
-      case 'contains':
-        return Array.isArray(value) && value.includes(operand)
-      default:
-        return true
-    }
-  }
-  
-  /**
-   * Vector search within specific candidates
-   */
-  private async vectorSearchWithin(query: any, candidates: any[]): Promise<any[]> {
-    const ids = candidates.map(c => c.id || c)
-    return this.brain.searchWithinItems(query, ids, candidates.length)
-  }
-  
-  /**
-   * Expand graph from candidates
-   */
-  private async graphExpand(candidates: any[], connected: any): Promise<any[]> {
-    const expanded: any[] = []
-    
-    for (const candidate of candidates) {
-      // Get verbs connected to this candidate
-      const nodeId = candidate.id || candidate
-      const [sourceVerbs, targetVerbs] = await Promise.all([
-        this.brain.getVerbsBySource(nodeId),
-        this.brain.getVerbsByTarget(nodeId)
-      ])
-      const allVerbs = [...sourceVerbs, ...targetVerbs]
-      const connections = allVerbs.map((v: any) => ({
-        id: v.targetId === nodeId ? v.sourceId : v.targetId,
-        type: v.type,
-        score: v.weight || 0.5
-      }))
-      expanded.push(...connections)
+    if (query.limit) {
+      final = final.slice(0, query.limit)
     }
     
-    return expanded
+    return final
   }
   
+  /**
+   * Calculate dynamic signal weights based on query characteristics
+   */
+  private calculateSignalWeights(query: TripleQuery): {
+    vector: number,
+    graph: number,
+    field: number
+  } {
+    const hasVector = !!(query.like || query.similar)
+    const hasGraph = !!(query.connected)
+    const hasField = !!(query.where && Object.keys(query.where).length > 0)
+    
+    // Count active signals
+    const activeSignals = [hasVector, hasGraph, hasField].filter(Boolean).length
+    
+    if (activeSignals === 1) {
+      // Single signal - full weight
+      return {
+        vector: hasVector ? 1.0 : 0,
+        graph: hasGraph ? 1.0 : 0,
+        field: hasField ? 1.0 : 0
+      }
+    }
+    
+    // Multiple signals - adaptive weights
+    if (hasVector && hasGraph && hasField) {
+      // All three signals - balanced with slight vector preference
+      return {
+        vector: 0.4,  // Semantic search is often most relevant
+        graph: 0.35,  // Relationships are important
+        field: 0.25   // Metadata is supportive
+      }
+    } else if (hasVector && hasGraph) {
+      // Vector + Graph - emphasize semantics
+      return {
+        vector: 0.6,
+        graph: 0.4,
+        field: 0
+      }
+    } else if (hasVector && hasField) {
+      // Vector + Field - balanced
+      return {
+        vector: 0.5,
+        graph: 0,
+        field: 0.5
+      }
+    } else if (hasGraph && hasField) {
+      // Graph + Field - emphasize relationships
+      return {
+        vector: 0,
+        graph: 0.6,
+        field: 0.4
+      }
+    }
+    
+    // Default balanced weights
+    return {
+      vector: 0.34,
+      graph: 0.33,
+      field: 0.33
+    }
+  }
+
+  
+
   /**
    * Apply boost strategies
    */
@@ -674,22 +983,6 @@ export class TripleIntelligenceEngine {
   // Query optimization from history removed
   
   /**
-   * Execute single signal query without fusion
-   */
-  private async executeSingleSignal(query: TripleQuery, type: string): Promise<any[]> {
-    switch (type) {
-      case 'vector':
-        return this.vectorSearch(query.like || query.similar!, query.limit)
-      case 'graph':
-        return this.graphTraversal(query.connected!)
-      case 'field':
-        return this.fieldFilter(query.where!)
-      default:
-        return []
-    }
-  }
-  
-  /**
    * Clear query optimization cache
    */
   clearCache(): void {
@@ -708,7 +1001,7 @@ export class TripleIntelligenceEngine {
 }
 
 // Export a beautiful, simple API
-export async function find(brain: BrainyData, query: TripleQuery): Promise<TripleResult[]> {
+export async function find(brain: Brainy<any>, query: TripleQuery): Promise<TripleResult[]> {
   const engine = new TripleIntelligenceEngine(brain)
   return engine.find(query)
 }

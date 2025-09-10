@@ -2,13 +2,13 @@
  * Default Augmentations Registration
  * 
  * Maintains zero-config philosophy by automatically registering
- * core augmentations that were previously hardcoded in BrainyData.
+ * core augmentations that were previously hardcoded in Brainy.
  * 
  * These augmentations are optional but enabled by default for
  * backward compatibility and optimal performance.
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import { BaseAugmentation } from './brainyAugmentation.js'
 import { CacheAugmentation } from './cacheAugmentation.js'
 import { IndexAugmentation } from './indexAugmentation.js'
@@ -74,7 +74,7 @@ export function createDefaultAugmentations(
 /**
  * Get augmentation by name with type safety
  */
-export function getAugmentation<T>(brain: BrainyData, name: string): T | null {
+export function getAugmentation<T>(brain: Brainy, name: string): T | null {
   // Access augmentations through a public method or property
   const augmentations = (brain as any).augmentations
   if (!augmentations) return null
@@ -89,35 +89,35 @@ export const AugmentationHelpers = {
   /**
    * Get cache augmentation
    */
-  getCache(brain: BrainyData): CacheAugmentation | null {
+  getCache(brain: Brainy): CacheAugmentation | null {
     return getAugmentation<CacheAugmentation>(brain, 'cache')
   },
 
   /**
    * Get index augmentation
    */
-  getIndex(brain: BrainyData): IndexAugmentation | null {
+  getIndex(brain: Brainy): IndexAugmentation | null {
     return getAugmentation<IndexAugmentation>(brain, 'index')
   },
 
   /**
    * Get metrics augmentation
    */
-  getMetrics(brain: BrainyData): MetricsAugmentation | null {
+  getMetrics(brain: Brainy): MetricsAugmentation | null {
     return getAugmentation<MetricsAugmentation>(brain, 'metrics')
   },
 
   /**
    * Get monitoring augmentation
    */
-  getMonitoring(brain: BrainyData): MonitoringAugmentation | null {
+  getMonitoring(brain: Brainy): MonitoringAugmentation | null {
     return getAugmentation<MonitoringAugmentation>(brain, 'monitoring')
   },
 
   /**
    * Get display augmentation
    */
-  getDisplay(brain: BrainyData): UniversalDisplayAugmentation | null {
+  getDisplay(brain: Brainy): UniversalDisplayAugmentation | null {
     return getAugmentation<UniversalDisplayAugmentation>(brain, 'display')
   }
 }

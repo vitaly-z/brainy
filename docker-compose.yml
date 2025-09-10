@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  brainy:
+    build: .
+    container_name: brainy-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - BRAINY_STORAGE_TYPE=filesystem
+      - BRAINY_STORAGE_PATH=/app/data
+      - BRAINY_LOG_LEVEL=info
+      - BRAINY_RATE_LIMIT_MAX=100
+      - BRAINY_RATE_LIMIT_WINDOW_MS=900000
+    volumes:
+      # Persistent storage for data
+      - brainy-data:/app/data
+      # Optional: Mount local models directory
+      # - ./models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - brainy-network
+
+  # Optional: MinIO for S3-compatible storage (development)
+  minio:
+    image: minio/minio:latest
+    container_name: brainy-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=brainy
+      - MINIO_ROOT_PASSWORD=brainy123456
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - brainy-network
+    profiles:
+      - with-s3
+
+volumes:
+  brainy-data:
+    driver: local
+  minio-data:
+    driver: local
+
+networks:
+  brainy-network:
+    driver: bridge

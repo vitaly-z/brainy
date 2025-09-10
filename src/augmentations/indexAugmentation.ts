@@ -1,7 +1,7 @@
 /**
  * Index Augmentation - Optional Metadata Indexing
  * 
- * Replaces the hardcoded MetadataIndex in BrainyData with an optional augmentation.
+ * Replaces the hardcoded MetadataIndex in Brainy with an optional augmentation.
  * Provides O(1) metadata filtering and field lookups.
  * 
  * Zero-config: Automatically enabled for better search performance
@@ -34,7 +34,7 @@ export class IndexAugmentation extends BaseAugmentation {
   readonly metadata = 'readonly' as const  // Reads metadata to build indexes
   readonly name = 'index'
   readonly timing = 'after' as const
-  operations = ['add', 'updateMetadata', 'delete', 'clear', 'all'] as ('add' | 'updateMetadata' | 'delete' | 'clear' | 'all')[]
+  operations = ['add', 'update', 'updateMetadata', 'delete', 'clear', 'all'] as ('add' | 'update' | 'updateMetadata' | 'delete' | 'clear' | 'all')[]
   readonly priority = 60 // Run after data operations
 
   // Augmentation metadata
@@ -42,7 +42,7 @@ export class IndexAugmentation extends BaseAugmentation {
   readonly description = 'Fast metadata field indexing for O(1) filtering and lookups'
 
   private metadataIndex: MetadataIndexManager | null = null
-  private config: IndexConfig
+  protected config: IndexConfig
   private flushTimer: NodeJS.Timeout | null = null
 
   constructor(config: IndexConfig = {}) {

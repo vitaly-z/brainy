@@ -370,6 +370,27 @@ export class ReadWriteSeparation extends EventEmitter {
     }
     return true
   }
+  
+  /**
+   * Set whether this node is primary (for leader election integration)
+   */
+  setPrimary(isPrimary: boolean): void {
+    const newRole = isPrimary ? 'primary' : 'replica'
+    if (this.role !== newRole) {
+      this.role = newRole
+      this.emit('roleChange', { oldRole: this.role, newRole })
+      
+      if (isPrimary) {
+        // Became primary - stop syncing from old primary
+        this.primaryConnection = undefined
+      } else {
+        // Became replica - connect to new primary if URL is known
+        if (this.config.primaryUrl) {
+          this.primaryConnection = new PrimaryConnection(this.config.primaryUrl)
+        }
+      }
+    }
+  }
 }
 
 /**

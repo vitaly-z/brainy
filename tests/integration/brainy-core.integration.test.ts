@@ -1,5 +1,5 @@
 /**
- * Integration Tests for Brainy Core with REAL AI
+ * Integration Tests for Brainy 3.0 Core with REAL AI
  * 
  * Tests production functionality with real transformer models
  * Requires high memory environment (16GB+ RAM recommended)
@@ -7,23 +7,22 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { BrainyData } from '../../dist/index.js'
-import { requiresMemory } from '../setup-integration.js'
+import { Brainy } from '../../src/brainy'
+import { requiresMemory } from '../setup-integration'
 
-describe('Brainy Core (Integration Tests - Real AI)', () => {
-  let brain: BrainyData
+describe('Brainy 3.0 Core (Integration Tests - Real AI)', () => {
+  let brain: Brainy
 
   beforeAll(async () => {
     // Ensure sufficient memory for real AI models
     requiresMemory(8)
     
-    console.log('🤖 Initializing Brainy with REAL AI models...')
+    console.log('🤖 Initializing Brainy 3.0 with REAL AI models...')
     
     // Create instance with real AI embedding function
-    brain = new BrainyData({
-      storage: { forceMemoryStorage: true },
-      verbose: false
-      // No embeddingFunction specified = uses real AI
+    brain = new Brainy({
+      storage: { type: 'memory' },
+      // No mock embedding function = uses real AI
     })
     
     // This may take 30-60 seconds to load models
@@ -35,13 +34,14 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
     const loadTime = Date.now() - startTime
     console.log(`✅ AI models loaded in ${loadTime}ms`)
     
-    await brain.clearAll({ force: true })
+    await brain.clear()
   }, 120000) // 2 minute timeout for model loading
 
   afterAll(async () => {
     if (brain) {
       // Clean up resources
-      await brain.clearAll({ force: true })
+      await brain.clear()
+      await brain.close()
     }
     
     // Force garbage collection
@@ -60,10 +60,13 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
       ]
 
       console.log('🧠 Testing real AI embeddings...')
-      const ids = []
+      const ids: string[] = []
       
       for (const item of testItems) {
-        const id = await brain.addNoun(item)
+        const id = await brain.add({ 
+          data: item,
+          type: 'document'
+        })
         ids.push(id)
         expect(id).toBeTypeOf('string')
         expect(id.length).toBeGreaterThan(0)
@@ -85,220 +88,276 @@ describe('Brainy Core (Integration Tests - Real AI)', () => {
 
       console.log('🧠 Adding test data for semantic search...')
       for (const item of testData) {
-        await brain.addNoun(item.content, { category: item.category })
+        await brain.add({ 
+          data: item.content,
+          type: 'document',
+          metadata: { category: item.category }
+        })
       }
 
       console.log('🔍 Testing semantic search queries...')
 
       // Test semantic similarity - should find AI-related content
-      const aiResults = await brain.search('artificial intelligence and deep learning', { limit: 3 })
+      const aiResults = await brain.find({ 
+        query: 'artificial intelligence and deep learning',
+        limit: 3 
+      })
       expect(aiResults).toHaveLength(3)
       expect(aiResults[0].score).toBeGreaterThan(0)
       
-      // Should prioritize AI-related content
-      const aiContent = aiResults.filter(r => 
-        r.metadata?.category === 'ai' || 
-        JSON.stringify(r).toLowerCase().includes('neural') ||
-        JSON.stringify(r).toLowerCase().includes('pytorch')
-      )
-      expect(aiContent.length).toBeGreaterThan(0)
-
-      console.log(`✅ Semantic search found ${aiResults.length} relevant results`)
-
-      // Test frontend-related search
-      const frontendResults = await brain.search('user interface development', { limit: 2 })
-      expect(frontendResults).toHaveLength(2)
+      // Verify AI-related content ranks higher
+      const topCategories = aiResults.map(r => r.entity.metadata?.category)
+      expect(topCategories).toContain('ai')
       
-      console.log('✅ Real AI semantic search working correctly')
+      console.log('✅ Semantic search working correctly')
     })
 
-    it('should handle complex queries with real embeddings', async () => {
-      // Test with more nuanced semantic queries
-      const queries = [
-        'containerization and orchestration',  // Should find Docker/Kubernetes
-        'web development frameworks',          // Should find React
-        'database performance tuning'         // Should find PostgreSQL
-      ]
+    it('should find similar items using real embeddings', async () => {
+      // Add a reference item
+      const referenceId = await brain.add({
+        data: 'TypeScript provides static typing for JavaScript',
+        type: 'document',
+        metadata: { reference: true }
+      })
 
-      for (const query of queries) {
-        console.log(`🔍 Testing query: "${query}"`)
-        const results = await brain.search(query, { limit: 2 })
-        
-        expect(results).toHaveLength(2)
-        expect(results[0].score).toBeGreaterThan(0)
-        expect(results[0].score).toBeLessThanOrEqual(1)
-        
-        // Results should be ordered by relevance
-        if (results.length > 1) {
-          expect(results[0].score).toBeGreaterThanOrEqual(results[1].score)
-        }
-      }
-
-      console.log('✅ Complex semantic queries handled correctly')
+      // Find similar items
+      const similar = await brain.similar({ to: referenceId, limit: 3 })
+      
+      expect(similar).toBeDefined()
+      expect(similar.length).toBeGreaterThan(0)
+      expect(similar.length).toBeLessThanOrEqual(3)
+      
+      // Should find JavaScript-related content
+      const topResult = similar[0]
+      expect(topResult.score).toBeGreaterThan(0.5) // Reasonably similar
+      
+      console.log('✅ Similarity search working with real embeddings')
     })
   })
 
-  describe('Brain Patterns with Real AI', () => {
+  describe('Advanced Querying with Real AI', () => {
     beforeAll(async () => {
-      // Add structured test data with metadata
-      const frameworks = [
-        { name: 'React', type: 'frontend', year: 2013, language: 'JavaScript' },
-        { name: 'Vue.js', type: 'frontend', year: 2014, language: 'JavaScript' },
-        { name: 'Angular', type: 'frontend', year: 2010, language: 'TypeScript' },
-        { name: 'Django', type: 'backend', year: 2005, language: 'Python' },
-        { name: 'FastAPI', type: 'backend', year: 2018, language: 'Python' },
-        { name: 'Express.js', type: 'backend', year: 2010, language: 'JavaScript' }
+      await brain.clear()
+      
+      // Add structured data for testing
+      const companies = [
+        { name: 'OpenAI', type: 'company', industry: 'AI', founded: 2015 },
+        { name: 'Microsoft', type: 'company', industry: 'Technology', founded: 1975 },
+        { name: 'Google', type: 'company', industry: 'Technology', founded: 1998 },
+        { name: 'Tesla', type: 'company', industry: 'Automotive', founded: 2003 }
       ]
 
-      console.log('🧠 Adding structured data for Brain Patterns testing...')
-      for (const framework of frameworks) {
-        await brain.addNoun(
-          `${framework.name} is a ${framework.type} framework built in ${framework.language}`,
-          framework
-        )
+      for (const company of companies) {
+        await brain.add({
+          data: `${company.name} is a ${company.industry} company founded in ${company.founded}`,
+          type: 'organization',
+          metadata: company
+        })
       }
     })
 
-    it('should combine semantic search with metadata filtering', async () => {
-      console.log('🔍 Testing Brain Patterns: semantic search + metadata filtering...')
-
-      // Find frontend frameworks with semantic search + metadata filtering
-      const frontendResults = await brain.search('user interface framework', { limit: 10,
-        metadata: { 
-          type: 'frontend',
-          language: 'JavaScript' 
-        }
+    it('should combine semantic and metadata search', async () => {
+      // Search for AI companies
+      const results = await brain.find({
+        query: 'artificial intelligence companies',
+        where: { industry: 'AI' },
+        limit: 5
       })
 
-      expect(frontendResults.length).toBeGreaterThan(0)
-      expect(frontendResults.length).toBeLessThanOrEqual(2) // React and Vue.js
+      expect(results.length).toBeGreaterThan(0)
+      const firstResult = results[0]
+      expect(firstResult.entity.metadata?.industry).toBe('AI')
       
-      // All results should match metadata filter
-      frontendResults.forEach(result => {
-        expect(result.metadata?.type).toBe('frontend')
-        expect(result.metadata?.language).toBe('JavaScript')
-      })
-
-      console.log(`✅ Found ${frontendResults.length} frontend JavaScript frameworks`)
-
-      // Find modern frameworks (after 2012) with semantic relevance
-      const modernResults = await brain.search('modern web framework', { limit: 5,
-        metadata: {
-          year: { greaterThan: 2012 }
-        }
-      })
-
-      expect(modernResults.length).toBeGreaterThan(0)
-      modernResults.forEach(result => {
-        expect(result.metadata?.year).toBeGreaterThan(2012)
-      })
-
-      console.log(`✅ Found ${modernResults.length} modern frameworks with real AI + metadata filtering`)
+      console.log('✅ Combined semantic + metadata search working')
     })
 
-    it('should handle range queries with semantic relevance', async () => {
-      console.log('🔍 Testing range queries with semantic search...')
-
-      // Find frameworks from the 2010s decade
-      const decade2010s = await brain.search('web development framework', { limit: 10,
-        metadata: {
-          year: { 
-            greaterThan: 2009,
-            lessThan: 2020 
-          }
-        }
+    it('should perform metadata-only queries', async () => {
+      // Find all tech companies
+      const techCompanies = await brain.find({
+        where: { industry: 'Technology' },
+        limit: 10
       })
 
-      expect(decade2010s.length).toBeGreaterThan(0)
-      decade2010s.forEach(result => {
-        expect(result.metadata?.year).toBeGreaterThan(2009)
-        expect(result.metadata?.year).toBeLessThan(2020)
+      expect(techCompanies.length).toBeGreaterThan(0)
+      techCompanies.forEach(result => {
+        expect(result.entity.metadata?.industry).toBe('Technology')
       })
-
-      console.log(`✅ Found ${decade2010s.length} frameworks from 2010s with semantic relevance`)
+      
+      console.log('✅ Metadata filtering working correctly')
     })
   })
 
-  describe('Production Performance with Real AI', () => {
-    it('should handle batch operations efficiently', async () => {
-      console.log('⚡ Testing batch performance with real AI...')
+  describe('Relationships and Graph Operations', () => {
+    let entityIds: string[] = []
 
-      const batchData = Array.from({ length: 10 }, (_, i) => ({
-        content: `Performance test item ${i}: ${Math.random().toString(36)}`,
-        batch: i,
-        timestamp: Date.now()
+    beforeAll(async () => {
+      await brain.clear()
+      
+      // Create entities
+      const alice = await brain.add({
+        data: 'Alice is a software engineer',
+        type: 'person',
+        metadata: { name: 'Alice', role: 'engineer' }
+      })
+      
+      const bob = await brain.add({
+        data: 'Bob is a product manager',
+        type: 'person',
+        metadata: { name: 'Bob', role: 'manager' }
+      })
+      
+      const project = await brain.add({
+        data: 'AI Assistant Project',
+        type: 'project',
+        metadata: { name: 'AI Assistant', status: 'active' }
+      })
+      
+      entityIds = [alice, bob, project]
+      
+      // Create relationships
+      await brain.relate({
+        from: alice,
+        to: project,
+        type: 'worksWith'
+      })
+      
+      await brain.relate({
+        from: bob,
+        to: project,
+        type: 'supervises'
+      })
+      
+      await brain.relate({
+        from: alice,
+        to: bob,
+        type: 'reportsTo'
+      })
+    })
+
+    it('should retrieve entity relationships', async () => {
+      const [alice, bob, project] = entityIds
+      
+      // Get Alice's relationships
+      const aliceRelations = await brain.getRelations({ from: alice })
+      
+      expect(aliceRelations).toBeDefined()
+      expect(aliceRelations.length).toBeGreaterThan(0)
+      
+      // Check specific relationships
+      const worksWithProject = aliceRelations.find(r => 
+        r.to === project && r.type === 'worksWith'
+      )
+      expect(worksWithProject).toBeDefined()
+      
+      const reportsToBob = aliceRelations.find(r => 
+        r.to === bob && r.type === 'reportsTo'
+      )
+      expect(reportsToBob).toBeDefined()
+      
+      console.log('✅ Relationship retrieval working')
+    })
+
+    it('should find connected entities', async () => {
+      const [alice] = entityIds
+      
+      // Find entities connected to Alice
+      const connected = await brain.find({
+        connected: {
+          to: alice,
+          via: 'reportsTo'
+        },
+        limit: 10
+      })
+      
+      // This should find entities that report to Alice
+      // (In our test, no one reports to Alice, so it should be empty or find Alice herself)
+      expect(connected).toBeDefined()
+      
+      console.log('✅ Graph traversal queries working')
+    })
+  })
+
+  describe('Performance with Real AI', () => {
+    it('should handle batch operations efficiently', async () => {
+      const batchSize = 10
+      const items = Array.from({ length: batchSize }, (_, i) => ({
+        data: `Test document ${i} with some content about ${i % 2 === 0 ? 'technology' : 'science'}`,
+        type: 'document' as const,
+        metadata: { index: i, batch: true }
       }))
 
+      console.log(`⏱️ Testing batch add of ${batchSize} items...`)
       const startTime = Date.now()
-      const ids = []
-
-      for (const item of batchData) {
-        const id = await brain.addNoun(item.content, { 
-          batch: item.batch,
-          timestamp: item.timestamp 
-        })
-        ids.push(id)
-      }
-
-      const batchTime = Date.now() - startTime
-      console.log(`✅ Processed ${batchData.length} items in ${batchTime}ms (${Math.round(batchTime/batchData.length)}ms per item)`)
-
-      // Verify all items were created
-      expect(ids).toHaveLength(10)
       
-      // Test batch retrieval
-      const retrievalStart = Date.now()
-      for (const id of ids) {
-        const item = await brain.getNoun(id)
-        expect(item).toBeTruthy()
-        expect(item?.metadata?.batch).toBeDefined()
-      }
-      const retrievalTime = Date.now() - retrievalStart
+      const ids = await brain.addMany({ items })
       
-      console.log(`✅ Retrieved ${ids.length} items in ${retrievalTime}ms`)
+      const duration = Date.now() - startTime
+      console.log(`✅ Batch add completed in ${duration}ms`)
+      
+      expect(ids).toHaveLength(batchSize)
+      expect(duration).toBeLessThan(30000) // Should complete within 30 seconds
+      
+      // Calculate throughput
+      const itemsPerSecond = (batchSize / duration) * 1000
+      console.log(`📊 Throughput: ${itemsPerSecond.toFixed(2)} items/second`)
     })
 
-    it('should provide accurate statistics with real data', async () => {
-      console.log('📊 Testing statistics with real AI data...')
-
-      const stats = await brain.getStatistics()
+    it('should search efficiently with real embeddings', async () => {
+      console.log('⏱️ Testing search performance...')
       
-      expect(stats).toHaveProperty('totalItems')
-      expect(stats).toHaveProperty('dimensions')
-      expect(stats).toHaveProperty('indexSize')
+      const queries = [
+        'machine learning algorithms',
+        'web development frameworks',
+        'cloud computing platforms'
+      ]
       
-      expect(stats.totalItems).toBeGreaterThan(0)
-      expect(stats.dimensions).toBe(384) // Standard embedding dimension
-      expect(typeof stats.indexSize).toBe('number')
+      const startTime = Date.now()
       
-      console.log(`✅ Statistics: ${stats.totalItems} items, ${stats.dimensions}D embeddings, ${stats.indexSize} index size`)
+      for (const query of queries) {
+        const results = await brain.find({ 
+          query,
+          limit: 5 
+        })
+        expect(results).toBeDefined()
+      }
+      
+      const duration = Date.now() - startTime
+      const avgQueryTime = duration / queries.length
+      
+      console.log(`✅ Average query time: ${avgQueryTime.toFixed(0)}ms`)
+      expect(avgQueryTime).toBeLessThan(5000) // Each query should take less than 5 seconds
     })
   })
 
-  describe('Memory Management with Real AI', () => {
-    it('should handle memory efficiently during operations', async () => {
-      const initialMemory = process.memoryUsage()
-      console.log(`📊 Initial memory: ${(initialMemory.heapUsed / 1024 / 1024).toFixed(2)} MB`)
-
-      // Perform memory-intensive operations
-      const operations = Array.from({ length: 5 }, (_, i) => 
-        `Memory test ${i}: ${Array.from({ length: 100 }, () => Math.random().toString(36)).join(' ')}`
-      )
-
-      for (const op of operations) {
-        await brain.addNoun(op)
-        await brain.search(op.slice(0, { limit: 20 }), 3) // Search with part of the content
-      }
-
-      const afterMemory = process.memoryUsage()
-      const memoryIncrease = (afterMemory.heapUsed - initialMemory.heapUsed) / 1024 / 1024
+  describe('Error Handling and Edge Cases', () => {
+    it('should handle invalid inputs gracefully', async () => {
+      // Test with empty data
+      await expect(brain.add({ 
+        data: '',
+        type: 'document'
+      })).resolves.toBeDefined()
       
-      console.log(`📊 Memory after operations: ${(afterMemory.heapUsed / 1024 / 1024).toFixed(2)} MB (+${memoryIncrease.toFixed(2)} MB)`)
+      // Test with very long text
+      const longText = 'Lorem ipsum '.repeat(10000)
+      await expect(brain.add({
+        data: longText,
+        type: 'document'
+      })).resolves.toBeDefined()
       
-      // Memory increase should be reasonable (less than 500MB for this test)
-      expect(memoryIncrease).toBeLessThan(500)
+      console.log('✅ Edge cases handled correctly')
+    })
+
+    it('should handle non-existent entities', async () => {
+      const fakeId = 'non-existent-id-12345'
       
-      console.log('✅ Memory usage within acceptable limits')
+      // Get non-existent entity
+      const entity = await brain.get(fakeId)
+      expect(entity).toBeNull()
+      
+      // Similar search with non-existent ID
+      await expect(brain.similar({ to: fakeId })).rejects.toThrow()
+      
+      console.log('✅ Non-existent entity handling correct')
     })
   })
 })

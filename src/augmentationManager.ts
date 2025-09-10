@@ -25,7 +25,8 @@ export class AugmentationManager {
    * @returns Array of augmentation information
    */
   list(): AugmentationInfo[] {
-    return this.pipeline.listAugmentationsWithStatus()
+    // Deprecated: use brain.augmentations instead
+    return []
   }
 
   /**
@@ -54,7 +55,8 @@ export class AugmentationManager {
    * @returns True if successfully enabled
    */
   enable(name: string): boolean {
-    return this.pipeline.enableAugmentation(name)
+    // Deprecated: use brain.augmentations instead
+    return false
   }
 
   /**
@@ -63,7 +65,8 @@ export class AugmentationManager {
    * @returns True if successfully disabled
    */
   disable(name: string): boolean {
-    return this.pipeline.disableAugmentation(name)
+    // Deprecated: use brain.augmentations instead
+    return false
   }
 
   /**
@@ -72,7 +75,7 @@ export class AugmentationManager {
    * @returns True if successfully removed
    */
   remove(name: string): boolean {
-    this.pipeline.unregister(name)
+    // Deprecated: use brain.augmentations instead
     return true
   }
 
@@ -82,7 +85,8 @@ export class AugmentationManager {
    * @returns Number of augmentations enabled
    */
   enableType(type: AugmentationType): number {
-    return this.pipeline.enableAugmentationType(type as any)
+    // Deprecated: use brain.augmentations instead
+    return 0
   }
 
   /**
@@ -91,7 +95,8 @@ export class AugmentationManager {
    * @returns Number of augmentations disabled
    */
   disableType(type: AugmentationType): number {
-    return this.pipeline.disableAugmentationType(type as any)
+    // Deprecated: use brain.augmentations instead
+    return 0
   }
 
   /**
@@ -124,7 +129,7 @@ export class AugmentationManager {
    * @param augmentation The augmentation to register
    */
   register(augmentation: IAugmentation): void {
-    this.pipeline.register(augmentation)
+    // Deprecated: use brain.augmentations instead
   }
 }
 

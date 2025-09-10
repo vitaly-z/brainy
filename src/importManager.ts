@@ -55,7 +55,7 @@ export interface ImportResult {
 export class ImportManager {
   private neuralImport: NeuralImportAugmentation
   private typeMatcher: BrainyTypes | null = null
-  private brain: any // BrainyData instance
+  private brain: any // Brainy instance
   
   constructor(brain: any) {
     this.brain = brain
@@ -194,8 +194,8 @@ export class ImportManager {
               _confidence: item.confidence
             }
             
-            // Add to brain - pass object once, it becomes both vector source and metadata
-            const id = await this.brain.addNoun(metadata)
+            // Add to brain using proper API signature: addNoun(vectorOrData, nounType, metadata)
+            const id = await this.brain.addNoun(dataToImport, nounType || 'content', metadata)
             result.nouns.push(id)
             result.stats.imported++
             return id

@@ -1,13 +1,13 @@
 /**
- * BrainyDataInterface
+ * BrainyInterface
  * 
- * This interface defines the methods from BrainyData that are used by serverSearchAugmentations.ts.
+ * This interface defines the methods from Brainy that are used by serverSearchAugmentations.ts.
  * It's used to break the circular dependency between brainyData.ts and serverSearchAugmentations.ts.
  */
 
 import { Vector } from '../coreTypes.js'
 
-export interface BrainyDataInterface<T = unknown> {
+export interface BrainyInterface<T = unknown> {
   /**
    * Initialize the database
    */

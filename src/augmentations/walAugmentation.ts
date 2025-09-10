@@ -12,6 +12,7 @@
  */
 
 import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
+import { AugmentationManifest } from './manifest.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 
 interface WALEntry {
@@ -36,7 +37,7 @@ interface WALConfig {
 }
 
 export class WALAugmentation extends BaseAugmentation {
-  name = 'WAL'
+  name = 'wal'
   timing = 'around' as const
   metadata = 'readonly' as const  // Reads metadata for logging/recovery
   operations = ['addNoun', 'addVerb', 'saveNoun', 'saveVerb', 'updateMetadata', 'delete', 'deleteVerb', 'clear'] as ('addNoun' | 'addVerb' | 'saveNoun' | 'saveVerb' | 'updateMetadata' | 'delete' | 'deleteVerb' | 'clear')[]
@@ -46,27 +47,189 @@ export class WALAugmentation extends BaseAugmentation {
   readonly category = 'internal' as const
   readonly description = 'Write-ahead logging for durability and crash recovery'
   
-  private config: Required<WALConfig>
   private currentLogId: string
   private operationCounter = 0
   private checkpointTimer?: NodeJS.Timeout
   private isRecovering = false
   
   constructor(config: WALConfig = {}) {
-    super()
-    this.config = {
-      enabled: config.enabled ?? true,
-      immediateWrites: config.immediateWrites ?? true, // Zero-config: immediate by default
-      adaptivePersistence: config.adaptivePersistence ?? true, // Zero-config: adaptive by default
-      walPrefix: config.walPrefix ?? 'wal',
-      maxSize: config.maxSize ?? 10 * 1024 * 1024, // 10MB
-      checkpointInterval: config.checkpointInterval ?? 60 * 1000, // 1 minute
-      autoRecover: config.autoRecover ?? true,
-      maxRetries: config.maxRetries ?? 3
-    }
+    super(config)
     
     // Create unique log ID for this session
     this.currentLogId = `${this.config.walPrefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  }
+  
+  /**
+   * Get the augmentation manifest for discovery
+   */
+  getManifest(): AugmentationManifest {
+    return {
+      id: 'wal',
+      name: 'Write-Ahead Log',
+      version: '2.0.0',
+      description: 'Provides durability and crash recovery through write-ahead logging',
+      longDescription: 'The WAL augmentation ensures data durability by logging all write operations before they are applied. It supports crash recovery, operation replay, and automatic log rotation. Essential for production deployments requiring high reliability.',
+      category: 'internal',
+      configSchema: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            default: true,
+            description: 'Enable or disable write-ahead logging'
+          },
+          immediateWrites: {
+            type: 'boolean',
+            default: true,
+            description: 'Execute operations immediately then log asynchronously for better performance'
+          },
+          adaptivePersistence: {
+            type: 'boolean',
+            default: true,
+            description: 'Automatically adapt persistence strategy based on operation patterns'
+          },
+          walPrefix: {
+            type: 'string',
+            default: 'wal',
+            description: 'Prefix for WAL file names'
+          },
+          maxSize: {
+            type: 'number',
+            default: 10485760, // 10MB
+            minimum: 1048576,  // 1MB
+            maximum: 1073741824, // 1GB
+            description: 'Maximum WAL file size in bytes before rotation'
+          },
+          checkpointInterval: {
+            type: 'number',
+            default: 60000, // 1 minute
+            minimum: 1000,  // 1 second
+            maximum: 3600000, // 1 hour
+            description: 'Interval between checkpoints in milliseconds'
+          },
+          autoRecover: {
+            type: 'boolean',
+            default: true,
+            description: 'Automatically recover pending operations on startup'
+          },
+          maxRetries: {
+            type: 'number',
+            default: 3,
+            minimum: 0,
+            maximum: 10,
+            description: 'Maximum number of retries for failed operations'
+          }
+        },
+        required: [],
+        additionalProperties: false
+      },
+      configDefaults: {
+        enabled: true,
+        immediateWrites: true,
+        adaptivePersistence: true,
+        walPrefix: 'wal',
+        maxSize: 10485760,
+        checkpointInterval: 60000,
+        autoRecover: true,
+        maxRetries: 3
+      },
+      configExamples: [
+        {
+          name: 'High Performance',
+          description: 'Optimized for speed with asynchronous logging',
+          config: {
+            enabled: true,
+            immediateWrites: true,
+            adaptivePersistence: true,
+            checkpointInterval: 300000 // 5 minutes
+          }
+        },
+        {
+          name: 'High Durability',
+          description: 'Maximum durability with synchronous writes',
+          config: {
+            enabled: true,
+            immediateWrites: false,
+            adaptivePersistence: false,
+            checkpointInterval: 30000, // 30 seconds
+            maxRetries: 5
+          }
+        },
+        {
+          name: 'Development',
+          description: 'Lightweight configuration for development',
+          config: {
+            enabled: true,
+            immediateWrites: true,
+            maxSize: 5242880, // 5MB
+            checkpointInterval: 120000, // 2 minutes
+            autoRecover: false
+          }
+        }
+      ],
+      minBrainyVersion: '2.0.0',
+      keywords: ['durability', 'recovery', 'wal', 'reliability', 'crash-recovery'],
+      documentation: 'https://docs.brainy.dev/augmentations/wal',
+      status: 'stable',
+      performance: {
+        memoryUsage: 'low',
+        cpuUsage: 'low',
+        networkUsage: 'none'
+      },
+      features: ['durability', 'crash-recovery', 'operation-replay', 'log-rotation'],
+      enhancedOperations: ['saveNoun', 'saveVerb', 'addNoun', 'addVerb', 'updateMetadata', 'delete'],
+      metrics: [
+        {
+          name: 'wal_operations_total',
+          type: 'counter',
+          description: 'Total number of operations logged to WAL'
+        },
+        {
+          name: 'wal_recovery_operations',
+          type: 'counter',
+          description: 'Number of operations recovered from WAL'
+        },
+        {
+          name: 'wal_file_size',
+          type: 'gauge',
+          description: 'Current WAL file size in bytes'
+        }
+      ],
+      ui: {
+        icon: '📝',
+        color: '#FF5722'
+      }
+    }
+  }
+  
+  /**
+   * Handle runtime configuration changes
+   */
+  protected async onConfigChange(newConfig: WALConfig, oldConfig: WALConfig): Promise<void> {
+    // Handle checkpoint interval changes
+    if (newConfig.checkpointInterval !== oldConfig.checkpointInterval) {
+      if (this.checkpointTimer) {
+        clearInterval(this.checkpointTimer)
+        this.checkpointTimer = undefined
+      }
+      
+      if (newConfig.checkpointInterval && newConfig.checkpointInterval > 0 && newConfig.enabled) {
+        this.checkpointTimer = setInterval(
+          () => this.createCheckpoint(),
+          newConfig.checkpointInterval
+        )
+      }
+    }
+    
+    // Handle enabled/disabled changes
+    if (newConfig.enabled !== oldConfig.enabled) {
+      if (!newConfig.enabled && this.checkpointTimer) {
+        clearInterval(this.checkpointTimer)
+        this.checkpointTimer = undefined
+      }
+      
+      this.log(`Write-Ahead Log ${newConfig.enabled ? 'enabled' : 'disabled'}`)
+    }
   }
   
   protected async onInitialize(): Promise<void> {

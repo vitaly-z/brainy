@@ -13,11 +13,11 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { BrainyData } from '../../dist/index.js'
+import { Brainy } from '../../src/brainy'
 import { requiresMemory } from '../setup-integration.js'
 
 describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
-  let brain: BrainyData
+  let brain: Brainy
 
   beforeAll(async () => {
     // Ensure sufficient memory for comprehensive AI testing
@@ -27,8 +27,8 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
     console.log(`📊 Available heap: ${process.env.NODE_OPTIONS}`)
     
     // Create instance with full feature set
-    brain = new BrainyData({
-      storage: { forceMemoryStorage: true },
+    brain = new Brainy({
+      storage: { type: 'memory' },
       verbose: true  // Enable verbose logging to track operations
     })
     
@@ -81,7 +81,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       ]
       
       for (const item of testItems) {
-        await brain.addNoun(item)
+        await brain.add({ data: item, type: 'thing' })
       }
       
       console.log(`✅ Added ${testItems.length} items for search testing`)
@@ -219,7 +219,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
 
       console.log('🔗 Adding structured data for Triple Intelligence...')
       for (const fw of frameworks) {
-        await brain.addNoun(`${fw.name} framework for ${fw.type} development`, fw)
+        await brain.add({ data: `${fw.name} framework for ${fw.type} development`, type: 'thing', metadata: fw })
       }
     })
 
@@ -350,7 +350,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
 
       console.log('   Adding batch data to trigger optimization...')
       for (const item of batchData) {
-        await brain.addNoun(item, { batch: 'optimization', index: Math.floor(Math.random() * 100) })
+        await brain.add({ data: item, type: 'thing', metadata: { batch: 'optimization', index: Math.floor(Math.random( }) * 100) })
       }
 
       // Check final statistics
@@ -368,10 +368,10 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log('💾 Testing index persistence (memory storage)...')
 
       // Since we're using memory storage, test data consistency
-      const testId = await brain.addNoun('Persistence test item', { test: 'persistence' })
+      const testId = await brain.add({ data: 'Persistence test item', type: 'thing', metadata: { test: 'persistence' } })
       
       // Verify immediate retrieval
-      const retrieved = await brain.getNoun(testId)
+      const retrieved = await brain.get(testId)
       expect(retrieved).toBeTruthy()
       expect(retrieved?.metadata?.test).toBe('persistence')
 

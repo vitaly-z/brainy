@@ -43,7 +43,8 @@ export class MemoryStorage extends BaseStorage {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0
+      level: noun.level || 0,
+      metadata: noun.metadata
     }
 
     // Copy connections
@@ -72,7 +73,8 @@ export class MemoryStorage extends BaseStorage {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0
+      level: noun.level || 0,
+      metadata: noun.metadata
     }
 
     // Copy connections
@@ -166,12 +168,13 @@ export class MemoryStorage extends BaseStorage {
       if (!noun) continue
       
       // Create a deep copy to avoid reference issues
-      const nounCopy: HNSWNoun = {
-        id: noun.id,
-        vector: [...noun.vector],
-        connections: new Map(),
-        level: noun.level || 0
-      }
+    const nounCopy: HNSWNoun = {
+      id: noun.id,
+      vector: [...noun.vector],
+      connections: new Map(),
+      level: noun.level || 0,
+      metadata: noun.metadata
+    }
       
       // Copy connections
       for (const [level, connections] of noun.connections.entries()) {

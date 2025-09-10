@@ -1,0 +1,715 @@
+{
+    "version": "2.0.0",
+    "patterns": [
+        {
+            "id": "info_what",
+            "category": "informational",
+            "examples": ["what is machine learning", "what are neural networks", "what does AI mean"],
+            "pattern": "what (is|are|does) (.+)",
+            "template": {
+                "like": "${2}"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "info_how",
+            "category": "informational",
+            "examples": ["how to train a model", "how does clustering work", "how to implement search"],
+            "pattern": "how (to|does|do|can) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "tutorial" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "info_why",
+            "category": "informational",
+            "examples": ["why use vector databases", "why does overfitting occur"],
+            "pattern": "why (does|do|is|are|use) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "explanation" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "info_when",
+            "category": "informational",
+            "examples": ["when did deep learning start", "when was transformer invented"],
+            "pattern": "when (did|was|were|is|are) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "event" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "info_where",
+            "category": "informational",
+            "examples": ["where is Stanford located", "where can I find datasets"],
+            "pattern": "where (is|are|can|do) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "location" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "info_who",
+            "category": "informational",
+            "examples": ["who invented transformers", "who is Geoffrey Hinton"],
+            "pattern": "who (is|are|invented|created|made) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "person" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "info_definition",
+            "category": "informational",
+            "examples": ["machine learning definition", "AI meaning", "what neural network means"],
+            "pattern": "(.+) (definition|meaning|means)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "definition" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "info_explain",
+            "category": "informational",
+            "examples": ["explain backpropagation", "explain how transformers work"],
+            "pattern": "explain (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "explanation" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "info_tutorial",
+            "category": "informational",
+            "examples": ["tutorial on deep learning", "pytorch tutorial", "guide to NLP"],
+            "pattern": "(tutorial|guide|course) (on|to|for)? (.+)",
+            "template": {
+                "like": "${3}",
+                "where": { "type": "tutorial" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "nav_entity",
+            "category": "navigational",
+            "examples": ["OpenAI website", "Google homepage", "GitHub tensorflow"],
+            "pattern": "([A-Z][\\w]+) (website|homepage|page|site)",
+            "template": {
+                "where": { "name": "${1}", "type": "website" }
+            },
+            "confidence": 0.95
+        },
+        {
+            "id": "nav_goto",
+            "category": "navigational",
+            "examples": ["go to documentation", "navigate to settings"],
+            "pattern": "(go to|navigate to|open|show) (.+)",
+            "template": {
+                "where": { "name": "${2}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "nav_profile",
+            "category": "navigational",
+            "examples": ["John Smith profile", "user profile", "my account"],
+            "pattern": "(.+) (profile|account|page)",
+            "template": {
+                "where": { "name": "${1}", "type": "profile" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "trans_buy",
+            "category": "transactional",
+            "examples": ["buy GPU", "purchase subscription", "order dataset"],
+            "pattern": "(buy|purchase|order|get) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "product", "available": true }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "trans_download",
+            "category": "transactional",
+            "examples": ["download model", "download dataset", "get paper PDF"],
+            "pattern": "(download|get|fetch) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "downloadable" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "trans_subscribe",
+            "category": "transactional",
+            "examples": ["subscribe to newsletter", "follow updates"],
+            "pattern": "(subscribe|follow|watch) (to )? (.+)",
+            "template": {
+                "like": "${3}",
+                "where": { "type": "subscription" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "commercial_reviews",
+            "category": "commercial",
+            "examples": ["tensorflow reviews", "best practices reviews", "model evaluation"],
+            "pattern": "(.+) (reviews|ratings|feedback|opinions)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "review" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "commercial_best",
+            "category": "commercial",
+            "examples": ["best machine learning framework", "top AI models", "best practices"],
+            "pattern": "(best|top|greatest|finest) (.+)",
+            "template": {
+                "like": "${2}",
+                "boost": "popular"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "commercial_compare",
+            "category": "commercial",
+            "examples": ["tensorflow vs pytorch", "compare BERT and GPT", "GPT-3 compared to GPT-4"],
+            "pattern": "(.+) (vs|versus|compared to|vs\\.) (.+)",
+            "template": {
+                "like": ["${1}", "${3}"],
+                "where": { "type": "comparison" }
+            },
+            "confidence": 0.95
+        },
+        {
+            "id": "commercial_alternatives",
+            "category": "commercial",
+            "examples": ["tensorflow alternatives", "options besides OpenAI", "similar to BERT"],
+            "pattern": "(.+) (alternatives|options|similar to|like)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "alternative" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "commercial_top_n",
+            "category": "commercial",
+            "examples": ["top 10 models", "top 5 papers", "best 3 frameworks"],
+            "pattern": "(top|best) (\\d+) (.+)",
+            "template": {
+                "like": "${3}",
+                "limit": "${2}",
+                "boost": "popular"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "commercial_cheapest",
+            "category": "commercial",
+            "examples": ["cheapest GPU", "most affordable cloud", "budget options"],
+            "pattern": "(cheapest|most affordable|budget|lowest price) (.+)",
+            "template": {
+                "like": "${2}",
+                "orderBy": { "price": "asc" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "commercial_pricing",
+            "category": "commercial",
+            "examples": ["GPU pricing", "cloud costs", "model training costs"],
+            "pattern": "(.+) (pricing|price|cost|costs|rates)",
+            "template": {
+                "like": "${1}",
+                "where": { "hasField": "price" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "temporal_from_year",
+            "category": "temporal",
+            "examples": ["papers from 2023", "research from 2022", "models from last year"],
+            "pattern": "(.+) from (\\d{4})",
+            "template": {
+                "like": "${1}",
+                "where": { "year": "${2}" }
+            },
+            "confidence": 0.95
+        },
+        {
+            "id": "temporal_after",
+            "category": "temporal",
+            "examples": ["papers after 2020", "research after January", "models after GPT-3"],
+            "pattern": "(.+) after (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "date": { "greaterThan": "${2}" } }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "temporal_before",
+            "category": "temporal",
+            "examples": ["papers before 2020", "research before transformer", "models before BERT"],
+            "pattern": "(.+) before (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "date": { "lessThan": "${2}" } }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "temporal_between",
+            "category": "temporal",
+            "examples": ["papers between 2020 and 2023", "research from 2021 to 2022"],
+            "pattern": "(.+) (between|from) (.+) (and|to) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "date": { "between": ["${3}", "${5}"] } }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "temporal_recent",
+            "category": "temporal",
+            "examples": ["recent papers", "latest research", "new models"],
+            "pattern": "(recent|latest|new|newest) (.+)",
+            "template": {
+                "like": "${2}",
+                "boost": "recent"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "temporal_last_n_days",
+            "category": "temporal",
+            "examples": ["papers last 30 days", "research last week", "models last month"],
+            "pattern": "(.+) last (\\d+) (days|weeks|months|years)",
+            "template": {
+                "like": "${1}",
+                "where": { "date": { "greaterThan": "${2} ${3} ago" } }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "temporal_this_period",
+            "category": "temporal",
+            "examples": ["papers this year", "research this month", "models this week"],
+            "pattern": "(.+) this (week|month|year|quarter)",
+            "template": {
+                "like": "${1}",
+                "where": { "date": { "greaterThan": "start of ${2}" } }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "spatial_near",
+            "category": "spatial",
+            "examples": ["conferences near Boston", "labs near Stanford", "companies near me"],
+            "pattern": "(.+) near (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "location": { "near": "${2}" } }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "spatial_in",
+            "category": "spatial",
+            "examples": ["companies in Silicon Valley", "universities in Boston", "labs in California"],
+            "pattern": "(.+) in ([A-Z][\\w\\s]+)",
+            "template": {
+                "like": "${1}",
+                "where": { "location": "${2}" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "spatial_at",
+            "category": "spatial",
+            "examples": ["researchers at MIT", "papers at conference", "work at Google"],
+            "pattern": "(.+) at ([A-Z][\\w]+)",
+            "template": {
+                "like": "${1}",
+                "where": { "organization": "${2}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "relational_by_author",
+            "category": "relational",
+            "examples": ["papers by Hinton", "research by OpenAI", "models by Google"],
+            "pattern": "(.+) by ([A-Z][\\w\\s]+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${2}" }
+            },
+            "confidence": 0.95
+        },
+        {
+            "id": "relational_from_source",
+            "category": "relational",
+            "examples": ["papers from Stanford", "datasets from Google", "models from OpenAI"],
+            "pattern": "(.+) from ([A-Z][\\w\\s]+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${2}" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "relational_related",
+            "category": "relational",
+            "examples": ["papers related to transformers", "research connected to NLP"],
+            "pattern": "(.+) (related to|connected to|associated with) (.+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "to": "${3}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "relational_created_by",
+            "category": "relational",
+            "examples": ["models created by OpenAI", "datasets created by Google"],
+            "pattern": "(.+) (created|made|developed|built) by (.+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${3}", "type": "created" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "relational_authored",
+            "category": "relational",
+            "examples": ["papers authored by Bengio", "articles written by researchers"],
+            "pattern": "(.+) (authored|written) by (.+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${3}", "type": "author" }
+            },
+            "confidence": 0.95
+        },
+        {
+            "id": "relational_published",
+            "category": "relational",
+            "examples": ["papers published by Nature", "articles published in Science"],
+            "pattern": "(.+) published (by|in) (.+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${3}", "type": "publisher" }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "filter_with",
+            "category": "filtering",
+            "examples": ["papers with code", "models with pretrained weights", "datasets with labels"],
+            "pattern": "(.+) with (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "${2}": { "exists": true } }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "filter_without",
+            "category": "filtering",
+            "examples": ["papers without code", "models without training", "datasets without labels"],
+            "pattern": "(.+) without (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "${2}": { "exists": false } }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "filter_only",
+            "category": "filtering",
+            "examples": ["only open source models", "only free datasets", "papers only"],
+            "pattern": "(only )? (.+) (only)?",
+            "template": {
+                "like": "${2}",
+                "where": { "exclusive": true }
+            },
+            "confidence": 0.75
+        },
+        {
+            "id": "filter_except",
+            "category": "filtering",
+            "examples": ["all models except GPT", "papers except reviews", "everything but tutorials"],
+            "pattern": "(.+) (except|but not|excluding) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "notLike": "${3}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "filter_including",
+            "category": "filtering",
+            "examples": ["papers including code", "models including documentation"],
+            "pattern": "(.+) (including|with|containing) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "includes": "${3}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "filter_more_than",
+            "category": "filtering",
+            "examples": ["papers with more than 100 citations", "models with over 1B parameters"],
+            "pattern": "(.+) with (more than|over|greater than) (\\d+) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "${4}": { "greaterThan": "${3}" } }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "filter_less_than",
+            "category": "filtering",
+            "examples": ["models with less than 1M parameters", "papers with under 10 citations"],
+            "pattern": "(.+) with (less than|under|fewer than) (\\d+) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "${4}": { "lessThan": "${3}" } }
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "filter_exactly",
+            "category": "filtering",
+            "examples": ["papers with exactly 5 authors", "models with 12 layers"],
+            "pattern": "(.+) with (exactly |)(\\d+) (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "${4}": "${3}" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "aggregation_count",
+            "category": "aggregation",
+            "examples": ["count papers", "number of models", "how many datasets"],
+            "pattern": "(count|number of|how many) (.+)",
+            "template": {
+                "like": "${2}",
+                "aggregate": "count"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "aggregation_average",
+            "category": "aggregation",
+            "examples": ["average citations", "mean accuracy", "average performance"],
+            "pattern": "(average|mean) (.+)",
+            "template": {
+                "like": "${2}",
+                "aggregate": "avg"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "aggregation_sum",
+            "category": "aggregation",
+            "examples": ["total citations", "sum of parameters", "total cost"],
+            "pattern": "(total|sum of|sum) (.+)",
+            "template": {
+                "like": "${2}",
+                "aggregate": "sum"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "aggregation_max",
+            "category": "aggregation",
+            "examples": ["highest accuracy", "maximum performance", "largest model"],
+            "pattern": "(highest|maximum|largest|biggest) (.+)",
+            "template": {
+                "like": "${2}",
+                "aggregate": "max"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "aggregation_min",
+            "category": "aggregation",
+            "examples": ["lowest error", "minimum cost", "smallest model"],
+            "pattern": "(lowest|minimum|smallest|least) (.+)",
+            "template": {
+                "like": "${2}",
+                "aggregate": "min"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "question_can",
+            "category": "informational",
+            "examples": ["can transformers handle images", "can I use this for NLP"],
+            "pattern": "can (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "capability" }
+            },
+            "confidence": 0.8
+        },
+        {
+            "id": "question_should",
+            "category": "informational",
+            "examples": ["should I use tensorflow", "should we implement caching"],
+            "pattern": "should (I|we|you) (.+)",
+            "template": {
+                "like": "${2}",
+                "where": { "type": "recommendation" }
+            },
+            "confidence": 0.8
+        },
+        {
+            "id": "question_which",
+            "category": "commercial",
+            "examples": ["which model is best", "which framework to use"],
+            "pattern": "which (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "type": "selection" }
+            },
+            "confidence": 0.8
+        },
+        {
+            "id": "comparative_better",
+            "category": "commercial",
+            "examples": ["is BERT better than GPT", "pytorch better than tensorflow"],
+            "pattern": "(is )? (.+) better than (.+)",
+            "template": {
+                "like": ["${2}", "${3}"],
+                "where": { "type": "comparison" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "comparative_faster",
+            "category": "commercial",
+            "examples": ["fastest model", "quickest training", "faster than BERT"],
+            "pattern": "(fastest|quickest|faster) (.+)",
+            "template": {
+                "like": "${2}",
+                "orderBy": { "speed": "desc" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "comparative_more_accurate",
+            "category": "commercial",
+            "examples": ["most accurate model", "higher accuracy than"],
+            "pattern": "(most accurate|highest accuracy|more accurate) (.+)",
+            "template": {
+                "like": "${2}",
+                "orderBy": { "accuracy": "desc" }
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "action_show",
+            "category": "navigational",
+            "examples": ["show me papers", "display results", "list models"],
+            "pattern": "(show|display|list) (me )? (.+)",
+            "template": {
+                "like": "${3}"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "action_find",
+            "category": "navigational",
+            "examples": ["find papers about AI", "search for models", "look for datasets"],
+            "pattern": "(find|search for|look for) (.+)",
+            "template": {
+                "like": "${2}"
+            },
+            "confidence": 0.9
+        },
+        {
+            "id": "action_get",
+            "category": "transactional",
+            "examples": ["get all papers", "fetch datasets", "retrieve models"],
+            "pattern": "(get|fetch|retrieve) (all )? (.+)",
+            "template": {
+                "like": "${3}"
+            },
+            "confidence": 0.85
+        },
+        {
+            "id": "combined_complex_1",
+            "category": "combined",
+            "examples": ["recent papers by Hinton with more than 50 citations"],
+            "pattern": "recent (.+) by (.+) with more than (\\d+) (.+)",
+            "template": {
+                "like": "${1}",
+                "connected": { "from": "${2}" },
+                "where": { "${4}": { "greaterThan": "${3}" } },
+                "boost": "recent"
+            },
+            "confidence": 0.75
+        },
+        {
+            "id": "combined_complex_2",
+            "category": "combined",
+            "examples": ["best machine learning papers from 2023 at Stanford"],
+            "pattern": "best (.+) from (\\d{4}) at (.+)",
+            "template": {
+                "like": "${1}",
+                "where": { "year": "${2}", "organization": "${3}" },
+                "boost": "popular"
+            },
+            "confidence": 0.75
+        },
+        {
+            "id": "combined_complex_3",
+            "category": "combined",
+            "examples": ["compare tensorflow and pytorch for computer vision"],
+            "pattern": "compare (.+) and (.+) for (.+)",
+            "template": {
+                "like": ["${1}", "${2}", "${3}"],
+                "where": { "type": "comparison", "domain": "${3}" }
+            },
+            "confidence": 0.75
+        },
+        {
+            "id": "contextual_more_like",
+            "category": "contextual",
+            "examples": ["more like this", "similar papers", "find similar"],
+            "pattern": "(more like|similar to|like) (this|that|these)",
+            "template": {
+                "similar": "__context__"
+            },
+            "confidence": 0.8
+        },
+        {
+            "id": "contextual_same_but",
+            "category": "contextual",
+            "examples": ["same but newer", "same query but from 2023"],
+            "pattern": "same (query |search |)but (.+)",
+            "template": {
+                "__modifier__": "${2}"
+            },
+            "confidence": 0.75
+        }
+    ]
+}

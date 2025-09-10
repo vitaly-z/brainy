@@ -77,7 +77,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   readonly category = 'core' as const
   readonly description = 'AI-powered intelligent scoring for relationship strength analysis'
   
-  private config: Required<VerbScoringConfig>
+  protected config: Required<VerbScoringConfig>
   private relationshipStats: Map<string, RelationshipMetrics> = new Map()
   private metrics: ScoringMetrics = {
     relationshipsScored: 0,
@@ -135,7 +135,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   
   /**
    * Get this augmentation instance for API compatibility
-   * Used by BrainyData to access scoring methods
+   * Used by Brainy to access scoring methods
    */
   getScoring(): IntelligentVerbScoringAugmentation {
     return this
@@ -567,7 +567,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   
   /**
    * Get learning statistics for monitoring and debugging
-   * Required for BrainyData.getVerbScoringStats()
+   * Required for Brainy.getVerbScoringStats()
    */
   getLearningStats(): {
     totalRelationships: number
@@ -605,7 +605,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   
   /**
    * Export learning data for backup or analysis
-   * Required for BrainyData.exportVerbScoringLearningData()
+   * Required for Brainy.exportVerbScoringLearningData()
    */
   exportLearningData(): string {
     const data = {
@@ -622,7 +622,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   
   /**
    * Import learning data from backup
-   * Required for BrainyData.importVerbScoringLearningData()
+   * Required for Brainy.importVerbScoringLearningData()
    */
   importLearningData(jsonData: string): void {
     try {
@@ -654,7 +654,7 @@ export class IntelligentVerbScoringAugmentation extends BaseAugmentation {
   
   /**
    * Provide feedback on a relationship's weight
-   * Required for BrainyData.provideVerbScoringFeedback()
+   * Required for Brainy.provideVerbScoringFeedback()
    */
   async provideFeedback(
     sourceId: string,

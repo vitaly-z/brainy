@@ -3,7 +3,7 @@
  *
  * @deprecated This module provides backward compatibility for old augmentation
  * loading code. All new code should use the AugmentationRegistry class directly
- * on BrainyData instances.
+ * on Brainy instances.
  */
 
 import { BrainyAugmentation } from './types/augmentations.js'

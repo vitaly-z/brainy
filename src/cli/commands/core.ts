@@ -7,7 +7,7 @@
 import chalk from 'chalk'
 import ora from 'ora'
 import { readFileSync, writeFileSync } from 'fs'
-import { BrainyData } from '../../brainyData.js'
+import { Brainy } from '../../brainy.js'
 import { BrainyTypes, NounType, VerbType } from '../../index.js'
 
 interface CoreOptions {
@@ -46,11 +46,11 @@ interface ExportOptions extends CoreOptions {
   format?: 'json' | 'csv' | 'jsonl'
 }
 
-let brainyInstance: BrainyData | null = null
+let brainyInstance: Brainy | null = null
 
-const getBrainy = async (): Promise<BrainyData> => {
+const getBrainy = async (): Promise<Brainy> => {
   if (!brainyInstance) {
-    brainyInstance = new BrainyData()
+    brainyInstance = new Brainy()
     await brainyInstance.init()
   }
   return brainyInstance
@@ -105,7 +105,7 @@ export const coreCommands = {
         
         if (suggestion.confidence < 0.6) {
           spinner.fail('Could not determine type with confidence')
-          console.log(chalk.yellow(`Suggestion: ${suggestion.type} (${(suggestion.confidence * 100).toFixed(1)}%)`)))
+          console.log(chalk.yellow(`Suggestion: ${suggestion.type} (${(suggestion.confidence * 100).toFixed(1)}%)`))
           console.log(chalk.dim('Use --type flag to specify explicitly'))
           process.exit(1)
         }
@@ -115,7 +115,11 @@ export const coreCommands = {
       }
       
       // Add with explicit type
-      const result = await brain.addNoun(text, nounType, metadata)
+      const result = await brain.add({
+        data: text,
+        type: nounType,
+        metadata
+      })
       
       spinner.succeed('Added successfully')
       
@@ -163,7 +167,7 @@ export const coreCommands = {
         }
       }
       
-      const results = await brain.search(query, searchOptions.limit, searchOptions)
+      const results = await brain.search(query, searchOptions.limit)
       
       spinner.succeed(`Found ${results.length} results`)
       
@@ -176,8 +180,8 @@ export const coreCommands = {
             if (result.score !== undefined) {
               console.log(chalk.dim(`   Similarity: ${(result.score * 100).toFixed(1)}%`))
             }
-            if (result.metadata) {
-              console.log(chalk.dim(`   Metadata: ${JSON.stringify(result.metadata)}`))
+            if (result.entity && result.entity.metadata) {
+              console.log(chalk.dim(`   Metadata: ${JSON.stringify(result.entity.metadata)}`))
             }
           })
         }
@@ -216,8 +220,8 @@ export const coreCommands = {
         console.log(chalk.cyan('\nItem Details:'))
         console.log(`  ID: ${item.id}`)
         console.log(`  Content: ${(item as any).content || 'N/A'}`)
-        if (item.metadata) {
-          console.log(`  Metadata: ${JSON.stringify(item.metadata, null, 2)}`)
+        if (item.entity && item.entity.metadata) {
+          console.log(`  Metadata: ${JSON.stringify(item.entity.metadata, null, 2)}`)
         }
         
         if (options.withConnections) {
@@ -265,7 +269,12 @@ export const coreCommands = {
       }
       
       // Create the relationship
-      const result = await brain.addVerb(source, target, verb as any, metadata)
+      const result = await brain.relate({
+        from: source,
+        to: target,
+        type: verb as any,
+        metadata
+      })
       
       spinner.succeed('Relationship created')
       
@@ -358,7 +367,11 @@ export const coreCommands = {
           // Use suggested type or default to Content if low confidence
           const nounType = suggestion.confidence >= 0.5 ? suggestion.type : NounType.Content
           
-          await brain.addNoun(content, nounType as NounType, metadata)
+          await brain.add({
+            data: content,
+            type: nounType as NounType,
+            metadata
+          })
           imported++
         }
         
@@ -392,7 +405,8 @@ export const coreCommands = {
       const format = options.format || 'json'
       
       // Export all data
-      const data = await brain.export({ format: 'json' })
+      const dataApi = await brain.data()
+      const data = await dataApi.export({ format: 'json' })
       let output = ''
       
       switch (format) {

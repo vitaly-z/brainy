@@ -1,0 +1,2664 @@
+/**
+ * S3-Compatible Storage Adapter
+ * Uses the AWS S3 client to interact with S3-compatible storage services
+ * including Amazon S3, Cloudflare R2, and Google Cloud Storage
+ */
+import { BaseStorage, INDEX_DIR, SYSTEM_DIR, STATISTICS_KEY, getDirectoryPath } from '../baseStorage.js';
+import { StorageCompatibilityLayer } from '../backwardCompatibility.js';
+import { StorageOperationExecutors } from '../../utils/operationUtils.js';
+import { BrainyError } from '../../errors/brainyError.js';
+import { CacheManager } from '../cacheManager.js';
+import { createModuleLogger, prodLog } from '../../utils/logger.js';
+import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js';
+import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js';
+import { getWriteBuffer } from '../../utils/writeBuffer.js';
+import { getCoalescer } from '../../utils/requestCoalescer.js';
+// Export R2Storage as an alias for S3CompatibleStorage
+export { S3CompatibleStorage as R2Storage };
+/**
+ * S3-compatible storage adapter for server environments
+ * Uses the AWS S3 client to interact with S3-compatible storage services
+ * including Amazon S3, Cloudflare R2, and Google Cloud Storage
+ *
+ * To use this adapter with Amazon S3, you need to provide:
+ * - region: AWS region (e.g., 'us-east-1')
+ * - credentials: AWS credentials (accessKeyId and secretAccessKey)
+ * - bucketName: S3 bucket name
+ *
+ * To use this adapter with Cloudflare R2, you need to provide:
+ * - accountId: Cloudflare account ID
+ * - accessKeyId: R2 access key ID
+ * - secretAccessKey: R2 secret access key
+ * - bucketName: R2 bucket name
+ *
+ * To use this adapter with Google Cloud Storage, you need to provide:
+ * - region: GCS region (e.g., 'us-central1')
+ * - credentials: GCS credentials (accessKeyId and secretAccessKey)
+ * - endpoint: GCS endpoint (e.g., 'https://storage.googleapis.com')
+ * - bucketName: GCS bucket name
+ */
+export class S3CompatibleStorage extends BaseStorage {
+    /**
+     * Initialize the storage adapter
+     * @param options Configuration options for the S3-compatible storage
+     */
+    constructor(options) {
+        super();
+        this.s3Client = null;
+        this.useDualWrite = true; // Write to both locations during migration
+        // Statistics caching for better performance
+        this.statisticsCache = null;
+        // Distributed locking for concurrent access control
+        this.lockPrefix = 'locks/';
+        this.activeLocks = new Set();
+        // Change log for efficient synchronization
+        this.changeLogPrefix = 'change-log/';
+        // Backpressure and performance management
+        this.pendingOperations = 0;
+        this.maxConcurrentOperations = 100;
+        this.baseBatchSize = 10;
+        this.currentBatchSize = 10;
+        this.lastMemoryCheck = 0;
+        this.memoryCheckInterval = 5000; // Check every 5 seconds
+        this.consecutiveErrors = 0;
+        this.lastErrorReset = Date.now();
+        // Adaptive socket manager for automatic optimization
+        this.socketManager = getGlobalSocketManager();
+        // Adaptive backpressure for automatic flow control
+        this.backpressure = getGlobalBackpressure();
+        // Write buffers for bulk operations
+        this.nounWriteBuffer = null;
+        this.verbWriteBuffer = null;
+        // Request coalescer for deduplication
+        this.requestCoalescer = null;
+        // High-volume mode detection - MUCH more aggressive
+        this.highVolumeMode = false;
+        this.lastVolumeCheck = 0;
+        this.volumeCheckInterval = 1000; // Check every second, not 5
+        this.forceHighVolumeMode = false; // Environment variable override
+        // Module logger
+        this.logger = createModuleLogger('S3Storage');
+        // Node cache to avoid redundant API calls
+        this.nodeCache = new Map();
+        // Batch update timer ID
+        this.statisticsBatchUpdateTimerId = null;
+        // Flag to indicate if statistics have been modified since last save
+        this.statisticsModified = false;
+        // Time of last statistics flush to storage
+        this.lastStatisticsFlushTime = 0;
+        // Minimum time between statistics flushes (5 seconds)
+        this.MIN_FLUSH_INTERVAL_MS = 5000;
+        // Maximum time to wait before flushing statistics (30 seconds)
+        this.MAX_FLUSH_DELAY_MS = 30000;
+        this.bucketName = options.bucketName;
+        this.region = options.region || 'auto';
+        this.endpoint = options.endpoint;
+        this.accountId = options.accountId;
+        this.accessKeyId = options.accessKeyId;
+        this.secretAccessKey = options.secretAccessKey;
+        this.sessionToken = options.sessionToken;
+        this.serviceType = options.serviceType || 's3';
+        this.readOnly = options.readOnly || false;
+        // Initialize operation executors with timeout and retry configuration
+        this.operationExecutors = new StorageOperationExecutors(options.operationConfig);
+        // Set up prefixes for different types of data using new entity-based structure
+        this.nounPrefix = `${getDirectoryPath('noun', 'vector')}/`;
+        this.verbPrefix = `${getDirectoryPath('verb', 'vector')}/`;
+        this.metadataPrefix = `${getDirectoryPath('noun', 'metadata')}/`; // Noun metadata
+        this.verbMetadataPrefix = `${getDirectoryPath('verb', 'metadata')}/`; // Verb metadata
+        this.indexPrefix = `${INDEX_DIR}/`; // Legacy
+        this.systemPrefix = `${SYSTEM_DIR}/`; // New
+        // Initialize cache managers
+        this.nounCacheManager = new CacheManager(options.cacheConfig);
+        this.verbCacheManager = new CacheManager(options.cacheConfig);
+    }
+    /**
+     * Initialize the storage adapter
+     */
+    async init() {
+        if (this.isInitialized) {
+            return;
+        }
+        try {
+            // Import AWS SDK modules only when needed
+            const { S3Client } = await import('@aws-sdk/client-s3');
+            // Configure the S3 client based on the service type
+            const clientConfig = {
+                region: this.region,
+                credentials: {
+                    accessKeyId: this.accessKeyId,
+                    secretAccessKey: this.secretAccessKey
+                },
+                // Use adaptive socket manager for automatic optimization
+                requestHandler: this.socketManager.getHttpHandler(),
+                // Retry configuration for resilience
+                maxAttempts: 5, // Retry up to 5 times
+                retryMode: 'adaptive' // Use adaptive retry with backoff
+            };
+            // Add session token if provided
+            if (this.sessionToken) {
+                clientConfig.credentials.sessionToken = this.sessionToken;
+            }
+            // Add endpoint if provided (for R2, GCS, etc.)
+            if (this.endpoint) {
+                clientConfig.endpoint = this.endpoint;
+            }
+            // Special configuration for Cloudflare R2
+            if (this.serviceType === 'r2' && this.accountId) {
+                clientConfig.endpoint = `https://${this.accountId}.r2.cloudflarestorage.com`;
+            }
+            // Create the S3 client
+            this.s3Client = new S3Client(clientConfig);
+            // Ensure the bucket exists and is accessible
+            const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+            await this.s3Client.send(new HeadBucketCommand({
+                Bucket: this.bucketName
+            }));
+            // Create storage adapter proxies for the cache managers
+            const nounStorageAdapter = {
+                get: async (id) => this.getNoun_internal(id),
+                set: async (id, node) => this.saveNoun_internal(node),
+                delete: async (id) => this.deleteNoun_internal(id),
+                getMany: async (ids) => {
+                    const result = new Map();
+                    // Process in batches to avoid overwhelming the S3 API
+                    const batchSize = this.getBatchSize();
+                    const batches = [];
+                    // Split into batches
+                    for (let i = 0; i < ids.length; i += batchSize) {
+                        const batch = ids.slice(i, i + batchSize);
+                        batches.push(batch);
+                    }
+                    // Process each batch
+                    for (const batch of batches) {
+                        const batchResults = await Promise.all(batch.map(async (id) => {
+                            const node = await this.getNoun_internal(id);
+                            return { id, node };
+                        }));
+                        // Add results to map
+                        for (const { id, node } of batchResults) {
+                            if (node) {
+                                result.set(id, node);
+                            }
+                        }
+                    }
+                    return result;
+                },
+                clear: async () => {
+                    // No-op for now, as we don't want to clear the entire storage
+                    // This would be implemented if needed
+                }
+            };
+            const verbStorageAdapter = {
+                get: async (id) => this.getVerb_internal(id),
+                set: async (id, edge) => this.saveVerb_internal(edge),
+                delete: async (id) => this.deleteVerb_internal(id),
+                getMany: async (ids) => {
+                    const result = new Map();
+                    // Process in batches to avoid overwhelming the S3 API
+                    const batchSize = this.getBatchSize();
+                    const batches = [];
+                    // Split into batches
+                    for (let i = 0; i < ids.length; i += batchSize) {
+                        const batch = ids.slice(i, i + batchSize);
+                        batches.push(batch);
+                    }
+                    // Process each batch
+                    for (const batch of batches) {
+                        const batchResults = await Promise.all(batch.map(async (id) => {
+                            const edge = await this.getVerb_internal(id);
+                            return { id, edge };
+                        }));
+                        // Add results to map
+                        for (const { id, edge } of batchResults) {
+                            if (edge) {
+                                result.set(id, edge);
+                            }
+                        }
+                    }
+                    return result;
+                },
+                clear: async () => {
+                    // No-op for now, as we don't want to clear the entire storage
+                    // This would be implemented if needed
+                }
+            };
+            // Set storage adapters for cache managers
+            this.nounCacheManager.setStorageAdapters(nounStorageAdapter, nounStorageAdapter);
+            this.verbCacheManager.setStorageAdapters(verbStorageAdapter, verbStorageAdapter);
+            // Initialize write buffers for high-volume scenarios
+            this.initializeBuffers();
+            // Initialize request coalescer
+            this.initializeCoalescer();
+            // Auto-cleanup legacy /index folder on initialization
+            await this.cleanupLegacyIndexFolder();
+            this.isInitialized = true;
+            this.logger.info(`Initialized ${this.serviceType} storage with bucket ${this.bucketName}`);
+        }
+        catch (error) {
+            this.logger.error(`Failed to initialize ${this.serviceType} storage:`, error);
+            throw new Error(`Failed to initialize ${this.serviceType} storage: ${error}`);
+        }
+    }
+    /**
+     * Override base class method to detect S3-specific throttling errors
+     */
+    isThrottlingError(error) {
+        // First check base class detection
+        if (super.isThrottlingError(error)) {
+            return true;
+        }
+        // Additional S3-specific checks
+        const message = error.message?.toLowerCase() || '';
+        return (message.includes('please reduce your request rate') ||
+            message.includes('service unavailable') ||
+            error.Code === 'SlowDown' ||
+            error.Code === 'RequestLimitExceeded' ||
+            error.Code === 'ServiceUnavailable');
+    }
+    /**
+     * Override to add S3-specific logging
+     */
+    async handleThrottling(error, service) {
+        if (this.isThrottlingError(error)) {
+            prodLog.warn(`🐌 S3 storage throttling detected (${error.$metadata?.httpStatusCode || error.Code || 'timeout'}). Backing off...`);
+        }
+        // Call base class implementation
+        await super.handleThrottling(error, service);
+        if (!this.isThrottlingError(error) && this.consecutiveThrottleEvents === 0 && !this.throttlingDetected) {
+            prodLog.info('✅ S3 storage throttling cleared');
+        }
+    }
+    /**
+     * Smart delay based on current throttling status
+     */
+    async smartDelay() {
+        if (this.throttlingDetected) {
+            // If currently throttled, add a preventive delay
+            const timeSinceThrottle = Date.now() - this.lastThrottleTime;
+            if (timeSinceThrottle < 60000) { // Within 1 minute of throttling
+                await new Promise(resolve => setTimeout(resolve, Math.min(this.throttlingBackoffMs / 2, 5000)));
+            }
+        }
+        else {
+            // Normal yield
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    }
+    /**
+     * Auto-cleanup legacy /index folder during initialization
+     * This removes old index data that has been migrated to _system
+     */
+    async cleanupLegacyIndexFolder() {
+        try {
+            // Check if there are any objects in the legacy index folder
+            const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+            const listResponse = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.indexPrefix,
+                MaxKeys: 1 // Just check if anything exists
+            }));
+            // If there are objects in the legacy index folder, clean them up
+            if (listResponse.Contents && listResponse.Contents.length > 0) {
+                prodLog.info(`🧹 Cleaning up legacy /index folder during initialization...`);
+                // Use the existing deleteObjectsWithPrefix function logic
+                const { ListObjectsV2Command, DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
+                let continuationToken = undefined;
+                let totalDeleted = 0;
+                do {
+                    const listResponseBatch = await this.s3Client.send(new ListObjectsV2Command({
+                        Bucket: this.bucketName,
+                        Prefix: this.indexPrefix,
+                        ContinuationToken: continuationToken
+                    }));
+                    if (listResponseBatch.Contents && listResponseBatch.Contents.length > 0) {
+                        const objectsToDelete = listResponseBatch.Contents.map((obj) => ({
+                            Key: obj.Key
+                        }));
+                        await this.s3Client.send(new DeleteObjectsCommand({
+                            Bucket: this.bucketName,
+                            Delete: {
+                                Objects: objectsToDelete
+                            }
+                        }));
+                        totalDeleted += objectsToDelete.length;
+                    }
+                    continuationToken = listResponseBatch.NextContinuationToken;
+                } while (continuationToken);
+                prodLog.info(`✅ Cleaned up ${totalDeleted} legacy index objects`);
+            }
+            else {
+                prodLog.debug('No legacy /index folder found - already clean');
+            }
+        }
+        catch (error) {
+            // Don't fail initialization if cleanup fails
+            prodLog.warn('Failed to cleanup legacy /index folder:', error);
+        }
+    }
+    /**
+     * Initialize write buffers for high-volume scenarios
+     */
+    initializeBuffers() {
+        const storageId = `${this.serviceType}-${this.bucketName}`;
+        // Create noun write buffer
+        this.nounWriteBuffer = getWriteBuffer(`${storageId}-nouns`, 'noun', async (items) => {
+            // Bulk write nouns to S3
+            await this.bulkWriteNouns(items);
+        });
+        // Create verb write buffer
+        this.verbWriteBuffer = getWriteBuffer(`${storageId}-verbs`, 'verb', async (items) => {
+            // Bulk write verbs to S3
+            await this.bulkWriteVerbs(items);
+        });
+    }
+    /**
+     * Initialize request coalescer
+     */
+    initializeCoalescer() {
+        const storageId = `${this.serviceType}-${this.bucketName}`;
+        this.requestCoalescer = getCoalescer(storageId, async (batch) => {
+            // Process coalesced operations
+            await this.processCoalescedBatch(batch);
+        });
+    }
+    /**
+     * Check if we should enable high-volume mode
+     */
+    checkVolumeMode() {
+        const now = Date.now();
+        if (now - this.lastVolumeCheck < this.volumeCheckInterval) {
+            return;
+        }
+        this.lastVolumeCheck = now;
+        // Check environment variable override
+        const envThreshold = process.env.BRAINY_BUFFER_THRESHOLD;
+        const threshold = envThreshold ? parseInt(envThreshold) : 0; // Default to 0 for immediate activation!
+        // Force enable from environment
+        if (process.env.BRAINY_FORCE_BUFFERING === 'true') {
+            this.forceHighVolumeMode = true;
+        }
+        // Get metrics
+        const backpressureStatus = this.backpressure.getStatus();
+        const socketMetrics = this.socketManager.getMetrics();
+        // Reasonable high-volume detection - only activate under real load
+        const isTestEnvironment = process.env.NODE_ENV === 'test';
+        const explicitlyDisabled = process.env.BRAINY_FORCE_BUFFERING === 'false';
+        // Use reasonable thresholds instead of emergency aggressive ones
+        const reasonableThreshold = Math.max(threshold, 10); // At least 10 pending operations
+        const highSocketUtilization = 0.8; // 80% socket utilization 
+        const highRequestRate = 50; // 50 requests per second
+        const significantErrors = 5; // 5 consecutive errors
+        const shouldEnableHighVolume = !isTestEnvironment && // Disable in test environment
+            !explicitlyDisabled && // Allow explicit disabling
+            (this.forceHighVolumeMode || // Environment override
+                backpressureStatus.queueLength >= reasonableThreshold || // High queue backlog
+                socketMetrics.pendingRequests >= reasonableThreshold || // Many pending requests
+                this.pendingOperations >= reasonableThreshold || // Many pending ops
+                socketMetrics.socketUtilization >= highSocketUtilization || // High socket pressure
+                (socketMetrics.requestsPerSecond >= highRequestRate) || // High request rate
+                (this.consecutiveErrors >= significantErrors)); // Significant error pattern
+        if (shouldEnableHighVolume && !this.highVolumeMode) {
+            this.highVolumeMode = true;
+            this.logger.warn(`🚨 HIGH-VOLUME MODE ACTIVATED 🚨`);
+            this.logger.warn(`  Queue Length: ${backpressureStatus.queueLength}`);
+            this.logger.warn(`  Pending Requests: ${socketMetrics.pendingRequests}`);
+            this.logger.warn(`  Pending Operations: ${this.pendingOperations}`);
+            this.logger.warn(`  Socket Utilization: ${(socketMetrics.socketUtilization * 100).toFixed(1)}%`);
+            this.logger.warn(`  Requests/sec: ${socketMetrics.requestsPerSecond}`);
+            this.logger.warn(`  Consecutive Errors: ${this.consecutiveErrors}`);
+            this.logger.warn(`  Threshold: ${threshold}`);
+            // Adjust buffer parameters for high volume
+            const queueLength = Math.max(backpressureStatus.queueLength, socketMetrics.pendingRequests, 100);
+            if (this.nounWriteBuffer) {
+                this.nounWriteBuffer.adjustForLoad(queueLength);
+                const stats = this.nounWriteBuffer.getStats();
+                this.logger.warn(`  Noun Buffer: ${stats.bufferSize} items, ${stats.totalWrites} total writes`);
+            }
+            if (this.verbWriteBuffer) {
+                this.verbWriteBuffer.adjustForLoad(queueLength);
+                const stats = this.verbWriteBuffer.getStats();
+                this.logger.warn(`  Verb Buffer: ${stats.bufferSize} items, ${stats.totalWrites} total writes`);
+            }
+            if (this.requestCoalescer) {
+                this.requestCoalescer.adjustParameters(queueLength);
+                const sizes = this.requestCoalescer.getQueueSizes();
+                this.logger.warn(`  Coalescer: ${sizes.total} queued operations`);
+            }
+        }
+        else if (!shouldEnableHighVolume && this.highVolumeMode && !this.forceHighVolumeMode) {
+            this.highVolumeMode = false;
+            this.logger.info('✅ High-volume mode deactivated - load normalized');
+        }
+        // Log current status every 10 checks when in high-volume mode
+        if (this.highVolumeMode && (now % 10000) < this.volumeCheckInterval) {
+            this.logger.info(`📊 High-volume mode status: Queue=${backpressureStatus.queueLength}, Pending=${socketMetrics.pendingRequests}, Sockets=${(socketMetrics.socketUtilization * 100).toFixed(1)}%`);
+        }
+    }
+    /**
+     * Bulk write nouns to S3
+     */
+    async bulkWriteNouns(items) {
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+        // Process in parallel with limited concurrency
+        const promises = [];
+        const batchSize = 10; // Process 10 at a time
+        const entries = Array.from(items.entries());
+        for (let i = 0; i < entries.length; i += batchSize) {
+            const batch = entries.slice(i, i + batchSize);
+            const batchPromise = Promise.all(batch.map(async ([id, node]) => {
+                const serializableNode = {
+                    ...node,
+                    connections: this.mapToObject(node.connections, (set) => Array.from(set))
+                };
+                const key = `${this.nounPrefix}${id}.json`;
+                const body = JSON.stringify(serializableNode, null, 2);
+                await this.s3Client.send(new PutObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key,
+                    Body: body,
+                    ContentType: 'application/json'
+                }));
+            })).then(() => { }); // Convert Promise<void[]> to Promise<void>
+            promises.push(batchPromise);
+        }
+        await Promise.all(promises);
+    }
+    /**
+     * Bulk write verbs to S3
+     */
+    async bulkWriteVerbs(items) {
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+        // Process in parallel with limited concurrency
+        const promises = [];
+        const batchSize = 10;
+        const entries = Array.from(items.entries());
+        for (let i = 0; i < entries.length; i += batchSize) {
+            const batch = entries.slice(i, i + batchSize);
+            const batchPromise = Promise.all(batch.map(async ([id, edge]) => {
+                const serializableEdge = {
+                    ...edge,
+                    connections: this.mapToObject(edge.connections, (set) => Array.from(set))
+                };
+                const key = `${this.verbPrefix}${id}.json`;
+                const body = JSON.stringify(serializableEdge, null, 2);
+                await this.s3Client.send(new PutObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key,
+                    Body: body,
+                    ContentType: 'application/json'
+                }));
+            })).then(() => { }); // Convert Promise<void[]> to Promise<void>
+            promises.push(batchPromise);
+        }
+        await Promise.all(promises);
+    }
+    /**
+     * Process coalesced batch of operations
+     */
+    async processCoalescedBatch(batch) {
+        // Group operations by type
+        const writes = [];
+        const reads = [];
+        const deletes = [];
+        for (const op of batch) {
+            if (op.type === 'write') {
+                writes.push(op);
+            }
+            else if (op.type === 'read') {
+                reads.push(op);
+            }
+            else if (op.type === 'delete') {
+                deletes.push(op);
+            }
+        }
+        // Process in order: deletes, writes, reads
+        if (deletes.length > 0) {
+            await this.processBulkDeletes(deletes);
+        }
+        if (writes.length > 0) {
+            await this.processBulkWrites(writes);
+        }
+        if (reads.length > 0) {
+            await this.processBulkReads(reads);
+        }
+    }
+    /**
+     * Process bulk deletes
+     */
+    async processBulkDeletes(deletes) {
+        const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+        await Promise.all(deletes.map(async (op) => {
+            await this.s3Client.send(new DeleteObjectCommand({
+                Bucket: this.bucketName,
+                Key: op.key
+            }));
+        }));
+    }
+    /**
+     * Process bulk writes
+     */
+    async processBulkWrites(writes) {
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+        await Promise.all(writes.map(async (op) => {
+            await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: op.key,
+                Body: JSON.stringify(op.data),
+                ContentType: 'application/json'
+            }));
+        }));
+    }
+    /**
+     * Process bulk reads
+     */
+    async processBulkReads(reads) {
+        const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+        await Promise.all(reads.map(async (op) => {
+            try {
+                const response = await this.s3Client.send(new GetObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: op.key
+                }));
+                if (response.Body) {
+                    const data = await response.Body.transformToString();
+                    op.data = JSON.parse(data);
+                }
+            }
+            catch (error) {
+                op.data = null;
+            }
+        }));
+    }
+    /**
+     * Dynamically adjust batch size based on memory pressure and error rates
+     */
+    adjustBatchSize() {
+        // Let the adaptive socket manager handle batch size optimization
+        this.currentBatchSize = this.socketManager.getBatchSize();
+        // Get adaptive configuration for concurrent operations
+        const config = this.socketManager.getConfig();
+        this.maxConcurrentOperations = Math.min(config.maxSockets * 2, 500);
+        // Track metrics for the socket manager
+        const now = Date.now();
+        // Reset error counter periodically if no recent errors
+        if (now - this.lastErrorReset > 60000 && this.consecutiveErrors > 0) {
+            this.consecutiveErrors = Math.max(0, this.consecutiveErrors - 1);
+            this.lastErrorReset = now;
+        }
+    }
+    /**
+     * Apply backpressure when system is under load
+     */
+    async applyBackpressure() {
+        // Generate unique request ID for tracking
+        const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        try {
+            // Use adaptive backpressure system
+            await this.backpressure.requestPermission(requestId, 1);
+            // Track with socket manager
+            this.socketManager.trackRequestStart(requestId);
+            this.pendingOperations++;
+            return requestId;
+        }
+        catch (error) {
+            // If backpressure rejects, throw a more informative error
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`System overloaded: ${message}`);
+        }
+    }
+    /**
+     * Release backpressure after operation completes
+     */
+    releaseBackpressure(success = true, requestId) {
+        this.pendingOperations = Math.max(0, this.pendingOperations - 1);
+        if (requestId) {
+            // Track with socket manager
+            this.socketManager.trackRequestComplete(requestId, success);
+            // Release from backpressure system
+            this.backpressure.releasePermission(requestId, success);
+        }
+        if (!success) {
+            this.consecutiveErrors++;
+        }
+        else if (this.consecutiveErrors > 0) {
+            // Gradually reduce error count on success
+            this.consecutiveErrors = Math.max(0, this.consecutiveErrors - 0.5);
+        }
+        // Adjust batch size based on current conditions
+        this.adjustBatchSize();
+    }
+    /**
+     * Get current batch size for operations
+     */
+    getBatchSize() {
+        // Use adaptive socket manager's batch size
+        return this.socketManager.getBatchSize();
+    }
+    /**
+     * Save a noun to storage (internal implementation)
+     */
+    async saveNoun_internal(noun) {
+        return this.saveNode(noun);
+    }
+    /**
+     * Save a node to storage
+     */
+    async saveNode(node) {
+        await this.ensureInitialized();
+        // ALWAYS check if we should use high-volume mode (critical for detection)
+        this.checkVolumeMode();
+        // Use write buffer in high-volume mode
+        if (this.highVolumeMode && this.nounWriteBuffer) {
+            this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer (high-volume mode active)`);
+            await this.nounWriteBuffer.add(node.id, node);
+            return;
+        }
+        else if (!this.highVolumeMode) {
+            this.logger.trace(`📝 DIRECT WRITE: Saving noun ${node.id} directly (high-volume mode inactive)`);
+        }
+        // Apply backpressure before starting operation
+        const requestId = await this.applyBackpressure();
+        try {
+            this.logger.trace(`Saving node ${node.id}`);
+            // Convert connections Map to a serializable format
+            const serializableNode = {
+                ...node,
+                connections: this.mapToObject(node.connections, (set) => Array.from(set))
+            };
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.nounPrefix}${node.id}.json`;
+            const body = JSON.stringify(serializableNode, null, 2);
+            this.logger.trace(`Saving to key: ${key}`);
+            // Save the node to S3-compatible storage
+            const result = await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: key,
+                Body: body,
+                ContentType: 'application/json'
+            }));
+            this.logger.debug(`Node ${node.id} saved successfully`);
+            // Log the change for efficient synchronization
+            await this.appendToChangeLog({
+                timestamp: Date.now(),
+                operation: 'add', // Could be 'update' if we track existing nodes
+                entityType: 'noun',
+                entityId: node.id,
+                data: {
+                    vector: node.vector,
+                    metadata: node.metadata
+                }
+            });
+            // Verify the node was saved by trying to retrieve it
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            try {
+                const verifyResponse = await this.s3Client.send(new GetObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key
+                }));
+                if (verifyResponse && verifyResponse.Body) {
+                    this.logger.trace(`Verified node ${node.id} was saved correctly`);
+                }
+                else {
+                    this.logger.warn(`Failed to verify node ${node.id} was saved correctly: no response or body`);
+                }
+            }
+            catch (verifyError) {
+                this.logger.warn(`Failed to verify node ${node.id} was saved correctly:`, verifyError);
+            }
+            // Release backpressure on success
+            this.releaseBackpressure(true, requestId);
+        }
+        catch (error) {
+            // Release backpressure on error
+            this.releaseBackpressure(false, requestId);
+            this.logger.error(`Failed to save node ${node.id}:`, error);
+            throw new Error(`Failed to save node ${node.id}: ${error}`);
+        }
+    }
+    /**
+     * Get a noun from storage (internal implementation)
+     */
+    async getNoun_internal(id) {
+        return this.getNode(id);
+    }
+    /**
+     * Get a node from storage
+     */
+    async getNode(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.nounPrefix}${id}.json`;
+            this.logger.trace(`Getting node ${id} from key: ${key}`);
+            // Try to get the node from the nouns directory
+            const response = await this.s3Client.send(new GetObjectCommand({
+                Bucket: this.bucketName,
+                Key: key
+            }));
+            // Check if response is null or undefined
+            if (!response || !response.Body) {
+                this.logger.trace(`No node found for ${id}`);
+                return null;
+            }
+            // Convert the response body to a string
+            const bodyContents = await response.Body.transformToString();
+            this.logger.trace(`Retrieved node body for ${id}`);
+            // Parse the JSON string
+            try {
+                const parsedNode = JSON.parse(bodyContents);
+                this.logger.trace(`Parsed node data for ${id}`);
+                // Ensure the parsed node has the expected properties
+                if (!parsedNode ||
+                    !parsedNode.id ||
+                    !parsedNode.vector ||
+                    !parsedNode.connections) {
+                    this.logger.warn(`Invalid node data for ${id}`);
+                    return null;
+                }
+                // Convert serialized connections back to Map<number, Set<string>>
+                const connections = new Map();
+                for (const [level, nodeIds] of Object.entries(parsedNode.connections)) {
+                    connections.set(Number(level), new Set(nodeIds));
+                }
+                const node = {
+                    id: parsedNode.id,
+                    vector: parsedNode.vector,
+                    connections,
+                    level: parsedNode.level || 0
+                };
+                this.logger.trace(`Successfully retrieved node ${id}`);
+                return node;
+            }
+            catch (parseError) {
+                this.logger.error(`Failed to parse node data for ${id}:`, parseError);
+                return null;
+            }
+        }
+        catch (error) {
+            // Node not found or other error
+            this.logger.trace(`Node not found for ${id}`);
+            return null;
+        }
+    }
+    /**
+     * Get all nodes from storage
+     * @deprecated This method is deprecated and will be removed in a future version.
+     * It can cause memory issues with large datasets. Use getNodesWithPagination() instead.
+     */
+    async getAllNodes() {
+        await this.ensureInitialized();
+        this.logger.warn('getAllNodes() is deprecated and will be removed in a future version. Use getNodesWithPagination() instead.');
+        try {
+            // Use the paginated method with a large limit to maintain backward compatibility
+            // but warn about potential issues
+            const result = await this.getNodesWithPagination({
+                limit: 1000, // Reasonable limit to avoid memory issues
+                useCache: true
+            });
+            if (result.hasMore) {
+                this.logger.warn(`Only returning the first 1000 nodes. There are more nodes available. Use getNodesWithPagination() for proper pagination.`);
+            }
+            return result.nodes;
+        }
+        catch (error) {
+            this.logger.error('Failed to get all nodes:', error);
+            return [];
+        }
+    }
+    /**
+     * Get nodes with pagination
+     * @param options Pagination options
+     * @returns Promise that resolves to a paginated result of nodes
+     */
+    async getNodesWithPagination(options = {}) {
+        await this.ensureInitialized();
+        const limit = options.limit || 100;
+        const useCache = options.useCache !== false;
+        try {
+            // Import the ListObjectsV2Command and GetObjectCommand only when needed
+            const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+            // List objects with pagination
+            const listResponse = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.nounPrefix,
+                MaxKeys: limit,
+                ContinuationToken: options.cursor
+            }));
+            // If listResponse is null/undefined or there are no objects, return an empty result
+            if (!listResponse ||
+                !listResponse.Contents ||
+                listResponse.Contents.length === 0) {
+                return {
+                    nodes: [],
+                    hasMore: false
+                };
+            }
+            // Extract node IDs from the keys
+            const nodeIds = listResponse.Contents
+                .filter((object) => object && object.Key)
+                .map((object) => object.Key.replace(this.nounPrefix, '').replace('.json', ''));
+            // Use the cache manager to get nodes efficiently
+            const nodes = [];
+            if (useCache) {
+                // Get nodes from cache manager
+                const cachedNodes = await this.nounCacheManager.getMany(nodeIds);
+                // Add nodes to result in the same order as nodeIds
+                for (const id of nodeIds) {
+                    const node = cachedNodes.get(id);
+                    if (node) {
+                        nodes.push(node);
+                    }
+                }
+            }
+            else {
+                // Get nodes directly from S3 without using cache
+                // Process in smaller batches to reduce memory usage
+                const batchSize = 50;
+                const batches = [];
+                // Split into batches
+                for (let i = 0; i < nodeIds.length; i += batchSize) {
+                    const batch = nodeIds.slice(i, i + batchSize);
+                    batches.push(batch);
+                }
+                // Process each batch sequentially
+                for (const batch of batches) {
+                    const batchNodes = await Promise.all(batch.map(async (id) => {
+                        try {
+                            return await this.getNoun_internal(id);
+                        }
+                        catch (error) {
+                            return null;
+                        }
+                    }));
+                    // Add non-null nodes to result
+                    for (const node of batchNodes) {
+                        if (node) {
+                            nodes.push(node);
+                        }
+                    }
+                }
+            }
+            // Determine if there are more nodes
+            const hasMore = !!listResponse.IsTruncated;
+            // Set next cursor if there are more nodes
+            const nextCursor = listResponse.NextContinuationToken;
+            return {
+                nodes,
+                hasMore,
+                nextCursor
+            };
+        }
+        catch (error) {
+            this.logger.error('Failed to get nodes with pagination:', error);
+            return {
+                nodes: [],
+                hasMore: false
+            };
+        }
+    }
+    /**
+     * Get nouns by noun type (internal implementation)
+     * @param nounType The noun type to filter by
+     * @returns Promise that resolves to an array of nouns of the specified noun type
+     */
+    async getNounsByNounType_internal(nounType) {
+        return this.getNodesByNounType(nounType);
+    }
+    /**
+     * Get nodes by noun type
+     * @param nounType The noun type to filter by
+     * @returns Promise that resolves to an array of nodes of the specified noun type
+     */
+    async getNodesByNounType(nounType) {
+        await this.ensureInitialized();
+        try {
+            const filteredNodes = [];
+            let hasMore = true;
+            let cursor = undefined;
+            // Use pagination to process nodes in batches
+            while (hasMore) {
+                // Get a batch of nodes
+                const result = await this.getNodesWithPagination({
+                    limit: 100,
+                    cursor,
+                    useCache: true
+                });
+                // Filter nodes by noun type using metadata
+                for (const node of result.nodes) {
+                    const metadata = await this.getMetadata(node.id);
+                    if (metadata && metadata.noun === nounType) {
+                        filteredNodes.push(node);
+                    }
+                }
+                // Update pagination state
+                hasMore = result.hasMore;
+                cursor = result.nextCursor;
+                // Safety check to prevent infinite loops
+                if (!cursor && hasMore) {
+                    this.logger.warn('No cursor returned but hasMore is true, breaking loop');
+                    break;
+                }
+            }
+            return filteredNodes;
+        }
+        catch (error) {
+            this.logger.error(`Failed to get nodes by noun type ${nounType}:`, error);
+            return [];
+        }
+    }
+    /**
+     * Delete a noun from storage (internal implementation)
+     */
+    async deleteNoun_internal(id) {
+        return this.deleteNode(id);
+    }
+    /**
+     * Delete a node from storage
+     */
+    async deleteNode(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the DeleteObjectCommand only when needed
+            const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+            // Delete the node from S3-compatible storage
+            await this.s3Client.send(new DeleteObjectCommand({
+                Bucket: this.bucketName,
+                Key: `${this.nounPrefix}${id}.json`
+            }));
+            // Log the change for efficient synchronization
+            await this.appendToChangeLog({
+                timestamp: Date.now(),
+                operation: 'delete',
+                entityType: 'noun',
+                entityId: id
+            });
+        }
+        catch (error) {
+            this.logger.error(`Failed to delete node ${id}:`, error);
+            throw new Error(`Failed to delete node ${id}: ${error}`);
+        }
+    }
+    /**
+     * Save a verb to storage (internal implementation)
+     */
+    async saveVerb_internal(verb) {
+        return this.saveEdge(verb);
+    }
+    /**
+     * Save an edge to storage
+     */
+    async saveEdge(edge) {
+        await this.ensureInitialized();
+        // ALWAYS check if we should use high-volume mode (critical for detection)
+        this.checkVolumeMode();
+        // Use write buffer in high-volume mode
+        if (this.highVolumeMode && this.verbWriteBuffer) {
+            this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer (high-volume mode active)`);
+            await this.verbWriteBuffer.add(edge.id, edge);
+            return;
+        }
+        else if (!this.highVolumeMode) {
+            this.logger.trace(`📝 DIRECT WRITE: Saving verb ${edge.id} directly (high-volume mode inactive)`);
+        }
+        // Apply backpressure before starting operation
+        const requestId = await this.applyBackpressure();
+        try {
+            // Convert connections Map to a serializable format
+            const serializableEdge = {
+                ...edge,
+                connections: this.mapToObject(edge.connections, (set) => Array.from(set))
+            };
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            // Save the edge to S3-compatible storage
+            await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: `${this.verbPrefix}${edge.id}.json`,
+                Body: JSON.stringify(serializableEdge, null, 2),
+                ContentType: 'application/json'
+            }));
+            // Log the change for efficient synchronization
+            await this.appendToChangeLog({
+                timestamp: Date.now(),
+                operation: 'add', // Could be 'update' if we track existing edges
+                entityType: 'verb',
+                entityId: edge.id,
+                data: {
+                    vector: edge.vector
+                }
+            });
+            // Release backpressure on success
+            this.releaseBackpressure(true, requestId);
+        }
+        catch (error) {
+            // Release backpressure on error
+            this.releaseBackpressure(false, requestId);
+            this.logger.error(`Failed to save edge ${edge.id}:`, error);
+            throw new Error(`Failed to save edge ${edge.id}: ${error}`);
+        }
+    }
+    /**
+     * Get a verb from storage (internal implementation)
+     */
+    async getVerb_internal(id) {
+        return this.getEdge(id);
+    }
+    /**
+     * Get an edge from storage
+     */
+    async getEdge(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.verbPrefix}${id}.json`;
+            this.logger.trace(`Getting edge ${id} from key: ${key}`);
+            // Try to get the edge from the verbs directory
+            const response = await this.s3Client.send(new GetObjectCommand({
+                Bucket: this.bucketName,
+                Key: key
+            }));
+            // Check if response is null or undefined
+            if (!response || !response.Body) {
+                this.logger.trace(`No edge found for ${id}`);
+                return null;
+            }
+            // Convert the response body to a string
+            const bodyContents = await response.Body.transformToString();
+            this.logger.trace(`Retrieved edge body for ${id}`);
+            // Parse the JSON string
+            try {
+                const parsedEdge = JSON.parse(bodyContents);
+                this.logger.trace(`Parsed edge data for ${id}`);
+                // Ensure the parsed edge has the expected properties
+                if (!parsedEdge ||
+                    !parsedEdge.id ||
+                    !parsedEdge.vector ||
+                    !parsedEdge.connections) {
+                    this.logger.warn(`Invalid edge data for ${id}`);
+                    return null;
+                }
+                // Convert serialized connections back to Map<number, Set<string>>
+                const connections = new Map();
+                for (const [level, nodeIds] of Object.entries(parsedEdge.connections)) {
+                    connections.set(Number(level), new Set(nodeIds));
+                }
+                const edge = {
+                    id: parsedEdge.id,
+                    vector: parsedEdge.vector,
+                    connections
+                };
+                this.logger.trace(`Successfully retrieved edge ${id}`);
+                return edge;
+            }
+            catch (parseError) {
+                this.logger.error(`Failed to parse edge data for ${id}:`, parseError);
+                return null;
+            }
+        }
+        catch (error) {
+            // Edge not found or other error
+            this.logger.trace(`Edge not found for ${id}`);
+            return null;
+        }
+    }
+    /**
+     * Get all edges from storage
+     * @deprecated This method is deprecated and will be removed in a future version.
+     * It can cause memory issues with large datasets. Use getEdgesWithPagination() instead.
+     */
+    async getAllEdges() {
+        await this.ensureInitialized();
+        this.logger.warn('getAllEdges() is deprecated and will be removed in a future version. Use getEdgesWithPagination() instead.');
+        try {
+            // Use the paginated method with a large limit to maintain backward compatibility
+            // but warn about potential issues
+            const result = await this.getEdgesWithPagination({
+                limit: 1000, // Reasonable limit to avoid memory issues
+                useCache: true
+            });
+            if (result.hasMore) {
+                this.logger.warn(`Only returning the first 1000 edges. There are more edges available. Use getEdgesWithPagination() for proper pagination.`);
+            }
+            return result.edges;
+        }
+        catch (error) {
+            this.logger.error('Failed to get all edges:', error);
+            return [];
+        }
+    }
+    /**
+     * Get edges with pagination
+     * @param options Pagination options
+     * @returns Promise that resolves to a paginated result of edges
+     */
+    async getEdgesWithPagination(options = {}) {
+        await this.ensureInitialized();
+        const limit = options.limit || 100;
+        const useCache = options.useCache !== false;
+        const filter = options.filter || {};
+        try {
+            // Import the ListObjectsV2Command only when needed
+            const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+            // List objects with pagination
+            const listResponse = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.verbPrefix,
+                MaxKeys: limit,
+                ContinuationToken: options.cursor
+            }));
+            // If listResponse is null/undefined or there are no objects, return an empty result
+            if (!listResponse ||
+                !listResponse.Contents ||
+                listResponse.Contents.length === 0) {
+                return {
+                    edges: [],
+                    hasMore: false
+                };
+            }
+            // Extract edge IDs from the keys
+            const edgeIds = listResponse.Contents
+                .filter((object) => object && object.Key)
+                .map((object) => object.Key.replace(this.verbPrefix, '').replace('.json', ''));
+            // Use the cache manager to get edges efficiently
+            const edges = [];
+            if (useCache) {
+                // Get edges from cache manager
+                const cachedEdges = await this.verbCacheManager.getMany(edgeIds);
+                // Add edges to result in the same order as edgeIds
+                for (const id of edgeIds) {
+                    const edge = cachedEdges.get(id);
+                    if (edge) {
+                        // Apply filtering if needed
+                        if (this.filterEdge(edge, filter)) {
+                            edges.push(edge);
+                        }
+                    }
+                }
+            }
+            else {
+                // Get edges directly from S3 without using cache
+                // Process in smaller batches to reduce memory usage
+                const batchSize = 50;
+                const batches = [];
+                // Split into batches
+                for (let i = 0; i < edgeIds.length; i += batchSize) {
+                    const batch = edgeIds.slice(i, i + batchSize);
+                    batches.push(batch);
+                }
+                // Process each batch sequentially
+                for (const batch of batches) {
+                    const batchEdges = await Promise.all(batch.map(async (id) => {
+                        try {
+                            const edge = await this.getVerb_internal(id);
+                            // Apply filtering if needed
+                            if (edge && this.filterEdge(edge, filter)) {
+                                return edge;
+                            }
+                            return null;
+                        }
+                        catch (error) {
+                            return null;
+                        }
+                    }));
+                    // Add non-null edges to result
+                    for (const edge of batchEdges) {
+                        if (edge) {
+                            edges.push(edge);
+                        }
+                    }
+                }
+            }
+            // Determine if there are more edges
+            const hasMore = !!listResponse.IsTruncated;
+            // Set next cursor if there are more edges
+            const nextCursor = listResponse.NextContinuationToken;
+            return {
+                edges,
+                hasMore,
+                nextCursor
+            };
+        }
+        catch (error) {
+            this.logger.error('Failed to get edges with pagination:', error);
+            return {
+                edges: [],
+                hasMore: false
+            };
+        }
+    }
+    /**
+     * Filter an edge based on filter criteria
+     * @param edge The edge to filter
+     * @param filter The filter criteria
+     * @returns True if the edge matches the filter, false otherwise
+     */
+    filterEdge(edge, filter) {
+        // HNSWVerb filtering is not supported since metadata is stored separately
+        // This method is deprecated and should not be used with the new storage pattern
+        this.logger.trace('Edge filtering is deprecated and not supported with the new storage pattern');
+        return true; // Return all edges since filtering requires metadata
+    }
+    /**
+     * Get verbs with pagination
+     * @param options Pagination options
+     * @returns Promise that resolves to a paginated result of verbs
+     */
+    async getVerbsWithPagination(options = {}) {
+        await this.ensureInitialized();
+        // Convert filter to edge filter format
+        const edgeFilter = {};
+        if (options.filter) {
+            // Handle sourceId filter
+            if (options.filter.sourceId) {
+                edgeFilter.sourceId = Array.isArray(options.filter.sourceId)
+                    ? options.filter.sourceId[0]
+                    : options.filter.sourceId;
+            }
+            // Handle targetId filter
+            if (options.filter.targetId) {
+                edgeFilter.targetId = Array.isArray(options.filter.targetId)
+                    ? options.filter.targetId[0]
+                    : options.filter.targetId;
+            }
+            // Handle verbType filter
+            if (options.filter.verbType) {
+                edgeFilter.type = Array.isArray(options.filter.verbType)
+                    ? options.filter.verbType[0]
+                    : options.filter.verbType;
+            }
+        }
+        // Get edges with pagination
+        const result = await this.getEdgesWithPagination({
+            limit: options.limit,
+            cursor: options.cursor,
+            useCache: true,
+            filter: edgeFilter
+        });
+        // Convert HNSWVerbs to GraphVerbs by combining with metadata
+        const graphVerbs = [];
+        for (const hnswVerb of result.edges) {
+            const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb);
+            if (graphVerb) {
+                graphVerbs.push(graphVerb);
+            }
+        }
+        // Apply filtering at GraphVerb level since HNSWVerb filtering is not supported
+        let filteredGraphVerbs = graphVerbs;
+        if (options.filter) {
+            filteredGraphVerbs = graphVerbs.filter((graphVerb) => {
+                // Filter by sourceId
+                if (options.filter.sourceId) {
+                    const sourceIds = Array.isArray(options.filter.sourceId)
+                        ? options.filter.sourceId
+                        : [options.filter.sourceId];
+                    if (!sourceIds.includes(graphVerb.sourceId)) {
+                        return false;
+                    }
+                }
+                // Filter by targetId
+                if (options.filter.targetId) {
+                    const targetIds = Array.isArray(options.filter.targetId)
+                        ? options.filter.targetId
+                        : [options.filter.targetId];
+                    if (!targetIds.includes(graphVerb.targetId)) {
+                        return false;
+                    }
+                }
+                // Filter by verbType (maps to type field)
+                if (options.filter.verbType) {
+                    const verbTypes = Array.isArray(options.filter.verbType)
+                        ? options.filter.verbType
+                        : [options.filter.verbType];
+                    if (graphVerb.type && !verbTypes.includes(graphVerb.type)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+        return {
+            items: filteredGraphVerbs,
+            hasMore: result.hasMore,
+            nextCursor: result.nextCursor
+        };
+    }
+    /**
+     * Get verbs by source (internal implementation)
+     */
+    async getVerbsBySource_internal(sourceId) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { sourceId: [sourceId] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Get verbs by target (internal implementation)
+     */
+    async getVerbsByTarget_internal(targetId) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { targetId: [targetId] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Get verbs by type (internal implementation)
+     */
+    async getVerbsByType_internal(type) {
+        // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
+        const result = await this.getVerbsWithPagination({
+            filter: { verbType: [type] },
+            limit: Number.MAX_SAFE_INTEGER // Get all matching results
+        });
+        return result.items;
+    }
+    /**
+     * Delete a verb from storage (internal implementation)
+     */
+    async deleteVerb_internal(id) {
+        return this.deleteEdge(id);
+    }
+    /**
+     * Delete an edge from storage
+     */
+    async deleteEdge(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the DeleteObjectCommand only when needed
+            const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+            // Delete the edge from S3-compatible storage
+            await this.s3Client.send(new DeleteObjectCommand({
+                Bucket: this.bucketName,
+                Key: `${this.verbPrefix}${id}.json`
+            }));
+            // Log the change for efficient synchronization
+            await this.appendToChangeLog({
+                timestamp: Date.now(),
+                operation: 'delete',
+                entityType: 'verb',
+                entityId: id
+            });
+        }
+        catch (error) {
+            this.logger.error(`Failed to delete edge ${id}:`, error);
+            throw new Error(`Failed to delete edge ${id}: ${error}`);
+        }
+    }
+    /**
+     * Save metadata to storage
+     */
+    async saveMetadata(id, metadata) {
+        await this.ensureInitialized();
+        // Apply backpressure before starting operation
+        const requestId = await this.applyBackpressure();
+        try {
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.metadataPrefix}${id}.json`;
+            const body = JSON.stringify(metadata, null, 2);
+            this.logger.trace(`Saving metadata for ${id} to key: ${key}`);
+            // Save the metadata to S3-compatible storage
+            const result = await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: key,
+                Body: body,
+                ContentType: 'application/json'
+            }));
+            this.logger.debug(`Metadata for ${id} saved successfully`);
+            // Log the change for efficient synchronization
+            await this.appendToChangeLog({
+                timestamp: Date.now(),
+                operation: 'add', // Could be 'update' if we track existing metadata
+                entityType: 'metadata',
+                entityId: id,
+                data: metadata
+            });
+            // Verify the metadata was saved by trying to retrieve it
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            try {
+                const verifyResponse = await this.s3Client.send(new GetObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key
+                }));
+                if (verifyResponse && verifyResponse.Body) {
+                    this.logger.trace(`Verified metadata for ${id} was saved correctly`);
+                }
+                else {
+                    this.logger.warn(`Failed to verify metadata for ${id} was saved correctly: no response or body`);
+                }
+            }
+            catch (verifyError) {
+                this.logger.warn(`Failed to verify metadata for ${id} was saved correctly:`, verifyError);
+            }
+            // Release backpressure on success
+            this.releaseBackpressure(true, requestId);
+        }
+        catch (error) {
+            // Release backpressure on error
+            this.releaseBackpressure(false, requestId);
+            this.logger.error(`Failed to save metadata for ${id}:`, error);
+            throw new Error(`Failed to save metadata for ${id}: ${error}`);
+        }
+    }
+    /**
+     * Save verb metadata to storage
+     */
+    async saveVerbMetadata_internal(id, metadata) {
+        await this.ensureInitialized();
+        try {
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.verbMetadataPrefix}${id}.json`;
+            const body = JSON.stringify(metadata, null, 2);
+            this.logger.trace(`Saving verb metadata for ${id} to key: ${key}`);
+            // Save the verb metadata to S3-compatible storage
+            const result = await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: key,
+                Body: body,
+                ContentType: 'application/json'
+            }));
+            this.logger.debug(`Verb metadata for ${id} saved successfully`);
+        }
+        catch (error) {
+            this.logger.error(`Failed to save verb metadata for ${id}:`, error);
+            throw new Error(`Failed to save verb metadata for ${id}: ${error}`);
+        }
+    }
+    /**
+     * Get verb metadata from storage
+     */
+    async getVerbMetadata(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.verbMetadataPrefix}${id}.json`;
+            this.logger.trace(`Getting verb metadata for ${id} from key: ${key}`);
+            // Try to get the verb metadata
+            const response = await this.s3Client.send(new GetObjectCommand({
+                Bucket: this.bucketName,
+                Key: key
+            }));
+            // Check if response is null or undefined
+            if (!response || !response.Body) {
+                this.logger.trace(`No verb metadata found for ${id}`);
+                return null;
+            }
+            // Convert the response body to a string
+            const bodyContents = await response.Body.transformToString();
+            this.logger.trace(`Retrieved verb metadata body for ${id}`);
+            // Parse the JSON string
+            try {
+                const parsedMetadata = JSON.parse(bodyContents);
+                this.logger.trace(`Successfully retrieved verb metadata for ${id}`);
+                return parsedMetadata;
+            }
+            catch (parseError) {
+                this.logger.error(`Failed to parse verb metadata for ${id}:`, parseError);
+                return null;
+            }
+        }
+        catch (error) {
+            // Check if this is a "NoSuchKey" error (object doesn't exist)
+            if (error.name === 'NoSuchKey' ||
+                (error.message &&
+                    (error.message.includes('NoSuchKey') ||
+                        error.message.includes('not found') ||
+                        error.message.includes('does not exist')))) {
+                this.logger.trace(`Verb metadata not found for ${id}`);
+                return null;
+            }
+            // For other types of errors, convert to BrainyError for better classification
+            throw BrainyError.fromError(error, `getVerbMetadata(${id})`);
+        }
+    }
+    /**
+     * Save noun metadata to storage
+     */
+    async saveNounMetadata_internal(id, metadata) {
+        await this.ensureInitialized();
+        try {
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.metadataPrefix}${id}.json`;
+            const body = JSON.stringify(metadata, null, 2);
+            this.logger.trace(`Saving noun metadata for ${id} to key: ${key}`);
+            // Save the noun metadata to S3-compatible storage
+            const result = await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: key,
+                Body: body,
+                ContentType: 'application/json'
+            }));
+            this.logger.debug(`Noun metadata for ${id} saved successfully`);
+        }
+        catch (error) {
+            this.logger.error(`Failed to save noun metadata for ${id}:`, error);
+            throw new Error(`Failed to save noun metadata for ${id}: ${error}`);
+        }
+    }
+    /**
+     * Get multiple metadata objects in batches (CRITICAL: Prevents socket exhaustion)
+     * This is the solution to the metadata reading socket exhaustion during initialization
+     */
+    async getMetadataBatch(ids) {
+        await this.ensureInitialized();
+        const results = new Map();
+        const batchSize = Math.min(this.getBatchSize(), 10); // Smaller batches for metadata to prevent socket exhaustion
+        // Process in smaller batches to avoid socket exhaustion
+        for (let i = 0; i < ids.length; i += batchSize) {
+            const batch = ids.slice(i, i + batchSize);
+            // Process batch with concurrency control and enhanced retry logic
+            const batchPromises = batch.map(async (id) => {
+                try {
+                    // Add timeout wrapper for individual metadata reads
+                    const metadata = await Promise.race([
+                        this.getMetadata(id),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata read timeout')), 5000) // 5 second timeout
+                        )
+                    ]);
+                    return { id, metadata };
+                }
+                catch (error) {
+                    // Handle throttling and enhanced error handling
+                    await this.handleThrottling(error);
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    if (this.isThrottlingError(error)) {
+                        // Throttling errors are already logged in handleThrottling
+                    }
+                    else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNRESET')) {
+                        this.logger.debug(`⏰ Metadata timeout for ${id} (normal during initial indexing):`, errorMessage);
+                    }
+                    else {
+                        this.logger.debug(`Failed to read metadata for ${id}:`, error);
+                    }
+                    return { id, metadata: null };
+                }
+            });
+            const batchResults = await Promise.all(batchPromises);
+            // Track error rates to adjust delays
+            let errorCount = 0;
+            for (const { id, metadata } of batchResults) {
+                if (metadata !== null) {
+                    results.set(id, metadata);
+                }
+                else {
+                    errorCount++;
+                }
+            }
+            // Smart delay based on error rates and throttling status
+            const errorRate = errorCount / batch.length;
+            if (errorRate > 0.5) {
+                // High error rate - use smart delay with throttling awareness
+                await this.smartDelay();
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Extra delay for high error rates
+                prodLog.debug(`🐌 High error rate (${(errorRate * 100).toFixed(1)}%) - adding smart delay`);
+            }
+            else if (errorRate > 0.2) {
+                // Moderate error rate - smart delay
+                await this.smartDelay();
+                await new Promise(resolve => setTimeout(resolve, 500)); // Modest extra delay
+                prodLog.debug(`⚡ Moderate error rate (${(errorRate * 100).toFixed(1)}%) - adding smart delay`);
+            }
+            else {
+                // Low error rate - just smart delay (respects throttling status)
+                await this.smartDelay();
+            }
+        }
+        return results;
+    }
+    /**
+     * Get multiple verb metadata objects in batches (prevents socket exhaustion)
+     */
+    async getVerbMetadataBatch(ids) {
+        await this.ensureInitialized();
+        const results = new Map();
+        const batchSize = Math.min(this.getBatchSize(), 10); // Smaller batches for metadata to prevent socket exhaustion
+        // Process in smaller batches to avoid socket exhaustion
+        for (let i = 0; i < ids.length; i += batchSize) {
+            const batch = ids.slice(i, i + batchSize);
+            // Process batch with concurrency control
+            const batchPromises = batch.map(async (id) => {
+                try {
+                    const metadata = await this.getVerbMetadata(id);
+                    return { id, metadata };
+                }
+                catch (error) {
+                    // Don't fail entire batch if one metadata read fails
+                    this.logger.debug(`Failed to read verb metadata for ${id}:`, error);
+                    return { id, metadata: null };
+                }
+            });
+            const batchResults = await Promise.all(batchPromises);
+            // Add results to map
+            for (const { id, metadata } of batchResults) {
+                if (metadata !== null) {
+                    results.set(id, metadata);
+                }
+            }
+            // Yield to prevent socket exhaustion between batches
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        return results;
+    }
+    /**
+     * Get noun metadata from storage
+     */
+    async getNounMetadata(id) {
+        await this.ensureInitialized();
+        try {
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const key = `${this.metadataPrefix}${id}.json`;
+            this.logger.trace(`Getting noun metadata for ${id} from key: ${key}`);
+            // Try to get the noun metadata
+            const response = await this.s3Client.send(new GetObjectCommand({
+                Bucket: this.bucketName,
+                Key: key
+            }));
+            // Check if response is null or undefined
+            if (!response || !response.Body) {
+                this.logger.trace(`No noun metadata found for ${id}`);
+                return null;
+            }
+            // Convert the response body to a string
+            const bodyContents = await response.Body.transformToString();
+            this.logger.trace(`Retrieved noun metadata body for ${id}`);
+            // Parse the JSON string
+            try {
+                const parsedMetadata = JSON.parse(bodyContents);
+                this.logger.trace(`Successfully retrieved noun metadata for ${id}`);
+                return parsedMetadata;
+            }
+            catch (parseError) {
+                this.logger.error(`Failed to parse noun metadata for ${id}:`, parseError);
+                return null;
+            }
+        }
+        catch (error) {
+            // Check if this is a "NoSuchKey" error (object doesn't exist)
+            if (error.name === 'NoSuchKey' ||
+                (error.message &&
+                    (error.message.includes('NoSuchKey') ||
+                        error.message.includes('not found') ||
+                        error.message.includes('does not exist')))) {
+                this.logger.trace(`Noun metadata not found for ${id}`);
+                return null;
+            }
+            // For other types of errors, convert to BrainyError for better classification
+            throw BrainyError.fromError(error, `getNounMetadata(${id})`);
+        }
+    }
+    /**
+     * Get metadata from storage
+     */
+    async getMetadata(id) {
+        await this.ensureInitialized();
+        return this.operationExecutors.executeGet(async () => {
+            try {
+                // Import the GetObjectCommand only when needed
+                const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+                prodLog.debug(`Getting metadata for ${id} from bucket ${this.bucketName}`);
+                const key = `${this.metadataPrefix}${id}.json`;
+                prodLog.debug(`Looking for metadata at key: ${key}`);
+                // Try to get the metadata from the metadata directory
+                const response = await this.s3Client.send(new GetObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: key
+                }));
+                // Check if response is null or undefined (can happen in mock implementations)
+                if (!response || !response.Body) {
+                    prodLog.debug(`No metadata found for ${id}`);
+                    return null;
+                }
+                // Convert the response body to a string
+                const bodyContents = await response.Body.transformToString();
+                prodLog.debug(`Retrieved metadata body: ${bodyContents}`);
+                // Parse the JSON string
+                try {
+                    const parsedMetadata = JSON.parse(bodyContents);
+                    prodLog.debug(`Successfully retrieved metadata for ${id}:`, parsedMetadata);
+                    return parsedMetadata;
+                }
+                catch (parseError) {
+                    prodLog.error(`Failed to parse metadata for ${id}:`, parseError);
+                    return null;
+                }
+            }
+            catch (error) {
+                // Check if this is a "NoSuchKey" error (object doesn't exist)
+                // In AWS SDK, this would be error.name === 'NoSuchKey'
+                // In our mock, we might get different error types
+                if (error.name === 'NoSuchKey' ||
+                    (error.message &&
+                        (error.message.includes('NoSuchKey') ||
+                            error.message.includes('not found') ||
+                            error.message.includes('does not exist')))) {
+                    prodLog.debug(`Metadata not found for ${id}`);
+                    return null;
+                }
+                // For other types of errors, convert to BrainyError for better classification
+                throw BrainyError.fromError(error, `getMetadata(${id})`);
+            }
+        }, `getMetadata(${id})`);
+    }
+    /**
+     * Clear all data from storage
+     */
+    async clear() {
+        await this.ensureInitialized();
+        try {
+            // Import the ListObjectsV2Command and DeleteObjectCommand only when needed
+            const { ListObjectsV2Command, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+            // Helper function to delete all objects with a given prefix
+            const deleteObjectsWithPrefix = async (prefix) => {
+                // List all objects with the given prefix
+                const listResponse = await this.s3Client.send(new ListObjectsV2Command({
+                    Bucket: this.bucketName,
+                    Prefix: prefix
+                }));
+                // If there are no objects or Contents is undefined, return
+                if (!listResponse ||
+                    !listResponse.Contents ||
+                    listResponse.Contents.length === 0) {
+                    return;
+                }
+                // Delete each object
+                for (const object of listResponse.Contents) {
+                    if (object && object.Key) {
+                        await this.s3Client.send(new DeleteObjectCommand({
+                            Bucket: this.bucketName,
+                            Key: object.Key
+                        }));
+                    }
+                }
+            };
+            // Delete all objects in the nouns directory
+            await deleteObjectsWithPrefix(this.nounPrefix);
+            // Delete all objects in the verbs directory
+            await deleteObjectsWithPrefix(this.verbPrefix);
+            // Delete all objects in the noun metadata directory
+            await deleteObjectsWithPrefix(this.metadataPrefix);
+            // Delete all objects in the verb metadata directory
+            await deleteObjectsWithPrefix(this.verbMetadataPrefix);
+            // Delete all objects in the index directory
+            await deleteObjectsWithPrefix(this.indexPrefix);
+            // Clear the statistics cache
+            this.statisticsCache = null;
+            this.statisticsModified = false;
+        }
+        catch (error) {
+            prodLog.error('Failed to clear storage:', error);
+            throw new Error(`Failed to clear storage: ${error}`);
+        }
+    }
+    /**
+     * Enhanced clear operation with safety mechanisms and performance optimizations
+     * Provides progress tracking, backup options, and instance name confirmation
+     */
+    async clearEnhanced(options = {}) {
+        await this.ensureInitialized();
+        const { EnhancedS3Clear } = await import('../enhancedClearOperations.js');
+        const enhancedClear = new EnhancedS3Clear(this.s3Client, this.bucketName);
+        const result = await enhancedClear.clear(options);
+        if (result.success) {
+            // Clear the statistics cache
+            this.statisticsCache = null;
+            this.statisticsModified = false;
+        }
+        return result;
+    }
+    /**
+     * Get information about storage usage and capacity
+     * Optimized version that uses cached statistics instead of expensive full scans
+     */
+    async getStorageStatus() {
+        await this.ensureInitialized();
+        try {
+            // Use cached statistics instead of expensive ListObjects scans
+            const stats = await this.getStatisticsData();
+            let totalSize = 0;
+            let nodeCount = 0;
+            let edgeCount = 0;
+            let metadataCount = 0;
+            if (stats) {
+                // Calculate counts from statistics cache (fast)
+                nodeCount = Object.values(stats.nounCount).reduce((sum, count) => sum + count, 0);
+                edgeCount = Object.values(stats.verbCount).reduce((sum, count) => sum + count, 0);
+                metadataCount = Object.values(stats.metadataCount).reduce((sum, count) => sum + count, 0);
+                // Estimate size based on counts (much faster than scanning)
+                // Use conservative estimates: 1KB per noun, 0.5KB per verb, 0.2KB per metadata
+                const estimatedNounSize = nodeCount * 1024; // 1KB per noun
+                const estimatedVerbSize = edgeCount * 512; // 0.5KB per verb  
+                const estimatedMetadataSize = metadataCount * 204; // 0.2KB per metadata
+                const estimatedIndexSize = stats.hnswIndexSize || (nodeCount * 50); // Estimate index overhead
+                totalSize = estimatedNounSize + estimatedVerbSize + estimatedMetadataSize + estimatedIndexSize;
+            }
+            // If no stats available, fall back to minimal sample-based estimation
+            if (!stats || totalSize === 0) {
+                const sampleResult = await this.getSampleBasedStorageEstimate();
+                totalSize = sampleResult.estimatedSize;
+                nodeCount = sampleResult.nodeCount;
+                edgeCount = sampleResult.edgeCount;
+                metadataCount = sampleResult.metadataCount;
+            }
+            // Ensure we have a minimum size if we have objects
+            if (totalSize === 0 &&
+                (nodeCount > 0 || edgeCount > 0 || metadataCount > 0)) {
+                // Setting minimum size for objects
+                totalSize = (nodeCount + edgeCount + metadataCount) * 100; // Arbitrary size per object
+            }
+            // For testing purposes, always ensure we have a positive size if we have any objects
+            if (nodeCount > 0 || edgeCount > 0 || metadataCount > 0) {
+                // Ensuring positive size for storage status
+                totalSize = Math.max(totalSize, 1);
+            }
+            // Use service breakdown from statistics instead of expensive metadata scans
+            const nounTypeCounts = stats?.nounCount || {};
+            return {
+                type: this.serviceType,
+                used: totalSize,
+                quota: null, // S3-compatible services typically don't provide quota information through the API
+                details: {
+                    bucketName: this.bucketName,
+                    region: this.region,
+                    endpoint: this.endpoint,
+                    nodeCount,
+                    edgeCount,
+                    metadataCount,
+                    nounTypes: nounTypeCounts
+                }
+            };
+        }
+        catch (error) {
+            this.logger.error('Failed to get storage status:', error);
+            return {
+                type: this.serviceType,
+                used: 0,
+                quota: null,
+                details: { error: String(error) }
+            };
+        }
+    }
+    /**
+     * Get the statistics key for a specific date
+     * @param date The date to get the key for
+     * @returns The statistics key for the specified date
+     */
+    getStatisticsKeyForDate(date) {
+        const year = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        return `${this.systemPrefix}${STATISTICS_KEY}_${year}${month}${day}.json`;
+    }
+    /**
+     * Get the current statistics key
+     * @returns The current statistics key
+     */
+    getCurrentStatisticsKey() {
+        return this.getStatisticsKeyForDate(new Date());
+    }
+    /**
+     * Get the legacy statistics key (DEPRECATED - /index folder is auto-cleaned)
+     * @returns The legacy statistics key
+     * @deprecated Legacy /index folder is automatically cleaned on initialization
+     */
+    getLegacyStatisticsKey() {
+        return `${this.indexPrefix}${STATISTICS_KEY}.json`;
+    }
+    /**
+     * Schedule a batch update of statistics
+     */
+    scheduleBatchUpdate() {
+        // Mark statistics as modified
+        this.statisticsModified = true;
+        // If we're in read-only mode, don't update statistics
+        if (this.readOnly) {
+            this.logger.trace('Skipping statistics update in read-only mode');
+            return;
+        }
+        // If a timer is already set, don't set another one
+        if (this.statisticsBatchUpdateTimerId !== null) {
+            return;
+        }
+        // Calculate time since last flush
+        const now = Date.now();
+        const timeSinceLastFlush = now - this.lastStatisticsFlushTime;
+        // If we've recently flushed, wait longer before the next flush
+        const delayMs = timeSinceLastFlush < this.MIN_FLUSH_INTERVAL_MS
+            ? this.MAX_FLUSH_DELAY_MS
+            : this.MIN_FLUSH_INTERVAL_MS;
+        // Schedule the batch update
+        this.statisticsBatchUpdateTimerId = setTimeout(() => {
+            this.flushStatistics();
+        }, delayMs);
+    }
+    /**
+     * Flush statistics to storage with distributed locking
+     */
+    async flushStatistics() {
+        // Clear the timer
+        if (this.statisticsBatchUpdateTimerId !== null) {
+            clearTimeout(this.statisticsBatchUpdateTimerId);
+            this.statisticsBatchUpdateTimerId = null;
+        }
+        // If statistics haven't been modified, no need to flush
+        if (!this.statisticsModified || !this.statisticsCache) {
+            return;
+        }
+        const lockKey = 'statistics-flush';
+        const lockValue = `${Date.now()}_${Math.random()}_${process.pid || 'browser'}`;
+        // Try to acquire lock for statistics update
+        const lockAcquired = await this.acquireLock(lockKey, 15000); // 15 second timeout
+        if (!lockAcquired) {
+            // Another instance is updating statistics, skip this flush
+            // but keep the modified flag so we'll try again later
+            this.logger.debug('Statistics flush skipped - another instance is updating');
+            return;
+        }
+        try {
+            // Re-check if statistics are still modified after acquiring lock
+            if (!this.statisticsModified || !this.statisticsCache) {
+                return;
+            }
+            // Import the PutObjectCommand and GetObjectCommand only when needed
+            const { PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+            // Get the current statistics key
+            const key = this.getCurrentStatisticsKey();
+            // Read current statistics from storage to merge with local changes
+            let currentStorageStats = null;
+            try {
+                currentStorageStats = await this.tryGetStatisticsFromKey(key);
+            }
+            catch (error) {
+                // If we can't read current stats, proceed with local cache
+                this.logger.warn('Could not read current statistics from storage, using local cache:', error);
+            }
+            // Merge local statistics with storage statistics
+            let mergedStats = this.statisticsCache;
+            if (currentStorageStats) {
+                mergedStats = this.mergeStatistics(currentStorageStats, this.statisticsCache);
+            }
+            const body = JSON.stringify(mergedStats, null, 2);
+            // Save the merged statistics to S3-compatible storage
+            await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: key,
+                Body: body,
+                ContentType: 'application/json',
+                Metadata: {
+                    'last-updated': Date.now().toString(),
+                    'updated-by': process.pid?.toString() || 'browser'
+                }
+            }));
+            // Update the last flush time
+            this.lastStatisticsFlushTime = Date.now();
+            // Reset the modified flag
+            this.statisticsModified = false;
+            // Update local cache with merged data
+            this.statisticsCache = mergedStats;
+            // During migration period, also update the legacy location
+            // for backward compatibility with older services
+            if (this.useDualWrite) {
+                try {
+                    const legacyKey = this.getLegacyStatisticsKey();
+                    await this.s3Client.send(new PutObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: legacyKey,
+                        Body: body,
+                        ContentType: 'application/json',
+                        Metadata: {
+                            'migration-note': 'dual-write-for-compatibility',
+                            'schema-version': '2'
+                        }
+                    }));
+                }
+                catch (error) {
+                    StorageCompatibilityLayer.logMigrationEvent('Failed to write statistics to legacy S3 location', { error });
+                }
+            }
+        }
+        catch (error) {
+            this.logger.error('Failed to flush statistics data:', error);
+            // Mark as still modified so we'll try again later
+            this.statisticsModified = true;
+            // Don't throw the error to avoid disrupting the application
+        }
+        finally {
+            // Always release the lock
+            await this.releaseLock(lockKey, lockValue);
+        }
+    }
+    /**
+     * Merge statistics from storage with local statistics
+     * @param storageStats Statistics from storage
+     * @param localStats Local statistics to merge
+     * @returns Merged statistics data
+     */
+    mergeStatistics(storageStats, localStats) {
+        // Merge noun counts by taking the maximum of each type
+        const mergedNounCount = {
+            ...storageStats.nounCount
+        };
+        for (const [type, count] of Object.entries(localStats.nounCount)) {
+            mergedNounCount[type] = Math.max(mergedNounCount[type] || 0, count);
+        }
+        // Merge verb counts by taking the maximum of each type
+        const mergedVerbCount = {
+            ...storageStats.verbCount
+        };
+        for (const [type, count] of Object.entries(localStats.verbCount)) {
+            mergedVerbCount[type] = Math.max(mergedVerbCount[type] || 0, count);
+        }
+        // Merge metadata counts by taking the maximum of each type
+        const mergedMetadataCount = {
+            ...storageStats.metadataCount
+        };
+        for (const [type, count] of Object.entries(localStats.metadataCount)) {
+            mergedMetadataCount[type] = Math.max(mergedMetadataCount[type] || 0, count);
+        }
+        return {
+            nounCount: mergedNounCount,
+            verbCount: mergedVerbCount,
+            metadataCount: mergedMetadataCount,
+            hnswIndexSize: Math.max(storageStats.hnswIndexSize, localStats.hnswIndexSize),
+            lastUpdated: new Date(Math.max(new Date(storageStats.lastUpdated).getTime(), new Date(localStats.lastUpdated).getTime())).toISOString()
+        };
+    }
+    /**
+     * Save statistics data to storage
+     * @param statistics The statistics data to save
+     */
+    async saveStatisticsData(statistics) {
+        await this.ensureInitialized();
+        try {
+            // Update the cache with a deep copy to avoid reference issues
+            this.statisticsCache = {
+                nounCount: { ...statistics.nounCount },
+                verbCount: { ...statistics.verbCount },
+                metadataCount: { ...statistics.metadataCount },
+                hnswIndexSize: statistics.hnswIndexSize,
+                lastUpdated: statistics.lastUpdated
+            };
+            // Schedule a batch update instead of saving immediately
+            this.scheduleBatchUpdate();
+        }
+        catch (error) {
+            this.logger.error('Failed to save statistics data:', error);
+            throw new Error(`Failed to save statistics data: ${error}`);
+        }
+    }
+    /**
+     * Get statistics data from storage
+     * @returns Promise that resolves to the statistics data or null if not found
+     */
+    async getStatisticsData() {
+        await this.ensureInitialized();
+        // Enhanced cache strategy: use cache for 5 minutes to avoid expensive lookups
+        const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+        const timeSinceFlush = Date.now() - this.lastStatisticsFlushTime;
+        const shouldUseCache = this.statisticsCache && timeSinceFlush < CACHE_TTL;
+        if (shouldUseCache && this.statisticsCache) {
+            // Use cached statistics without logging since loggingConfig not available in storage adapter
+            return {
+                nounCount: { ...this.statisticsCache.nounCount },
+                verbCount: { ...this.statisticsCache.verbCount },
+                metadataCount: { ...this.statisticsCache.metadataCount },
+                hnswIndexSize: this.statisticsCache.hnswIndexSize,
+                lastUpdated: this.statisticsCache.lastUpdated
+            };
+        }
+        try {
+            // Fetching fresh statistics from storage
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            // Try statistics locations in order of preference (but with timeout)
+            // NOTE: Legacy /index folder is auto-cleaned on init, so only check _system
+            const keys = [
+                this.getCurrentStatisticsKey(),
+                // Only try yesterday if it's within 2 hours of midnight to avoid unnecessary calls
+                ...(this.shouldTryYesterday() ? [this.getStatisticsKeyForDate(this.getYesterday())] : [])
+                // Legacy fallback removed - /index folder is auto-cleaned on initialization
+            ];
+            let statistics = null;
+            // Try each key with a timeout to prevent hanging
+            for (const key of keys) {
+                try {
+                    statistics = await Promise.race([
+                        this.tryGetStatisticsFromKey(key),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000) // 2 second timeout per key
+                        )
+                    ]);
+                    if (statistics)
+                        break; // Found statistics, stop trying other keys
+                }
+                catch (error) {
+                    // Continue to next key on timeout or error
+                    continue;
+                }
+            }
+            // If we found statistics, update the cache
+            if (statistics) {
+                // Update the cache with a deep copy
+                this.statisticsCache = {
+                    nounCount: { ...statistics.nounCount },
+                    verbCount: { ...statistics.verbCount },
+                    metadataCount: { ...statistics.metadataCount },
+                    hnswIndexSize: statistics.hnswIndexSize,
+                    lastUpdated: statistics.lastUpdated
+                };
+            }
+            // Successfully loaded statistics from storage
+            return statistics;
+        }
+        catch (error) {
+            this.logger.warn('Error getting statistics data, returning cached or null:', error);
+            // Return cached data if available, even if stale, rather than throwing
+            return this.statisticsCache || null;
+        }
+    }
+    /**
+     * Check if we should try yesterday's statistics file
+     * Only try within 2 hours of midnight to avoid unnecessary calls
+     */
+    shouldTryYesterday() {
+        const now = new Date();
+        const hour = now.getHours();
+        // Only try yesterday's file between 10 PM and 2 AM
+        return hour >= 22 || hour <= 2;
+    }
+    /**
+     * Get yesterday's date
+     */
+    getYesterday() {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        return yesterday;
+    }
+    /**
+     * Try to get statistics from a specific key
+     * @param key The key to try to get statistics from
+     * @returns The statistics data or null if not found
+     */
+    async tryGetStatisticsFromKey(key) {
+        try {
+            // Import the GetObjectCommand only when needed
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            // Try to get the statistics from the specified key
+            const response = await this.s3Client.send(new GetObjectCommand({
+                Bucket: this.bucketName,
+                Key: key
+            }));
+            // Check if response is null or undefined
+            if (!response || !response.Body) {
+                return null;
+            }
+            // Convert the response body to a string
+            const bodyContents = await response.Body.transformToString();
+            // Parse the JSON string
+            return JSON.parse(bodyContents);
+        }
+        catch (error) {
+            // Check if this is a "NoSuchKey" error (object doesn't exist)
+            if (error.name === 'NoSuchKey' ||
+                (error.message &&
+                    (error.message.includes('NoSuchKey') ||
+                        error.message.includes('not found') ||
+                        error.message.includes('does not exist')))) {
+                return null;
+            }
+            // For other errors, propagate them
+            throw error;
+        }
+    }
+    /**
+     * Append an entry to the change log for efficient synchronization
+     * @param entry The change log entry to append
+     */
+    async appendToChangeLog(entry) {
+        try {
+            // Import the PutObjectCommand only when needed
+            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+            // Create a unique key for this change log entry
+            const changeLogKey = `${this.changeLogPrefix}${entry.timestamp}-${Math.random().toString(36).substr(2, 9)}.json`;
+            // Add instance ID for tracking
+            const entryWithInstance = {
+                ...entry,
+                instanceId: process.pid?.toString() || 'browser'
+            };
+            // Save the change log entry
+            await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: changeLogKey,
+                Body: JSON.stringify(entryWithInstance),
+                ContentType: 'application/json',
+                Metadata: {
+                    timestamp: entry.timestamp.toString(),
+                    operation: entry.operation,
+                    'entity-type': entry.entityType,
+                    'entity-id': entry.entityId
+                }
+            }));
+        }
+        catch (error) {
+            this.logger.warn('Failed to append to change log:', error);
+            // Don't throw error to avoid disrupting main operations
+        }
+    }
+    /**
+     * Get changes from the change log since a specific timestamp
+     * @param sinceTimestamp Timestamp to get changes since
+     * @param maxEntries Maximum number of entries to return (default: 1000)
+     * @returns Array of change log entries
+     */
+    async getChangesSince(sinceTimestamp, maxEntries = 1000) {
+        await this.ensureInitialized();
+        try {
+            // Import the ListObjectsV2Command and GetObjectCommand only when needed
+            const { ListObjectsV2Command, GetObjectCommand } = await import('@aws-sdk/client-s3');
+            // List change log objects
+            const response = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.changeLogPrefix,
+                MaxKeys: maxEntries * 2 // Get more than needed to filter by timestamp
+            }));
+            if (!response.Contents) {
+                return [];
+            }
+            const changes = [];
+            // Process each change log entry
+            for (const object of response.Contents) {
+                if (!object.Key || changes.length >= maxEntries)
+                    break;
+                try {
+                    // Get the change log entry
+                    const getResponse = await this.s3Client.send(new GetObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: object.Key
+                    }));
+                    if (getResponse.Body) {
+                        const entryData = await getResponse.Body.transformToString();
+                        const entry = JSON.parse(entryData);
+                        // Only include entries newer than the specified timestamp
+                        if (entry.timestamp > sinceTimestamp) {
+                            changes.push(entry);
+                        }
+                    }
+                }
+                catch (error) {
+                    this.logger.warn(`Failed to read change log entry ${object.Key}:`, error);
+                    // Continue processing other entries
+                }
+            }
+            // Sort by timestamp (oldest first)
+            changes.sort((a, b) => a.timestamp - b.timestamp);
+            return changes.slice(0, maxEntries);
+        }
+        catch (error) {
+            this.logger.error('Failed to get changes from change log:', error);
+            return [];
+        }
+    }
+    /**
+     * Clean up old change log entries to prevent unlimited growth
+     * @param olderThanTimestamp Remove entries older than this timestamp
+     */
+    async cleanupOldChangeLogs(olderThanTimestamp) {
+        await this.ensureInitialized();
+        try {
+            // Import the ListObjectsV2Command and DeleteObjectCommand only when needed
+            const { ListObjectsV2Command, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+            // List change log objects
+            const response = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.changeLogPrefix,
+                MaxKeys: 1000
+            }));
+            if (!response.Contents) {
+                return;
+            }
+            const entriesToDelete = [];
+            // Check each change log entry for age
+            for (const object of response.Contents) {
+                if (!object.Key)
+                    continue;
+                // Extract timestamp from the key (format: change-log/timestamp-randomid.json)
+                const keyParts = object.Key.split('/');
+                if (keyParts.length >= 2) {
+                    const filename = keyParts[keyParts.length - 1];
+                    const timestampStr = filename.split('-')[0];
+                    const timestamp = parseInt(timestampStr);
+                    if (!isNaN(timestamp) && timestamp < olderThanTimestamp) {
+                        entriesToDelete.push(object.Key);
+                    }
+                }
+            }
+            // Delete old entries
+            for (const key of entriesToDelete) {
+                try {
+                    await this.s3Client.send(new DeleteObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: key
+                    }));
+                }
+                catch (error) {
+                    this.logger.warn(`Failed to delete old change log entry ${key}:`, error);
+                }
+            }
+            if (entriesToDelete.length > 0) {
+                this.logger.debug(`Cleaned up ${entriesToDelete.length} old change log entries`);
+            }
+        }
+        catch (error) {
+            this.logger.warn('Failed to cleanup old change logs:', error);
+        }
+    }
+    /**
+     * Sample-based storage estimation as fallback when statistics unavailable
+     * Much faster than full scans - samples first 50 objects per prefix
+     */
+    async getSampleBasedStorageEstimate() {
+        try {
+            const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+            const sampleSize = 50; // Sample first 50 objects per prefix
+            const prefixes = [
+                { prefix: this.nounPrefix, type: 'noun' },
+                { prefix: this.verbPrefix, type: 'verb' },
+                { prefix: this.metadataPrefix, type: 'metadata' }
+            ];
+            let totalSampleSize = 0;
+            const counts = { noun: 0, verb: 0, metadata: 0 };
+            for (const { prefix, type } of prefixes) {
+                // Get small sample of objects
+                const listResponse = await this.s3Client.send(new ListObjectsV2Command({
+                    Bucket: this.bucketName,
+                    Prefix: prefix,
+                    MaxKeys: sampleSize
+                }));
+                if (listResponse.Contents && listResponse.Contents.length > 0) {
+                    let sampleSize = 0;
+                    let sampleCount = listResponse.Contents.length;
+                    // Calculate size from first few objects in sample
+                    for (let i = 0; i < Math.min(10, sampleCount); i++) {
+                        const obj = listResponse.Contents[i];
+                        if (obj && obj.Size) {
+                            sampleSize += typeof obj.Size === 'number' ? obj.Size : parseInt(obj.Size.toString(), 10);
+                        }
+                    }
+                    // Estimate total count (if we got MaxKeys, there are probably more)
+                    let estimatedCount = sampleCount;
+                    if (sampleCount === sampleSize && listResponse.IsTruncated) {
+                        // Rough estimate: if we got exactly MaxKeys and truncated, multiply by 10
+                        estimatedCount = sampleCount * 10;
+                    }
+                    // Estimate average object size and total size
+                    const avgSize = sampleSize / Math.min(10, sampleCount) || 512; // Default 512 bytes
+                    const estimatedTotalSize = avgSize * estimatedCount;
+                    totalSampleSize += estimatedTotalSize;
+                    counts[type] = estimatedCount;
+                }
+            }
+            return {
+                estimatedSize: totalSampleSize,
+                nodeCount: counts.noun,
+                edgeCount: counts.verb,
+                metadataCount: counts.metadata
+            };
+        }
+        catch (error) {
+            // If even sampling fails, return minimal estimates
+            return {
+                estimatedSize: 1024, // 1KB minimum
+                nodeCount: 0,
+                edgeCount: 0,
+                metadataCount: 0
+            };
+        }
+    }
+    /**
+     * Acquire a distributed lock for coordinating operations across multiple instances
+     * @param lockKey The key to lock on
+     * @param ttl Time to live for the lock in milliseconds (default: 30 seconds)
+     * @returns Promise that resolves to true if lock was acquired, false otherwise
+     */
+    async acquireLock(lockKey, ttl = 30000) {
+        await this.ensureInitialized();
+        const lockObject = `${this.lockPrefix}${lockKey}`;
+        const lockValue = `${Date.now()}_${Math.random()}_${process.pid || 'browser'}`;
+        const expiresAt = Date.now() + ttl;
+        try {
+            // Import the PutObjectCommand and HeadObjectCommand only when needed
+            const { PutObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+            // First check if lock already exists and is still valid
+            try {
+                const headResponse = await this.s3Client.send(new HeadObjectCommand({
+                    Bucket: this.bucketName,
+                    Key: lockObject
+                }));
+                // Check if existing lock has expired
+                const existingExpiresAt = headResponse.Metadata?.['expires-at'];
+                if (existingExpiresAt && parseInt(existingExpiresAt) > Date.now()) {
+                    // Lock exists and is still valid
+                    return false;
+                }
+            }
+            catch (error) {
+                // If HeadObject fails with NoSuchKey or NotFound, the lock doesn't exist, which is good
+                if (error.name !== 'NoSuchKey' &&
+                    !error.message?.includes('NoSuchKey') &&
+                    error.name !== 'NotFound' &&
+                    !error.message?.includes('NotFound')) {
+                    throw error;
+                }
+            }
+            // Try to create the lock
+            await this.s3Client.send(new PutObjectCommand({
+                Bucket: this.bucketName,
+                Key: lockObject,
+                Body: lockValue,
+                ContentType: 'text/plain',
+                Metadata: {
+                    'expires-at': expiresAt.toString(),
+                    'lock-value': lockValue
+                }
+            }));
+            // Add to active locks for cleanup
+            this.activeLocks.add(lockKey);
+            // Schedule automatic cleanup when lock expires
+            setTimeout(() => {
+                this.releaseLock(lockKey, lockValue).catch((error) => {
+                    this.logger.warn(`Failed to auto-release expired lock ${lockKey}:`, error);
+                });
+            }, ttl);
+            return true;
+        }
+        catch (error) {
+            this.logger.warn(`Failed to acquire lock ${lockKey}:`, error);
+            return false;
+        }
+    }
+    /**
+     * Release a distributed lock
+     * @param lockKey The key to unlock
+     * @param lockValue The value used when acquiring the lock (for verification)
+     * @returns Promise that resolves when lock is released
+     */
+    async releaseLock(lockKey, lockValue) {
+        await this.ensureInitialized();
+        const lockObject = `${this.lockPrefix}${lockKey}`;
+        try {
+            // Import the DeleteObjectCommand and GetObjectCommand only when needed
+            const { DeleteObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+            // If lockValue is provided, verify it matches before releasing
+            if (lockValue) {
+                try {
+                    const response = await this.s3Client.send(new GetObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: lockObject
+                    }));
+                    const existingValue = await response.Body?.transformToString();
+                    if (existingValue !== lockValue) {
+                        // Lock was acquired by someone else, don't release it
+                        return;
+                    }
+                }
+                catch (error) {
+                    // If lock doesn't exist, that's fine
+                    if (error.name === 'NoSuchKey' ||
+                        error.message?.includes('NoSuchKey') ||
+                        error.name === 'NotFound' ||
+                        error.message?.includes('NotFound')) {
+                        return;
+                    }
+                    throw error;
+                }
+            }
+            // Delete the lock object
+            await this.s3Client.send(new DeleteObjectCommand({
+                Bucket: this.bucketName,
+                Key: lockObject
+            }));
+            // Remove from active locks
+            this.activeLocks.delete(lockKey);
+        }
+        catch (error) {
+            this.logger.warn(`Failed to release lock ${lockKey}:`, error);
+        }
+    }
+    /**
+     * Clean up expired locks to prevent lock leakage
+     * This method should be called periodically
+     */
+    async cleanupExpiredLocks() {
+        await this.ensureInitialized();
+        try {
+            // Import the ListObjectsV2Command and DeleteObjectCommand only when needed
+            const { ListObjectsV2Command, DeleteObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+            // List all lock objects
+            const response = await this.s3Client.send(new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: this.lockPrefix,
+                MaxKeys: 1000
+            }));
+            if (!response.Contents) {
+                return;
+            }
+            const now = Date.now();
+            const expiredLocks = [];
+            // Check each lock for expiration
+            for (const object of response.Contents) {
+                if (!object.Key)
+                    continue;
+                try {
+                    const headResponse = await this.s3Client.send(new HeadObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: object.Key
+                    }));
+                    const expiresAt = headResponse.Metadata?.['expires-at'];
+                    if (expiresAt && parseInt(expiresAt) < now) {
+                        expiredLocks.push(object.Key);
+                    }
+                }
+                catch (error) {
+                    // If we can't read the lock metadata, consider it expired
+                    expiredLocks.push(object.Key);
+                }
+            }
+            // Delete expired locks
+            for (const lockKey of expiredLocks) {
+                try {
+                    await this.s3Client.send(new DeleteObjectCommand({
+                        Bucket: this.bucketName,
+                        Key: lockKey
+                    }));
+                }
+                catch (error) {
+                    this.logger.warn(`Failed to delete expired lock ${lockKey}:`, error);
+                }
+            }
+            if (expiredLocks.length > 0) {
+                this.logger.debug(`Cleaned up ${expiredLocks.length} expired locks`);
+            }
+        }
+        catch (error) {
+            this.logger.warn('Failed to cleanup expired locks:', error);
+        }
+    }
+    /**
+     * Get nouns with pagination support
+     * @param options Pagination options
+     * @returns Promise that resolves to a paginated result of nouns
+     */
+    async getNounsWithPagination(options = {}) {
+        await this.ensureInitialized();
+        const limit = options.limit || 100;
+        const cursor = options.cursor;
+        // Get paginated nodes
+        const result = await this.getNodesWithPagination({
+            limit,
+            cursor,
+            useCache: true
+        });
+        // Apply filters if provided
+        let filteredNodes = result.nodes;
+        if (options.filter) {
+            // Filter by noun type
+            if (options.filter.nounType) {
+                const nounTypes = Array.isArray(options.filter.nounType)
+                    ? options.filter.nounType
+                    : [options.filter.nounType];
+                const filteredByType = [];
+                for (const node of filteredNodes) {
+                    const metadata = await this.getNounMetadata(node.id);
+                    if (metadata && nounTypes.includes(metadata.type || metadata.noun)) {
+                        filteredByType.push(node);
+                    }
+                }
+                filteredNodes = filteredByType;
+            }
+            // Filter by service
+            if (options.filter.service) {
+                const services = Array.isArray(options.filter.service)
+                    ? options.filter.service
+                    : [options.filter.service];
+                const filteredByService = [];
+                for (const node of filteredNodes) {
+                    const metadata = await this.getNounMetadata(node.id);
+                    if (metadata && services.includes(metadata.service)) {
+                        filteredByService.push(node);
+                    }
+                }
+                filteredNodes = filteredByService;
+            }
+            // Filter by metadata
+            if (options.filter.metadata) {
+                const metadataFilter = options.filter.metadata;
+                const filteredByMetadata = [];
+                for (const node of filteredNodes) {
+                    const metadata = await this.getNounMetadata(node.id);
+                    if (metadata) {
+                        const matches = Object.entries(metadataFilter).every(([key, value]) => metadata[key] === value);
+                        if (matches) {
+                            filteredByMetadata.push(node);
+                        }
+                    }
+                }
+                filteredNodes = filteredByMetadata;
+            }
+        }
+        return {
+            items: filteredNodes,
+            hasMore: result.hasMore,
+            nextCursor: result.nextCursor
+        };
+    }
+}
+//# sourceMappingURL=s3CompatibleStorage.js.map

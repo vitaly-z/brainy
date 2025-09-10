@@ -6,7 +6,7 @@
  * 🚀 Scalable health monitoring for high-performance databases
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 // @ts-ignore
 import chalk from 'chalk'
 // @ts-ignore
@@ -52,7 +52,7 @@ export interface RepairAction {
  * Comprehensive Health Check and Auto-Repair System
  */
 export class HealthCheck {
-  private brainy: BrainyData
+  private brainy: Brainy
   
   private colors = {
     primary: chalk.hex('#3A5F4A'),
@@ -83,7 +83,7 @@ export class HealthCheck {
     sparkle: '✨'
   }
 
-  constructor(brainy: BrainyData) {
+  constructor(brainy: Brainy) {
     this.brainy = brainy
   }
 

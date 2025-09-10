@@ -5,7 +5,7 @@
  * ⚛️ Complete with confidence scoring and relationship weight calculation
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import * as fs from '../universal/fs.js'
 import * as path from '../universal/path.js'
@@ -83,7 +83,7 @@ export interface NeuralImportOptions {
  * Neural Import Engine - The Brain Behind the Analysis
  */
 export class NeuralImport {
-  private brainy: BrainyData
+  private brainy: Brainy
   private colors = {
     primary: chalk.hex('#3A5F4A'),
     success: chalk.hex('#2D4A3A'),
@@ -109,7 +109,7 @@ export class NeuralImport {
     gear: '⚙️'
   }
 
-  constructor(brainy: BrainyData) {
+  constructor(brainy: Brainy) {
     this.brainy = brainy
   }
 
@@ -288,7 +288,7 @@ export class NeuralImport {
    */
   private async calculateEntityTypeConfidence(text: string, data: any, nounType: string): Promise<number> {
     // Base semantic similarity using search instead of similarity method
-    const searchResults = await this.brainy.search(text + ' ' + nounType, { limit: 1 })
+    const searchResults = await this.brainy.search(text + ' ' + nounType, 1)
     const textSimilarity = searchResults.length > 0 ? searchResults[0].score : 0.5
     
     // Field-based confidence boost
@@ -372,7 +372,7 @@ export class NeuralImport {
     const reasons: string[] = []
 
     // Semantic similarity reason using search
-    const searchResults = await this.brainy.search(text + ' ' + nounType, { limit: 1 })
+    const searchResults = await this.brainy.search(text + ' ' + nounType, 1)
     const similarity = searchResults.length > 0 ? searchResults[0].score : 0.5
     if (similarity > 0.7) {
       reasons.push(`High semantic similarity (${(similarity * 100).toFixed(1)}%)`)
@@ -456,18 +456,17 @@ export class NeuralImport {
   ): Promise<number> {
     // Semantic similarity between entities and verb type using search
     const relationshipText = `${this.extractMainText(source.originalData)} ${verbType} ${this.extractMainText(target.originalData)}`
-    const directResults = await this.brainy.search(relationshipText, { limit: 1 })
-    const directSimilarity = directResults.length > 0 ? directResults[0].score : 0.5
+    const directResults = await this.brainy.search(relationshipText, 1)
+    const directScore = directResults.length > 0 ? directResults[0].score : 0.4
     
-    // Context-based similarity using search
-    const contextResults = await this.brainy.search(context + ' ' + verbType, { limit: 1 })
+    const contextResults = await this.brainy.search(context + ' ' + verbType, 1)
     const contextSimilarity = contextResults.length > 0 ? contextResults[0].score : 0.5
     
     // Entity type compatibility
     const typeCompatibility = this.calculateTypeCompatibility(source.nounType, target.nounType, verbType)
     
     // Combine with weights
-    return (directSimilarity * 0.4) + (contextSimilarity * 0.4) + (typeCompatibility * 0.2)
+    return (directScore * 0.4) + (contextSimilarity * 0.4) + (typeCompatibility * 0.2)
   }
 
   /**
@@ -780,24 +779,26 @@ export class NeuralImport {
     try {
       // Add entities to Brainy
       for (const entity of result.detectedEntities) {
-        await this.brainy.addNoun(this.extractMainText(entity.originalData), {
-          ...entity.originalData,
-          nounType: entity.nounType,
-          confidence: entity.confidence,
-          id: entity.suggestedId
+        await this.brainy.add({
+          data: this.extractMainText(entity.originalData),
+          type: entity.nounType as NounType,
+          metadata: {
+            ...entity.originalData,
+            confidence: entity.confidence,
+            id: entity.suggestedId
+          }
         })
       }
 
       // Add relationships to Brainy
       for (const relationship of result.detectedRelationships) {
-        await this.brainy.addVerb(
-          relationship.sourceId,
-          relationship.targetId,
-          relationship.verbType as VerbType,
-          {
-            weight: relationship.weight,
-            metadata: {
-              confidence: relationship.confidence,
+        await this.brainy.relate({
+          from: relationship.sourceId,
+          to: relationship.targetId,
+          type: relationship.verbType as VerbType,
+          weight: relationship.weight,
+          metadata: {
+            confidence: relationship.confidence,
               context: relationship.context,
               ...relationship.metadata
             }

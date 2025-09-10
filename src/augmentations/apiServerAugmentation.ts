@@ -61,7 +61,7 @@ export class APIServerAugmentation extends BaseAugmentation {
   readonly operations = ['all'] as ('all')[]
   readonly priority = 5  // Low priority, runs after other augmentations
   
-  private config: APIServerConfig
+  protected config: APIServerConfig
   private mcpService?: BrainyMCPService
   private httpServer?: any
   private wsServer?: any

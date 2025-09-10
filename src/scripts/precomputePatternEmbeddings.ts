@@ -18,7 +18,7 @@
  * - Patterns load instantly with pre-computed vectors
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import patternData from '../patterns/library.json' assert { type: 'json' }
 import * as fs from 'fs/promises'
 import * as path from 'path'
@@ -27,7 +27,7 @@ async function precomputeEmbeddings() {
   console.log('🧠 Pre-computing pattern embeddings...')
   
   // Initialize Brainy with minimal config
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: 'memory',
     verbose: false
   })

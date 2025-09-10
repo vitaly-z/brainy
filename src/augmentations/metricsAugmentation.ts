@@ -1,7 +1,7 @@
 /**
  * Metrics Augmentation - Optional Performance & Usage Metrics
  * 
- * Replaces the hardcoded StatisticsCollector in BrainyData with an optional augmentation.
+ * Replaces the hardcoded StatisticsCollector in Brainy with an optional augmentation.
  * Tracks performance metrics, usage patterns, and system statistics.
  * 
  * Zero-config: Automatically enabled for observability
@@ -35,11 +35,11 @@ export class MetricsAugmentation extends BaseAugmentation {
   readonly metadata = 'readonly' as const  // Reads metadata for metrics
   readonly name = 'metrics'
   readonly timing = 'after' as const
-  operations = ['add', 'search', 'delete', 'clear', 'all'] as ('add' | 'search' | 'delete' | 'clear' | 'all')[]
+  operations = ['add', 'update', 'search', 'find', 'similar', 'delete', 'relate', 'unrelate', 'clear', 'all'] as ('add' | 'update' | 'search' | 'find' | 'similar' | 'delete' | 'relate' | 'unrelate' | 'clear' | 'all')[]
   readonly priority = 40 // Low priority, runs after other augmentations
 
   private statisticsCollector: StatisticsCollector | null = null
-  private config: MetricsConfig
+  protected config: MetricsConfig
   private metricsTimer: NodeJS.Timeout | null = null
 
   constructor(config: MetricsConfig = {}) {

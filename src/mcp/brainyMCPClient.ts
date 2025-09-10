@@ -6,7 +6,7 @@
  */
 
 import WebSocket from 'ws'
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 
 interface ClientOptions {
@@ -30,7 +30,7 @@ interface Message {
 export class BrainyMCPClient {
   private socket?: WebSocket
   private options: Required<ClientOptions>
-  private brainy?: BrainyData
+  private brainy?: Brainy
   private messageHandlers: Map<string, (message: Message) => void> = new Map()
   private reconnectTimeout?: NodeJS.Timeout
   private isConnected = false
@@ -49,7 +49,7 @@ export class BrainyMCPClient {
    */
   private async initBrainy() {
     if (this.options.useBrainyMemory && !this.brainy) {
-      this.brainy = new BrainyData({
+      this.brainy = new Brainy({
         storage: {
           requestPersistentStorage: true
         }
@@ -122,7 +122,7 @@ export class BrainyMCPClient {
     // Store in Brainy for persistent memory
     if (this.brainy && message.type === 'message') {
       try {
-        await this.brainy.addNoun({
+        await this.brainy.add({
           text: `${message.from}: ${JSON.stringify(message.data)}`,
           metadata: {
             messageId: message.id,
@@ -130,9 +130,10 @@ export class BrainyMCPClient {
             to: message.to,
             timestamp: message.timestamp,
             type: message.type,
-            event: message.event
+            event: message.event,
+            category: 'Message'
           }
-        }, 'Message')
+        })
       } catch (error) {
         console.error('Error storing message in Brainy:', error)
       }
@@ -145,10 +146,13 @@ export class BrainyMCPClient {
       // Store history in Brainy
       if (this.brainy) {
         for (const histMsg of message.data.history) {
-          await this.brainy.addNoun({
+          await this.brainy.add({
             text: `${histMsg.from}: ${JSON.stringify(histMsg.data)}`,
-            metadata: histMsg
-          }, 'Message')
+            metadata: {
+              ...histMsg,
+              category: 'Message'
+            }
+          })
         }
       }
     }

@@ -5,7 +5,7 @@
  * ⚛️ 1950s retro sci-fi aesthetic maintained throughout
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import * as fs from '../universal/fs.js'
 import * as path from '../universal/path.js'
 // @ts-ignore
@@ -54,7 +54,7 @@ export interface BackupManifest {
  * Backup & Restore Engine - The Brain's Memory Preservation System
  */
 export class BackupRestore {
-  private brainy: BrainyData
+  private brainy: Brainy
   private colors = {
     primary: chalk.hex('#3A5F4A'),
     success: chalk.hex('#2D4A3A'),
@@ -81,7 +81,7 @@ export class BackupRestore {
     time: '⏰'
   }
 
-  constructor(brainy: BrainyData) {
+  constructor(brainy: Brainy) {
     this.brainy = brainy
   }
 
@@ -310,12 +310,9 @@ export class BackupRestore {
       data.metadata = await this.collectMetadata()
     }
 
-    // Statistics placeholder
+    // Statistics not yet implemented
     if (options.includeStatistics) {
-      data.statistics = {
-        timestamp: new Date().toISOString(),
-        placeholder: true
-      }
+      console.warn('Statistics collection not yet implemented in backup')
     }
 
     return data
@@ -352,23 +349,58 @@ export class BackupRestore {
   }
 
   private async compressData(data: string): Promise<string> {
-    // Placeholder - would use zlib or similar
-    return data // For now, no compression
+    // Use zlib gzip compression
+    const { gzip } = await import('zlib')
+    const { promisify } = await import('util')
+    const gzipAsync = promisify(gzip)
+    
+    const compressed = await gzipAsync(Buffer.from(data, 'utf-8'))
+    return compressed.toString('base64')
   }
 
   private async decompressData(data: string): Promise<string> {
-    // Placeholder - would use zlib or similar
-    return data // For now, no decompression
+    // Use zlib gunzip decompression
+    const { gunzip } = await import('zlib')
+    const { promisify } = await import('util')
+    const gunzipAsync = promisify(gunzip)
+    
+    const compressed = Buffer.from(data, 'base64')
+    const decompressed = await gunzipAsync(compressed)
+    return decompressed.toString('utf-8')
   }
 
   private async encryptData(data: string, password: string): Promise<string> {
-    // Placeholder - would use crypto module
-    return data // For now, no encryption
+    // Use crypto module for AES-256 encryption
+    const crypto = await import('crypto')
+    
+    // Generate key from password
+    const key = crypto.createHash('sha256').update(password).digest()
+    const iv = crypto.randomBytes(16)
+    
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
+    let encrypted = cipher.update(data, 'utf8', 'base64')
+    encrypted += cipher.final('base64')
+    
+    // Prepend IV to encrypted data for decryption
+    return iv.toString('base64') + ':' + encrypted
   }
 
   private async decryptData(data: string, password: string): Promise<string> {
-    // Placeholder - would use crypto module
-    return data // For now, no decryption
+    // Use crypto module for AES-256 decryption
+    const crypto = await import('crypto')
+    
+    // Split IV and encrypted data
+    const [ivString, encrypted] = data.split(':')
+    const iv = Buffer.from(ivString, 'base64')
+    
+    // Generate key from password
+    const key = crypto.createHash('sha256').update(password).digest()
+    
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    let decrypted = decipher.update(encrypted, 'base64', 'utf8')
+    decrypted += decipher.final('utf8')
+    
+    return decrypted
   }
 
   private async verifyBackup(backupPath: string, options: BackupOptions): Promise<void> {
@@ -383,41 +415,79 @@ export class BackupRestore {
   }
 
   private async executeRestore(data: any, manifest: BackupManifest): Promise<void> {
-    // Placeholder restore implementation
-    console.log(this.colors.warning('Note: Restore system is in beta - limited functionality'))
+    console.log(this.colors.info('🔄 Starting restore process...'))
     
     // Phase 1: Validate data structure
     if (!data.entities || !Array.isArray(data.entities)) {
       throw new Error('Invalid backup data structure')
     }
     
-    // Phase 2: Restore entities (placeholder)
-    console.log(this.colors.info(`Would restore ${data.entities.length} entities`))
+    // Phase 2: Clear existing data if overwriting
+    console.log(this.colors.dim('Clearing existing data...'))
+    const dataAPI = await this.brainy.data()
+    await dataAPI.clear({ force: true })
     
-    // Phase 3: Restore relationships (placeholder)
-    console.log(this.colors.info(`Would restore ${data.relationships.length} relationships`))
+    // Phase 3: Restore entities
+    console.log(this.colors.dim(`Restoring ${data.entities.length} entities...`))
+    const entityMap = new Map<string, string>() // old ID -> new ID mapping
     
-    // Phase 4: Restore metadata (placeholder)
+    for (const entity of data.entities) {
+      const newId = await this.brainy.add({
+        data: entity.metadata || entity.data,
+        type: entity.type,
+        metadata: entity.metadata,
+        vector: entity.vector, // Preserve original vectors if available
+        service: entity.service
+      })
+      entityMap.set(entity.id, newId)
+    }
+    
+    // Phase 4: Restore relationships if they exist
+    if (data.relationships && Array.isArray(data.relationships)) {
+      console.log(this.colors.dim(`Restoring ${data.relationships.length} relationships...`))
+      
+      for (const rel of data.relationships) {
+        // Map old IDs to new IDs
+        const fromId = entityMap.get(rel.from) || rel.from
+        const toId = entityMap.get(rel.to) || rel.to
+        
+        await this.brainy.relate({
+          from: fromId,
+          to: toId,
+          type: rel.type,
+          metadata: rel.metadata || {}
+        })
+      }
+    }
+    
+    // Phase 5: Restore metadata if present
     if (data.metadata) {
       await this.restoreMetadata(data.metadata)
     }
     
-    // Phase 5: Simulate successful restore
-    console.log(this.colors.success('Backup structure validated - restore would be successful'))
+    console.log(this.colors.success('✅ Restore completed successfully'))
   }
 
   private async collectMetadata(): Promise<any> {
-    // Collect global metadata
-    return {}
+    // Collect global metadata like statistics, configuration, etc.
+    const stats = await this.brainy.query.entities({ limit: 1 })
+    return {
+      totalEntities: stats.totalCount || 0,
+      timestamp: new Date().toISOString(),
+      version: '3.0.0'
+    }
   }
 
   private async restoreMetadata(metadata: any): Promise<void> {
-    // Restore global metadata
+    // Store restored metadata for reference
+    // Could be saved to a config store or logged
+    console.log(this.colors.dim(`Restored from backup created at: ${metadata.timestamp}`))
   }
 
   private async calculateChecksum(data: string): Promise<string> {
-    // Placeholder - would calculate SHA-256 hash
-    return 'checksum-placeholder'
+    // Use crypto module for SHA-256 checksum
+    const crypto = await import('crypto')
+    return crypto.createHash('sha256').update(data).digest('hex')
   }
 
   private formatFileSize(bytes: number): string {
