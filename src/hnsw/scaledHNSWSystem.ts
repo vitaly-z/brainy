@@ -161,8 +161,19 @@ export class ScaledHNSWSystem {
 
     // Initialize batch S3 operations
     if (this.config.s3Config) {
+      // Create S3 client from config
+      const { S3Client } = await import('@aws-sdk/client-s3')
+      const s3Client = new S3Client({
+        region: this.config.s3Config.region || 'us-east-1',
+        endpoint: this.config.s3Config.endpoint,
+        credentials: this.config.s3Config.accessKeyId && this.config.s3Config.secretAccessKey ? {
+          accessKeyId: this.config.s3Config.accessKeyId,
+          secretAccessKey: this.config.s3Config.secretAccessKey
+        } : undefined // Will use default credentials from environment
+      })
+      
       this.batchOperations = new BatchS3Operations(
-        null as any, // Would be initialized with actual S3 client
+        s3Client,
         this.config.s3Config.bucketName,
         {
           maxConcurrency: 50,

@@ -1,19 +1,30 @@
 /**
- * Brainy - Your AI-Powered Second Brain
- * 🧠⚛️ A multi-dimensional database with vector, graph, and facet storage
+ * Brainy 3.0 - Your AI-Powered Second Brain
+ * 🧠⚛️ A multi-dimensional database with vector, graph, and relational storage
  * 
  * Core Components:
- * - BrainyData: The brain (core database)
- * - Cortex: The orchestrator (manages augmentations)
- * - NeuralImport: AI-powered data understanding
- * - Augmentations: Brain capabilities (plugins)
+ * - Brainy: The unified database with Triple Intelligence
+ * - Triple Intelligence: Seamless fusion of vector + graph + field search
+ * - Augmentations: Extensible plugin system
+ * - Neural API: AI-powered clustering and analysis
  */
 
-// Export main BrainyData class and related types
-import { BrainyData, BrainyDataConfig } from './brainyData.js'
+// Export main Brainy class - the modern, clean API for Brainy 3.0
+import { Brainy } from './brainy.js'
 
-export { BrainyData }
-export type { BrainyDataConfig }
+export { Brainy }
+
+// Export Brainy configuration and types
+export type {
+  BrainyConfig,
+  Entity,
+  Relation,
+  Result,
+  AddParams,
+  UpdateParams,
+  RelateParams,
+  FindParams
+} from './types/brainy.types.js'
 
 // Export zero-configuration types and enums
 export {
@@ -66,16 +77,14 @@ import {
   euclideanDistance,
   cosineDistance,
   manhattanDistance,
-  dotProductDistance,
-  getStatistics
+  dotProductDistance
 } from './utils/index.js'
 
 export {
   euclideanDistance,
   cosineDistance,
   manhattanDistance,
-  dotProductDistance,
-  getStatistics
+  dotProductDistance
 }
 
 // Export version utilities
@@ -102,9 +111,7 @@ import {
   createModuleLogger 
 } from './utils/logger.js'
 
-// Export BrainyChat for conversational AI
-import { BrainyChat } from './chat/BrainyChat.js'
-export { BrainyChat }
+// Chat system removed - was returning fake responses
 
 // Export Cortex CLI functionality - commented out for core MIT build
 // export { Cortex } from './cortex/cortex.js'
@@ -239,40 +246,8 @@ export type {
   // AugmentationOptions - REMOVED in 2.0 (use BaseAugmentation config)
 }
 
-// Export augmentation registry for build-time loading
-import {
-  availableAugmentations,
-  registerAugmentation,
-  initializeAugmentationPipeline,
-  setAugmentationEnabled,
-  getAugmentationsByType
-} from './augmentationRegistry.js'
+// Augmentation registry removed - use Brainy's built-in augmentation system
 
-export {
-  availableAugmentations,
-  registerAugmentation,
-  initializeAugmentationPipeline,
-  setAugmentationEnabled,
-  getAugmentationsByType
-}
-
-// Export augmentation registry loader for build tools
-import {
-  loadAugmentationsFromModules,
-  createAugmentationRegistryPlugin,
-  createAugmentationRegistryRollupPlugin
-} from './augmentationRegistryLoader.js'
-import type {
-  AugmentationRegistryLoaderOptions,
-  AugmentationLoadResult
-} from './augmentationRegistryLoader.js'
-
-export {
-  loadAugmentationsFromModules,
-  createAugmentationRegistryPlugin,
-  createAugmentationRegistryRollupPlugin
-}
-export type { AugmentationRegistryLoaderOptions, AugmentationLoadResult }
 
 
 // Export augmentation implementations
@@ -293,11 +268,6 @@ import {
 import {
   WebSocketConduitAugmentation
 } from './augmentations/conduitAugmentations.js'
-import {
-  ServerSearchConduitAugmentation,
-  ServerSearchActivationAugmentation,
-  createServerSearchAugmentations
-} from './augmentations/serverSearchAugmentations.js'
 
 // Storage augmentation exports
 export {
@@ -318,10 +288,7 @@ export {
 
 // Other augmentation exports
 export {
-  WebSocketConduitAugmentation,
-  ServerSearchConduitAugmentation,
-  ServerSearchActivationAugmentation,
-  createServerSearchAugmentations
+  WebSocketConduitAugmentation
 }
 
 // LLM augmentations are optional and not imported by default

@@ -13,14 +13,8 @@ export {
   logModelConfig
 } from './modelAutoConfig.js'
 
-// Model precision manager
-export {
-  ModelPrecisionManager,
-  getModelPrecision,
-  setModelPrecision,
-  lockModelPrecision,
-  validateModelPrecision
-} from './modelPrecisionManager.js'
+// Model precision - Always Q8 now (99% accuracy, 75% smaller)
+export const getModelPrecision = () => 'q8' as const
 
 // Storage configuration
 export { 
@@ -75,7 +69,7 @@ export {
 
 /**
  * Main zero-config processor
- * This is what BrainyData will call
+ * This is what Brainy will call
  */
 export async function applyZeroConfig(input?: string | any): Promise<any> {
   // Handle legacy config (full object) by detecting known legacy properties

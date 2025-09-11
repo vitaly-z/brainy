@@ -1,7 +1,7 @@
 /**
  * Cache Augmentation - Optional Search Result Caching
  * 
- * Replaces the hardcoded SearchCache in BrainyData with an optional augmentation.
+ * Replaces the hardcoded SearchCache in Brainy with an optional augmentation.
  * This reduces core size and allows custom cache implementations.
  * 
  * Zero-config: Automatically enabled with sensible defaults
@@ -9,6 +9,7 @@
  */
 
 import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
+import { AugmentationManifest } from './manifest.js'
 import { SearchCache } from '../utils/searchCache.js'
 import type { GraphNoun } from '../types/graphTypes.js'
 
@@ -32,7 +33,7 @@ export class CacheAugmentation extends BaseAugmentation {
   readonly name = 'cache'
   readonly timing = 'around' as const
   readonly metadata = 'none' as const  // Cache doesn't access metadata
-  operations = ['search', 'add', 'delete', 'clear', 'all'] as ('search' | 'add' | 'delete' | 'clear' | 'all')[]
+  operations = ['search', 'find', 'similar', 'add', 'update', 'delete', 'clear', 'all'] as ('search' | 'find' | 'similar' | 'add' | 'update' | 'delete' | 'clear' | 'all')[]
   readonly priority = 50 // Mid-priority, runs after data operations
 
   // Augmentation metadata
@@ -40,16 +41,109 @@ export class CacheAugmentation extends BaseAugmentation {
   readonly description = 'Transparent search result caching with automatic invalidation'
 
   private searchCache: SearchCache<GraphNoun> | null = null
-  private config: CacheConfig
 
-  constructor(config: CacheConfig = {}) {
-    super()
-    this.config = {
-      maxSize: 1000,
-      ttl: 300000, // 5 minutes default
-      enabled: true,
-      invalidateOnWrite: true,
-      ...config
+  constructor(config?: CacheConfig) {
+    super(config)
+  }
+  
+  getManifest(): AugmentationManifest {
+    return {
+      id: 'cache',
+      name: 'Cache',
+      version: '2.0.0',
+      description: 'Intelligent caching for search and query operations',
+      longDescription: 'Provides transparent caching for search results with automatic invalidation on data changes. Significantly improves performance for repeated queries while maintaining data consistency.',
+      category: 'performance',
+      configSchema: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            default: true,
+            description: 'Enable or disable caching'
+          },
+          maxSize: {
+            type: 'number',
+            default: 1000,
+            minimum: 10,
+            maximum: 100000,
+            description: 'Maximum number of cached entries'
+          },
+          ttl: {
+            type: 'number',
+            default: 300000, // 5 minutes
+            minimum: 1000,    // 1 second
+            maximum: 3600000, // 1 hour
+            description: 'Time to live for cache entries in milliseconds'
+          },
+          invalidateOnWrite: {
+            type: 'boolean',
+            default: true,
+            description: 'Automatically invalidate cache on data modifications'
+          }
+        },
+        additionalProperties: false
+      },
+      configDefaults: {
+        enabled: true,
+        maxSize: 1000,
+        ttl: 300000,
+        invalidateOnWrite: true
+      },
+      configExamples: [
+        {
+          name: 'High Performance',
+          description: 'Large cache with longer TTL for read-heavy workloads',
+          config: {
+            enabled: true,
+            maxSize: 10000,
+            ttl: 1800000, // 30 minutes
+            invalidateOnWrite: true
+          }
+        },
+        {
+          name: 'Conservative',
+          description: 'Small cache with short TTL for frequently changing data',
+          config: {
+            enabled: true,
+            maxSize: 100,
+            ttl: 60000, // 1 minute
+            invalidateOnWrite: true
+          }
+        }
+      ],
+      minBrainyVersion: '2.0.0',
+      keywords: ['cache', 'performance', 'search', 'optimization'],
+      documentation: 'https://docs.brainy.dev/augmentations/cache',
+      status: 'stable',
+      performance: {
+        memoryUsage: 'medium',
+        cpuUsage: 'low',
+        networkUsage: 'none'
+      },
+      features: ['search-caching', 'auto-invalidation', 'ttl-support', 'memory-management'],
+      enhancedOperations: ['search', 'searchText', 'findSimilar'],
+      metrics: [
+        {
+          name: 'cache_hits',
+          type: 'counter',
+          description: 'Number of cache hits'
+        },
+        {
+          name: 'cache_misses',
+          type: 'counter',
+          description: 'Number of cache misses'
+        },
+        {
+          name: 'cache_size',
+          type: 'gauge',
+          description: 'Current cache size'
+        }
+      ],
+      ui: {
+        icon: '⚡',
+        color: '#FFC107'
+      }
     }
   }
 
@@ -199,18 +293,19 @@ export class CacheAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Update cache configuration
+   * Handle runtime configuration changes
    */
-  updateConfig(config: Partial<CacheConfig>) {
-    this.config = { ...this.config, ...config }
-    
-    if (this.searchCache && this.config.enabled) {
+  protected async onConfigChange(newConfig: CacheConfig, oldConfig: CacheConfig): Promise<void> {
+    if (this.searchCache && newConfig.enabled) {
       this.searchCache.updateConfig({
-        maxSize: this.config.maxSize!,
-        maxAge: this.config.ttl!,  // SearchCache uses maxAge
-        enabled: this.config.enabled
+        maxSize: newConfig.maxSize!,
+        maxAge: newConfig.ttl!,  // SearchCache uses maxAge
+        enabled: newConfig.enabled
       })
       this.log('Cache configuration updated')
+    } else if (!newConfig.enabled && this.searchCache) {
+      this.searchCache.clear()
+      this.log('Cache disabled and cleared')
     }
   }
 

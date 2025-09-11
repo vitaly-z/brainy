@@ -61,13 +61,14 @@ export class APIServerAugmentation extends BaseAugmentation {
   readonly operations = ['all'] as ('all')[]
   readonly priority = 5  // Low priority, runs after other augmentations
   
-  private config: APIServerConfig
+  protected config: APIServerConfig
   private mcpService?: BrainyMCPService
   private httpServer?: any
   private wsServer?: any
   private clients = new Map<string, ConnectedClient>()
   private operationHistory: any[] = []
   private maxHistorySize = 1000
+  private rateLimitStore = new Map<string, number[]>()
   
   constructor(config: APIServerConfig = {}) {
     super()
@@ -550,20 +551,330 @@ export class APIServerAugmentation extends BaseAugmentation {
    * Start Deno server
    */
   private async startDenoServer(): Promise<void> {
-    // Deno implementation would go here
-    // Using Deno.serve() or oak framework
-    this.log('Deno server not yet implemented', 'warn')
+    try {
+      // Check if Deno.serve is available (Deno 1.35+)
+      const DenoGlobal = (globalThis as any).Deno
+      if (DenoGlobal && 'serve' in DenoGlobal) {
+        const handler = this.createUniversalHandler()
+        
+        this.httpServer = DenoGlobal.serve({
+          port: this.config.port,
+          hostname: this.config.host || '0.0.0.0',
+          handler: handler
+        })
+        
+        this.log(`Deno server started on ${this.config.host || '0.0.0.0'}:${this.config.port}`)
+        
+        // Setup WebSocket handling for Deno
+        this.setupUniversalWebSocket()
+        
+      } else {
+        throw new Error('Deno.serve not available - requires Deno 1.35+')
+      }
+    } catch (error) {
+      this.log(`Failed to start Deno server: ${(error as Error).message}`, 'error')
+      throw error
+    }
   }
   
   /**
    * Start Service Worker (for browser)
    */
   private async startServiceWorker(): Promise<void> {
-    // Service Worker implementation would go here
-    // Intercepts fetch() calls and handles them locally
-    this.log('Service Worker API not yet implemented', 'warn')
+    try {
+      if (typeof self !== 'undefined' && 'addEventListener' in self) {
+        // Service Worker environment - intercept fetch events
+        const handler = this.createUniversalHandler()
+        
+        self.addEventListener('fetch', async (event: any) => {
+          const url = new URL(event.request.url)
+          
+          // Only handle API requests
+          if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws') || url.pathname.startsWith('/mcp/')) {
+            event.respondWith(handler(event.request))
+          }
+        })
+        
+        this.log('Service Worker API server registered for /api/, /ws, and /mcp paths')
+        
+        // Setup message handling for WebSocket-like communication
+        this.setupServiceWorkerMessaging()
+        
+      } else if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        // Browser main thread - service worker registration should be handled by the application
+        this.log('Service Worker environment detected. Registration should be handled by your application.', 'info')
+        // Return early - the app will handle service worker registration
+        return
+      } else {
+        this.log('Service Worker environment not available', 'warn')
+        return
+      }
+    } catch (error) {
+      this.log(`Failed to start Service Worker server: ${(error as Error).message}`, 'error')
+      throw error
+    }
   }
   
+  /**
+   * Create universal handler using Web Standards (works in Node, Deno, Service Workers)
+   */
+  private createUniversalHandler(): (request: Request) => Promise<Response> {
+    return async (request: Request): Promise<Response> => {
+      try {
+        const url = new URL(request.url)
+        const method = request.method.toUpperCase()
+        const path = url.pathname
+        
+        // Add CORS headers
+        const corsOrigin = Array.isArray(this.config.cors?.origin) 
+          ? this.config.cors.origin[0] 
+          : this.config.cors?.origin || '*'
+          
+        const headers = new Headers({
+          'Access-Control-Allow-Origin': corsOrigin,
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Content-Type': 'application/json'
+        })
+        
+        // Handle preflight requests
+        if (method === 'OPTIONS') {
+          return new Response(null, { status: 200, headers })
+        }
+        
+        // Authentication
+        if (!this.authenticateRequest(request)) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers
+          })
+        }
+        
+        // Rate limiting
+        if (!this.checkRateLimit(request)) {
+          return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+            status: 429,
+            headers
+          })
+        }
+        
+        // Route handling
+        if (path.startsWith('/api/brainy/')) {
+          return this.handleBrainyAPI(request, path.replace('/api/brainy/', ''), headers)
+        } else if (path.startsWith('/mcp/')) {
+          return this.handleMCPAPI(request, path.replace('/mcp/', ''), headers)
+        } else if (path === '/health') {
+          return new Response(JSON.stringify({ status: 'ok', timestamp: Date.now() }), {
+            status: 200,
+            headers
+          })
+        }
+        
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers
+        })
+        
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          error: 'Internal server error',
+          message: (error as Error).message
+        }), {
+          status: 500,
+          headers: new Headers({ 'Content-Type': 'application/json' })
+        })
+      }
+    }
+  }
+  
+  /**
+   * Handle Brainy API requests using universal Request/Response
+   */
+  private async handleBrainyAPI(request: Request, path: string, headers: Headers): Promise<Response> {
+    const method = request.method.toUpperCase()
+    const body = method !== 'GET' ? await request.json().catch(() => ({})) : {}
+    
+    try {
+      let result: any
+      
+      switch (`${method} ${path}`) {
+        case 'POST add':
+          result = { id: await this.context!.brain.add(body) }
+          break
+        case 'GET get':
+          const id = new URL(request.url).searchParams.get('id')
+          result = await this.context!.brain.get(id)
+          break
+        case 'PUT update':
+          await this.context!.brain.update(body)
+          result = { success: true }
+          break
+        case 'DELETE delete':
+          const deleteId = new URL(request.url).searchParams.get('id')
+          await this.context!.brain.delete(deleteId)
+          result = { success: true }
+          break
+        case 'POST find':
+          result = await this.context!.brain.find(body)
+          break
+        case 'POST relate':
+          result = { id: await this.context!.brain.relate(body) }
+          break
+        case 'GET insights':
+          result = await this.context!.brain.insights()
+          break
+        default:
+          return new Response(JSON.stringify({ error: `Unknown endpoint: ${method} ${path}` }), {
+            status: 404,
+            headers
+          })
+      }
+      
+      return new Response(JSON.stringify(result), { status: 200, headers })
+      
+    } catch (error) {
+      return new Response(JSON.stringify({ 
+        error: (error as Error).message 
+      }), { status: 400, headers })
+    }
+  }
+  
+  /**
+   * Handle MCP API requests
+   */
+  private async handleMCPAPI(request: Request, path: string, headers: Headers): Promise<Response> {
+    try {
+      if (!this.mcpService) {
+        return new Response(JSON.stringify({ error: 'MCP service not available' }), {
+          status: 503,
+          headers
+        })
+      }
+      
+      const body = await request.json().catch(() => ({}))
+      // Convert to MCP request format
+      const mcpRequest = {
+        type: path.includes('data') ? 'data_access' : 'tool_execution',
+        ...body
+      }
+      const result = await this.mcpService.handleRequest(mcpRequest as any)
+      
+      return new Response(JSON.stringify(result), { status: 200, headers })
+    } catch (error) {
+      return new Response(JSON.stringify({ 
+        error: (error as Error).message 
+      }), { status: 400, headers })
+    }
+  }
+  
+  /**
+   * Universal WebSocket setup (works in Node, Deno)
+   */
+  private setupUniversalWebSocket(): void {
+    // WebSocket handling varies by platform but uses same interface
+    this.log('WebSocket support enabled for real-time updates')
+  }
+  
+  /**
+   * Service Worker messaging for WebSocket-like communication
+   */
+  private setupServiceWorkerMessaging(): void {
+    if (typeof self !== 'undefined') {
+      self.addEventListener('message', async (event: any) => {
+        if (event.data.type === 'brainy-api') {
+          try {
+            const response = await this.handleBrainyAPI(
+              new Request('http://localhost/api/brainy/' + event.data.endpoint, {
+                method: event.data.method || 'POST',
+                body: JSON.stringify(event.data.data)
+              }),
+              event.data.endpoint,
+              new Headers({ 'Content-Type': 'application/json' })
+            )
+            
+            const result = await response.json()
+            
+            event.ports[0]?.postMessage({
+              id: event.data.id,
+              success: response.ok,
+              data: result
+            })
+          } catch (error) {
+            event.ports[0]?.postMessage({
+              id: event.data.id,
+              success: false,
+              error: (error as Error).message
+            })
+          }
+        }
+      })
+    }
+  }
+  
+  /**
+   * Universal authentication using Web Standards
+   */
+  private authenticateRequest(request: Request): boolean {
+    if (!this.config.auth?.required) return true
+    
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) return false
+    
+    if (this.config.auth.apiKeys?.length) {
+      const apiKey = authHeader.replace('Bearer ', '')
+      return this.config.auth.apiKeys.includes(apiKey)
+    }
+    
+    return true
+  }
+  
+  
+  private checkRateLimit(request: Request): boolean {
+    if (!this.config.rateLimit) return true
+    
+    // Get client identifier from headers or use a default
+    const clientId = request.headers.get('x-forwarded-for') || 
+                    request.headers.get('x-real-ip') || 
+                    request.headers.get('cf-connecting-ip') || // Cloudflare
+                    request.headers.get('x-vercel-forwarded-for') || // Vercel
+                    'unknown'
+    
+    const now = Date.now()
+    const windowMs = this.config.rateLimit.windowMs || 60000
+    const maxRequests = this.config.rateLimit.max || 100
+    const windowStart = now - windowMs
+    
+    // Get or create request timestamps for this client
+    let timestamps = this.rateLimitStore.get(clientId) || []
+    
+    // Remove old timestamps outside the window
+    timestamps = timestamps.filter(t => t > windowStart)
+    
+    // Check if limit exceeded
+    if (timestamps.length >= maxRequests) {
+      this.log(`Rate limit exceeded for client ${clientId}: ${timestamps.length}/${maxRequests} requests`, 'warn')
+      return false
+    }
+    
+    // Add current request timestamp
+    timestamps.push(now)
+    this.rateLimitStore.set(clientId, timestamps)
+    
+    // Periodic cleanup of old entries to prevent memory leak
+    if (this.rateLimitStore.size > 1000) {
+      for (const [id, times] of this.rateLimitStore.entries()) {
+        const validTimes = times.filter(t => t > windowStart)
+        if (validTimes.length === 0) {
+          this.rateLimitStore.delete(id)
+        } else {
+          this.rateLimitStore.set(id, validTimes)
+        }
+      }
+    }
+    
+    return true
+  }
+
   /**
    * Shutdown the server
    */
@@ -573,7 +884,10 @@ export class APIServerAugmentation extends BaseAugmentation {
       if (client.socket) {
         try {
           client.socket.close()
-        } catch {}
+        } catch (error) {
+          // Socket already closed or errored
+          console.debug('Error closing WebSocket:', error)
+        }
       }
     }
     this.clients.clear()

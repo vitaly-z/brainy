@@ -36,17 +36,13 @@ await brain.addNoun("Same content", { id: "123" }) // Skipped (duplicate)
 - Custom hash field selection
 - Perfect for real-time data streams
 
-### 2. WAL (Write-Ahead Logging) Augmentation ✅ Available
 
 Enterprise-grade durability and crash recovery.
 
 ```typescript
-import { WALAugmentation } from 'brainy'
 
 const brain = new BrainyData({
   augmentations: [
-    new WALAugmentation({
-      walPath: './wal',          // WAL directory
       checkpointInterval: 1000,  // Checkpoint every 1000 operations
       compression: true,          // Enable log compression
       maxLogSize: 100 * 1024 * 1024  // 100MB max log size
@@ -55,13 +51,10 @@ const brain = new BrainyData({
 })
 
 // All operations are now durably logged
-await brain.addNoun("Critical data")  // Written to WAL before storage
 
 // Recover from crash
 const recovered = new BrainyData({ 
-  augmentations: [new WALAugmentation({ recover: true })]
 })
-await recovered.init()  // Automatically replays WAL
 ```
 
 **Features:**
@@ -474,7 +467,6 @@ const brain = new BrainyData({
     new IntelligentVerbScoringAugmentation(), // Scoring
     new CompressionAugmentation(),       // Compression
     new CachingAugmentation(),          // Caching
-    new WALAugmentation(),              // Durability
     new MonitoringAugmentation()        // Monitoring last
   ]
 })

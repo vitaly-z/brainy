@@ -9,7 +9,7 @@
  */
 
 import { Vector } from '../coreTypes.js'
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import { EMBEDDED_PATTERNS, getPatternEmbeddings, PATTERNS_METADATA } from './embeddedPatterns.js'
 
 export interface Pattern {
@@ -22,21 +22,32 @@ export interface Pattern {
   embedding?: Vector
   domain?: string
   frequency?: number | string
+  slots?: SlotDefinition[]  // Named slot definitions
+}
+
+export interface SlotDefinition {
+  name: string
+  type: 'text' | 'number' | 'date' | 'entity' | 'location' | 'person' | 'any'
+  required?: boolean
+  default?: any
+  pattern?: string  // Optional regex for validation
+  transform?: (value: string) => any  // Optional transformation function
 }
 
 export interface SlotExtraction {
   slots: Record<string, any>
   confidence: number
+  errors?: string[]  // Validation errors
 }
 
 export class PatternLibrary {
   private patterns: Map<string, Pattern>
   private patternEmbeddings: Map<string, Vector>
-  private brain: BrainyData
+  private brain: Brainy
   private embeddingCache: Map<string, Vector>
   private successMetrics: Map<string, number>
   
-  constructor(brain: BrainyData) {
+  constructor(brain: Brainy) {
     this.brain = brain
     this.patterns = new Map()
     this.patternEmbeddings = new Map()
@@ -107,7 +118,18 @@ export class PatternLibrary {
       return this.embeddingCache.get(text)!
     }
     
-    const embedding = await this.brain.embed(text)
+    // Use add/get/delete pattern to get embeddings
+    const id = await this.brain.add({
+      data: text,
+      type: 'document'
+    })
+    
+    const entity = await this.brain.get(id)
+    const embedding = entity?.vector || []
+    
+    // Clean up temporary entity
+    await this.brain.delete(id)
+    
     this.embeddingCache.set(text, embedding)
     return embedding
   }
@@ -142,11 +164,17 @@ export class PatternLibrary {
   }
   
   /**
-   * Extract slots from query based on pattern
+   * Extract slots from query based on pattern with enhanced fuzzy matching
    */
   extractSlots(query: string, pattern: Pattern): SlotExtraction {
     const slots: Record<string, any> = {}
+    const errors: string[] = []
     let confidence = pattern.confidence
+    
+    // If pattern has named slot definitions, use them
+    if (pattern.slots && pattern.slots.length > 0) {
+      return this.extractNamedSlots(query, pattern)
+    }
     
     // Try regex extraction first
     const regex = new RegExp(pattern.pattern, 'i')
@@ -161,25 +189,394 @@ export class PatternLibrary {
       // High confidence if regex matches
       confidence = Math.min(confidence * 1.2, 1.0)
     } else {
-      // Fall back to token-based extraction
-      const tokens = this.tokenize(query)
-      const exampleTokens = this.tokenize(pattern.examples[0])
+      // Enhanced fuzzy matching with Levenshtein distance
+      const fuzzyResult = this.fuzzyExtractSlots(query, pattern)
+      Object.assign(slots, fuzzyResult.slots)
+      confidence = fuzzyResult.confidence
       
-      // Simple alignment-based extraction
-      for (let i = 0; i < tokens.length; i++) {
-        if (i < exampleTokens.length && exampleTokens[i].startsWith('$')) {
-          slots[exampleTokens[i]] = tokens[i]
-        }
+      if (fuzzyResult.errors) {
+        errors.push(...fuzzyResult.errors)
       }
-      
-      // Lower confidence for fuzzy matching
-      confidence *= 0.7
     }
     
     // Post-process slots
     this.postProcessSlots(slots, pattern)
     
-    return { slots, confidence }
+    return { slots, confidence, errors: errors.length > 0 ? errors : undefined }
+  }
+  
+  /**
+   * Extract named slots with type validation
+   */
+  private extractNamedSlots(query: string, pattern: Pattern): SlotExtraction {
+    const slots: Record<string, any> = {}
+    const errors: string[] = []
+    let confidence = pattern.confidence
+    
+    if (!pattern.slots) {
+      return { slots, confidence }
+    }
+    
+    // Create a flexible regex from pattern
+    let flexiblePattern = pattern.pattern
+    const slotPositions: Map<number, SlotDefinition> = new Map()
+    
+    // Replace named slots in pattern with capture groups
+    pattern.slots.forEach((slot, index) => {
+      const slotPattern = slot.pattern || this.getDefaultPatternForType(slot.type)
+      flexiblePattern = flexiblePattern.replace(
+        new RegExp(`\\{${slot.name}\\}`, 'g'),
+        `(${slotPattern})`
+      )
+      slotPositions.set(index + 1, slot)
+    })
+    
+    const regex = new RegExp(flexiblePattern, 'i')
+    const match = query.match(regex)
+    
+    if (match) {
+      // Extract and validate each slot
+      slotPositions.forEach((slotDef, position) => {
+        const value = match[position]
+        
+        if (value) {
+          // Apply transformation if defined
+          const transformedValue = slotDef.transform 
+            ? slotDef.transform(value)
+            : this.transformByType(value, slotDef.type)
+          
+          // Validate the value
+          if (this.validateSlotValue(transformedValue, slotDef)) {
+            slots[slotDef.name] = transformedValue
+          } else {
+            errors.push(`Invalid value for slot '${slotDef.name}': expected ${slotDef.type}, got '${value}'`)
+            confidence *= 0.8
+          }
+        } else if (slotDef.required) {
+          if (slotDef.default !== undefined) {
+            slots[slotDef.name] = slotDef.default
+          } else {
+            errors.push(`Required slot '${slotDef.name}' not found`)
+            confidence *= 0.5
+          }
+        }
+      })
+    } else {
+      // Try fuzzy matching for named slots
+      const fuzzyResult = this.fuzzyExtractNamedSlots(query, pattern)
+      Object.assign(slots, fuzzyResult.slots)
+      confidence = fuzzyResult.confidence
+      if (fuzzyResult.errors) {
+        errors.push(...fuzzyResult.errors)
+      }
+    }
+    
+    return { slots, confidence, errors: errors.length > 0 ? errors : undefined }
+  }
+  
+  /**
+   * Fuzzy extraction using Levenshtein distance
+   */
+  private fuzzyExtractSlots(query: string, pattern: Pattern): SlotExtraction {
+    const slots: Record<string, any> = {}
+    let bestConfidence = 0
+    
+    // Try each example with fuzzy matching
+    for (const example of pattern.examples) {
+      const distance = this.levenshteinDistance(query.toLowerCase(), example.toLowerCase())
+      const similarity = 1 - (distance / Math.max(query.length, example.length))
+      
+      if (similarity > 0.6) {  // 60% similarity threshold
+        // Extract slots using alignment
+        const aligned = this.alignStrings(query, example)
+        const extractedSlots = this.extractSlotsFromAlignment(aligned, pattern)
+        
+        if (Object.keys(extractedSlots).length > 0) {
+          const currentConfidence = pattern.confidence * similarity
+          if (currentConfidence > bestConfidence) {
+            Object.assign(slots, extractedSlots)
+            bestConfidence = currentConfidence
+          }
+        }
+      }
+    }
+    
+    return { 
+      slots, 
+      confidence: bestConfidence,
+      errors: bestConfidence < 0.5 ? ['Low confidence fuzzy match'] : undefined
+    }
+  }
+  
+  /**
+   * Fuzzy extraction for named slots
+   */
+  private fuzzyExtractNamedSlots(query: string, pattern: Pattern): SlotExtraction {
+    const slots: Record<string, any> = {}
+    const errors: string[] = []
+    let confidence = pattern.confidence * 0.7  // Lower confidence for fuzzy
+    
+    if (!pattern.slots) {
+      return { slots, confidence }
+    }
+    
+    // Tokenize query for flexible matching
+    const tokens = this.tokenize(query)
+    
+    pattern.slots.forEach(slotDef => {
+      const value = this.findSlotValueInTokens(tokens, slotDef)
+      
+      if (value) {
+        const transformedValue = slotDef.transform 
+          ? slotDef.transform(value)
+          : this.transformByType(value, slotDef.type)
+        
+        if (this.validateSlotValue(transformedValue, slotDef)) {
+          slots[slotDef.name] = transformedValue
+        } else {
+          errors.push(`Fuzzy match: uncertain value for '${slotDef.name}'`)
+          confidence *= 0.9
+        }
+      } else if (slotDef.required && slotDef.default !== undefined) {
+        slots[slotDef.name] = slotDef.default
+      }
+    })
+    
+    return { slots, confidence, errors: errors.length > 0 ? errors : undefined }
+  }
+  
+  /**
+   * Find slot value in tokens based on type
+   */
+  private findSlotValueInTokens(tokens: string[], slotDef: SlotDefinition): string | null {
+    const joinedTokens = tokens.join(' ')
+    
+    switch (slotDef.type) {
+      case 'number':
+        const numberMatch = joinedTokens.match(/\d+(\.\d+)?/)
+        return numberMatch ? numberMatch[0] : null
+        
+      case 'date':
+        const datePatterns = [
+          /\d{4}-\d{2}-\d{2}/,
+          /\d{1,2}\/\d{1,2}\/\d{2,4}/,
+          /(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}/i,
+          /(today|tomorrow|yesterday)/i
+        ]
+        for (const pattern of datePatterns) {
+          const match = joinedTokens.match(pattern)
+          if (match) return match[0]
+        }
+        return null
+        
+      case 'person':
+        // Look for capitalized words (proper nouns)
+        const personMatch = joinedTokens.match(/\b[A-Z][a-z]+(\s+[A-Z][a-z]+)*\b/)
+        return personMatch ? personMatch[0] : null
+        
+      case 'location':
+        // Look for location indicators
+        const locationPatterns = [
+          /\b(in|at|from|to)\s+([A-Z][a-z]+(\s+[A-Z][a-z]+)*)\b/,
+          /\b[A-Z][a-z]+,\s+[A-Z]{2}\b/  // City, STATE format
+        ]
+        for (const pattern of locationPatterns) {
+          const match = joinedTokens.match(pattern)
+          if (match) return match[2] || match[0]
+        }
+        return null
+        
+      case 'entity':
+      case 'text':
+      case 'any':
+      default:
+        // Return first non-common word as potential value
+        const commonWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'])
+        const significantToken = tokens.find(t => !commonWords.has(t.toLowerCase()))
+        return significantToken || null
+    }
+  }
+  
+  /**
+   * Get default regex pattern for slot type
+   */
+  private getDefaultPatternForType(type: string): string {
+    switch (type) {
+      case 'number':
+        return '\\d+(?:\\.\\d+)?'
+      case 'date':
+        return '[\\w\\s,/-]+'
+      case 'person':
+        return '[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*'
+      case 'location':
+        return '[A-Z][a-z]+(?:[\\s,]+[A-Z][a-z]+)*'
+      case 'entity':
+        return '[\\w\\s-]+'
+      case 'text':
+      case 'any':
+      default:
+        return '.+'
+    }
+  }
+  
+  /**
+   * Transform value based on type
+   */
+  private transformByType(value: string, type: string): any {
+    switch (type) {
+      case 'number':
+        const num = parseFloat(value)
+        return isNaN(num) ? value : num
+        
+      case 'date':
+        // Simple date parsing
+        if (value.toLowerCase() === 'today') {
+          return new Date().toISOString().split('T')[0]
+        } else if (value.toLowerCase() === 'tomorrow') {
+          const tomorrow = new Date()
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          return tomorrow.toISOString().split('T')[0]
+        } else if (value.toLowerCase() === 'yesterday') {
+          const yesterday = new Date()
+          yesterday.setDate(yesterday.getDate() - 1)
+          return yesterday.toISOString().split('T')[0]
+        }
+        return value
+        
+      case 'person':
+      case 'location':
+      case 'entity':
+        // Capitalize properly
+        return value.split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+        
+      default:
+        return value.trim()
+    }
+  }
+  
+  /**
+   * Validate slot value against definition
+   */
+  private validateSlotValue(value: any, slotDef: SlotDefinition): boolean {
+    if (value === null || value === undefined) {
+      return !slotDef.required
+    }
+    
+    switch (slotDef.type) {
+      case 'number':
+        return typeof value === 'number' && !isNaN(value)
+      case 'date':
+        return typeof value === 'string' && value.length > 0
+      case 'text':
+      case 'person':
+      case 'location':
+      case 'entity':
+        return typeof value === 'string' && value.length > 0
+      case 'any':
+        return true
+      default:
+        return true
+    }
+  }
+  
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  private levenshteinDistance(s1: string, s2: string): number {
+    const len1 = s1.length
+    const len2 = s2.length
+    const matrix: number[][] = []
+    
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i]
+    }
+    
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j
+    }
+    
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = s1[i - 1] === s2[j - 1] ? 0 : 1
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,      // deletion
+          matrix[i][j - 1] + 1,      // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        )
+      }
+    }
+    
+    return matrix[len1][len2]
+  }
+  
+  /**
+   * Align two strings for slot extraction
+   */
+  private alignStrings(query: string, example: string): Array<[string, string]> {
+    const queryTokens = this.tokenize(query)
+    const exampleTokens = this.tokenize(example)
+    const aligned: Array<[string, string]> = []
+    
+    let i = 0, j = 0
+    while (i < queryTokens.length && j < exampleTokens.length) {
+      if (queryTokens[i] === exampleTokens[j]) {
+        aligned.push([queryTokens[i], exampleTokens[j]])
+        i++
+        j++
+      } else {
+        // Try to find best match
+        const bestMatch = this.findBestTokenMatch(queryTokens[i], exampleTokens.slice(j, j + 3))
+        if (bestMatch.index >= 0) {
+          j += bestMatch.index
+          aligned.push([queryTokens[i], exampleTokens[j]])
+        } else {
+          aligned.push([queryTokens[i], exampleTokens[j]])
+        }
+        i++
+        j++
+      }
+    }
+    
+    return aligned
+  }
+  
+  /**
+   * Find best token match using fuzzy comparison
+   */
+  private findBestTokenMatch(token: string, candidates: string[]): { index: number; similarity: number } {
+    let bestIndex = -1
+    let bestSimilarity = 0
+    
+    candidates.forEach((candidate, index) => {
+      const distance = this.levenshteinDistance(token.toLowerCase(), candidate.toLowerCase())
+      const similarity = 1 - (distance / Math.max(token.length, candidate.length))
+      
+      if (similarity > bestSimilarity && similarity > 0.6) {
+        bestIndex = index
+        bestSimilarity = similarity
+      }
+    })
+    
+    return { index: bestIndex, similarity: bestSimilarity }
+  }
+  
+  /**
+   * Extract slots from string alignment
+   */
+  private extractSlotsFromAlignment(aligned: Array<[string, string]>, _pattern: Pattern): Record<string, any> {
+    const slots: Record<string, any> = {}
+    let slotIndex = 1
+    
+    aligned.forEach(([queryToken, exampleToken]) => {
+      if (exampleToken.startsWith('$')) {
+        slots[`$${slotIndex}`] = queryToken
+        slotIndex++
+      }
+    })
+    
+    return slots
   }
   
   /**
@@ -317,7 +714,7 @@ export class PatternLibrary {
   /**
    * Helper: Post-process extracted slots
    */
-  private postProcessSlots(slots: Record<string, any>, pattern: Pattern): void {
+  private postProcessSlots(slots: Record<string, any>, _pattern: Pattern): void {
     // Convert string numbers to actual numbers
     for (const [key, value] of Object.entries(slots)) {
       if (typeof value === 'string') {

@@ -24,7 +24,7 @@ const CRITICAL_MODEL_CONFIG = {
     // SHA256 of model.onnx - computed from actual model
     'onnx/model.onnx': 'add_actual_hash_here',
     'tokenizer.json': 'add_actual_hash_here'
-  },
+  } as Record<string, string>,
   modelSize: {
     'onnx/model.onnx': 90387606, // Exact size in bytes (updated to match actual file)
     'tokenizer.json': 711661
@@ -184,19 +184,40 @@ export class ModelGuardian {
         }
       }
       
-      // TODO: Add SHA256 verification for ultimate security
-      // if (CRITICAL_MODEL_CONFIG.modelHash[file]) {
-      //   const hash = await this.computeFileHash(filePath)
-      //   if (hash !== CRITICAL_MODEL_CONFIG.modelHash[file]) {
-      //     console.error('❌ CRITICAL: Model hash mismatch!')
-      //     return false
-      //   }
-      // }
+      // SHA256 verification for ultimate security
+      if (CRITICAL_MODEL_CONFIG.modelHash && CRITICAL_MODEL_CONFIG.modelHash[file]) {
+        const hash = await this.computeFileHash(filePath)
+        if (hash !== CRITICAL_MODEL_CONFIG.modelHash[file]) {
+          console.error(
+            `❌ CRITICAL: Model hash mismatch for ${file}!\n` +
+            `Expected: ${CRITICAL_MODEL_CONFIG.modelHash[file]}\n` +
+            `Got: ${hash}\n` +
+            `This indicates model tampering or corruption!`
+          )
+          return false
+        }
+      }
     }
     
     return true
   }
   
+  /**
+   * Compute SHA256 hash of a file
+   */
+  private async computeFileHash(filePath: string): Promise<string> {
+    try {
+      const { readFile } = await import('fs/promises')
+      const { createHash } = await import('crypto')
+      const fileBuffer = await readFile(filePath)
+      const hash = createHash('sha256').update(fileBuffer).digest('hex')
+      return hash
+    } catch (error) {
+      console.error(`Failed to compute hash for ${filePath}:`, error)
+      return ''
+    }
+  }
+
   /**
    * Download model from a fallback source
    */

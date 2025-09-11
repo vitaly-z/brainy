@@ -68,7 +68,7 @@ Delete a noun.
 Get multiple nouns (unified method).
 - **options**: Can be:
   - `string[]` - Array of IDs
-  - `{filter: object}` - Metadata filter
+  - `{where: object}` - Metadata filter
   - `{limit: number, offset: number}` - Pagination
 - **Returns**: `Promise<VectorDocument[]>`
 

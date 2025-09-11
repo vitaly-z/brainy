@@ -303,22 +303,19 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       // CRITICAL: Control which model precision transformers.js uses
       // Q8 models use quantized int8 weights for 75% size reduction
-      // FP32 models use full precision floating point
+      // Always use Q8 for optimal balance
       
-      if (actualType === 'q8') {
-        this.logger('log', '🎯 Selecting Q8 quantized model (75% smaller, 99% accuracy)')
-      } else {
-        this.logger('log', '📦 Using FP32 model (full precision, larger size)')
-      }
+      actualType = 'q8'  // Always Q8
+      this.logger('log', '🎯 Using Q8 quantized model (75% smaller, 99% accuracy)')
       
       // Load the feature extraction pipeline with memory optimizations
       const pipelineOptions: any = {
         cache_dir: cacheDir,
         local_files_only: isBrowser() ? false : this.options.localFilesOnly,
         // CRITICAL: Specify dtype for model precision
-        dtype: actualType === 'q8' ? 'q8' : 'fp32',
+        dtype: 'q8',
         // CRITICAL: For Q8, explicitly use quantized model
-        quantized: actualType === 'q8',
+        quantized: true,
         // CRITICAL: ONNX memory optimizations
         session_options: {
           enableCpuMemArena: false,  // Disable pre-allocated memory arena
@@ -347,8 +344,8 @@ export class TransformerEmbedding implements EmbeddingModel {
           if (existsSync(modelPath)) {
             this.logger('log', '✅ Q8 model found locally')
           } else {
-            this.logger('warn', '⚠️ Q8 model not found, will fall back to FP32')
-            actualType = 'fp32' // Fall back to fp32
+            this.logger('warn', '⚠️ Q8 model not found')
+            actualType = 'q8' // Always Q8
           }
         }
         
@@ -530,9 +527,7 @@ export function createEmbeddingFunction(options: TransformerEmbeddingOptions = {
     const { embeddingManager } = await import('../embeddings/EmbeddingManager.js')
     
     // Validate precision if specified
-    if (options.precision) {
-      embeddingManager.validatePrecision(options.precision as 'q8' | 'fp32')
-    }
+    // Precision is always Q8 now
     
     return await embeddingManager.embed(data)
   }

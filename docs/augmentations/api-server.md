@@ -360,7 +360,6 @@ class FilteredAPIServer extends APIServerAugmentation {
 const brain = new BrainyData()
 
 // Stack augmentations for complete system
-brain.augmentations.register(new WALAugmentation())           // Durability
 brain.augmentations.register(new EntityRegistryAugmentation()) // Dedup
 brain.augmentations.register(new APIServerAugmentation())      // API
 

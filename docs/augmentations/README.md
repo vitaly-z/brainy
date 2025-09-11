@@ -55,7 +55,6 @@ Replace or enhance the storage layer.
 
 | Augmentation | Description | Timing | Status |
 |-------------|-------------|--------|--------|
-| **WALAugmentation** | Write-ahead logging for durability | `around` | ✅ Production |
 | **S3StorageAugmentation** | Use S3 as storage backend | `replace` | 📝 Example |
 | **RedisAugmentation** | Redis caching layer | `around` | 📝 Example |
 | **PostgresAugmentation** | PostgreSQL persistence | `replace` | 📝 Example |
@@ -120,7 +119,6 @@ Visual representations of data.
 const brain = new BrainyData()
 
 // Just register augmentations - they work automatically!
-brain.augmentations.register(new WALAugmentation())
 brain.augmentations.register(new EntityRegistryAugmentation())
 brain.augmentations.register(new APIServerAugmentation())
 

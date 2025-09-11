@@ -131,7 +131,7 @@ export interface LODConfig {
  * Neural API - Unified best-of-both implementation
  */
 export class NeuralAPI {
-  private brain: any // BrainyData instance
+  private brain: any // Brainy instance
   private similarityCache: Map<string, number> = new Map()
   private clusterCache: Map<string, any> = new Map() // Enhanced for enterprise
   private hierarchyCache: Map<string, SemanticHierarchy> = new Map()
@@ -870,10 +870,10 @@ export class NeuralAPI {
   }
   
   private async getViewportLOD(viewport: any, lod: any): Promise<any> {
-    return {}
+    throw new Error('getViewportLOD not implemented. LOD visualization requires implementing viewport-specific level-of-detail logic')
   }
   
   private async getGlobalLOD(lod: any): Promise<any> {
-    return {}
+    throw new Error('getGlobalLOD not implemented. LOD visualization requires implementing global level-of-detail logic')
   }
 }

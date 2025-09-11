@@ -171,8 +171,6 @@ brain.addNouns([...])        // Automatically batched
 
 ## Data Integrity Augmentations (3 total)
 
-### WALAugmentation
-**Location**: `src/augmentations/walAugmentation.ts`  
 **Auto-enabled**: When `wal: true`  
 **Purpose**: Write-ahead logging for crash recovery
 ```typescript
@@ -282,7 +280,6 @@ const brain = new BrainyData({
   storage: 'auto',        // Storage augmentation
   cache: true,           // Cache augmentation  
   index: true,           // Index augmentation
-  wal: true,            // WAL augmentation
   metrics: true         // Metrics augmentation
 })
 ```

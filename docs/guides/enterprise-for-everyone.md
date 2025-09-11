@@ -46,11 +46,9 @@ const brain = new BrainyData({
 **Everyone gets mission-critical reliability:**
 
 ```typescript
-import { WALAugmentation } from 'brainy'
 
 const brain = new BrainyData({
   augmentations: [
-    new WALAugmentation({
       enabled: true,                    // Write-ahead logging
       redundancy: 3,                    // Triple redundancy
       checkpointInterval: 1000,         // Frequent checkpoints

@@ -40,7 +40,6 @@ brainy-data/
 │   ├── __entity_registry__.json
 │   └── __metadata_index__*.json
 ├── verbs/            # Relationship storage
-├── wal/              # Write-Ahead Logging
 └── locks/            # Concurrent access control
 ```
 
@@ -83,7 +82,6 @@ High-performance field indexing system:
 Brainy's extensible plugin architecture allows for powerful enhancements:
 
 ### Core Augmentations
-- **WAL (Write-Ahead Logging)**: Durability and crash recovery
 - **Entity Registry**: High-speed deduplication for streaming data
 - **Batch Processing**: Optimized bulk operations
 - **Connection Pool**: Efficient resource management

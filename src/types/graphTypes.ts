@@ -393,7 +393,7 @@ export const NounType = {
   Person: 'person', // Human entities
   Organization: 'organization', // Formal organizations (companies, institutions, etc.)
   Location: 'location', // Geographic locations (merges previous Place and Location)
-  Thing: 'thing', // Physical objects
+  Thing: 'thing', // Physical objects (generic items/entities should use this)
   Concept: 'concept', // Abstract ideas, concepts, and intangible entities
   Event: 'event', // Occurrences with time and place
 
@@ -408,7 +408,7 @@ export const NounType = {
   Collection: 'collection', // Generic grouping of items (merges Group, List, and Category)
   Dataset: 'dataset', // Structured collections of data
 
-  // Business/Application Types
+  // Business/Application Types  
   Product: 'product', // Commercial products and offerings
   Service: 'service', // Services and offerings
   User: 'user', // User accounts and profiles

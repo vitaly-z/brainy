@@ -40,7 +40,6 @@ These augmentations don't read or write metadata at all:
 ### Category 2: Read-Only Access ('readonly')
 These augmentations read metadata but never modify it:
 
-5. **WALAugmentation** - Reads metadata for logging/recovery
 6. **IndexAugmentation** - Reads metadata to build indexes
 7. **MonitoringAugmentation** - Reads metadata for monitoring
 8. **MetricsAugmentation** - Reads metadata for metrics collection
@@ -111,10 +110,7 @@ export class CacheAugmentation extends BaseAugmentation {
 }
 ```
 
-**WALAugmentation:**
 ```typescript
-export class WALAugmentation extends BaseAugmentation {
-  readonly name = 'WAL'
   readonly metadata = 'readonly' as const  // ✅ Only reads for logging
   // ... rest unchanged
 }

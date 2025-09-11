@@ -2,12 +2,12 @@
  * BrainyMCPAdapter
  * 
  * This class provides an adapter for accessing Brainy data through the Model Control Protocol (MCP).
- * It wraps a BrainyData instance and exposes methods for getting vectors, searching similar items,
+ * It wraps a Brainy instance and exposes methods for getting vectors, searching similar items,
  * and getting relationships.
  */
 
 import { v4 as uuidv4 } from '../universal/uuid.js'
-import { BrainyDataInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyDataInterface.js'
 import { 
   MCPRequest, 
   MCPResponse, 
@@ -17,13 +17,13 @@ import {
 } from '../types/mcpTypes.js'
 
 export class BrainyMCPAdapter {
-  private brainyData: BrainyDataInterface
+  private brainyData: BrainyInterface
 
   /**
    * Creates a new BrainyMCPAdapter
-   * @param brainyData The BrainyData instance to wrap
+   * @param brainyData The Brainy instance to wrap
    */
-  constructor(brainyData: BrainyDataInterface) {
+  constructor(brainyData: BrainyInterface) {
     this.brainyData = brainyData
   }
 
@@ -124,8 +124,8 @@ export class BrainyMCPAdapter {
       )
     }
 
-    // Add noun directly - addNoun handles string input automatically
-    const id = await this.brainyData.addNoun(text, metadata)
+    // Add data directly using addNoun
+    const id = await this.brainyData.addNoun(text, 'document', metadata)
     return this.createSuccessResponse(request.requestId, { id })
   }
 
@@ -146,7 +146,7 @@ export class BrainyMCPAdapter {
     }
 
     // This is a simplified implementation - in a real implementation, we would
-    // need to check if these methods exist on the BrainyDataInterface
+    // need to check if these methods exist on the BrainyInterface
     const outgoing = await (this.brainyData as any).getVerbsBySource?.(id) || []
     const incoming = await (this.brainyData as any).getVerbsByTarget?.(id) || []
 

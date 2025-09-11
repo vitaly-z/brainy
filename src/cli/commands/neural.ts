@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import fs from 'fs';
 import path from 'path';
-import { BrainyData } from '../../brainyData.js';
+import { Brainy } from '../../brainyData.js';
 import { NeuralAPI } from '../../neural/neuralAPI.js';
 
 interface CommandArguments {
@@ -98,7 +98,7 @@ export const neuralCommand = {
     console.log(chalk.gray('━'.repeat(50)));
     
     // Initialize Brainy and Neural API
-    const brain = new BrainyData();
+    const brain = new Brainy();
     const neural = new NeuralAPI(brain);
     
     try {

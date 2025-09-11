@@ -9,7 +9,7 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import ora from 'ora'
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 import { neuralCommands } from './commands/neural.js'
 import { coreCommands } from './commands/core.js'
 import { utilityCommands } from './commands/utility.js'

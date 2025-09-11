@@ -119,10 +119,8 @@ const logs = auditLogger.queryLogs({
 
 ## 📦 Storage & Persistence
 
-### Write-Ahead Logging (WAL) ✅
 Full crash recovery and replay:
 ```typescript
-brain.use(new WALAugmentation({
   enabled: true,
   checkpointInterval: 1000,
   maxLogSize: 100 * 1024 * 1024  // 100MB

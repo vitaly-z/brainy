@@ -5,16 +5,16 @@
  * These are the core "sensory organs" of the atomic age brain-in-jar system
  */
 
-import { BrainyDataInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyDataInterface.js'
 
 /**
  * Default augmentations that ship with Brainy
  * These are automatically registered on startup
  */
 export class DefaultAugmentationRegistry {
-  private brainy: BrainyDataInterface
+  private brainy: BrainyInterface
 
-  constructor(brainy: BrainyDataInterface) {
+  constructor(brainy: BrainyInterface) {
     this.brainy = brainy
   }
 
@@ -40,7 +40,7 @@ export class DefaultAugmentationRegistry {
       // Import the Neural Import augmentation
       const { NeuralImportAugmentation } = await import('../augmentations/neuralImport.js')
       
-      // Note: The actual registration is commented out since BrainyData doesn't have addAugmentation method yet
+      // Note: The actual registration is commented out since Brainy doesn't have addAugmentation method yet
       // This would create instance with default configuration
       /*
       const neuralImport = new NeuralImportAugmentation(this.brainy as any, {
@@ -59,7 +59,7 @@ export class DefaultAugmentationRegistry {
       }
       */
       
-      console.log('🧠⚛️ Cortex module loaded (awaiting BrainyData augmentation support)')
+      console.log('🧠⚛️ Cortex module loaded (awaiting Brainy augmentation support)')
 
     } catch (error) {
       console.error('❌ Failed to register Cortex:', error instanceof Error ? error.message : String(error))
@@ -77,12 +77,12 @@ export class DefaultAugmentationRegistry {
   }> {
     try {
       // Check if Cortex is registered as an augmentation
-      // Note: hasAugmentation method doesn't exist yet in BrainyData
+      // Note: hasAugmentation method doesn't exist yet in Brainy
       const hasCortex = false // this.brainy.hasAugmentation && this.brainy.hasAugmentation('SENSE', 'cortex')
       
       return {
         available: hasCortex || false,
-        status: hasCortex ? 'active' : 'not registered (awaiting BrainyData support)',
+        status: hasCortex ? 'active' : 'not registered (awaiting Brainy support)',
         version: '1.0.0'
       }
     } catch (error) {
@@ -99,7 +99,7 @@ export class DefaultAugmentationRegistry {
   async reinstallCortex(): Promise<void> {
     try {
       // Remove existing if present
-      // Note: removeAugmentation method doesn't exist yet in BrainyData
+      // Note: removeAugmentation method doesn't exist yet in Brainy
       /*
       if (this.brainy.removeAugmentation) {
         try {
@@ -123,7 +123,7 @@ export class DefaultAugmentationRegistry {
 /**
  * Helper function to initialize default augmentations for any Brainy instance
  */
-export async function initializeDefaultAugmentations(brainy: BrainyDataInterface): Promise<DefaultAugmentationRegistry> {
+export async function initializeDefaultAugmentations(brainy: BrainyInterface): Promise<DefaultAugmentationRegistry> {
   const registry = new DefaultAugmentationRegistry(brainy)
   await registry.initializeDefaults()
   return registry

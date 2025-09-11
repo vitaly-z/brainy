@@ -32,7 +32,7 @@ import { NounType, VerbType } from '../../types/graphTypes.js'
  */
 export class IntelligentComputationEngine {
   private typeMatcher: BrainyTypes | null = null
-  private config: DisplayConfig
+  protected config: DisplayConfig
   private initialized = false
 
   constructor(config: DisplayConfig) {
@@ -214,7 +214,7 @@ export class IntelligentComputationEngine {
     
     // Use basic type detection
     const detectedType = this.detectTypeHeuristically(data, entityType)
-    const mockTypeResult: TypeMatchResult = {
+    const typeResult: TypeMatchResult = {
       type: detectedType,
       confidence: 0.6, // Lower confidence for heuristics
       reasoning: 'Heuristic detection (AI unavailable)',
@@ -224,7 +224,7 @@ export class IntelligentComputationEngine {
     const context: FieldComputationContext = {
       data,
       metadata: data,
-      typeResult: mockTypeResult,
+      typeResult: typeResult,
       config: this.config,
       entityType
     }
@@ -237,8 +237,8 @@ export class IntelligentComputationEngine {
       description: this.extractFieldWithPatterns(data, patterns, 'description') || 'No description',
       type: detectedType,
       tags: this.extractFieldWithPatterns(data, patterns, 'tags') || [],
-      confidence: mockTypeResult.confidence,
-      reasoning: this.config.debugMode ? mockTypeResult.reasoning : undefined,
+      confidence: typeResult.confidence,
+      reasoning: this.config.debugMode ? typeResult.reasoning : undefined,
       computedAt: Date.now(),
       version: '1.0.0'
     }

@@ -270,7 +270,7 @@ export class CacheManager<T extends HNSWNode | Edge | HNSWVerb> {
       // Determine if we're dealing with a large dataset (>100K items)
       const isLargeDataset = totalItems > 100000
       
-      // Check if we're in read-only mode (from parent BrainyData instance)
+      // Check if we're in read-only mode (from parent Brainy instance)
       const isReadOnly = this.options?.readOnly || false
       
       // In Node.js, use available system memory with enhanced allocation
@@ -392,7 +392,7 @@ export class CacheManager<T extends HNSWNode | Edge | HNSWVerb> {
       // Determine if we're dealing with a large dataset (>100K items)
       const isLargeDataset = totalItems > 100000
       
-      // Check if we're in read-only mode (from parent BrainyData instance)
+      // Check if we're in read-only mode (from parent Brainy instance)
       const isReadOnly = this.options?.readOnly || false
       
       // Get memory information based on environment

@@ -66,7 +66,7 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
         } else {
           // Create a new instance for this synapse
           this.neuralImport = new NeuralImportAugmentation()
-          // NeuralImport will be initialized when the synapse is added to BrainyData
+          // NeuralImport will be initialized when the synapse is added to Brainy
           // await this.neuralImport.initialize()
         }
       } catch (error) {
@@ -213,7 +213,7 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
     } = {}
   ): Promise<void> {
     if (!this.context?.brain) {
-      throw new Error('BrainyData context not initialized')
+      throw new Error('Brainy context not initialized')
     }
     
     // Add synapse source metadata
@@ -242,10 +242,13 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
         if (neuralResult.success && neuralResult.data) {
           // Store detected nouns (entities)
           for (const noun of neuralResult.data.nouns) {
-            await this.context.brain.addNoun(noun, {
-              ...enrichedMetadata,
-              _neuralConfidence: neuralResult.data.confidence,
-              _neuralInsights: neuralResult.data.insights
+            await this.context.brain.add({
+              text: noun,
+              metadata: {
+                ...enrichedMetadata,
+                _neuralConfidence: neuralResult.data.confidence,
+                _neuralInsights: neuralResult.data.insights
+              }
             })
           }
           
@@ -265,12 +268,16 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
           
           // Store original content with neural metadata
           if (typeof content === 'string') {
-            await this.context.brain.addNoun(content, 'Content', {
-              ...enrichedMetadata,
-              _neuralProcessed: true,
-              _neuralConfidence: neuralResult.data.confidence,
-              _detectedEntities: neuralResult.data.nouns.length,
-              _detectedRelationships: neuralResult.data.verbs.length
+            await this.context.brain.add({
+              text: content,
+              metadata: {
+                ...enrichedMetadata,
+                category: 'Content',
+                _neuralProcessed: true,
+                _neuralConfidence: neuralResult.data.confidence,
+                _detectedEntities: neuralResult.data.nouns.length,
+                _detectedRelationships: neuralResult.data.verbs.length
+              }
             })
           }
           
@@ -283,21 +290,33 @@ export abstract class SynapseAugmentation extends BaseAugmentation {
     
     // Fallback to basic storage
     if (typeof content === 'string') {
-      await this.context.brain.addNoun(content, 'Content', enrichedMetadata)
+      await this.context.brain.add({
+        text: content,
+        metadata: {
+          ...enrichedMetadata,
+          category: 'Content'
+        }
+      })
     } else {
       // For structured data, store as JSON
-      await this.context.brain.addNoun(JSON.stringify(content), 'Content', enrichedMetadata)
+      await this.context.brain.add({
+        text: JSON.stringify(content),
+        metadata: {
+          ...enrichedMetadata,
+          category: 'Content'
+        }
+      })
     }
   }
   
   /**
    * Helper method to query existing synced data
    */
-  protected async queryBrainyData(
+  protected async queryBrainy(
     filter: { connector?: string; [key: string]: any }
   ): Promise<any[]> {
     if (!this.context?.brain) {
-      throw new Error('BrainyData context not initialized')
+      throw new Error('Brainy context not initialized')
     }
     
     const searchFilter = {

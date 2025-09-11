@@ -260,7 +260,9 @@ export class GraphPathfinding {
           for (const [neighbor, edges] of neighbors) {
             if (forwardVisited.has(neighbor)) continue
             
-            const bestEdge = edges[0] // TODO: Select best edge
+            // Select edge with lowest weight for optimal path
+            const bestEdge = edges.reduce((best, edge) => 
+              edge.weight < best.weight ? edge : best, edges[0])
             forwardVisited.set(neighbor, {
               path: [...currentData.path, neighbor],
               edges: [...currentData.edges, bestEdge],
@@ -312,7 +314,9 @@ export class GraphPathfinding {
           
           if (backwardVisited.has(nodeId)) continue
           
-          const bestEdge = edges[0] // TODO: Select best edge
+          // Select edge with lowest weight for optimal path
+          const bestEdge = edges.reduce((best, edge) => 
+            edge.weight < best.weight ? edge : best, edges[0])
           backwardVisited.set(nodeId, {
             path: [...currentData.path, nodeId],
             edges: [...currentData.edges, bestEdge],

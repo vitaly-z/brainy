@@ -39,7 +39,7 @@ export class NaturalLanguageProcessor {
   /**
    * Process natural language query into structured Triple Intelligence query
    * @param naturalQuery The natural language query string
-   * @param queryEmbedding Pre-computed embedding from BrainyData (passed in to avoid circular dependency)
+   * @param queryEmbedding Pre-computed embedding from Brainy (passed in to avoid circular dependency)
    */
   async processNaturalQuery(naturalQuery: string, queryEmbedding?: Vector): Promise<TripleQuery> {
     // Use static pattern matcher (no async, no memory allocation!)
@@ -55,7 +55,7 @@ export class NaturalLanguageProcessor {
       }
     }
     
-    // Track for learning (but don't create new BrainyData!)
+    // Track for learning (but don't create new Brainy!)
     this.queryHistory.push({
       query: naturalQuery,
       result: structuredQuery,
@@ -156,7 +156,7 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Find similar queries from history (without using BrainyData)
+   * Find similar queries from history (without using Brainy)
    */
   private findSimilarQueries(embedding: Vector): Array<{
     query: string
