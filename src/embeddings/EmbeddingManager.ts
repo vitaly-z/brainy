@@ -50,9 +50,9 @@ export class EmbeddingManager {
   private locked = false
   
   private constructor() {
-    // Determine precision - Q8 by default
-    this.precision = this.determinePrecision()
-    console.log(`🎯 EmbeddingManager: Using ${this.precision.toUpperCase()} precision`)
+    // Always use Q8 for optimal size/performance (99% accuracy, 75% smaller)
+    this.precision = 'q8'
+    console.log(`🎯 EmbeddingManager: Using Q8 precision`)
   }
   
   /**
@@ -70,7 +70,18 @@ export class EmbeddingManager {
    */
   async init(): Promise<void> {
     // In unit test mode, skip real model initialization
-    if (process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__) {
+    const isTestMode = process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__
+    
+    if (isTestMode) {
+      // Production safeguard: Warn if mock mode is active but NODE_ENV is production
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'CRITICAL: Mock embeddings detected in production environment! ' +
+          'BRAINY_UNIT_TEST or __BRAINY_UNIT_TEST__ is set while NODE_ENV=production. ' +
+          'This is a security risk. Remove test flags before deploying to production.'
+        )
+      }
+      
       if (!this.initialized) {
         this.initialized = true
         this.initTime = 1 // Mock init time
@@ -126,9 +137,9 @@ export class EmbeddingManager {
       const pipelineOptions: any = {
         cache_dir: modelsPath,
         local_files_only: false,
-        // Specify precision
-        dtype: this.precision,
-        quantized: this.precision === 'q8',
+        // Always use Q8 precision
+        dtype: 'q8',
+        quantized: true,
         // Memory optimizations
         session_options: {
           enableCpuMemArena: false,
@@ -150,7 +161,7 @@ export class EmbeddingManager {
       // Log success
       const memoryMB = this.getMemoryUsage()
       console.log(`✅ Model loaded in ${this.initTime}ms`)
-      console.log(`📊 Precision: ${this.precision.toUpperCase()} | Memory: ${memoryMB}MB`)
+      console.log(`📊 Precision: Q8 | Memory: ${memoryMB}MB`)
       console.log(`🔒 Configuration locked`)
       
     } catch (error) {
@@ -165,7 +176,13 @@ export class EmbeddingManager {
    */
   async embed(text: string | string[]): Promise<Vector> {
     // Check for unit test environment - use mocks to prevent ONNX conflicts
-    if (process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__) {
+    const isTestMode = process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__
+    
+    if (isTestMode) {
+      // Production safeguard
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('CRITICAL: Mock embeddings in production!')
+      }
       return this.getMockEmbedding(text)
     }
     
@@ -236,24 +253,6 @@ export class EmbeddingManager {
     }
   }
   
-  /**
-   * Determine model precision
-   */
-  private determinePrecision(): ModelPrecision {
-    // Check environment variable overrides
-    if (process.env.BRAINY_MODEL_PRECISION === 'fp32') {
-      return 'fp32'
-    }
-    if (process.env.BRAINY_MODEL_PRECISION === 'q8') {
-      return 'q8'
-    }
-    if (process.env.BRAINY_FORCE_FP32 === 'true') {
-      return 'fp32'
-    }
-    
-    // Default to Q8 - optimal for most use cases
-    return 'q8'
-  }
   
   /**
    * Get models directory path

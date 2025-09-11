@@ -255,12 +255,12 @@ export class WebSocketConduitAugmentation extends BaseConduitAugmentation {
  * Example usage:
  * 
  * // Server instance
- * const serverBrain = new BrainyData()
+ * const serverBrain = new Brainy()
  * serverBrain.augmentations.register(new APIServerAugmentation())
  * await serverBrain.init()
  * 
  * // Client instance
- * const clientBrain = new BrainyData()
+ * const clientBrain = new Brainy()
  * const conduit = new WebSocketConduitAugmentation()
  * clientBrain.augmentations.register(conduit)
  * await clientBrain.init()

@@ -7,6 +7,7 @@
 
 import { StorageAugmentation } from './storageAugmentation.js'
 import { StorageAdapter } from '../coreTypes.js'
+import { AugmentationManifest } from './manifest.js'
 import { MemoryStorage } from '../storage/adapters/memoryStorage.js'
 import { OPFSStorage } from '../storage/adapters/opfsStorage.js'
 import { 
@@ -19,9 +20,66 @@ import {
  */
 export class MemoryStorageAugmentation extends StorageAugmentation {
   readonly name = 'memory-storage'
+  readonly category = 'core' as const
+  readonly description = 'High-performance in-memory storage for development and testing'
   
-  constructor() {
-    super()
+  constructor(config?: any) {
+    super(config)
+  }
+  
+  getManifest(): AugmentationManifest {
+    return {
+      id: 'memory-storage',
+      name: 'Memory Storage',
+      version: '2.0.0',
+      description: 'Fast in-memory storage with no persistence',
+      longDescription: 'Perfect for development, testing, and temporary data. All data is lost when the process ends. Provides the fastest possible performance with zero I/O overhead.',
+      category: 'storage',
+      configSchema: {
+        type: 'object',
+        properties: {
+          maxSize: {
+            type: 'number',
+            default: 104857600, // 100MB
+            minimum: 1048576,   // 1MB
+            maximum: 1073741824, // 1GB
+            description: 'Maximum memory usage in bytes'
+          },
+          gcInterval: {
+            type: 'number',
+            default: 60000, // 1 minute
+            minimum: 1000,  // 1 second
+            maximum: 3600000, // 1 hour
+            description: 'Garbage collection interval in milliseconds'
+          },
+          enableStats: {
+            type: 'boolean',
+            default: false,
+            description: 'Enable memory usage statistics'
+          }
+        },
+        additionalProperties: false
+      },
+      configDefaults: {
+        maxSize: 104857600,
+        gcInterval: 60000,
+        enableStats: false
+      },
+      minBrainyVersion: '2.0.0',
+      keywords: ['storage', 'memory', 'ram', 'volatile', 'fast'],
+      documentation: 'https://docs.brainy.dev/augmentations/memory-storage',
+      status: 'stable',
+      performance: {
+        memoryUsage: 'high',
+        cpuUsage: 'low',
+        networkUsage: 'none'
+      },
+      features: ['fast-access', 'zero-latency', 'no-persistence'],
+      ui: {
+        icon: '💾',
+        color: '#4CAF50'
+      }
+    }
   }
   
   async provideStorage(): Promise<StorageAdapter> {
@@ -32,7 +90,7 @@ export class MemoryStorageAugmentation extends StorageAugmentation {
   
   protected async onInitialize(): Promise<void> {
     await this.storageAdapter!.init()
-    this.log('Memory storage initialized')
+    this.log(`Memory storage initialized (max size: ${this.config.maxSize} bytes)`)
   }
 }
 
@@ -41,18 +99,85 @@ export class MemoryStorageAugmentation extends StorageAugmentation {
  */
 export class FileSystemStorageAugmentation extends StorageAugmentation {
   readonly name = 'filesystem-storage'
-  private rootDirectory: string
+  readonly category = 'core' as const
+  readonly description = 'Persistent file-based storage for Node.js environments'
   
-  constructor(rootDirectory: string = './brainy-data') {
-    super()
-    this.rootDirectory = rootDirectory
+  constructor(config?: any) {
+    super(config)
+  }
+  
+  getManifest(): AugmentationManifest {
+    return {
+      id: 'filesystem-storage',
+      name: 'FileSystem Storage',
+      version: '2.0.0',
+      description: 'Persistent storage using the local filesystem',
+      longDescription: 'Stores data as files on the local filesystem. Perfect for Node.js applications, desktop apps, and servers. Provides persistent storage with good performance and unlimited capacity.',
+      category: 'storage',
+      configSchema: {
+        type: 'object',
+        properties: {
+          rootDirectory: {
+            type: 'string',
+            default: './brainy-data',
+            description: 'Root directory for storing data files'
+          },
+          compression: {
+            type: 'boolean',
+            default: false,
+            description: 'Enable gzip compression for stored files'
+          },
+          maxFileSize: {
+            type: 'number',
+            default: 10485760, // 10MB
+            minimum: 1048576,  // 1MB
+            maximum: 104857600, // 100MB
+            description: 'Maximum size per file in bytes'
+          },
+          autoBackup: {
+            type: 'boolean',
+            default: false,
+            description: 'Enable automatic backups'
+          },
+          backupInterval: {
+            type: 'number',
+            default: 3600000, // 1 hour
+            minimum: 60000,   // 1 minute
+            maximum: 86400000, // 24 hours
+            description: 'Backup interval in milliseconds'
+          }
+        },
+        additionalProperties: false
+      },
+      configDefaults: {
+        rootDirectory: './brainy-data',
+        compression: false,
+        maxFileSize: 10485760,
+        autoBackup: false,
+        backupInterval: 3600000
+      },
+      minBrainyVersion: '2.0.0',
+      keywords: ['storage', 'filesystem', 'persistent', 'node', 'disk'],
+      documentation: 'https://docs.brainy.dev/augmentations/filesystem-storage',
+      status: 'stable',
+      performance: {
+        memoryUsage: 'low',
+        cpuUsage: 'low',
+        networkUsage: 'none'
+      },
+      features: ['persistence', 'unlimited-capacity', 'file-based', 'compression-support'],
+      ui: {
+        icon: '📁',
+        color: '#FF9800'
+      }
+    }
   }
   
   async provideStorage(): Promise<StorageAdapter> {
     try {
       // Dynamically import for Node.js environments
       const { FileSystemStorage } = await import('../storage/adapters/fileSystemStorage.js')
-      const storage = new FileSystemStorage(this.rootDirectory)
+      const storage = new FileSystemStorage(this.config.rootDirectory)
       this.storageAdapter = storage
       return storage
     } catch (error) {
@@ -66,7 +191,10 @@ export class FileSystemStorageAugmentation extends StorageAugmentation {
   
   protected async onInitialize(): Promise<void> {
     await this.storageAdapter!.init()
-    this.log(`FileSystem storage initialized at ${this.rootDirectory}`)
+    this.log(`FileSystem storage initialized at ${this.config.rootDirectory}`)
+    if (this.config.compression) {
+      this.log('Compression enabled for stored files')
+    }
   }
 }
 
@@ -75,11 +203,70 @@ export class FileSystemStorageAugmentation extends StorageAugmentation {
  */
 export class OPFSStorageAugmentation extends StorageAugmentation {
   readonly name = 'opfs-storage'
-  private requestPersistent: boolean
+  readonly category = 'core' as const
+  readonly description = 'Persistent browser storage using Origin Private File System'
   
-  constructor(requestPersistent: boolean = false) {
-    super()
-    this.requestPersistent = requestPersistent
+  constructor(config?: any) {
+    super(config)
+  }
+  
+  getManifest(): AugmentationManifest {
+    return {
+      id: 'opfs-storage',
+      name: 'OPFS Storage',
+      version: '2.0.0',
+      description: 'Modern browser storage with file system capabilities',
+      longDescription: 'Uses the Origin Private File System API for persistent browser storage. Provides file-like storage in modern browsers with better performance than IndexedDB and unlimited storage quota.',
+      category: 'storage',
+      configSchema: {
+        type: 'object',
+        properties: {
+          requestPersistent: {
+            type: 'boolean',
+            default: false,
+            description: 'Request persistent storage permission from browser'
+          },
+          directoryName: {
+            type: 'string',
+            default: 'brainy-data',
+            description: 'Directory name within OPFS'
+          },
+          chunkSize: {
+            type: 'number',
+            default: 1048576, // 1MB
+            minimum: 65536,   // 64KB
+            maximum: 10485760, // 10MB
+            description: 'Chunk size for file operations in bytes'
+          },
+          enableCache: {
+            type: 'boolean',
+            default: true,
+            description: 'Enable in-memory caching for frequently accessed data'
+          }
+        },
+        additionalProperties: false
+      },
+      configDefaults: {
+        requestPersistent: false,
+        directoryName: 'brainy-data',
+        chunkSize: 1048576,
+        enableCache: true
+      },
+      minBrainyVersion: '2.0.0',
+      keywords: ['storage', 'browser', 'opfs', 'persistent', 'web'],
+      documentation: 'https://docs.brainy.dev/augmentations/opfs-storage',
+      status: 'stable',
+      performance: {
+        memoryUsage: 'medium',
+        cpuUsage: 'low',
+        networkUsage: 'none'
+      },
+      features: ['browser-persistent', 'file-system-api', 'unlimited-quota', 'async-operations'],
+      ui: {
+        icon: '🌐',
+        color: '#2196F3'
+      }
+    }
   }
   
   async provideStorage(): Promise<StorageAdapter> {
@@ -99,12 +286,12 @@ export class OPFSStorageAugmentation extends StorageAugmentation {
   protected async onInitialize(): Promise<void> {
     await this.storageAdapter!.init()
     
-    if (this.requestPersistent && this.storageAdapter instanceof OPFSStorage) {
+    if (this.config.requestPersistent && this.storageAdapter instanceof OPFSStorage) {
       const granted = await this.storageAdapter.requestPersistentStorage()
       this.log(`Persistent storage ${granted ? 'granted' : 'denied'}`)
     }
     
-    this.log('OPFS storage initialized')
+    this.log(`OPFS storage initialized in directory: ${this.config.directoryName}`)
   }
 }
 
@@ -113,7 +300,7 @@ export class OPFSStorageAugmentation extends StorageAugmentation {
  */
 export class S3StorageAugmentation extends StorageAugmentation {
   readonly name = 's3-storage'
-  private config: {
+  protected config: {
     bucketName: string
     region?: string
     accessKeyId: string
@@ -156,7 +343,7 @@ export class S3StorageAugmentation extends StorageAugmentation {
  */
 export class R2StorageAugmentation extends StorageAugmentation {
   readonly name = 'r2-storage'
-  private config: {
+  protected config: {
     bucketName: string
     accountId: string
     accessKeyId: string
@@ -195,7 +382,7 @@ export class R2StorageAugmentation extends StorageAugmentation {
  */
 export class GCSStorageAugmentation extends StorageAugmentation {
   readonly name = 'gcs-storage'
-  private config: {
+  protected config: {
     bucketName: string
     region?: string
     accessKeyId: string
@@ -249,14 +436,14 @@ export async function createAutoStorageAugmentation(options: {
   
   if (isNodeEnv) {
     // Node.js environment - use FileSystem
-    return new FileSystemStorageAugmentation(
-      options.rootDirectory || './brainy-data'
-    )
+    return new FileSystemStorageAugmentation({
+      rootDirectory: options.rootDirectory || './brainy-data'
+    })
   } else {
     // Browser environment - try OPFS, fall back to memory
-    const opfsAug = new OPFSStorageAugmentation(
-      options.requestPersistentStorage || false
-    )
+    const opfsAug = new OPFSStorageAugmentation({
+      requestPersistent: options.requestPersistentStorage || false
+    })
     
     // Test if OPFS is available
     const testStorage = new OPFSStorage()

@@ -6,7 +6,7 @@
  * NO runtime loading, NO external files needed!
  */
 
-import { BrainyData } from '../dist/brainyData.js'
+import { Brainy } from '../dist/brainy.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
@@ -23,9 +23,9 @@ async function buildEmbeddedPatterns() {
   console.log(`📚 Processing ${libraryData.patterns.length} patterns...`)
   
   // Initialize Brainy for embedding (one-time only!)
-  const brain = new BrainyData({
-    storage: { forceMemoryStorage: true },
-    logging: { verbose: false }
+  const brain = new Brainy({
+    // Use in-memory storage for build process
+    storage: { type: 'memory' }
   })
   
   await brain.init()
@@ -45,10 +45,20 @@ async function buildEmbeddedPatterns() {
       
       for (const example of pattern.examples || []) {
         try {
-          const embedding = await brain.embed(example)
-          if (Array.isArray(embedding)) {
-            embeddings.push(embedding)
+          // Add the example temporarily to get its embedding
+          const id = await brain.add({
+            data: example,
+            type: 'document' // Use document type for text
+          })
+          
+          // Get the entity with its embedding
+          const entity = await brain.get(id)
+          if (entity?.vector && Array.isArray(entity.vector)) {
+            embeddings.push(entity.vector)
           }
+          
+          // Remove the temporary entity
+          await brain.delete(id)
         } catch (error) {
           console.warn(`  ⚠️ Failed to embed example: "${example}"`)
         }
@@ -215,7 +225,8 @@ The patterns are now embedded directly in Brainy!
 No external files needed, instant availability.
 `)
   
-  // No close method needed for BrainyData
+  // Close Brainy instance
+  await brain.close()
 }
 
 // Run if called directly

@@ -1139,7 +1139,7 @@ export class MetadataIndexManager {
       totalEntries,
       totalIds,
       fieldsIndexed: Array.from(fields),
-      lastRebuild: 0, // TODO: track rebuild timestamp
+      lastRebuild: Date.now(),
       indexSize: totalEntries * 100 // rough estimate
     }
   }

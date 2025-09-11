@@ -6,7 +6,7 @@
  * 🚀 Scalable performance analytics with atomic age aesthetics
  */
 
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 // @ts-ignore
 import chalk from 'chalk'
 // @ts-ignore
@@ -88,7 +88,7 @@ export interface PerformanceAlert {
  * Real-time Performance Monitoring System
  */
 export class PerformanceMonitor {
-  private brainy: BrainyData
+  private brainy: Brainy
   private metrics: PerformanceMetrics[] = []
   private alerts: PerformanceAlert[] = []
   private alertRules: AlertRule[] = []
@@ -122,7 +122,7 @@ export class PerformanceMonitor {
     shield: '🛡️'
   }
 
-  constructor(brainy: BrainyData) {
+  constructor(brainy: Brainy) {
     this.brainy = brainy
     this.initializeDefaultAlerts()
   }

@@ -7,7 +7,7 @@
 import chalk from 'chalk'
 import ora from 'ora'
 import Table from 'cli-table3'
-import { BrainyData } from '../../brainyData.js'
+import { Brainy } from '../../brainyData.js'
 
 interface UtilityOptions {
   verbose?: boolean
@@ -30,11 +30,11 @@ interface BenchmarkOptions extends UtilityOptions {
   iterations?: string
 }
 
-let brainyInstance: BrainyData | null = null
+let brainyInstance: Brainy | null = null
 
-const getBrainy = async (): Promise<BrainyData> => {
+const getBrainy = async (): Promise<Brainy> => {
   if (!brainyInstance) {
-    brainyInstance = new BrainyData()
+    brainyInstance = new Brainy()
     await brainyInstance.init()
   }
   return brainyInstance

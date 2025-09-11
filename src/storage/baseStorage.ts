@@ -3,6 +3,8 @@
  * Provides common functionality for all storage adapters
  */
 
+import { GraphAdjacencyIndex } from '../graph/graphAdjacencyIndex.js'
+
 import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../coreTypes.js'
 import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
 import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
@@ -61,6 +63,7 @@ export function getDirectoryPath(entityType: 'noun' | 'verb', dataType: 'vector'
  */
 export abstract class BaseStorage extends BaseStorageAdapter {
   protected isInitialized = false
+  protected graphIndex?: GraphAdjacencyIndex
   protected readOnly = false
 
   /**
@@ -637,8 +640,25 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async deleteVerb(id: string): Promise<void> {
     await this.ensureInitialized()
     return this.deleteVerb_internal(id)
-  }
 
+  }
+  /**
+   * Get graph index (lazy initialization)
+   */
+  async getGraphIndex(): Promise<GraphAdjacencyIndex> {
+    if (!this.graphIndex) {
+      console.log('Initializing GraphAdjacencyIndex...')
+      this.graphIndex = new GraphAdjacencyIndex(this)
+      
+      // Check if we need to rebuild from existing data
+      const sampleVerbs = await this.getVerbs({ pagination: { limit: 1 } })
+      if (sampleVerbs.items.length > 0) {
+        console.log('Found existing verbs, rebuilding graph index...')
+        await this.graphIndex.rebuild()
+      }
+    }
+    return this.graphIndex
+  }
   /**
    * Clear all data from storage
    * This method should be implemented by each specific adapter

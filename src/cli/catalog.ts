@@ -366,7 +366,10 @@ function readLicenseFile(): string | null {
     if (existsSync(licensePath)) {
       return readFileSync(licensePath, 'utf8').trim()
     }
-  } catch {}
+  } catch (error) {
+    // License file read failed, return null
+    console.debug('Failed to read license file:', error)
+  }
   return null
 }
 
@@ -402,13 +405,6 @@ function getDefaultCatalog(): Catalog {
         name: 'Intelligent Verb Scoring',
         category: 'neural',
         description: 'Smart relationship scoring with taxonomy understanding',
-        status: 'available'
-      },
-      {
-        id: 'wal-augmentation',
-        name: 'WAL-based Augmentation',
-        category: 'enterprise',
-        description: 'Write-ahead log for reliable augmentation processing',
         status: 'available'
       },
       {

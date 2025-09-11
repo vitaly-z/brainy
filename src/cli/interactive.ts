@@ -9,7 +9,7 @@ import chalk from 'chalk'
 import inquirer from 'inquirer'
 import fuzzy from 'fuzzy'
 import ora from 'ora'
-import { BrainyData } from '../brainyData.js'
+import { Brainy } from '../brainy.js'
 
 // Professional color scheme
 export const colors = {
@@ -116,7 +116,7 @@ export async function promptSearchQuery(previousSearches?: string[]): Promise<st
  */
 export async function promptItemId(
   action: string,
-  brain?: BrainyData,
+  brain?: Brainy,
   allowMultiple: boolean = false
 ): Promise<string | string[]> {
   console.log(colors.primary(`\n${icons.thinking} Select item to ${action}\n`))
@@ -436,7 +436,7 @@ async function promptUrl(): Promise<string> {
 /**
  * Interactive relationship builder
  */
-export async function promptRelationship(brain?: BrainyData): Promise<{
+export async function promptRelationship(brain?: Brainy): Promise<{
   source: string
   verb: string
   target: string

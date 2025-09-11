@@ -90,7 +90,7 @@ interface ItemWithMetadata {
 }
 
 export class ImprovedNeuralAPI {
-  private brain: any // BrainyData instance
+  private brain: any // Brainy instance
   private config: NeuralAPIConfig
   
   // Caching for performance
@@ -1758,18 +1758,23 @@ export class ImprovedNeuralAPI {
     const items = await Promise.all(
       itemIds.map(async id => {
         const noun = await this.brain.getNoun(id)
+        if (!noun) {
+          return null
+        }
         return {
           id,
-          vector: noun?.vector || [],
-          metadata: noun?.data || {},
-          nounType: noun?.noun || 'concept',
-          label: noun?.label || id,
-          data: noun?.data
-        }
+          vector: noun.vector || [],
+          metadata: noun.metadata || {},
+          nounType: noun.metadata?.noun || noun.metadata?.nounType || 'content',
+          label: noun.metadata?.label || noun.metadata?.data || id,
+          data: noun.metadata
+        } as ItemWithMetadata
       })
     )
     
-    return items.filter(item => item.vector.length > 0)
+    return items.filter((item): item is ItemWithMetadata => 
+      item !== null
+    )
   }
   
   /**
@@ -1797,10 +1802,13 @@ export class ImprovedNeuralAPI {
       return []
     }
     
-    // Use a simple approach: get recent items or sample
-    // In practice, this could be optimized with pagination
-    const items = await this.brain.getRecent(Math.min(stats.totalNodes, 10000))
-    return items.map((item: any) => item.id)
+    // Get nouns with pagination (limit to 10000 for performance)
+    const limit = Math.min(stats.totalNodes, 10000)
+    const result = await this.brain.getNouns({
+      pagination: { limit }
+    })
+    
+    return result.map((item: any) => item.id).filter((id: any) => id)
   }
 
   private async _getTotalItemCount(): Promise<number> {
@@ -1997,7 +2005,9 @@ export class ImprovedNeuralAPI {
       })
     )
     
-    return items.filter(item => item.vector.length > 0)
+    return items.filter((item): item is {id: string, vector: number[]} => 
+      item !== null && item.vector.length > 0
+    )
   }
   
   /**
@@ -2346,54 +2356,8 @@ export class ImprovedNeuralAPI {
   ): Promise<string> {
     if (members.length === 0) return `${algorithm}-cluster`
     
-    try {
-      // Lazy load Triple Intelligence if available
-      const TripleIntelligenceEngine = await import('../triple/TripleIntelligence.js')
-        .then(m => m.TripleIntelligenceEngine)
-        .catch(() => null)
-      
-      if (!TripleIntelligenceEngine) {
-        return this._generateClusterLabel(members, algorithm)
-      }
-      
-      const intelligence = new TripleIntelligenceEngine(this.brain)
-      
-      // Extract key features from cluster members
-      const memberData = members.map(m => ({
-        id: m.id,
-        type: m.nounType,
-        label: m.label,
-        data: m.data
-      }))
-      
-      // Use Triple Intelligence to analyze the cluster and generate label
-      const prompt = `Analyze this cluster of ${memberData.length} related items and provide a concise, descriptive label (2-4 words):
-
-Items:
-${memberData.map(item => `- ${item.label || item.id} (${item.type})`).join('\n')}
-
-The items were grouped using ${algorithm} clustering. What is the most appropriate label that captures their common theme or relationship?`
-
-      const response = await intelligence.find({ 
-        like: prompt,
-        limit: 1 
-      })
-      
-      // Extract clean label from response
-      const firstResult = response[0]
-      const label = (firstResult?.metadata?.content || firstResult?.id || `${algorithm}-cluster`)
-        .toString()
-        .replace(/^(Label:|Cluster:|Theme:)/i, '')
-        .trim()
-        .replace(/['"]/g, '')
-        .slice(0, 50)
-      
-      return label || `${algorithm}-cluster`
-      
-    } catch (error) {
-      // Fallback to simple labeling
-      return this._generateClusterLabel(members, algorithm)
-    }
+    // Use simple labeling - Triple Intelligence doesn't generate labels from prompts
+    return this._generateClusterLabel(members, algorithm)
   }
   
   /**
@@ -2849,7 +2813,19 @@ The items were grouped using ${algorithm} clustering. What is the most appropria
 
   private _calculateDomainConfidence(cluster: SemanticCluster, domainItems: any[]): number {
     // Calculate how well this cluster represents the domain
-    return 0.8 // Placeholder
+    // Based on cluster density and coherence
+    const density = cluster.members.length / (cluster.members.length + 10) // Normalize
+    const coherence = cluster.cohesion || 0.5 // Use cluster's cohesion if available
+    
+    // Domain relevance: what fraction of cluster members are from this domain
+    const domainMemberCount = cluster.members.filter(id => 
+      domainItems.some(item => item.id === id)
+    ).length
+    const domainRelevance = cluster.members.length > 0 
+      ? domainMemberCount / cluster.members.length 
+      : 0
+    
+    return (density * 0.3 + coherence * 0.3 + domainRelevance * 0.4) // Weighted average
   }
 
   private async _findCrossDomainMembers(cluster: SemanticCluster, threshold: number): Promise<string[]> {
@@ -2892,12 +2868,57 @@ The items were grouped using ${algorithm} clustering. What is the most appropria
 
   private async _calculateItemToClusterSimilarity(itemId: string, cluster: SemanticCluster): Promise<number> {
     // Calculate similarity between an item and a cluster centroid
-    return 0.5 // Placeholder
+    const item = await this.brain.get(itemId)
+    if (!item || !item.vector || !cluster.centroid) {
+      return 0 // No similarity if vectors missing
+    }
+    
+    // Calculate cosine similarity
+    const dotProduct = item.vector.reduce((sum: number, val: number, i: number) => sum + val * (cluster.centroid as number[])[i], 0)
+    const itemMagnitude = Math.sqrt(item.vector.reduce((sum: number, val: number) => sum + val * val, 0))
+    const centroidMagnitude = Math.sqrt((cluster.centroid as number[]).reduce((sum: number, val: number) => sum + val * val, 0))
+    
+    if (itemMagnitude === 0 || centroidMagnitude === 0) {
+      return 0
+    }
+    
+    return dotProduct / (itemMagnitude * centroidMagnitude)
   }
 
   private async _recalculateClusterCentroid(cluster: SemanticCluster): Promise<Vector> {
     // Recalculate centroid after adding new members
-    return cluster.centroid as Vector
+    if (cluster.members.length === 0) {
+      return cluster.centroid as Vector // Keep existing if no members
+    }
+    
+    // Get all member vectors
+    const memberVectors: Vector[] = []
+    for (const memberId of cluster.members) {
+      const member = await this.brain.get(memberId)
+      if (member && member.vector) {
+        memberVectors.push(member.vector)
+      }
+    }
+    
+    if (memberVectors.length === 0) {
+      return cluster.centroid as Vector // Keep existing if no valid vectors
+    }
+    
+    // Calculate mean vector (centroid)
+    const dimensions = memberVectors[0].length
+    const newCentroid = new Array(dimensions).fill(0)
+    
+    for (const vector of memberVectors) {
+      for (let i = 0; i < dimensions; i++) {
+        newCentroid[i] += vector[i]
+      }
+    }
+    
+    for (let i = 0; i < dimensions; i++) {
+      newCentroid[i] /= memberVectors.length
+    }
+    
+    return newCentroid
   }
 
   private async _calculateSimilarity(id1: string, id2: string): Promise<number> {

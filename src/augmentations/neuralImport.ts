@@ -72,7 +72,7 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   operations = ['add', 'addNoun', 'addVerb', 'all'] as ('add' | 'addNoun' | 'addVerb' | 'all')[]  // Use 'all' to catch batch operations
   readonly priority = 80  // High priority for data processing
   
-  private config: NeuralImportConfig
+  protected config: NeuralImportConfig
   private analysisCache = new Map<string, NeuralAnalysisResult>()
   private typeMatcher: BrainyTypes | null = null
 

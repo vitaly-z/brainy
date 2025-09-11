@@ -1,14 +1,12 @@
 /**
  * Model Configuration Auto-Selection
- * Intelligently selects model precision based on environment
- * while allowing manual override
+ * Always uses Q8 for optimal size/performance balance (99% accuracy, 75% smaller)
  */
 
 import { isBrowser, isNode } from '../utils/environment.js'
-import { setModelPrecision } from './modelPrecisionManager.js'
 
-export type ModelPrecision = 'fp32' | 'q8'
-export type ModelPreset = 'fast' | 'small' | 'auto'
+export type ModelPrecision = 'q8'
+export type ModelPreset = 'small' | 'auto'
 
 interface ModelConfigResult {
   precision: ModelPrecision
@@ -17,98 +15,35 @@ interface ModelConfigResult {
 }
 
 /**
- * Auto-select model precision based on environment and resources
- * DEFAULT: Q8 for optimal size/performance balance
- * @param override - Manual override: 'fp32', 'q8', 'fast' (fp32), 'small' (q8), or 'auto'
+ * Auto-select model precision - Always returns Q8
+ * Q8 provides 99% accuracy with 75% smaller size
+ * @param override - For backward compatibility, ignored
  */
 export function autoSelectModelPrecision(override?: ModelPrecision | ModelPreset): ModelConfigResult {
-  // Handle direct precision override
-  if (override === 'fp32' || override === 'q8') {
-    setModelPrecision(override) // Update central config
-    return {
-      precision: override,
-      reason: `Manually specified: ${override}`,
-      autoSelected: false
-    }
+  // Always use Q8 regardless of override for simplicity
+  // Q8 is optimal: 33MB vs 130MB, 99% accuracy retained
+  
+  // Log deprecation notice if FP32 was requested
+  if (typeof override === 'string' && override.toLowerCase().includes('fp32')) {
+    console.log('Note: FP32 precision is deprecated. Using Q8 (99% accuracy, 75% smaller).')
   }
   
-  // Handle preset overrides
-  if (override === 'fast') {
-    setModelPrecision('fp32') // Update central config
-    return {
-      precision: 'fp32',
-      reason: 'Preset: fast (fp32 for best quality)',
-      autoSelected: false
-    }
+  return {
+    precision: 'q8',
+    reason: 'Q8 precision (99% accuracy, 75% smaller)',
+    autoSelected: true
   }
-  
-  if (override === 'small') {
-    setModelPrecision('q8') // Update central config
-    return {
-      precision: 'q8',
-      reason: 'Preset: small (q8 for reduced size)',
-      autoSelected: false
-    }
-  }
-  
-  // Auto-selection logic
-  return autoDetectBestPrecision()
 }
 
 /**
  * Automatically detect the best model precision for the environment
- * NEW DEFAULT: Q8 for optimal size/performance (75% smaller, 99% accuracy)
+ * DEPRECATED: Always returns Q8 now
  */
 function autoDetectBestPrecision(): ModelConfigResult {
-  // Check if user explicitly wants FP32 via environment variable
-  if (process.env.BRAINY_FORCE_FP32 === 'true') {
-    setModelPrecision('fp32')
-    return {
-      precision: 'fp32',
-      reason: 'FP32 forced via BRAINY_FORCE_FP32 environment variable',
-      autoSelected: false
-    }
-  }
-  
-  // Browser environment - use Q8 for smaller download/memory
-  if (isBrowser()) {
-    setModelPrecision('q8')
-    return {
-      precision: 'q8',
-      reason: 'Browser environment - using Q8 (23MB vs 90MB)',
-      autoSelected: true
-    }
-  }
-  
-  // Serverless environments - use Q8 for faster cold starts
-  if (isServerlessEnvironment()) {
-    setModelPrecision('q8')
-    return {
-      precision: 'q8',
-      reason: 'Serverless environment - using Q8 for 75% faster cold starts',
-      autoSelected: true
-    }
-  }
-  
-  // Check available memory
-  const memoryMB = getAvailableMemoryMB()
-  
-  // Only use FP32 if explicitly high memory AND user opts in
-  if (memoryMB >= 4096 && process.env.BRAINY_PREFER_QUALITY === 'true') {
-    setModelPrecision('fp32')
-    return {
-      precision: 'fp32',
-      reason: `High memory (${memoryMB}MB) + quality preference - using FP32`,
-      autoSelected: true
-    }
-  }
-  
-  // DEFAULT TO Q8 - Optimal for 99% of use cases
-  // Q8 provides 99% accuracy at 25% of the size
-  setModelPrecision('q8')
+  // Always return Q8 - deprecated function kept for backward compatibility
   return {
     precision: 'q8',
-    reason: 'Default: Q8 model (23MB, 99% accuracy, 4x faster loads)',
+    reason: 'Q8 precision (99% accuracy, 75% smaller)',
     autoSelected: true
   }
 }

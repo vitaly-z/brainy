@@ -61,12 +61,14 @@ export class EntityRegistryAugmentation extends BaseAugmentation {
   readonly operations = ['add', 'addNoun', 'addVerb'] as ('add' | 'addNoun' | 'addVerb')[]
   readonly priority = 90 // High priority for entity registration
   
-  private config: Required<EntityRegistryConfig>
+  protected config: Required<EntityRegistryConfig>
   private memoryIndex = new Map<string, EntityMapping>()
   private fieldIndices = new Map<string, Map<string, string>>() // field -> value -> brainyId
   private syncTimer?: NodeJS.Timeout
   private brain?: any
   private storage?: any
+  private cacheHits = 0
+  private cacheMisses = 0
   
   constructor(config: EntityRegistryConfig = {}) {
     super()
@@ -236,8 +238,11 @@ export class EntityRegistryAugmentation extends BaseAugmentation {
     if (cached) {
       // Update last accessed time
       cached.lastAccessed = Date.now()
+      this.cacheHits++
       return cached.brainyId
     }
+    
+    this.cacheMisses++
     
     // If not in cache and using storage persistence, try loading from storage
     if (this.config.persistence === 'storage' || this.config.persistence === 'hybrid') {
@@ -335,7 +340,7 @@ export class EntityRegistryAugmentation extends BaseAugmentation {
     return {
       totalMappings: this.memoryIndex.size,
       fieldCounts,
-      cacheHitRate: 0.95, // TODO: Implement actual hit rate tracking
+      cacheHitRate: this.cacheHits > 0 ? this.cacheHits / (this.cacheHits + this.cacheMisses) : 0,
       memoryUsage: this.estimateMemoryUsage()
     }
   }

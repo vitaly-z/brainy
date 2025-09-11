@@ -28,9 +28,7 @@ const results = await brain.find({
 
 ## 🔧 12+ Production Augmentations
 
-### 1. WAL (Write-Ahead Logging) ✅
 ```typescript
-import { WALAugmentation } from 'brainy'
 // Full crash recovery, checkpointing, replay
 ```
 

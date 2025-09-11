@@ -1,5 +1,5 @@
 /**
- * Static Pattern Matcher - NO runtime initialization, NO BrainyData needed
+ * Static Pattern Matcher - NO runtime initialization, NO Brainy needed
  * 
  * All patterns and embeddings are pre-computed at build time
  * This is pure pattern matching with zero dependencies
@@ -137,7 +137,7 @@ export function matchPatternByRegex(query: string): {
 
 /**
  * Convert natural language to structured query using STATIC patterns
- * NO initialization needed, NO BrainyData required
+ * NO initialization needed, NO Brainy required
  */
 export function patternMatchQuery(
   query: string,

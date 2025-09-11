@@ -43,7 +43,8 @@ export class MemoryStorage extends BaseStorage {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0
+      level: noun.level || 0,
+      metadata: noun.metadata
     }
 
     // Copy connections
@@ -72,7 +73,8 @@ export class MemoryStorage extends BaseStorage {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0
+      level: noun.level || 0,
+      metadata: noun.metadata
     }
 
     // Copy connections
@@ -121,12 +123,17 @@ export class MemoryStorage extends BaseStorage {
     
     // Iterate through all nouns to find matches
     for (const [nounId, noun] of this.nouns.entries()) {
-      // Get the metadata to check filters
-      const metadata = await this.getMetadata(nounId)
-      if (!metadata) continue
+      // Check the noun's embedded metadata field
+      const nounMetadata = noun.metadata || {}
+      
+      // Also check separate metadata store for backward compatibility
+      const separateMetadata = await this.getMetadata(nounId)
+      
+      // Merge both metadata sources (noun.metadata takes precedence)
+      const metadata = { ...separateMetadata, ...nounMetadata }
       
       // Filter by noun type if specified
-      if (nounTypes && !nounTypes.includes(metadata.noun)) {
+      if (nounTypes && metadata.noun && !nounTypes.includes(metadata.noun)) {
         continue
       }
       
@@ -166,12 +173,13 @@ export class MemoryStorage extends BaseStorage {
       if (!noun) continue
       
       // Create a deep copy to avoid reference issues
-      const nounCopy: HNSWNoun = {
-        id: noun.id,
-        vector: [...noun.vector],
-        connections: new Map(),
-        level: noun.level || 0
-      }
+    const nounCopy: HNSWNoun = {
+      id: noun.id,
+      vector: [...noun.vector],
+      connections: new Map(),
+      level: noun.level || 0,
+      metadata: noun.metadata
+    }
       
       // Copy connections
       for (const [level, connections] of noun.connections.entries()) {

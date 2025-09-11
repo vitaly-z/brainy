@@ -6,7 +6,6 @@
  */
 
 import { BrainyData } from '../src/index.js'
-import { WALAugmentation } from '../src/augmentations/walAugmentation.js'
 import { EntityRegistryAugmentation } from '../src/augmentations/entityRegistryAugmentation.js'
 import { BatchProcessingAugmentation } from '../src/augmentations/batchProcessingAugmentation.js'
 import { APIServerAugmentation } from '../src/augmentations/apiServerAugmentation.js'
@@ -16,7 +15,6 @@ async function main() {
   const brain = new BrainyData()
   
   // Register augmentations - they just work!
-  brain.augmentations.register(new WALAugmentation())           // Durability
   brain.augmentations.register(new EntityRegistryAugmentation()) // Deduplication
   brain.augmentations.register(new BatchProcessingAugmentation()) // Performance
   brain.augmentations.register(new APIServerAugmentation())      // API exposure

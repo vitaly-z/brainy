@@ -3,7 +3,7 @@
  * Implements compression, memory-mapping, and pre-built index segments
  */
 
-import { HNSWNoun, HNSWVerb, Vector } from '../coreTypes.js'
+import { HNSWNoun, Vector } from '../coreTypes.js'
 
 // Compression types supported
 enum CompressionType {
@@ -414,10 +414,15 @@ export class ReadOnlyOptimizations {
    * Load segment data from storage
    */
   private async loadSegmentFromStorage(segment: IndexSegment): Promise<ArrayBuffer> {
-    // This would integrate with your S3 storage adapter
-    // For now, return a placeholder
-    console.log(`Loading segment ${segment.id} from storage`)
-    return new ArrayBuffer(0)
+    // Load segment from memory-mapped buffer if available
+    const cached = this.memoryMappedBuffers.get(segment.id)
+    if (cached) {
+      return cached
+    }
+    
+    // In production, this would load from actual storage (S3, file system, etc)
+    // For now, throw an error to indicate missing implementation
+    throw new Error(`Segment loading not implemented. Segment ${segment.id} requires storage integration.`)
   }
 
   /**

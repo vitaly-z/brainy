@@ -1441,6 +1441,68 @@ export class FileSystemStorage extends BaseStorage {
     }
     
     // Merge statistics from both locations
-    return StorageCompatibilityLayer.mergeStatistics(newStats, oldStats)
+    return this.mergeStatistics(newStats, oldStats)
+  }
+
+  /**
+   * Merge statistics from multiple sources
+   */
+  private mergeStatistics(
+    storageStats: StatisticsData | null,
+    localStats: StatisticsData | null
+  ): StatisticsData {
+    // Handle null cases
+    if (!storageStats && !localStats) {
+      return {
+        nounCount: {},
+        verbCount: {},
+        metadataCount: {},
+        hnswIndexSize: 0,
+        totalNodes: 0,
+        totalEdges: 0,
+        lastUpdated: new Date().toISOString()
+      }
+    }
+    if (!storageStats) return localStats!
+    if (!localStats) return storageStats
+
+    // Merge noun counts by taking the maximum of each type
+    const mergedNounCount: Record<string, number> = {
+      ...storageStats.nounCount
+    }
+    for (const [type, count] of Object.entries(localStats.nounCount)) {
+      mergedNounCount[type] = Math.max(mergedNounCount[type] || 0, count)
+    }
+
+    // Merge verb counts by taking the maximum of each type
+    const mergedVerbCount: Record<string, number> = {
+      ...storageStats.verbCount
+    }
+    for (const [type, count] of Object.entries(localStats.verbCount)) {
+      mergedVerbCount[type] = Math.max(mergedVerbCount[type] || 0, count)
+    }
+
+    // Merge metadata counts by taking the maximum of each type
+    const mergedMetadataCount: Record<string, number> = {
+      ...storageStats.metadataCount
+    }
+    for (const [type, count] of Object.entries(localStats.metadataCount)) {
+      mergedMetadataCount[type] = Math.max(
+        mergedMetadataCount[type] || 0,
+        count
+      )
+    }
+
+    return {
+      nounCount: mergedNounCount,
+      verbCount: mergedVerbCount,
+      metadataCount: mergedMetadataCount,
+      hnswIndexSize: Math.max(storageStats.hnswIndexSize || 0, localStats.hnswIndexSize || 0),
+      totalNodes: Math.max(storageStats.totalNodes || 0, localStats.totalNodes || 0),
+      totalEdges: Math.max(storageStats.totalEdges || 0, localStats.totalEdges || 0),
+      totalMetadata: Math.max(storageStats.totalMetadata || 0, localStats.totalMetadata || 0),
+      operations: storageStats.operations || localStats.operations,
+      lastUpdated: new Date().toISOString()
+    }
   }
 }

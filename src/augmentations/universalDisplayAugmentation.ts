@@ -53,7 +53,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
     reads: '*',           // Read all user data for intelligent analysis
     writes: ['_display']  // Cache computed fields in isolated namespace
   }
-  operations = ['get', 'search', 'findSimilar', 'getVerb' as any, 'addNoun', 'addVerb'] as any
+  operations = ['get', 'search', 'find', 'similar', 'findSimilar', 'getVerb' as any, 'add', 'addNoun', 'addVerb', 'relate'] as any
 
   // Augmentation metadata
   readonly category = 'core' as const
@@ -75,7 +75,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
   private computationEngine: IntelligentComputationEngine
   private displayCache: DisplayCache
   private requestDeduplicator: RequestDeduplicator
-  private config: DisplayConfig
+  protected config: DisplayConfig
   protected context: AugmentationContext | undefined
 
   constructor(config: Partial<DisplayConfig> = {}) {
@@ -102,7 +102,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
 
   /**
    * Initialize the augmentation with AI components
-   * @param context BrainyData context
+   * @param context Brainy context
    */
   async initialize(context: AugmentationContext): Promise<void> {
     if (!this.config.enabled) {

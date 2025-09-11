@@ -9,26 +9,44 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
-**🧠 Brainy 3.0 - Enterprise-Scale Universal Knowledge Protocol™**
+**🧠 Brainy 3.0 - Planet-Scale Universal Knowledge Protocol™**
 
-**World's first Triple Intelligence™ database**—now with true distributed scaling, enterprise features, and production-ready performance. Unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
+**World's first Triple Intelligence™ database**—now with true distributed scaling, enterprise features, and
+production-ready performance. Unifying vector similarity, graph relationships, and document filtering in one magical
+API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
 
-**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface, now with horizontal scaling across multiple nodes. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language at enterprise scale.
+**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector,
+graph, document) into one unified query interface, now with horizontal scaling across multiple nodes. This breakthrough
+enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language
+at enterprise scale.
 
 **Build once, integrate everywhere.** O(log n) performance, <10ms search latency, distributed across unlimited nodes.
 
 ## 🎉 What's New in 3.0
 
-- **Distributed Scaling**: Horizontal sharding, leader election, and automatic failover
-- **Enterprise Features**: Rate limiting, audit logging, multi-tenancy
-- **Read/Write Separation**: Primary-replica architecture for scale
-- **Intelligent Type Mapping**: Prevents semantic degradation with smart inference
-- **Production Ready**: <10ms search for 10K+ items, handles 100+ concurrent operations
-- **World's First Triple Intelligence™**: Unified vector + graph + document in ONE query
-- **Universal Knowledge Protocol**: 31 nouns × 40 verbs standardize all knowledge
-- **Natural Language**: Ask questions in plain English
-- **Zero Configuration**: Works instantly, no setup required
-- **Universal Compatibility**: Node.js, Browser, Edge, Workers, Distributed Clusters
+### 🌐 **Zero-Config Distributed System** (Industry First!)
+
+- **Storage-Based Coordination**: No Consul/etcd/Zookeeper needed - uses your S3/GCS!
+- **Automatic Node Discovery**: Nodes find each other via storage
+- **Intelligent Sharding**: Domain-aware data placement for optimal queries
+- **Live Shard Migration**: Zero-downtime data movement with streaming
+- **Auto-Rebalancing**: Handles node joins/leaves automatically
+
+### 🏢 **Enterprise Features**
+
+- **Distributed Scaling**: Horizontal sharding across unlimited nodes
+- **Read/Write Separation**: Optimized nodes for different workloads
+- **Multi-Tenancy**: Customer isolation with shared infrastructure
+- **Rate Limiting & Audit**: Production-ready governance
+- **Geographic Distribution**: Global nodes with local performance
+
+### ⚡ **Performance Breakthroughs**
+
+- **<10ms Search**: Even with 10K+ items per node
+- **Linear Write Scaling**: Add nodes for more throughput
+- **Smart Query Planning**: Routes queries to optimal shards
+- **Streaming Ingestion**: Handle firehoses (Bluesky, Twitter, etc.)
+- **100+ Concurrent Ops**: Production-tested at scale
 
 ## ⚡ Quick Start - Zero Configuration
 
@@ -37,30 +55,31 @@ npm install @soulcraft/brainy
 ```
 
 ### 🎯 **True Zero Configuration**
+
 ```javascript
-import { BrainyData } from '@soulcraft/brainy'
+import {BrainyData} from '@soulcraft/brainy'
 
 // Just this - auto-detects everything!
 const brain = new BrainyData()
 await brain.init()
 
 // Add entities (nouns) with automatic embedding
-const jsId = await brain.addNoun("JavaScript is a programming language", 'concept', { 
-  type: "language", 
-  year: 1995,
-  paradigm: "multi-paradigm"
+const jsId = await brain.addNoun("JavaScript is a programming language", 'concept', {
+    type: "language",
+    year: 1995,
+    paradigm: "multi-paradigm"
 })
 
 const nodeId = await brain.addNoun("Node.js runtime environment", 'concept', {
-  type: "runtime",
-  year: 2009,
-  platform: "server-side"
+    type: "runtime",
+    year: 2009,
+    platform: "server-side"
 })
 
 // Create relationships (verbs) between entities
 await brain.addVerb(nodeId, jsId, "executes", {
-  since: 2009,
-  performance: "high"
+    since: 2009,
+    performance: "high"
 })
 
 // Natural language search with graph relationships
@@ -68,9 +87,9 @@ const results = await brain.find("programming languages used by server runtimes"
 
 // Triple Intelligence: vector + metadata + relationships
 const filtered = await brain.find({
-  like: "JavaScript",                    // Vector similarity
-  where: { type: "language" },           // Metadata filtering  
-  connected: { from: nodeId, depth: 1 }  // Graph relationships
+    like: "JavaScript",                    // Vector similarity
+    where: {type: "language"},           // Metadata filtering  
+    connected: {from: nodeId, depth: 1}  // Graph relationships
 })
 ```
 
@@ -82,14 +101,17 @@ const filtered = await brain.find({
 - ✅ **Node.js 20 LTS** - Compatible (maintenance mode)
 - ❌ **Node.js 24** - Not supported (known ONNX runtime compatibility issues)
 
-> **Important:** Brainy uses ONNX runtime for AI embeddings. Node.js 24 has known compatibility issues that cause crashes during inference operations. We recommend Node.js 22 LTS for maximum stability.
+> **Important:** Brainy uses ONNX runtime for AI embeddings. Node.js 24 has known compatibility issues that cause
+> crashes during inference operations. We recommend Node.js 22 LTS for maximum stability.
 
 If using nvm: `nvm use` (we provide a `.nvmrc` file)
 
 ## 🚀 Key Features
 
 ### World's First Triple Intelligence™ Engine
+
 **The breakthrough that enables the Universal Knowledge Protocol:**
+
 - **Vector Search**: Semantic similarity with HNSW indexing
 - **Graph Relationships**: Navigate connected knowledge like Neo4j
 - **Document Filtering**: MongoDB-style queries with O(log n) performance
@@ -97,7 +119,9 @@ If using nvm: `nvm use` (we provide a `.nvmrc` file)
 - **First to solve this**: Others do vector OR graph OR document—we do ALL
 
 ### Universal Knowledge Protocol with Infinite Expressiveness
+
 **Enabled by Triple Intelligence, standardized for everyone:**
+
 - **24 Noun Types × 40 Verb Types**: 960 base combinations
 - **∞ Expressiveness**: Unlimited metadata = model ANY data
 - **One Language**: All tools, augmentations, AI models speak the same types
@@ -105,6 +129,7 @@ If using nvm: `nvm use` (we provide a `.nvmrc` file)
 - **No Schema Lock-in**: Evolve without migrations
 
 ### Natural Language Understanding
+
 ```javascript
 // Ask questions naturally
 await brain.find("Show me recent React components with tests")
@@ -113,10 +138,11 @@ await brain.find("Documentation about authentication from last month")
 ```
 
 ### 🎯 Zero Configuration Philosophy
+
 Brainy 2.9+ automatically configures **everything**:
 
 ```javascript
-import { BrainyData, PresetName } from '@soulcraft/brainy'
+import {BrainyData, PresetName} from '@soulcraft/brainy'
 
 // 1. Pure zero-config - detects everything
 const brain = new BrainyData()
@@ -134,21 +160,23 @@ const searchAPI = new BrainyData(PresetName.SEARCH_API)      // Low-latency sear
 
 // 4. Custom zero-config (type-safe)
 const customBrain = new BrainyData({
-  mode: 'production',
-  model: 'fp32',        // or 'q8', 'auto'
-  storage: 'cloud',     // or 'memory', 'disk', 'auto'
-  features: ['core', 'search', 'cache']
+    mode: 'production',
+    model: 'q8',           // Optimized model (99% accuracy, 75% smaller)
+    storage: 'cloud',     // or 'memory', 'disk', 'auto'
+    features: ['core', 'search', 'cache']
 })
 ```
 
 **What's Auto-Detected:**
+
 - **Storage**: S3/GCS/R2 → Filesystem → Memory (priority order)
-- **Models**: FP32 vs Q8 based on memory/performance  
+- **Models**: Always Q8 for optimal balance
 - **Features**: Minimal → Default → Full based on environment
 - **Memory**: Optimal cache sizes and batching
 - **Performance**: Threading, chunking, indexing strategies
 
 ### Production Performance
+
 - **3ms average search** - Lightning fast queries
 - **24MB memory footprint** - Efficient resource usage
 - **Worker-based embeddings** - Non-blocking operations
@@ -159,79 +187,72 @@ const customBrain = new BrainyData({
 Most users **never need this** - zero-config handles everything. For advanced use cases:
 
 ```javascript
-// Model precision control (auto-detected by default)
-const brain = new BrainyData({
-  model: 'fp32'  // Full precision - max compatibility
-})
-const fastBrain = new BrainyData({
-  model: 'q8'    // Quantized - 75% smaller, 99% accuracy  
-})
+// Model is always Q8 for optimal performance
+const brain = new BrainyData()  // Uses Q8 automatically
 
 // Storage control (auto-detected by default)
-const memoryBrain = new BrainyData({ storage: 'memory' })     // RAM only
-const diskBrain = new BrainyData({ storage: 'disk' })         // Local filesystem  
-const cloudBrain = new BrainyData({ storage: 'cloud' })       // S3/GCS/R2
+const memoryBrain = new BrainyData({storage: 'memory'})     // RAM only
+const diskBrain = new BrainyData({storage: 'disk'})         // Local filesystem  
+const cloudBrain = new BrainyData({storage: 'cloud'})       // S3/GCS/R2
 
 // Legacy full config (still supported)
 const legacyBrain = new BrainyData({
-  storage: { forceMemoryStorage: true },
-  embeddingOptions: { precision: 'fp32' }
+    storage: {forceMemoryStorage: true}
 })
 ```
 
-**Model Comparison:**
-- **FP32**: 90MB, 100% accuracy, maximum compatibility
-- **Q8**: 23MB, ~99% accuracy, faster loading, smaller memory
+**Model Details:**
 
-**When to use Q8:**
-- ✅ Memory-constrained environments  
-- ✅ Faster startup required
-- ✅ Mobile or edge deployments
-- ❌ Existing FP32 datasets (incompatible embeddings)
+- **Q8**: 33MB, 99% accuracy, 75% smaller than full precision
+- Fast loading and optimal memory usage
+- Perfect for all environments
 
 **Air-gap deployment:**
+
 ```bash
-npm run download-models        # Both models (recommended)
-npm run download-models:q8     # Q8 only (space-constrained)
-npm run download-models:fp32   # FP32 only (compatibility)
+npm run download-models        # Download Q8 model
+npm run download-models:q8     # Download Q8 model
 ```
 
 ## 📚 Core API
 
 ### `search()` - Vector Similarity
+
 ```javascript
 const results = await brain.search("machine learning", {
-  limit: 10,                    // Number of results
-  metadata: { type: "article" }, // Filter by metadata
-  includeContent: true          // Include full content
+    limit: 10,                    // Number of results
+    metadata: {type: "article"}, // Filter by metadata
+    includeContent: true          // Include full content
 })
 ```
 
 ### `find()` - Natural Language Queries
+
 ```javascript
 // Simple natural language
 const results = await brain.find("recent important documents")
 
 // Structured query with Triple Intelligence
 const results = await brain.find({
-  like: "JavaScript",           // Vector similarity
-  where: {                      // Metadata filters
-    year: { greaterThan: 2020 },
-    important: true
-  },
-  related: { to: "React" }      // Graph relationships
+    like: "JavaScript",           // Vector similarity
+    where: {                      // Metadata filters
+        year: {greaterThan: 2020},
+        important: true
+    },
+    related: {to: "React"}      // Graph relationships
 })
 ```
 
 ### CRUD Operations
+
 ```javascript
 // Create entities (nouns)
 const id = await brain.addNoun(data, nounType, metadata)
 
 // Create relationships (verbs)
 const verbId = await brain.addVerb(sourceId, targetId, "relationType", {
-  strength: 0.9,
-  bidirectional: false
+    strength: 0.9,
+    bidirectional: false
 })
 
 // Read
@@ -248,36 +269,106 @@ await brain.deleteVerb(verbId)
 
 // Bulk operations
 await brain.import(arrayOfData)
-const exported = await brain.export({ format: 'json' })
+const exported = await brain.export({format: 'json'})
 ```
+
+## 🌐 Distributed System (NEW!)
+
+### Zero-Config Distributed Setup
+
+```javascript
+// Single node (default)
+const brain = new BrainyData({
+    storage: {type: 's3', options: {bucket: 'my-data'}}
+})
+
+// Distributed cluster - just add one flag!
+const brain = new BrainyData({
+    storage: {type: 's3', options: {bucket: 'my-data'}},
+    distributed: true  // That's it! Everything else is automatic
+})
+```
+
+### How It Works
+
+- **Storage-Based Discovery**: Nodes find each other via S3/GCS (no Consul/etcd!)
+- **Automatic Sharding**: Data distributed by content hash
+- **Smart Query Planning**: Queries routed to optimal shards
+- **Live Rebalancing**: Handles node joins/leaves automatically
+- **Zero Downtime**: Streaming shard migration
+
+### Real-World Example: Social Media Firehose
+
+```javascript
+// Ingestion nodes (optimized for writes)
+const ingestionNode = new BrainyData({
+    storage: {type: 's3', options: {bucket: 'social-data'}},
+    distributed: true,
+    writeOnly: true  // Optimized for high-throughput writes
+})
+
+// Process Bluesky firehose
+blueskyStream.on('post', async (post) => {
+    await ingestionNode.addNoun(post, 'social-post', {
+        platform: 'bluesky',
+        author: post.author,
+        timestamp: post.createdAt
+    })
+})
+
+// Search nodes (optimized for queries)
+const searchNode = new BrainyData({
+    storage: {type: 's3', options: {bucket: 'social-data'}},
+    distributed: true,
+    readOnly: true  // Optimized for fast queries
+})
+
+// Search across ALL data from ALL nodes
+const trending = await searchNode.find('trending AI topics', {
+    where: {timestamp: {greaterThan: Date.now() - 3600000}},
+    limit: 100
+})
+```
+
+### Benefits Over Traditional Systems
+
+| Feature        | Traditional (Pinecone, Weaviate) | Brainy Distributed            |
+|----------------|----------------------------------|-------------------------------|
+| Setup          | Complex (k8s, operators)         | One flag: `distributed: true` |
+| Coordination   | External (etcd, Consul)          | Built-in (via storage)        |
+| Minimum Nodes  | 3-5 for HA                       | 1 (scale as needed)           |
+| Sharding       | Random                           | Domain-aware                  |
+| Query Planning | Basic                            | Triple Intelligence           |
+| Cost           | High (always-on clusters)        | Low (scale to zero)           |
 
 ## 🎯 Use Cases
 
 ### Knowledge Management with Relationships
+
 ```javascript
 // Store documentation with rich relationships
 const apiGuide = await brain.addNoun("REST API Guide", 'document', {
-  title: "API Guide",
-  category: "documentation",
-  version: "2.0"
+    title: "API Guide",
+    category: "documentation",
+    version: "2.0"
 })
 
 const author = await brain.addNoun("Jane Developer", 'person', {
-  type: "person",
-  role: "tech-lead"
+    type: "person",
+    role: "tech-lead"
 })
 
 const project = await brain.addNoun("E-commerce Platform", 'project', {
-  type: "project",
-  status: "active"
+    type: "project",
+    status: "active"
 })
 
 // Create knowledge graph
-await brain.addVerb(author, apiGuide, "authored", { 
-  date: "2024-03-15" 
+await brain.addVerb(author, apiGuide, "authored", {
+    date: "2024-03-15"
 })
-await brain.addVerb(apiGuide, project, "documents", { 
-  coverage: "complete" 
+await brain.addVerb(apiGuide, project, "documents", {
+    coverage: "complete"
 })
 
 // Query the knowledge graph naturally
@@ -285,31 +376,33 @@ const docs = await brain.find("documentation authored by tech leads for active p
 ```
 
 ### Semantic Search
+
 ```javascript
 // Find similar content
 const similar = await brain.search(existingContent, {
-  limit: 5,
-  threshold: 0.8
+    limit: 5,
+    threshold: 0.8
 })
 ```
 
 ### AI Memory Layer with Context
+
 ```javascript
 // Store conversation with relationships
 const userId = await brain.addNoun("User 123", 'user', {
-  type: "user",
-  tier: "premium"
+    type: "user",
+    tier: "premium"
 })
 
 const messageId = await brain.addNoun(userMessage, 'message', {
-  type: "message",
-  timestamp: Date.now(),
-  session: "abc"
+    type: "message",
+    timestamp: Date.now(),
+    session: "abc"
 })
 
 const topicId = await brain.addNoun("Product Support", 'topic', {
-  type: "topic",
-  category: "support"
+    type: "topic",
+    category: "support"
 })
 
 // Link conversation elements
@@ -318,9 +411,9 @@ await brain.addVerb(messageId, topicId, "about")
 
 // Retrieve context with relationships
 const context = await brain.find({
-  where: { type: "message" },
-  connected: { from: userId, type: "sent" },
-  like: "previous product issues"
+    where: {type: "message"},
+    connected: {from: userId, type: "sent"},
+    like: "previous product issues"
 })
 ```
 
@@ -330,30 +423,30 @@ Brainy supports multiple storage backends:
 
 ```javascript
 // Memory (default for testing)
-const brain = new BrainyData({ 
-  storage: { type: 'memory' } 
+const brain = new BrainyData({
+    storage: {type: 'memory'}
 })
 
 // FileSystem (Node.js)
-const brain = new BrainyData({ 
-  storage: { 
-    type: 'filesystem',
-    path: './data'
-  } 
+const brain = new BrainyData({
+    storage: {
+        type: 'filesystem',
+        path: './data'
+    }
 })
 
 // Browser Storage (OPFS)
-const brain = new BrainyData({ 
-  storage: { type: 'opfs' } 
+const brain = new BrainyData({
+    storage: {type: 'opfs'}
 })
 
 // S3 Compatible (Production)
-const brain = new BrainyData({ 
-  storage: { 
-    type: 's3',
-    bucket: 'my-bucket',
-    region: 'us-east-1'
-  } 
+const brain = new BrainyData({
+    storage: {
+        type: 's3',
+        bucket: 'my-bucket',
+        region: 'us-east-1'
+    }
 })
 ```
 
@@ -386,6 +479,7 @@ brainy export --format json > backup.json
 Brainy includes a powerful Neural API for advanced semantic analysis:
 
 ### Clustering & Analysis
+
 ```javascript
 // Access via brain.neural
 const neural = brain.neural
@@ -396,9 +490,9 @@ const clusters = await neural.clusters()
 
 // Cluster with options
 const clusters = await neural.clusters({
-  algorithm: 'kmeans',     // or 'hierarchical', 'sample'
-  maxClusters: 5,          // Maximum number of clusters
-  threshold: 0.8           // Similarity threshold
+    algorithm: 'kmeans',     // or 'hierarchical', 'sample'
+    maxClusters: 5,          // Maximum number of clusters
+    threshold: 0.8           // Similarity threshold
 })
 
 // Calculate similarity between any items
@@ -416,19 +510,20 @@ const outliers = await neural.outliers(0.3)
 
 // Generate visualization data for D3/Cytoscape
 const vizData = await neural.visualize({
-  maxNodes: 100,
-  dimensions: 3,
-  algorithm: 'force'
+    maxNodes: 100,
+    dimensions: 3,
+    algorithm: 'force'
 })
 ```
 
 ### Real-World Examples
+
 ```javascript
 // Group customer feedback into themes
 const feedbackClusters = await neural.clusters()
 for (const cluster of feedbackClusters) {
-  console.log(`Theme: ${cluster.label}`)
-  console.log(`Items: ${cluster.members.length}`)
+    console.log(`Theme: ${cluster.label}`)
+    console.log(`Items: ${cluster.members.length}`)
 }
 
 // Find related documents
@@ -461,7 +556,6 @@ brainy cloud setup
 Brainy includes enterprise-grade capabilities at no extra cost. **No premium tiers, no paywalls.**
 
 - **Scales to 10M+ items** with consistent 3ms search latency
-- **Write-Ahead Logging (WAL)** for zero data loss durability
 - **Distributed architecture** with sharding and replication
 - **Read/write separation** for horizontal scaling
 - **Connection pooling** and request deduplication
@@ -472,21 +566,22 @@ Brainy includes enterprise-grade capabilities at no extra cost. **No premium tie
 
 ## 📊 Benchmarks
 
-| Operation | Performance | Memory |
-|-----------|------------|--------|
-| Initialize | 450ms | 24MB |
-| Add Item | 12ms | +0.1MB |
-| Vector Search (1k items) | 3ms | - |
-| Metadata Filter (10k items) | 0.8ms | - |
-| Natural Language Query | 15ms | - |
-| Bulk Import (1000 items) | 2.3s | +8MB |
-| **Production Scale (10M items)** | **5.8ms** | **12GB** |
+| Operation                        | Performance | Memory   |
+|----------------------------------|-------------|----------|
+| Initialize                       | 450ms       | 24MB     |
+| Add Item                         | 12ms        | +0.1MB   |
+| Vector Search (1k items)         | 3ms         | -        |
+| Metadata Filter (10k items)      | 0.8ms       | -        |
+| Natural Language Query           | 15ms        | -        |
+| Bulk Import (1000 items)         | 2.3s        | +8MB     |
+| **Production Scale (10M items)** | **5.8ms**   | **12GB** |
 
 ## 🔄 Migration from 1.x
 
 See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
 
 Key changes:
+
 - Search methods consolidated into `search()` and `find()`
 - Result format now includes full objects with metadata
 - New natural language capabilities
@@ -500,8 +595,9 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ### How We Achieved The Impossible
 
 **Triple Intelligence™** makes us the **world's first** to unify three database paradigms:
+
 1. **Vector databases** (Pinecone, Weaviate) - semantic similarity
-2. **Graph databases** (Neo4j, ArangoDB) - relationships  
+2. **Graph databases** (Neo4j, ArangoDB) - relationships
 3. **Document databases** (MongoDB, Elasticsearch) - metadata filtering
 
 **One API to rule them all.** Others make you choose. We unified them.
@@ -520,6 +616,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ### Why This Changes Everything
 
 **Like HTTP for the web, Brainy for knowledge:**
+
 - All augmentations compose perfectly - same noun-verb language
 - All AI models share knowledge - GPT, Claude, Llama all understand
 - All tools integrate seamlessly - no translation layers

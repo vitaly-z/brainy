@@ -8,7 +8,7 @@
  */
 
 import { v4 as uuidv4 } from '../universal/uuid.js'
-import { BrainyDataInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyDataInterface.js'
 import {
   MCPRequest,
   MCPResponse,
@@ -34,11 +34,11 @@ export class BrainyMCPService {
 
   /**
    * Creates a new BrainyMCPService
-   * @param brainyData The BrainyData instance to wrap
+   * @param brainyData The Brainy instance to wrap
    * @param options Configuration options for the service
    */
   constructor(
-    brainyData: BrainyDataInterface,
+    brainyData: BrainyInterface,
     options: MCPServiceOptions = {}
   ) {
     this.dataAdapter = new BrainyMCPAdapter(brainyData)
@@ -164,18 +164,10 @@ export class BrainyMCPService {
         })
       }
 
-      // Check username/password authentication
-      // This is a placeholder - in a real implementation, you would check against a database
-      if (
-        credentials.username === 'admin' &&
-        credentials.password === 'password'
-      ) {
-        const token = this.generateAuthToken(credentials.username)
-        return this.createSuccessResponse(request.requestId, {
-          authenticated: true,
-          token
-        })
-      }
+      // Authentication must be implemented by the user
+      throw new Error(
+        'Authentication not configured. Please implement custom authentication handler by extending BrainyMCPService and overriding authenticateUser()'
+      )
 
       return this.createErrorResponse(
         request.requestId,

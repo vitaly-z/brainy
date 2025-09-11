@@ -14,7 +14,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { createServer, IncomingMessage } from 'http'
 import { BrainyMCPService } from './brainyMCPService.js'
-import { BrainyDataInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyDataInterface.js'
 import { MCPServiceOptions } from '../types/mcpTypes.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 
@@ -44,7 +44,7 @@ export class BrainyMCPBroadcast extends BrainyMCPService {
   private maxHistorySize = 100
   
   constructor(
-    brainyData: BrainyDataInterface,
+    brainyData: BrainyInterface,
     options: MCPServiceOptions & { 
       broadcastPort?: number
       cloudUrl?: string 

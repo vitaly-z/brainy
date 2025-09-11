@@ -4,15 +4,17 @@
  */
 
 import { EventEmitter } from 'events'
+import { NetworkTransport, NetworkMessage } from './networkTransport.js'
 import { createHash } from 'crypto'
 
 export interface NodeInfo {
   id: string
   address: string
   port: number
-  role: 'leader' | 'follower' | 'candidate'
-  lastHeartbeat: number
-  metadata?: Record<string, any>
+  lastSeen: number
+  status: 'active' | 'inactive' | 'suspected'
+  state?: 'follower' | 'candidate' | 'leader'
+  lastHeartbeat?: number
 }
 
 export interface CoordinatorConfig {
@@ -31,6 +33,14 @@ export interface ConsensusState {
   state: 'follower' | 'candidate' | 'leader'
 }
 
+export interface RaftMessage {
+  type: 'requestVote' | 'voteResponse' | 'appendEntries' | 'appendResponse'
+  term: number
+  from: string
+  to?: string
+  data?: any
+}
+
 /**
  * Distributed Coordinator implementing Raft-like consensus
  */
@@ -43,6 +53,15 @@ export class DistributedCoordinator extends EventEmitter {
   private electionTimer?: NodeJS.Timeout
   private heartbeatTimer?: NodeJS.Timeout
   private isRunning: boolean = false
+  private networkTransport?: NetworkTransport
+  private votesReceived: Set<string> = new Set()
+  private currentTerm: number = 0
+  private lastLogIndex: number = -1
+  private lastLogTerm: number = 0
+  private logEntries: Array<{ term: number; index: number; data: any }> = []
+  private transport: any = null // For migration proposals
+  private pendingMigrations = new Map<string, any>()
+  private committedMigrations = new Set<string>()
 
   constructor(config: CoordinatorConfig = {}) {
     super()
@@ -67,7 +86,9 @@ export class DistributedCoordinator extends EventEmitter {
       id: this.nodeId,
       address: config.address || 'localhost',
       port: config.port || 3000,
-      role: 'follower',
+      lastSeen: Date.now(),
+      status: 'active',
+      state: 'follower',
       lastHeartbeat: Date.now()
     })
     
@@ -80,14 +101,61 @@ export class DistributedCoordinator extends EventEmitter {
   /**
    * Start the coordinator
    */
-  async start(): Promise<void> {
+  async start(networkTransport?: NetworkTransport): Promise<void> {
     if (this.isRunning) return
     
     this.isRunning = true
+    this.networkTransport = networkTransport
+    
+    // Setup network message handlers if transport is provided
+    if (this.networkTransport) {
+      this.setupNetworkHandlers()
+    }
+    
     this.emit('started', { nodeId: this.nodeId })
     
     // Start as follower
     this.becomeFollower()
+  }
+
+  /**
+   * Setup network message handlers
+   */
+  private setupNetworkHandlers(): void {
+    if (!this.networkTransport) return
+    
+    // Register message handlers directly on the messageHandlers map
+    const handlers = (this.networkTransport as any).messageHandlers as Map<string, (msg: NetworkMessage) => Promise<any>>
+    
+    // Handle vote requests
+    handlers.set('requestVote', async (msg: NetworkMessage) => {
+      const response = await this.handleVoteRequest(msg)
+      // Send response back
+      if (this.networkTransport) {
+        await this.networkTransport.sendToNode(msg.from, 'voteResponse', response)
+      }
+      return response
+    })
+    
+    // Handle vote responses
+    handlers.set('voteResponse', async (msg: NetworkMessage) => {
+      this.handleVoteResponse(msg)
+    })
+    
+    // Handle heartbeats/append entries
+    handlers.set('appendEntries', async (msg: NetworkMessage) => {
+      const response = await this.handleAppendEntries(msg)
+      // Send response back
+      if (this.networkTransport) {
+        await this.networkTransport.sendToNode(msg.from, 'appendResponse', response)
+      }
+      return response
+    })
+    
+    // Handle append responses
+    handlers.set('appendResponse', async (msg: NetworkMessage) => {
+      this.handleAppendResponse(msg)
+    })
   }
 
   /**
@@ -108,24 +176,25 @@ export class DistributedCoordinator extends EventEmitter {
       this.heartbeatTimer = undefined
     }
     
-    this.emit('stopped', { nodeId: this.nodeId })
+    this.emit('stopped')
   }
 
   /**
-   * Register nodes in the cluster
+   * Register additional nodes
    */
-  private registerNodes(nodeAddresses: string[]): void {
-    for (const address of nodeAddresses) {
-      const [host, port] = address.split(':')
-      const nodeId = this.generateNodeId(address)
+  registerNodes(nodes: string[]): void {
+    for (const node of nodes) {
+      const [address, port] = node.split(':')
+      const nodeId = this.generateNodeId(node)
       
-      if (nodeId !== this.nodeId) {
+      if (!this.nodes.has(nodeId)) {
         this.nodes.set(nodeId, {
           id: nodeId,
-          address: host,
-          port: parseInt(port) || 3000,
-          role: 'follower',
-          lastHeartbeat: 0
+          address,
+          port: parseInt(port || '3000'),
+          lastSeen: Date.now(),
+          status: 'active',
+          state: 'follower'
         })
       }
     }
@@ -136,42 +205,38 @@ export class DistributedCoordinator extends EventEmitter {
    */
   private becomeFollower(): void {
     this.consensusState.state = 'follower'
-    this.consensusState.votedFor = null
     
     const node = this.nodes.get(this.nodeId)
     if (node) {
-      node.role = 'follower'
+      node.state = 'follower'
     }
     
-    // Stop sending heartbeats
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer)
-      this.heartbeatTimer = undefined
-    }
-    
-    // Start election timeout
     this.resetElectionTimeout()
-    
-    this.emit('roleChange', { role: 'follower', nodeId: this.nodeId })
+    this.emit('stateChange', 'follower')
   }
 
   /**
    * Become a candidate and start election
    */
-  private becomeCandidate(): void {
+  private async becomeCandidate(): Promise<void> {
     this.consensusState.state = 'candidate'
-    this.consensusState.term++
+    this.currentTerm++
+    this.consensusState.term = this.currentTerm
     this.consensusState.votedFor = this.nodeId
+    this.votesReceived = new Set([this.nodeId])
     
     const node = this.nodes.get(this.nodeId)
     if (node) {
-      node.role = 'candidate'
+      node.state = 'candidate'
     }
     
-    this.emit('roleChange', { role: 'candidate', nodeId: this.nodeId })
+    this.emit('stateChange', 'candidate')
     
-    // Start election
-    this.startElection()
+    // Request votes from all other nodes
+    await this.requestVotes()
+    
+    // Reset election timeout
+    this.resetElectionTimeout()
   }
 
   /**
@@ -183,62 +248,221 @@ export class DistributedCoordinator extends EventEmitter {
     
     const node = this.nodes.get(this.nodeId)
     if (node) {
-      node.role = 'leader'
+      node.state = 'leader'
     }
     
-    // Stop election timer
+    // Stop election timer as leader
     if (this.electionTimer) {
       clearTimeout(this.electionTimer)
       this.electionTimer = undefined
     }
     
+    this.emit('stateChange', 'leader')
+    this.emit('leaderElected', this.nodeId)
+    
     // Start sending heartbeats
     this.startHeartbeat()
-    
-    this.emit('roleChange', { role: 'leader', nodeId: this.nodeId })
-    this.emit('leaderElected', { leader: this.nodeId, term: this.consensusState.term })
   }
 
   /**
-   * Start election process
+   * Request votes from all nodes
    */
-  private async startElection(): Promise<void> {
-    const votes = new Set<string>([this.nodeId]) // Vote for self
-    const majority = Math.floor(this.nodes.size / 2) + 1
+  private async requestVotes(): Promise<void> {
+    if (!this.networkTransport) {
+      // Simulate vote for testing
+      this.checkVoteMajority()
+      return
+    }
     
-    // Request votes from other nodes (simplified for now)
-    // In a real implementation, this would send RPC requests
+    const voteRequest = {
+      type: 'requestVote' as const,
+      term: this.currentTerm,
+      candidateId: this.nodeId,
+      lastLogIndex: this.getLastLogIndex(),
+      lastLogTerm: this.getLastLogTerm()
+    }
+    
+    // Send vote requests to all other nodes
     for (const [nodeId] of this.nodes) {
       if (nodeId !== this.nodeId) {
-        // Simulate vote request
-        const voteGranted = await this.requestVote(nodeId, this.consensusState.term)
-        if (voteGranted) {
-          votes.add(nodeId)
-        }
-        
-        // Check if we have majority
-        if (votes.size >= majority) {
-          this.becomeLeader()
-          return
+        try {
+          await this.networkTransport.sendToNode(nodeId, 'requestVote', voteRequest)
+        } catch (err) {
+          console.error(`Failed to request vote from ${nodeId}:`, err)
         }
       }
     }
-    
-    // If we don't get majority, reset election timeout
-    this.resetElectionTimeout()
   }
 
   /**
-   * Request vote from a node (simplified)
+   * Handle vote request from another node
    */
-  private async requestVote(_nodeId: string, _term: number): Promise<boolean> {
-    // In a real implementation, this would send an RPC request
-    // For now, simulate with random success
-    return Math.random() > 0.3
+  private async handleVoteRequest(msg: NetworkMessage): Promise<any> {
+    const { term, candidateId, lastLogIndex, lastLogTerm } = msg.data
+    
+    // Update term if necessary
+    if (term > this.currentTerm) {
+      this.currentTerm = term
+      this.consensusState.term = term
+      this.consensusState.votedFor = null
+      this.becomeFollower()
+    }
+    
+    // Grant vote if conditions are met
+    let voteGranted = false
+    if (term >= this.currentTerm &&
+        (!this.consensusState.votedFor || this.consensusState.votedFor === candidateId) &&
+        this.isLogUpToDate(lastLogIndex, lastLogTerm)) {
+      this.consensusState.votedFor = candidateId
+      voteGranted = true
+      this.resetElectionTimeout()
+    }
+    
+    return {
+      type: 'voteResponse',
+      term: this.currentTerm,
+      voteGranted
+    }
   }
 
   /**
-   * Start heartbeat as leader
+   * Handle vote response
+   */
+  private handleVoteResponse(msg: NetworkMessage): void {
+    const { term, voteGranted } = msg.data
+    
+    // Ignore old responses
+    if (term < this.currentTerm) return
+    
+    // Update term if necessary
+    if (term > this.currentTerm) {
+      this.currentTerm = term
+      this.consensusState.term = term
+      this.becomeFollower()
+      return
+    }
+    
+    // Count vote if granted
+    if (voteGranted && this.consensusState.state === 'candidate') {
+      this.votesReceived.add(msg.from)
+      this.checkVoteMajority()
+    }
+  }
+
+  /**
+   * Check if we have majority votes
+   */
+  private checkVoteMajority(): void {
+    const majority = Math.floor(this.nodes.size / 2) + 1
+    if (this.votesReceived.size >= majority) {
+      this.becomeLeader()
+    }
+  }
+
+  /**
+   * Handle append entries (heartbeat) from leader
+   */
+  private async handleAppendEntries(msg: NetworkMessage): Promise<any> {
+    const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = msg.data
+    
+    // Update term if necessary
+    if (term > this.currentTerm) {
+      this.currentTerm = term
+      this.consensusState.term = term
+      this.consensusState.votedFor = null
+      this.becomeFollower()
+    }
+    
+    // Reset election timeout when receiving valid heartbeat
+    if (term >= this.currentTerm) {
+      this.consensusState.leader = leaderId
+      this.resetElectionTimeout()
+      
+      // Update leader node's last heartbeat
+      const leaderNode = this.nodes.get(leaderId)
+      if (leaderNode) {
+        leaderNode.lastHeartbeat = Date.now()
+        leaderNode.lastSeen = Date.now()
+      }
+    }
+    
+    // Check log consistency
+    let success = false
+    if (term >= this.currentTerm) {
+      if (this.checkLogConsistency(prevLogIndex, prevLogTerm)) {
+        // Append new entries if any
+        if (entries && entries.length > 0) {
+          this.appendLogEntries(prevLogIndex, entries)
+        }
+        success = true
+      }
+    }
+    
+    return {
+      type: 'appendResponse',
+      term: this.currentTerm,
+      success
+    }
+  }
+
+  /**
+   * Handle append response from follower
+   */
+  private handleAppendResponse(msg: NetworkMessage): void {
+    const { term, success } = msg.data
+    
+    // Update term if necessary
+    if (term > this.currentTerm) {
+      this.currentTerm = term
+      this.consensusState.term = term
+      this.becomeFollower()
+    }
+    
+    // Process successful append
+    if (success && this.consensusState.state === 'leader') {
+      // Update follower's match index
+      // In a real implementation, this would track replication progress
+    }
+  }
+
+  /**
+   * Send heartbeat to followers
+   */
+  private async sendHeartbeat(): Promise<void> {
+    if (!this.networkTransport) {
+      // Fallback for testing
+      await new Promise(resolve => setTimeout(resolve, 10))
+      return
+    }
+    
+    const heartbeat = {
+      type: 'appendEntries' as const,
+      term: this.currentTerm,
+      leaderId: this.nodeId,
+      prevLogIndex: this.getLastLogIndex(),
+      prevLogTerm: this.getLastLogTerm(),
+      entries: [],
+      leaderCommit: 0
+    }
+    
+    // Send heartbeat to all followers
+    for (const [nodeId] of this.nodes) {
+      if (nodeId !== this.nodeId) {
+        try {
+          await this.networkTransport.sendToNode(nodeId, 'appendEntries', heartbeat)
+        } catch (err) {
+          // Node might be down, mark as suspected
+          const node = this.nodes.get(nodeId)
+          if (node) {
+            node.status = 'suspected'
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Start heartbeat timer as leader
    */
   private startHeartbeat(): void {
     if (this.heartbeatTimer) {
@@ -251,22 +475,6 @@ export class DistributedCoordinator extends EventEmitter {
     
     // Send immediate heartbeat
     this.sendHeartbeat()
-  }
-
-  /**
-   * Send heartbeat to all followers
-   */
-  private sendHeartbeat(): void {
-    for (const [nodeId] of this.nodes) {
-      if (nodeId !== this.nodeId) {
-        // In a real implementation, this would send an RPC request
-        this.emit('heartbeat', { 
-          from: this.nodeId, 
-          to: nodeId, 
-          term: this.consensusState.term 
-        })
-      }
-    }
   }
 
   /**
@@ -288,25 +496,63 @@ export class DistributedCoordinator extends EventEmitter {
   }
 
   /**
-   * Handle received heartbeat
+   * Check if log is up to date
    */
-  handleHeartbeat(from: string, term: number): void {
-    if (term >= this.consensusState.term) {
-      this.consensusState.term = term
-      this.consensusState.leader = from
-      
-      if (this.consensusState.state !== 'follower') {
-        this.becomeFollower()
-      } else {
-        this.resetElectionTimeout()
-      }
-      
-      // Update node's last heartbeat
-      const node = this.nodes.get(from)
-      if (node) {
-        node.lastHeartbeat = Date.now()
-      }
+  private isLogUpToDate(lastLogIndex: number, lastLogTerm: number): boolean {
+    const myLastLogTerm = this.getLastLogTerm()
+    const myLastLogIndex = this.getLastLogIndex()
+    
+    if (lastLogTerm > myLastLogTerm) return true
+    if (lastLogTerm < myLastLogTerm) return false
+    return lastLogIndex >= myLastLogIndex
+  }
+
+  /**
+   * Check log consistency
+   */
+  private checkLogConsistency(prevLogIndex: number, prevLogTerm: number): boolean {
+    if (prevLogIndex === -1) return true
+    
+    if (prevLogIndex >= this.logEntries.length) return false
+    
+    const entry = this.logEntries[prevLogIndex]
+    return entry && entry.term === prevLogTerm
+  }
+
+  /**
+   * Append log entries
+   */
+  private appendLogEntries(prevLogIndex: number, entries: any[]): void {
+    // Remove conflicting entries
+    this.logEntries = this.logEntries.slice(0, prevLogIndex + 1)
+    
+    // Append new entries
+    for (const entry of entries) {
+      this.logEntries.push({
+        term: entry.term,
+        index: this.logEntries.length,
+        data: entry.data
+      })
     }
+    
+    this.lastLogIndex = this.logEntries.length - 1
+    if (this.lastLogIndex >= 0) {
+      this.lastLogTerm = this.logEntries[this.lastLogIndex].term
+    }
+  }
+
+  /**
+   * Get last log index
+   */
+  private getLastLogIndex(): number {
+    return this.lastLogIndex
+  }
+
+  /**
+   * Get last log term
+   */
+  private getLastLogTerm(): number {
+    return this.lastLogTerm
   }
 
   /**
@@ -322,6 +568,49 @@ export class DistributedCoordinator extends EventEmitter {
    */
   getLeader(): string | null {
     return this.consensusState.leader
+  }
+  
+  /**
+   * Propose a shard migration to the cluster
+   */
+  async proposeMigration(migration: {
+    shardId: string
+    fromNode: string
+    toNode: string
+    migrationId: string
+  }): Promise<void> {
+    if (!this.isLeader()) {
+      throw new Error('Only leader can propose migrations')
+    }
+    
+    // Broadcast migration proposal to all nodes
+    const message = {
+      type: 'migration-proposal',
+      migration,
+      timestamp: Date.now()
+    }
+    
+    await this.transport.broadcast('migration', message)
+    
+    // Store migration as pending
+    this.pendingMigrations.set(migration.migrationId, {
+      ...migration,
+      status: 'pending'
+    })
+  }
+  
+  /**
+   * Get migration status
+   */
+  async getMigrationStatus(migrationId: string): Promise<'pending' | 'committed' | 'rejected'> {
+    const migration = this.pendingMigrations.get(migrationId)
+    
+    if (!migration) {
+      // Check if it was committed
+      return this.committedMigrations.has(migrationId) ? 'committed' : 'rejected'
+    }
+    
+    return migration.status || 'pending'
   }
 
   /**
@@ -344,7 +633,7 @@ export class DistributedCoordinator extends EventEmitter {
   getHealth(): { healthy: boolean; leader: string | null; nodes: number; activeNodes: number } {
     const now = Date.now()
     const activeNodes = Array.from(this.nodes.values()).filter(
-      node => now - node.lastHeartbeat < this.electionTimeout
+      node => now - node.lastSeen < this.electionTimeout
     ).length
 
     return {
@@ -353,6 +642,38 @@ export class DistributedCoordinator extends EventEmitter {
       nodes: this.nodes.size,
       activeNodes
     }
+  }
+
+  /**
+   * Propose a command to the cluster
+   */
+  async proposeCommand(command: any): Promise<void> {
+    if (this.consensusState.state !== 'leader') {
+      throw new Error(`Not the leader. Current leader: ${this.consensusState.leader}`)
+    }
+    
+    // Add to log
+    const entry = {
+      term: this.currentTerm,
+      index: this.logEntries.length,
+      data: command
+    }
+    
+    this.logEntries.push(entry)
+    this.lastLogIndex = entry.index
+    this.lastLogTerm = entry.term
+    
+    // Replicate to followers
+    await this.sendHeartbeat()
+    
+    this.emit('commandProposed', command)
+  }
+
+  /**
+   * Get current state
+   */
+  getState(): ConsensusState {
+    return { ...this.consensusState }
   }
 }
 

@@ -4,10 +4,8 @@
 
 ## ✅ Actually Implemented Augmentations (12+)
 
-### 1. WAL (Write-Ahead Logging) Augmentation ✅
 Full implementation with crash recovery, checkpointing, and replay.
 ```typescript
-import { WALAugmentation } from 'brainy'
 // Fully working with all features documented
 ```
 

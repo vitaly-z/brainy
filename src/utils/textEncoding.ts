@@ -30,7 +30,10 @@ export async function applyTensorFlowPatch(): Promise<void> {
     const globalObj = (() => {
       if (typeof globalThis !== 'undefined') return globalThis
       if (typeof global !== 'undefined') return global
-      return {} as any
+      throw new Error(
+        'Cannot apply TextEncoder/TextDecoder patches: No global object found. ' +
+        'This environment does not have globalThis or global defined.'
+      )
     })()
 
     // Make sure TextEncoder and TextDecoder are available globally

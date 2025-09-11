@@ -23,11 +23,11 @@ export class RequestDeduplicatorAugmentation extends BaseAugmentation {
   name = 'RequestDeduplicator'
   timing = 'around' as const
   metadata = 'none' as const  // Doesn't access metadata
-  operations = ['search', 'searchText', 'searchByNounTypes', 'findSimilar', 'get'] as ('search' | 'searchText' | 'searchByNounTypes' | 'findSimilar' | 'get')[]
+  operations = ['search', 'find', 'similar', 'searchText', 'searchByNounTypes', 'findSimilar', 'get'] as ('search' | 'find' | 'similar' | 'searchText' | 'searchByNounTypes' | 'findSimilar' | 'get')[]
   priority = 50 // Performance optimization
   
   private pendingRequests: Map<string, PendingRequest<any>> = new Map()
-  private config: Required<DeduplicatorConfig>
+  protected config: Required<DeduplicatorConfig>
   private cleanupInterval?: NodeJS.Timeout
   
   constructor(config: DeduplicatorConfig = {}) {

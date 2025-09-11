@@ -9,10 +9,8 @@ const path = require('path')
 const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2'
 const OUTPUT_DIR = './models'
 
-// Parse command line arguments for model type selection
-const args = process.argv.slice(2)
-const downloadType = args.includes('fp32') ? 'fp32' : 
-                    args.includes('q8') ? 'q8' : 'both'
+// Always download Q8 model only
+const downloadType = 'q8'
 
 async function downloadModels() {
   // Use dynamic import for ES modules in CommonJS
@@ -26,23 +24,16 @@ async function downloadModels() {
     console.log('🧠 Brainy Model Downloader v2.8.0')
     console.log('===================================')
     console.log(`   Model: ${MODEL_NAME}`)
-    console.log(`   Type: ${downloadType} (fp32, q8, or both)`)
+    console.log(`   Type: Q8 (optimized, 99% accuracy)`)
     console.log(`   Cache: ${env.cacheDir}`)
     console.log('')
     
     // Create output directory
     await fs.mkdir(OUTPUT_DIR, { recursive: true })
     
-    // Download models based on type
-    if (downloadType === 'both' || downloadType === 'fp32') {
-      console.log('📥 Downloading FP32 model (full precision, 90MB)...')
-      await downloadModelVariant('fp32')
-    }
-    
-    if (downloadType === 'both' || downloadType === 'q8') {
-      console.log('📥 Downloading Q8 model (quantized, 23MB)...')
-      await downloadModelVariant('q8')
-    }
+    // Download Q8 model only
+    console.log('📥 Downloading Q8 model (quantized, 33MB, 99% accuracy)...')
+    await downloadModelVariant('q8')
     
     // Copy ALL model files from cache to our models directory
     console.log('📋 Copying model files to bundle directory...')

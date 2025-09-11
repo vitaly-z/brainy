@@ -1,0 +1,57 @@
+# Git
+.git
+.gitignore
+
+# Development
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+tests
+*.test.ts
+*.test.js
+coverage
+.nyc_output
+
+# Documentation (keep only essentials)
+docs
+*.md
+!README.md
+!LICENSE
+
+# Build artifacts (will be built in Docker)
+dist
+build
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+
+# Strategy and private docs
+.strategy
+CLAUDE.md
+
+# Development files
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Data (should be mounted, not baked in)
+data
+*.db
+*.sqlite
+
+# Models (should be downloaded at runtime or mounted)
+models
+*.onnx
+*.bin

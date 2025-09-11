@@ -5,12 +5,14 @@
  * Each augmentation knows its place and when to execute automatically.
  * 
  * The Vision: Components that enhance Brainy's capabilities seamlessly
- * - WAL: Adds durability to storage operations
  * - RequestDeduplicator: Prevents duplicate concurrent requests  
  * - ConnectionPool: Optimizes cloud storage throughput
  * - IntelligentVerbScoring: Enhances relationship analysis
  * - StreamingPipeline: Enables unlimited data processing
  */
+
+import { AugmentationManifest } from './manifest.js'
+import { AugmentationConfigResolver } from './configResolver.js'
 
 /**
  * Metadata access declaration for augmentations
@@ -48,18 +50,18 @@ export interface BrainyAugmentation {
    * Which operations this augmentation applies to
    * Granular operation matching for precise augmentation targeting
    */
-  operations: (
+   operations: (
     // Data Operations
     | 'add' | 'addNoun' | 'addVerb' 
     | 'saveNoun' | 'saveVerb' | 'updateMetadata'
-    | 'delete' | 'deleteVerb' | 'clear' | 'get'
+    | 'update' | 'delete' | 'deleteVerb' | 'clear' | 'get'
     
     // Search Operations
     | 'search' | 'searchText' | 'searchByNounTypes' 
-    | 'findSimilar' | 'searchWithCursor'
+    | 'find' | 'findSimilar' | 'searchWithCursor' | 'similar'
     
     // Relationship Operations
-    | 'relate' | 'getConnections'
+    | 'relate' | 'unrelate' | 'getConnections' | 'getRelations'
     
     // Storage Operations
     | 'storage' | 'backup' | 'restore'
@@ -70,7 +72,7 @@ export interface BrainyAugmentation {
   
   /**
    * Priority for execution order (higher numbers execute first)
-   * - 100: Critical system operations (WAL, ConnectionPool)
+   * - 100: Critical system operations (ConnectionPool)
    * - 50: Performance optimizations (RequestDeduplicator, Caching)
    * - 10: Enhancement features (IntelligentVerbScoring)
    * - 1: Optional features (Logging, Analytics)
@@ -79,9 +81,9 @@ export interface BrainyAugmentation {
   
   /**
    * Initialize the augmentation
-   * Called once during BrainyData initialization
+   * Called once during Brainy initialization
    * 
-   * @param context - The BrainyData instance and storage
+   * @param context - The Brainy instance and storage
    */
   initialize(context: AugmentationContext): Promise<void>
   
@@ -106,7 +108,7 @@ export interface BrainyAugmentation {
   shouldExecute?(operation: string, params: any): boolean
   
   /**
-   * Optional: Cleanup when BrainyData is destroyed
+   * Optional: Cleanup when Brainy is destroyed
    */
   shutdown?(): Promise<void>
   
@@ -140,9 +142,9 @@ export interface BrainyAugmentation {
  */
 export interface AugmentationContext {
   /**
-   * The BrainyData instance (for accessing methods and config)
+   * The Brainy instance (for accessing methods and config)
    */
-  brain: any // BrainyData - avoiding circular imports
+  brain: any // Brainy - avoiding circular imports
   
   /**
    * The storage adapter
@@ -162,6 +164,10 @@ export interface AugmentationContext {
 
 /**
  * Base class for augmentations with common functionality
+ * 
+ * This is the unified base class that combines the features of both
+ * BaseAugmentation and ConfigurableAugmentation. All augmentations
+ * should extend this class for consistent configuration support.
  */
 export abstract class BaseAugmentation implements BrainyAugmentation {
   abstract name: string
@@ -171,14 +177,14 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
     // Data Operations
     | 'add' | 'addNoun' | 'addVerb' 
     | 'saveNoun' | 'saveVerb' | 'updateMetadata'
-    | 'delete' | 'deleteVerb' | 'clear' | 'get'
+    | 'update' | 'delete' | 'deleteVerb' | 'clear' | 'get'
     
     // Search Operations
     | 'search' | 'searchText' | 'searchByNounTypes' 
-    | 'findSimilar' | 'searchWithCursor'
+    | 'find' | 'findSimilar' | 'searchWithCursor' | 'similar'
     
     // Relationship Operations
-    | 'relate' | 'getConnections'
+    | 'relate' | 'unrelate' | 'getConnections' | 'getRelations'
     
     // Storage Operations
     | 'storage' | 'backup' | 'restore'
@@ -195,6 +201,110 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   
   protected context?: AugmentationContext
   protected isInitialized = false
+  protected config: any = {}
+  private configResolver?: AugmentationConfigResolver
+  
+  /**
+   * Constructor with optional configuration
+   * @param config Optional configuration to override defaults
+   */
+  constructor(config?: any) {
+    // Only resolve configuration if getManifest is implemented
+    if (this.getManifest) {
+      this.config = this.resolveConfiguration(config)
+    } else if (config) {
+      // Legacy support: direct config assignment for augmentations without manifests
+      this.config = config
+    }
+  }
+  
+  /**
+   * Get the augmentation manifest for discovery
+   * Override this to enable configuration support
+   * CRITICAL: This enables tools to discover parameters and configuration
+   */
+  getManifest?(): AugmentationManifest
+  
+  /**
+   * Get parameter schema for operations
+   * Enables tools to know what parameters each operation needs
+   */
+  getParameterSchema?(operation: string): any
+  
+  /**
+   * Get operation descriptions
+   * Enables tools to show what each operation does
+   */
+  getOperationInfo?(): Record<string, {
+    description: string
+    parameters?: any
+    returns?: any
+    examples?: any[]
+  }>
+  
+  /**
+   * Get current configuration
+   */
+  getConfig(): any {
+    return { ...this.config }
+  }
+  
+  /**
+   * Update configuration at runtime
+   * @param partial Partial configuration to merge
+   */
+  async updateConfig(partial: any): Promise<void> {
+    if (!this.configResolver) {
+      // For legacy augmentations without manifest, just merge config
+      const oldConfig = this.config
+      this.config = { ...this.config, ...partial }
+      
+      if (this.onConfigChange) {
+        await this.onConfigChange(this.config, oldConfig)
+      }
+      return
+    }
+    
+    const oldConfig = this.config
+    
+    try {
+      // Use resolver to update and validate
+      this.config = this.configResolver.updateRuntime(partial)
+      
+      // Call config change handler if implemented
+      if (this.onConfigChange) {
+        await this.onConfigChange(this.config, oldConfig)
+      }
+    } catch (error) {
+      // Revert on error
+      this.config = oldConfig
+      throw error
+    }
+  }
+  
+  /**
+   * Optional: Handle configuration changes
+   * Override this to react to runtime configuration updates
+   */
+  protected onConfigChange?(newConfig: any, oldConfig: any): Promise<void>
+  
+  /**
+   * Resolve configuration from all sources
+   * Priority: constructor > env > files > defaults
+   */
+  private resolveConfiguration(constructorConfig?: any): any {
+    const manifest = this.getManifest!()
+    
+    // Create config resolver
+    this.configResolver = new AugmentationConfigResolver({
+      augmentationId: manifest.id,
+      schema: manifest.configSchema,
+      defaults: manifest.configDefaults
+    })
+    
+    // Resolve configuration from all sources
+    return this.configResolver.resolve(constructorConfig)
+  }
   
   async initialize(context: AugmentationContext): Promise<void> {
     this.context = context
@@ -264,6 +374,13 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
     }
   }
 }
+
+/**
+ * Alias for backward compatibility
+ * ConfigurableAugmentation is now merged into BaseAugmentation
+ * @deprecated Use BaseAugmentation instead
+ */
+export const ConfigurableAugmentation = BaseAugmentation
 
 /**
  * Registry for managing augmentations
@@ -382,6 +499,99 @@ export class AugmentationRegistry {
    */
   get(name: string): BrainyAugmentation | undefined {
     return this.augmentations.find(aug => aug.name === name)
+  }
+  
+  /**
+   * Discover augmentation parameters and schemas
+   * Critical for tools like brain-cloud to generate UIs
+   */
+  discover(name?: string): any {
+    if (name) {
+      const aug = this.get(name)
+      if (!aug) return null
+      
+      const baseAug = aug as BaseAugmentation
+      return {
+        name: aug.name,
+        operations: aug.operations,
+        priority: aug.priority,
+        timing: aug.timing,
+        metadata: aug.metadata,
+        manifest: baseAug.getManifest ? baseAug.getManifest() : undefined,
+        parameters: baseAug.getParameterSchema ? 
+          aug.operations.reduce((acc, op) => {
+            acc[op] = baseAug.getParameterSchema!(op as string)
+            return acc
+          }, {} as any) : undefined,
+        operationInfo: baseAug.getOperationInfo ? baseAug.getOperationInfo() : undefined,
+        config: baseAug.getConfig ? baseAug.getConfig() : undefined
+      }
+    }
+    
+    // Return all augmentations discovery info
+    return this.augmentations.map(aug => this.discover(aug.name))
+  }
+  
+  /**
+   * Get configuration schema for an augmentation
+   * Enables UI generation for configuration
+   */
+  getConfigSchema(name: string): any {
+    const aug = this.get(name) as BaseAugmentation
+    if (!aug || !aug.getManifest) return null
+    
+    const manifest = aug.getManifest()
+    return manifest?.configSchema
+  }
+  
+  /**
+   * Configure an augmentation at runtime
+   */
+  async configure(name: string, config: any): Promise<void> {
+    const aug = this.get(name) as BaseAugmentation
+    if (!aug || !aug.updateConfig) {
+      throw new Error(`Augmentation ${name} does not support configuration`)
+    }
+    
+    await aug.updateConfig(config)
+  }
+  
+  /**
+   * Get metrics for an augmentation
+   */
+  metrics(name?: string): any {
+    if (name) {
+      const aug = this.get(name) as any
+      if (!aug || !aug.metrics) return null
+      return aug.metrics()
+    }
+    
+    // Return all metrics
+    const allMetrics: any = {}
+    for (const aug of this.augmentations) {
+      const a = aug as any
+      if (a.metrics) {
+        allMetrics[aug.name] = a.metrics()
+      }
+    }
+    return allMetrics
+  }
+  
+  /**
+   * Get health status
+   */
+  health(): any {
+    const health: any = {
+      overall: 'healthy',
+      augmentations: {}
+    }
+    
+    for (const aug of this.augmentations) {
+      const a = aug as any
+      health.augmentations[aug.name] = a.health ? a.health() : 'unknown'
+    }
+    
+    return health
   }
   
   /**

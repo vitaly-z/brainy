@@ -1,6 +1,5 @@
 # Storage Architecture
 
-Brainy implements a sophisticated, unified storage system that works across all environments (Node.js, Browser, Edge Workers) with enterprise-grade features like metadata indexing, entity registry, and write-ahead logging.
 
 ## Storage Structure
 
@@ -17,7 +16,6 @@ brainy-data/
 │   └── __metadata_index__{field}_{value}_chunk{n}.json # Value indexes
 ├── verbs/                         # Relationship/action storage
 │   └── {uuid}.json               # Relationship documents
-├── wal/                          # Write-Ahead Logging
 │   └── wal_{timestamp}_{id}.wal # Transaction logs
 └── locks/                        # Concurrent access control
     └── {resource}.lock          # Resource locks
@@ -144,11 +142,9 @@ High-performance deduplication system for streaming data:
 - **Cache**: LRU with configurable TTL
 - **Sync**: Periodic or on-demand
 
-## Write-Ahead Logging (WAL)
 
 Ensures durability and enables recovery:
 
-### WAL Entry Format
 ```json
 {
   "timestamp": 1699564234567,
@@ -163,10 +159,8 @@ Ensures durability and enables recovery:
 ```
 
 ### Recovery Process
-1. On startup, check for WAL files
 2. Replay operations from last checkpoint
 3. Verify checksums for integrity
-4. Clean up processed WAL files
 
 ## Storage Optimization
 
@@ -297,13 +291,11 @@ console.log(stats)
 
 ### Optimize for Your Use Case
 1. **Read-heavy**: Enable aggressive caching
-2. **Write-heavy**: Use WAL and batching
 3. **Real-time**: Memory with periodic persistence
 4. **Archival**: S3 with compression
 
 ### Monitor and Maintain
 1. Regular statistics collection
-2. WAL cleanup scheduling
 3. Index optimization
 4. Cache tuning based on hit rates
 

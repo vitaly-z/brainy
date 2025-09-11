@@ -4,34 +4,37 @@
  * Auto-detects environment and uses optimal storage (OPFS in browsers)
  */
 
-import { BrainyData, BrainyDataConfig } from './brainyData.js'
+import { Brainy, BrainyConfig } from './brainy.js'
 import { VerbType, NounType } from './types/graphTypes.js'
 
 /**
- * Create a BrainyData instance optimized for browser frameworks
+ * Create a Brainy instance optimized for browser frameworks
  * Auto-detects environment and selects optimal storage and settings
  */
-export async function createBrowserBrainyData(config: Partial<BrainyDataConfig> = {}): Promise<BrainyData> {
-  // BrainyData already has environment detection and will automatically:
+export async function createBrowserBrainy(config: Partial<BrainyConfig> = {}): Promise<Brainy> {
+  // Brainy already has environment detection and will automatically:
   // - Use OPFS storage in browsers with fallback to Memory
   // - Use FileSystem storage in Node.js
   // - Request persistent storage when appropriate
-  const browserConfig: BrainyDataConfig = {
+  const browserConfig: BrainyConfig = {
     storage: {
-      requestPersistentStorage: true // Request persistent storage for better performance
+      type: 'opfs',
+      options: {
+        requestPersistentStorage: true // Request persistent storage for better performance
+      }
     },
     ...config
   }
 
-  const brainyData = new BrainyData(browserConfig)
+  const brainyData = new Brainy(browserConfig)
   await brainyData.init()
   
   return brainyData
 }
 
 // Re-export types and constants for framework use
-export { VerbType, NounType, BrainyData }
-export type { BrainyDataConfig }
+export { VerbType, NounType, Brainy }
+export type { BrainyConfig }
 
 // Default export for easy importing
-export default createBrowserBrainyData
+export default createBrowserBrainy
