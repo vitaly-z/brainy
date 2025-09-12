@@ -169,12 +169,17 @@ Creates a relationship between two entities.
 **Parameters:**
 - `from` (required) - Source entity ID
 - `to` (required) - Target entity ID
-- `type` (required) - VerbType for the relationship
+- `type` (required) - VerbType enum value
 - `weight` - Relationship strength (0-1), default: 1
 - `metadata` - Relationship metadata
 - `bidirectional` - Create reverse relationship
 - `service` - Service name for multi-tenancy
 - `writeOnly` - Skip validation
+
+**Validation:**
+- `from` and `to` must be different (no self-referential relationships)
+- `type` must be a valid VerbType enum value
+- `weight` if provided must be between 0 and 1
 
 **Returns:** Relationship ID
 
@@ -1170,19 +1175,49 @@ try {
 
 ---
 
+## Input Validation
+
+Brainy uses a **zero-config validation system** that automatically adapts to your system resources:
+
+### Auto-Configured Limits
+- `limit` parameter maximum: Based on available memory (e.g., 8GB RAM = 80K max limit)
+- Query string length: Auto-scaled based on memory
+- Vector dimensions: Must be exactly 384 for all-MiniLM-L6-v2 model
+
+### Common Validation Rules
+- **Pagination**: `limit` and `offset` must be non-negative
+- **Thresholds**: Values like `weight` and `threshold` must be between 0 and 1
+- **Mutual Exclusion**: Cannot use both `query` and `vector` in same request
+- **Type Safety**: `NounType` and `VerbType` must be valid enum values
+- **Self-Reference**: Cannot create relationships from an entity to itself
+
+### Performance Auto-Tuning
+The validation system monitors query performance and adjusts limits automatically:
+- Fast queries with large results → increases limits
+- Slow queries → reduces limits to maintain performance
+
 ## Error Handling
 
-All methods throw typed errors:
+All methods validate parameters and throw descriptive errors:
 
 ```typescript
 try {
   await brain.add({ data: '', type: NounType.Document })
 } catch (error) {
-  if (error instanceof ValidationError) {
-    console.error('Invalid input:', error.message)
-  } else if (error instanceof StorageError) {
-    console.error('Storage failed:', error.message)
-  }
+  // Error: "must provide either data or vector"
+}
+
+try {
+  await brain.find({ limit: -1 })
+} catch (error) {
+  // Error: "limit must be non-negative"
+}
+
+try {
+  await brain.update({ id: 'xyz', metadata: null, merge: false })
+} catch (error) {
+  // Error: "must specify at least one field to update"
+  // Note: Use metadata: {} to clear, not null
 }
 ```
 

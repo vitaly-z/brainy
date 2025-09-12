@@ -8,6 +8,7 @@ import { StorageAdapter } from '../coreTypes.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { prodLog } from './logger.js'
 import { getGlobalCache, UnifiedCache } from './unifiedCache.js'
+import { NounType } from '../types/graphTypes.js'
 
 export interface MetadataIndexEntry {
   field: string
@@ -1959,7 +1960,7 @@ export class MetadataIndexManager {
    * Get fields that commonly appear with a specific entity type
    * Returns fields with their affinity scores (0-1)
    */
-  async getFieldsForType(nounType: string): Promise<Array<{
+  async getFieldsForType(nounType: NounType): Promise<Array<{
     field: string
     affinity: number
     occurrences: number

@@ -386,10 +386,9 @@ describe('Brainy.find()', () => {
         )
       )
       
-      // Act
+      // Act - Use empty query to test pagination performance on large dataset
       const start = Date.now()
       const results = await brain.find({
-        query: 'Entity',
         limit: 50
       })
       const duration = Date.now() - start

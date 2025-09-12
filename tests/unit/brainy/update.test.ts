@@ -236,23 +236,18 @@ describe('Brainy.update()', () => {
       })).rejects.toThrow()
     })
     
-    it('should allow any entity type on update', async () => {
+    it('should reject invalid entity type on update', async () => {
       // Arrange
       const id = await brain.add(createAddParams({
         data: 'Test',
         type: 'thing'
       }))
       
-      // Act - Update doesn't validate type
-      await brain.update({
+      // Act & Assert - Should properly validate type
+      await expect(brain.update({
         id,
         type: 'invalid_type' as any
-      })
-      
-      // Assert
-      const updated = await brain.get(id)
-      expect(updated).not.toBeNull()
-      expect(updated!.type).toBe('invalid_type')
+      })).rejects.toThrow('invalid NounType')
     })
     
     it('should not update vector directly via update method', async () => {
@@ -280,7 +275,7 @@ describe('Brainy.update()', () => {
       expect(updated!.vector).toEqual(originalVector)
     })
     
-    it('should handle empty update parameters', async () => {
+    it('should reject empty update parameters', async () => {
       // Arrange
       const id = await brain.add(createAddParams({
         data: 'Test',
@@ -288,18 +283,13 @@ describe('Brainy.update()', () => {
         metadata: { original: true }
       }))
       
-      // Act - Update with empty params (should be no-op)
-      await brain.update({ id })
-      
-      // Assert - Nothing should change
-      const entity = await brain.get(id)
-      expect(entity).not.toBeNull()
-      expect(entity!.metadata.original).toBe(true)
+      // Act & Assert - Should require at least one field to update
+      await expect(brain.update({ id })).rejects.toThrow('must specify at least one field to update')
     })
   })
   
   describe('edge cases', () => {
-    it('should handle updating with null metadata (documents actual behavior)', async () => {
+    it('should reject updating with null metadata', async () => {
       // Arrange
       const id = await brain.add(createAddParams({
         data: 'Test',
@@ -307,29 +297,18 @@ describe('Brainy.update()', () => {
         metadata: { existing: 'data', another: 'field' }
       }))
       
-      // Act
-      await brain.update({
+      // Act & Assert - null metadata is not a valid update
+      // This prevents accidental data loss from null values
+      await expect(brain.update({
         id,
         metadata: null as any,
         merge: false
-      })
+      })).rejects.toThrow('must specify at least one field to update')
       
-      // Assert
-      const updated = await brain.get(id)
-      expect(updated).not.toBeNull()
-      expect(updated!.metadata).toBeDefined()
-      
-      // Document the actual API behavior:
-      // 1. Setting metadata to null does NOT clear existing metadata
-      // 2. String data may be spread into metadata as individual characters
-      
-      // The original metadata should still be present (actual behavior)
-      expect(updated!.metadata.existing).toBe('data')
-      expect(updated!.metadata.another).toBe('field')
-      
-      // Note: This documents that null metadata updates preserve existing fields
-      // This may be intentional to prevent accidental data loss
-      console.log('Documented behavior: null metadata update preserves existing metadata')
+      // Verify original data is untouched
+      const entity = await brain.get(id)
+      expect(entity!.metadata.existing).toBe('data')
+      expect(entity!.metadata.another).toBe('field')
     })
     
     it('should handle concurrent updates', async () => {
