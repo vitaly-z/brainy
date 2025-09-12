@@ -201,7 +201,7 @@ describe('Brainy.relate()', () => {
         from: entity1Id,
         to: entity2Id,
         type: 'invalidType' as any
-      })).rejects.toThrow('Invalid verb type')
+      })).rejects.toThrow('invalid VerbType')
     })
     
     it('should handle missing required parameters', async () => {

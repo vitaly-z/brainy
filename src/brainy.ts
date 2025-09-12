@@ -14,7 +14,6 @@ import {
   defaultEmbeddingFunction,
   cosineDistance
 } from './utils/index.js'
-import { validateNounType, validateVerbType } from './utils/typeValidation.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
 import { AugmentationRegistry, AugmentationContext } from './augmentations/brainyAugmentation.js'
 import { createDefaultAugmentations } from './augmentations/defaultAugmentations.js'
@@ -165,11 +164,9 @@ export class Brainy<T = any> {
   async add(params: AddParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Validate parameters
-    if (!params.data && !params.vector) {
-      throw new Error('Either data or vector is required')
-    }
-    validateNounType(params.type)
+    // Zero-config validation
+    const { validateAddParams } = await import('./utils/paramValidation.js')
+    validateAddParams(params)
 
     // Generate ID if not provided
     const id = params.id || uuidv4()
@@ -266,9 +263,9 @@ export class Brainy<T = any> {
   async update(params: UpdateParams<T>): Promise<void> {
     await this.ensureInitialized()
 
-    if (!params.id) {
-      throw new Error('ID is required for update')
-    }
+    // Zero-config validation
+    const { validateUpdateParams } = await import('./utils/paramValidation.js')
+    validateUpdateParams(params)
 
     return this.augmentationRegistry.execute('update', params, async () => {
       // Get existing entity
@@ -363,11 +360,9 @@ export class Brainy<T = any> {
   async relate(params: RelateParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Validate parameters
-    if (!params.from || !params.to) {
-      throw new Error('Both from and to are required')
-    }
-    validateVerbType(params.type)
+    // Zero-config validation
+    const { validateRelateParams } = await import('./utils/paramValidation.js')
+    validateRelateParams(params)
 
     // Verify entities exist
     const fromEntity = await this.get(params.from)
@@ -495,7 +490,12 @@ export class Brainy<T = any> {
     const params: FindParams<T> =
       typeof query === 'string' ? await this.parseNaturalQuery(query) : query
 
-    return this.augmentationRegistry.execute('find', params, async () => {
+    // Zero-config validation - only enforces universal truths
+    const { validateFindParams, recordQueryPerformance } = await import('./utils/paramValidation.js')
+    validateFindParams(params)
+
+    const startTime = Date.now()
+    const result = await this.augmentationRegistry.execute('find', params, async () => {
       let results: Result<T>[] = []
 
       // Handle empty query - return paginated results from storage
@@ -561,13 +561,26 @@ export class Brainy<T = any> {
       // Apply O(log n) metadata filtering using core MetadataIndexManager
       if (params.where || params.type || params.service) {
         // Build filter object for metadata index
-        const filter: any = {}
+        let filter: any = {}
+        
+        // Base filter from where and service
         if (params.where) Object.assign(filter, params.where)
+        if (params.service) filter.service = params.service
+        
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
-          filter.noun = types.length === 1 ? types[0] : { anyOf: types }
+          if (types.length === 1) {
+            filter.noun = types[0]
+          } else {
+            // For multiple types, create separate filter for each type with all conditions
+            filter = {
+              anyOf: types.map(type => ({
+                noun: type,
+                ...filter
+              }))
+            }
+          }
         }
-        if (params.service) filter.service = params.service
         
         const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
         
@@ -608,6 +621,12 @@ export class Brainy<T = any> {
 
       return results.slice(offset, offset + limit)
     })
+    
+    // Record performance for auto-tuning
+    const duration = Date.now() - startTime
+    recordQueryPerformance(duration, result.length)
+    
+    return result
   }
 
   /**
@@ -953,7 +972,7 @@ export class Brainy<T = any> {
    * Get fields that commonly appear with a specific entity type
    * Essential for type-aware NLP parsing
    */
-  async getFieldsForType(nounType: string): Promise<Array<{
+  async getFieldsForType(nounType: NounType): Promise<Array<{
     field: string
     affinity: number
     occurrences: number

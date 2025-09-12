@@ -385,7 +385,7 @@ export class NaturalLanguageProcessor {
     reason?: string
   }> {
     // Get fields that actually appear with this type
-    const typeFields = await this.brain.getFieldsForType(nounType)
+    const typeFields = await this.brain.getFieldsForType(nounType as NounType)
     
     // Check if this field appears with this type
     const fieldInfo = typeFields.find(tf => tf.field === field)
@@ -554,7 +554,7 @@ export class NaturalLanguageProcessor {
     // Step 4: Get type-specific fields if we detected a type
     let typeSpecificFields: Array<{field: string; affinity: number}> = []
     if (detectedNounType && typeConfidence > 0.75) {
-      const fieldsForType = await this.brain.getFieldsForType(detectedNounType)
+      const fieldsForType = await this.brain.getFieldsForType(detectedNounType as NounType)
       typeSpecificFields = fieldsForType.map(f => ({field: f.field, affinity: f.affinity}))
     }
     

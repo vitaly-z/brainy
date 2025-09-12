@@ -148,7 +148,7 @@ class NaturalLanguageProcessor {
   private fieldEmbeddings = new Map<string, Vector>()
   
   // Type-field affinity for intelligent prioritization
-  async getFieldsForType(nounType: string) {
+  async getFieldsForType(nounType: NounType) {
     return this.brain.getFieldsForType(nounType)  // Real data patterns
   }
 }
