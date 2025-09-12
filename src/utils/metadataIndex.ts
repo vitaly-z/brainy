@@ -49,6 +49,26 @@ interface SortedFieldIndex {
   fieldType: 'number' | 'string' | 'date' | 'mixed'
 }
 
+// Cardinality tracking for optimization decisions
+interface CardinalityInfo {
+  uniqueValues: number
+  totalValues: number
+  distribution: 'uniform' | 'skewed' | 'sparse'
+  updateFrequency: number
+  lastAnalyzed: number
+}
+
+// Field statistics for smart optimization
+interface FieldStats {
+  cardinality: CardinalityInfo
+  queryCount: number
+  rangeQueryCount: number
+  exactQueryCount: number
+  avgQueryTime: number
+  indexType: 'hash' | 'sorted' | 'both'
+  normalizationStrategy?: 'none' | 'precision' | 'bucket'
+}
+
 export class MetadataIndexManager {
   private storage: StorageAdapter
   private config: Required<MetadataIndexConfig>
@@ -64,6 +84,16 @@ export class MetadataIndexManager {
   // Sorted indices for range queries (only for numeric/date fields)
   private sortedIndices = new Map<string, SortedFieldIndex>()
   private numericFields = new Set<string>() // Track which fields are numeric
+  
+  // Cardinality and field statistics tracking
+  private fieldStats = new Map<string, FieldStats>()
+  private cardinalityUpdateInterval = 100 // Update cardinality every N operations
+  private operationCount = 0
+  
+  // Smart normalization thresholds
+  private readonly HIGH_CARDINALITY_THRESHOLD = 1000
+  private readonly TIMESTAMP_PRECISION_MS = 60000 // 1 minute buckets
+  private readonly FLOAT_PRECISION = 2 // decimal places
   
   // Unified cache for coordinated memory management
   private unifiedCache: UnifiedCache
@@ -331,6 +361,112 @@ export class MetadataIndexManager {
     
     return result
   }
+
+  /**
+   * Update cardinality statistics for a field
+   */
+  private updateCardinalityStats(field: string, value: any, operation: 'add' | 'remove'): void {
+    // Initialize field stats if needed
+    if (!this.fieldStats.has(field)) {
+      this.fieldStats.set(field, {
+        cardinality: {
+          uniqueValues: 0,
+          totalValues: 0,
+          distribution: 'uniform',
+          updateFrequency: 0,
+          lastAnalyzed: Date.now()
+        },
+        queryCount: 0,
+        rangeQueryCount: 0,
+        exactQueryCount: 0,
+        avgQueryTime: 0,
+        indexType: 'hash'
+      })
+    }
+
+    const stats = this.fieldStats.get(field)!
+    const cardinality = stats.cardinality
+
+    // Track unique values
+    const fieldIndexKey = `${field}:${String(value)}`
+    const entry = this.indexCache.get(fieldIndexKey)
+    
+    if (operation === 'add') {
+      if (!entry || entry.ids.size === 1) {
+        cardinality.uniqueValues++
+      }
+      cardinality.totalValues++
+    } else if (operation === 'remove') {
+      if (entry && entry.ids.size === 0) {
+        cardinality.uniqueValues--
+      }
+      cardinality.totalValues = Math.max(0, cardinality.totalValues - 1)
+    }
+
+    // Update frequency tracking
+    cardinality.updateFrequency++
+    
+    // Periodically analyze distribution
+    if (++this.operationCount % this.cardinalityUpdateInterval === 0) {
+      this.analyzeFieldDistribution(field)
+    }
+
+    // Determine optimal index type based on cardinality
+    this.updateIndexStrategy(field, stats)
+  }
+
+  /**
+   * Analyze field distribution for optimization
+   */
+  private analyzeFieldDistribution(field: string): void {
+    const stats = this.fieldStats.get(field)
+    if (!stats) return
+
+    const cardinality = stats.cardinality
+    const ratio = cardinality.uniqueValues / Math.max(1, cardinality.totalValues)
+
+    // Determine distribution type
+    if (ratio > 0.9) {
+      cardinality.distribution = 'sparse' // High uniqueness (like IDs, timestamps)
+    } else if (ratio < 0.1) {
+      cardinality.distribution = 'skewed' // Low uniqueness (like status, type)
+    } else {
+      cardinality.distribution = 'uniform' // Balanced distribution
+    }
+
+    cardinality.lastAnalyzed = Date.now()
+  }
+
+  /**
+   * Update index strategy based on field statistics
+   */
+  private updateIndexStrategy(field: string, stats: FieldStats): void {
+    const isNumeric = this.numericFields.has(field)
+    const hasHighCardinality = stats.cardinality.uniqueValues > this.HIGH_CARDINALITY_THRESHOLD
+    const hasRangeQueries = stats.rangeQueryCount > stats.exactQueryCount * 0.3
+
+    // Determine optimal index type
+    if (isNumeric && hasRangeQueries) {
+      stats.indexType = 'both' // Need both hash and sorted
+    } else if (hasRangeQueries) {
+      stats.indexType = 'sorted'
+    } else {
+      stats.indexType = 'hash'
+    }
+
+    // Determine normalization strategy for high cardinality fields
+    if (hasHighCardinality) {
+      if (field.toLowerCase().includes('time') || field.toLowerCase().includes('date')) {
+        stats.normalizationStrategy = 'bucket' // Time bucketing
+      } else if (isNumeric) {
+        stats.normalizationStrategy = 'precision' // Reduce float precision
+      } else {
+        stats.normalizationStrategy = 'none' // Keep as-is for strings
+      }
+    } else {
+      stats.normalizationStrategy = 'none'
+    }
+  }
   
   /**
    * Get IDs matching a range query
@@ -342,6 +478,12 @@ export class MetadataIndexManager {
     includeMin: boolean = true,
     includeMax: boolean = true
   ): Promise<string[]> {
+    // Track range query for field statistics
+    if (this.fieldStats.has(field)) {
+      const stats = this.fieldStats.get(field)!
+      stats.rangeQueryCount++
+    }
+    
     // Ensure sorted index exists
     await this.ensureSortedIndex(field)
     
@@ -408,14 +550,35 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Normalize value for consistent indexing
+   * Normalize value for consistent indexing with smart optimization
    */
-  private normalizeValue(value: any): string {
+  private normalizeValue(value: any, field?: string): string {
     if (value === null || value === undefined) return '__NULL__'
     if (typeof value === 'boolean') return value ? '__TRUE__' : '__FALSE__'
+    
+    // Apply smart normalization based on field statistics
+    if (field && this.fieldStats.has(field)) {
+      const stats = this.fieldStats.get(field)!
+      const strategy = stats.normalizationStrategy
+      
+      if (strategy === 'bucket' && typeof value === 'number') {
+        // Time bucketing for timestamps
+        if (field.toLowerCase().includes('time') || field.toLowerCase().includes('date')) {
+          const bucketSize = this.TIMESTAMP_PRECISION_MS
+          const bucketed = Math.floor(value / bucketSize) * bucketSize
+          return bucketed.toString()
+        }
+      } else if (strategy === 'precision' && typeof value === 'number') {
+        // Reduce float precision for high cardinality numeric fields
+        const rounded = Math.round(value * Math.pow(10, this.FLOAT_PRECISION)) / Math.pow(10, this.FLOAT_PRECISION)
+        return rounded.toString()
+      }
+    }
+    
+    // Default normalization
     if (typeof value === 'number') return value.toString()
     if (Array.isArray(value)) {
-      const joined = value.map(v => this.normalizeValue(v)).join(',')
+      const joined = value.map(v => this.normalizeValue(v, field)).join(',')
       // Hash very long array values to avoid filesystem limits
       if (joined.length > 100) {
         return this.hashValue(joined)
@@ -518,9 +681,15 @@ export class MetadataIndexManager {
       }
       
       // Add ID to entry
+      const wasNew = entry.ids.size === 0
       entry.ids.add(id)
       entry.lastUpdated = Date.now()
       this.dirtyEntries.add(key)
+      
+      // Update cardinality statistics
+      if (wasNew) {
+        this.updateCardinalityStats(field, value, 'add')
+      }
       
       // Incrementally update sorted index for this field
       if (!updatedFields.has(field)) {
@@ -616,9 +785,15 @@ export class MetadataIndexManager {
         }
         
         if (entry) {
+          const hadId = entry.ids.has(id)
           entry.ids.delete(id)
           entry.lastUpdated = Date.now()
           this.dirtyEntries.add(key)
+          
+          // Update cardinality statistics
+          if (hadId && entry.ids.size === 0) {
+            this.updateCardinalityStats(field, value, 'remove')
+          }
           
           // Incrementally update sorted index when removing
           this.updateSortedIndexRemove(field, value, id)
@@ -692,6 +867,12 @@ export class MetadataIndexManager {
    * Get IDs for a specific field-value combination with caching
    */
   async getIds(field: string, value: any): Promise<string[]> {
+    // Track exact query for field statistics
+    if (this.fieldStats.has(field)) {
+      const stats = this.fieldStats.get(field)!
+      stats.exactQueryCount++
+    }
+    
     const key = this.getIndexKey(field, value)
     
     // Check metadata cache first
@@ -1537,5 +1718,154 @@ export class MetadataIndexManager {
     } catch (error) {
       // Entry might not exist
     }
+  }
+
+  /**
+   * Get field statistics for optimization and discovery
+   */
+  async getFieldStatistics(): Promise<Map<string, FieldStats>> {
+    // Initialize stats for fields we haven't seen yet
+    for (const field of this.fieldIndexes.keys()) {
+      if (!this.fieldStats.has(field)) {
+        this.fieldStats.set(field, {
+          cardinality: {
+            uniqueValues: 0,
+            totalValues: 0,
+            distribution: 'uniform',
+            updateFrequency: 0,
+            lastAnalyzed: Date.now()
+          },
+          queryCount: 0,
+          rangeQueryCount: 0,
+          exactQueryCount: 0,
+          avgQueryTime: 0,
+          indexType: 'hash'
+        })
+      }
+    }
+    
+    return new Map(this.fieldStats)
+  }
+
+  /**
+   * Get field cardinality information
+   */
+  async getFieldCardinality(field: string): Promise<CardinalityInfo | null> {
+    const stats = this.fieldStats.get(field)
+    return stats ? stats.cardinality : null
+  }
+
+  /**
+   * Get all field names with their cardinality (for query optimization)
+   */
+  async getFieldsWithCardinality(): Promise<Array<{ field: string; cardinality: number; distribution: string }>> {
+    const fields: Array<{ field: string; cardinality: number; distribution: string }> = []
+    
+    for (const [field, stats] of this.fieldStats) {
+      fields.push({
+        field,
+        cardinality: stats.cardinality.uniqueValues,
+        distribution: stats.cardinality.distribution
+      })
+    }
+    
+    // Sort by cardinality (low cardinality fields are better for filtering)
+    fields.sort((a, b) => a.cardinality - b.cardinality)
+    
+    return fields
+  }
+
+  /**
+   * Get optimal query plan based on field statistics
+   */
+  async getOptimalQueryPlan(filters: Record<string, any>): Promise<{
+    strategy: 'exact' | 'range' | 'hybrid'
+    fieldOrder: string[]
+    estimatedCost: number
+  }> {
+    const fieldOrder: string[] = []
+    let hasRangeQueries = false
+    let totalEstimatedCost = 0
+    
+    // Analyze each filter
+    for (const [field, value] of Object.entries(filters)) {
+      const stats = this.fieldStats.get(field)
+      if (!stats) continue
+      
+      // Check if this is a range query
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        hasRangeQueries = true
+      }
+      
+      // Estimate cost based on cardinality
+      const cardinality = stats.cardinality.uniqueValues
+      const estimatedCost = Math.log2(Math.max(1, cardinality))
+      totalEstimatedCost += estimatedCost
+      
+      fieldOrder.push(field)
+    }
+    
+    // Sort fields by cardinality (process low cardinality first)
+    fieldOrder.sort((a, b) => {
+      const statsA = this.fieldStats.get(a)
+      const statsB = this.fieldStats.get(b)
+      if (!statsA || !statsB) return 0
+      return statsA.cardinality.uniqueValues - statsB.cardinality.uniqueValues
+    })
+    
+    return {
+      strategy: hasRangeQueries ? 'hybrid' : 'exact',
+      fieldOrder,
+      estimatedCost: totalEstimatedCost
+    }
+  }
+
+  /**
+   * Export field statistics for analysis
+   */
+  async exportFieldStats(): Promise<any> {
+    const stats: any = {
+      fields: {},
+      summary: {
+        totalFields: this.fieldStats.size,
+        highCardinalityFields: 0,
+        sparseFields: 0,
+        skewedFields: 0,
+        uniformFields: 0
+      }
+    }
+    
+    for (const [field, fieldStats] of this.fieldStats) {
+      stats.fields[field] = {
+        cardinality: fieldStats.cardinality,
+        queryStats: {
+          total: fieldStats.queryCount,
+          exact: fieldStats.exactQueryCount,
+          range: fieldStats.rangeQueryCount,
+          avgTime: fieldStats.avgQueryTime
+        },
+        indexType: fieldStats.indexType,
+        normalization: fieldStats.normalizationStrategy
+      }
+      
+      // Update summary
+      if (fieldStats.cardinality.uniqueValues > this.HIGH_CARDINALITY_THRESHOLD) {
+        stats.summary.highCardinalityFields++
+      }
+      
+      switch (fieldStats.cardinality.distribution) {
+        case 'sparse':
+          stats.summary.sparseFields++
+          break
+        case 'skewed':
+          stats.summary.skewedFields++
+          break
+        case 'uniform':
+          stats.summary.uniformFields++
+          break
+      }
+    }
+    
+    return stats
   }
 }
