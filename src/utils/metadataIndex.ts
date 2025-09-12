@@ -664,6 +664,13 @@ export class MetadataIndexManager {
   async addToIndex(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(metadata)
     
+    // Sort fields to process 'noun' field first for type-field affinity tracking
+    fields.sort((a, b) => {
+      if (a.field === 'noun') return -1
+      if (b.field === 'noun') return 1
+      return 0
+    })
+    
     // Track which fields we're updating for incremental sorted index maintenance
     const updatedFields = new Set<string>()
     
@@ -1886,17 +1893,22 @@ export class MetadataIndexManager {
    * Tracks which fields commonly appear with which entity types
    */
   private updateTypeFieldAffinity(entityId: string, field: string, value: any, operation: 'add' | 'remove'): void {
-    // Only track affinity for non-system fields
-    if (this.config.excludeFields.includes(field)) return
+    // Only track affinity for non-system fields (but allow 'noun' for type detection)
+    if (this.config.excludeFields.includes(field) && field !== 'noun') return
     
-    // Get the entity type from the "noun" field for this entity
+    // For the 'noun' field, the value IS the entity type
     let entityType: string | null = null
     
-    // Find the noun type for this entity
-    for (const [key, entry] of this.indexCache.entries()) {
-      if (key.startsWith('noun:') && entry.ids.has(entityId)) {
-        entityType = key.split(':', 2)[1]
-        break
+    if (field === 'noun') {
+      // This is the type definition itself
+      entityType = this.normalizeValue(value)
+    } else {
+      // Find the noun type for this entity by looking for entries with this entityId
+      for (const [key, entry] of this.indexCache.entries()) {
+        if (key.startsWith('noun:') && entry.ids.has(entityId)) {
+          entityType = key.split(':', 2)[1]
+          break
+        }
       }
     }
     
