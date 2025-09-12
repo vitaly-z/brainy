@@ -246,36 +246,49 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Generate common variations of field names for better matching
+   * Generate linguistic variations of field names - NO HARDCODED TERMS
+   * Uses algorithmic patterns to create natural variations
    */
   private getFieldVariations(field: string): string[] {
     const variations: string[] = []
     
     // camelCase to space separated: publishDate -> publish date
     const spaceSeparated = field.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
-    variations.push(spaceSeparated)
-    
-    // snake_case to space separated: created_at -> created at
-    const underscoreRemoved = field.replace(/_/g, ' ')
-    variations.push(underscoreRemoved)
-    
-    // Common abbreviations
-    const abbreviations: Record<string, string[]> = {
-      'date': ['dt', 'time', 'timestamp'],
-      'created': ['creation', 'made'],
-      'updated': ['modified', 'changed'],
-      'author': ['writer', 'creator', 'by'],
-      'category': ['cat', 'type', 'kind'],
-      'description': ['desc', 'about', 'summary']
+    if (spaceSeparated !== field.toLowerCase()) {
+      variations.push(spaceSeparated)
     }
     
-    for (const [key, abbrevs] of Object.entries(abbreviations)) {
-      if (field.toLowerCase().includes(key)) {
-        variations.push(...abbrevs)
+    // snake_case to space separated: created_at -> created at
+    const underscoreRemoved = field.replace(/_/g, ' ').toLowerCase()
+    if (underscoreRemoved !== field.toLowerCase()) {
+      variations.push(underscoreRemoved)
+    }
+    
+    // kebab-case to space separated: publish-date -> publish date
+    const dashRemoved = field.replace(/-/g, ' ').toLowerCase()
+    if (dashRemoved !== field.toLowerCase()) {
+      variations.push(dashRemoved)
+    }
+    
+    // Generate suffix variations (remove common suffixes)
+    const suffixes = ['At', 'Date', 'Time', 'Id', 'Ref', 'Name', 'Value', 'Count', 'Number']
+    for (const suffix of suffixes) {
+      if (field.endsWith(suffix) && field.length > suffix.length) {
+        const withoutSuffix = field.slice(0, -suffix.length).toLowerCase()
+        variations.push(withoutSuffix)
       }
     }
     
-    return variations
+    // Generate prefix variations (remove common prefixes)
+    const prefixes = ['is', 'has', 'can', 'get', 'set']
+    for (const prefix of prefixes) {
+      if (field.toLowerCase().startsWith(prefix) && field.length > prefix.length) {
+        const withoutPrefix = field.slice(prefix.length).toLowerCase()
+        variations.push(withoutPrefix)
+      }
+    }
+    
+    return [...new Set(variations)] // Remove duplicates
   }
   
   /**
@@ -321,6 +334,131 @@ export class NaturalLanguageProcessor {
     }
     
     return { field: bestMatch, confidence: bestScore }
+  }
+  
+  /**
+   * Find best matching field with type context prioritization
+   * Fields with high type affinity get boosted scores
+   */
+  private async findBestMatchingFieldWithTypeContext(
+    term: string,
+    typeSpecificFields: Array<{field: string; affinity: number}>
+  ): Promise<{ field: string | null; confidence: number }> {
+    // First do normal field matching
+    const normalMatch = await this.findBestMatchingField(term)
+    
+    if (!normalMatch.field || typeSpecificFields.length === 0) {
+      return normalMatch
+    }
+    
+    // Check if the matched field has type affinity
+    const typeField = typeSpecificFields.find(tf => tf.field === normalMatch.field)
+    
+    if (typeField) {
+      // Boost confidence based on type affinity
+      // High affinity (0.8+) gets 20% boost, medium affinity (0.5+) gets 10% boost
+      let boost = 0
+      if (typeField.affinity >= 0.8) {
+        boost = 0.2
+      } else if (typeField.affinity >= 0.5) {
+        boost = 0.1
+      }
+      
+      const boostedConfidence = Math.min(1.0, normalMatch.confidence + boost)
+      return { field: normalMatch.field, confidence: boostedConfidence }
+    }
+    
+    return normalMatch
+  }
+  
+  /**
+   * Validate field-type compatibility
+   * Returns validation result with suggestions for invalid combinations
+   */
+  private async validateFieldForType(
+    field: string, 
+    nounType: string
+  ): Promise<{
+    isValid: boolean
+    affinity: number
+    suggestions?: string[]
+    reason?: string
+  }> {
+    // Get fields that actually appear with this type
+    const typeFields = await this.brain.getFieldsForType(nounType)
+    
+    // Check if this field appears with this type
+    const fieldInfo = typeFields.find(tf => tf.field === field)
+    
+    if (fieldInfo) {
+      return {
+        isValid: true,
+        affinity: fieldInfo.affinity
+      }
+    }
+    
+    // Field doesn't appear with this type - provide suggestions
+    const suggestions = typeFields
+      .filter(tf => tf.affinity > 0.1) // Only suggest common fields
+      .slice(0, 3) // Top 3 suggestions
+      .map(tf => tf.field)
+    
+    return {
+      isValid: false,
+      affinity: 0,
+      suggestions,
+      reason: `Field '${field}' rarely appears with ${nounType} entities. Common fields: ${suggestions.join(', ')}`
+    }
+  }
+  
+  /**
+   * Enhanced intelligent parse with validation
+   */
+  private async validateAndOptimizeQuery(
+    tripleQuery: TripleQuery,
+    detectedNounType: string | null,
+    fieldMatches: any[]
+  ): Promise<TripleQuery> {
+    if (!detectedNounType || !tripleQuery.where) {
+      return tripleQuery
+    }
+    
+    const validationErrors: string[] = []
+    const optimizedWhere: Record<string, any> = {}
+    
+    // Validate each field in the where clause
+    for (const [field, value] of Object.entries(tripleQuery.where)) {
+      if (field === 'noun') {
+        optimizedWhere[field] = value // Always valid
+        continue
+      }
+      
+      const validation = await this.validateFieldForType(field, detectedNounType)
+      
+      if (validation.isValid || validation.affinity > 0.05) {
+        // Valid or has some affinity - include in query
+        optimizedWhere[field] = value
+      } else {
+        // Invalid field for this type
+        validationErrors.push(validation.reason || `Invalid field: ${field}`)
+        
+        // Try to find a better field match from suggestions
+        if (validation.suggestions && validation.suggestions.length > 0) {
+          const bestSuggestion = validation.suggestions[0]
+          optimizedWhere[bestSuggestion] = value
+        }
+      }
+    }
+    
+    // Log validation errors for debugging (in production, could throw or return errors)
+    if (validationErrors.length > 0) {
+      console.warn('Field validation warnings:', validationErrors)
+    }
+    
+    return {
+      ...tripleQuery,
+      where: optimizedWhere
+    }
   }
   
   /**
@@ -392,8 +530,8 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Intelligent parse using dynamic field discovery and semantic matching
-   * NO FALLBACKS - uses actual indexed fields and entities
+   * Intelligent parse using type-aware field discovery and semantic matching
+   * NO FALLBACKS - uses actual indexed fields, entities, and type context
    */
   private async intelligentParse(query: string, queryEmbedding: Vector): Promise<TripleQuery> {
     // Step 1: Analyze intent and extract structure
@@ -402,15 +540,38 @@ export class NaturalLanguageProcessor {
     // Step 2: Extract query terms
     const queryTerms = query.split(/\s+/).filter(term => term.length > 2)
     
-    // Step 3: Find matching fields and entities using semantic similarity
-    const entityMatches = await this.findEntityMatches(queryTerms)
+    // Step 3: Detect NounType first for context
+    let detectedNounType: string | null = null
+    let typeConfidence = 0
+    for (const term of queryTerms) {
+      const nounTypeMatch = await this.findBestNounType(term)
+      if (nounTypeMatch.type && nounTypeMatch.confidence > typeConfidence) {
+        detectedNounType = nounTypeMatch.type
+        typeConfidence = nounTypeMatch.confidence
+      }
+    }
     
-    // Step 4: Build structured query from matches
+    // Step 4: Get type-specific fields if we detected a type
+    let typeSpecificFields: Array<{field: string; affinity: number}> = []
+    if (detectedNounType && typeConfidence > 0.75) {
+      const fieldsForType = await this.brain.getFieldsForType(detectedNounType)
+      typeSpecificFields = fieldsForType.map(f => ({field: f.field, affinity: f.affinity}))
+    }
+    
+    // Step 5: Find matching fields and entities with type context
+    const entityMatches = await this.findEntityMatchesWithTypeContext(queryTerms, typeSpecificFields)
+    
+    // Step 6: Build structured query from matches
     const tripleQuery: TripleQuery = {}
     
     // Separate fields from entities
     const fieldMatches = entityMatches.filter(m => m.type === 'field')
     const entityRefs = entityMatches.filter(m => m.type === 'entity')
+    
+    // Add detected type constraint if confident
+    if (detectedNounType && typeConfidence > 0.75) {
+      tripleQuery.where = { ...tripleQuery.where, noun: detectedNounType }
+    }
     
     // Build metadata filters from field matches
     if (fieldMatches.length > 0) {
@@ -447,20 +608,30 @@ export class NaturalLanguageProcessor {
       tripleQuery.like = query
     }
     
+    // Validate and optimize query based on type context
+    const validatedQuery = await this.validateAndOptimizeQuery(
+      tripleQuery,
+      detectedNounType,
+      fieldMatches
+    )
+    
     // Add query optimization hints based on field statistics
-    if (fieldMatches.length > 0) {
-      const queryPlan = await this.brain.getOptimalQueryPlan(tripleQuery.where || {})
+    if (fieldMatches.length > 0 && validatedQuery.where) {
+      const queryPlan = await this.brain.getOptimalQueryPlan(validatedQuery.where)
       
       // Attach optimization hints as a separate property
-      const hints: any = tripleQuery
+      const hints: any = validatedQuery
       hints.optimizationHints = {
+        detectedType: detectedNounType,
+        typeConfidence,
         fieldOrder: queryPlan.fieldOrder,
         strategy: queryPlan.strategy,
-        estimatedCost: queryPlan.estimatedCost
+        estimatedCost: queryPlan.estimatedCost,
+        typeSpecificFieldCount: typeSpecificFields.length
       }
     }
     
-    return tripleQuery
+    return validatedQuery
   }
   
   /**
@@ -767,26 +938,45 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Find entity matches using semantic similarity for fields and vector search for entities
+   * Find entity matches using type context and semantic similarity
    */
   private async findEntityMatches(terms: string[]): Promise<any[]> {
+    return this.findEntityMatchesWithTypeContext(terms, [])
+  }
+  
+  /**
+   * Find entity matches with type context for better field prioritization
+   */
+  private async findEntityMatchesWithTypeContext(
+    terms: string[], 
+    typeSpecificFields: Array<{field: string; affinity: number}>
+  ): Promise<any[]> {
     const matches: any[] = []
     
     // Get field statistics for optimization hints
     const fieldStats = await this.brain.getFieldStatistics()
     
+    // Create field priority map based on type affinity
+    const fieldPriorityMap = new Map<string, number>()
+    for (const {field, affinity} of typeSpecificFields) {
+      fieldPriorityMap.set(field, affinity)
+    }
+    
     for (const term of terms) {
       try {
         // First, check if term matches a field using semantic similarity
-        const fieldMatch = await this.findBestMatchingField(term)
+        const fieldMatch = await this.findBestMatchingFieldWithTypeContext(term, typeSpecificFields)
         
         if (fieldMatch.field && fieldMatch.confidence > 0.7) {
           const stats = fieldStats.get(fieldMatch.field)
+          const typeAffinity = fieldPriorityMap.get(fieldMatch.field) || 0
+          
           matches.push({
             term,
             type: 'field',
             field: fieldMatch.field,
             confidence: fieldMatch.confidence,
+            typeAffinity, // NEW: How likely this field appears with this type
             cardinality: stats?.cardinality.uniqueValues,
             distribution: stats?.cardinality.distribution,
             indexType: stats?.indexType
