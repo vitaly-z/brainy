@@ -118,17 +118,8 @@ export class PatternLibrary {
       return this.embeddingCache.get(text)!
     }
     
-    // Use add/get/delete pattern to get embeddings
-    const id = await this.brain.add({
-      data: text,
-      type: 'document'
-    })
-    
-    const entity = await this.brain.get(id)
-    const embedding = entity?.vector || []
-    
-    // Clean up temporary entity
-    await this.brain.delete(id)
+    // Use brain's embed method directly to avoid recursion
+    const embedding = await (this.brain as any).embed(text)
     
     this.embeddingCache.set(text, embedding)
     return embedding

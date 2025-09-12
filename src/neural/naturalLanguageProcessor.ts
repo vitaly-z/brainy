@@ -56,7 +56,7 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Get embedding using add/get/delete pattern
+   * Get embedding directly using brain's embed method
    */
   private async getEmbedding(text: string): Promise<Vector> {
     // Check cache first
@@ -64,17 +64,8 @@ export class NaturalLanguageProcessor {
       return this.embeddingCache.get(text)!
     }
     
-    // Use add/get/delete pattern to get embedding
-    const id = await this.brain.add({
-      data: text,
-      type: 'document'
-    })
-    
-    const entity = await this.brain.get(id)
-    const embedding = entity?.vector || []
-    
-    // Clean up temporary entity
-    await this.brain.delete(id)
+    // Use brain's embed method directly to avoid recursion
+    const embedding = await (this.brain as any).embed(text)
     
     // Cache the embedding
     this.embeddingCache.set(text, embedding)
@@ -89,6 +80,13 @@ export class NaturalLanguageProcessor {
       await this.patternLibrary.init()
       this.initialized = true
     }
+  }
+  
+  /**
+   * Public initialization method for external callers
+   */
+  async init(): Promise<void> {
+    await this.ensureInitialized()
   }
   
   /**
@@ -136,21 +134,12 @@ export class NaturalLanguageProcessor {
    * Hybrid parse when pattern matching fails
    */
   private async hybridParse(query: string, queryEmbedding: Vector): Promise<TripleQuery> {
-    // Analyze intent using embeddings and keywords
+    // Analyze intent using keywords only (no recursive searches)
     const intent = await this.analyzeIntent(query)
     
-    // Find similar successful queries from history
-    const similar = await this.findSimilarQueries(queryEmbedding)
-    if (similar.length > 0 && similar[0].similarity > 0.9) {
-      // Adapt a very similar previous query (for future implementation)
-      // return this.adaptQuery(query, similar[0].result)
-    }
-    
-    // Extract entities using Brainy's search
-    const entities = await this.extractEntities(query)
-    
-    // Build query based on intent and entities
-    return this.buildQuery(query, intent, entities)
+    // Build query based on intent alone - no entity extraction needed
+    // The vector search will handle finding relevant entities
+    return this.buildQuery(query, intent, [])
   }
   
   /**

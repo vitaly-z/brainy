@@ -22,6 +22,7 @@ import { ImprovedNeuralAPI } from './neural/improvedNeuralAPI.js'
 import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
+import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
 import {
   Entity,
   Relation,
@@ -47,6 +48,8 @@ export class Brainy<T = any> {
   // Core components
   private index!: HNSWIndex | HNSWIndexOptimized
   private storage!: StorageAdapter
+  private metadataIndex!: MetadataIndexManager
+  private graphIndex!: GraphAdjacencyIndex
   private embedder: EmbeddingFunction
   private distance: DistanceFunction
   private augmentationRegistry: AugmentationRegistry
@@ -56,7 +59,6 @@ export class Brainy<T = any> {
   private _neural?: ImprovedNeuralAPI
   private _nlp?: NaturalLanguageProcessor
   private _tripleIntelligence?: TripleIntelligenceSystem
-  private _metadataIndex?: MetadataIndexManager
 
   // State
   private initialized = false
@@ -108,6 +110,15 @@ export class Brainy<T = any> {
 
       // Setup index now that we have storage
       this.index = this.setupIndex()
+
+      // Initialize core metadata index
+      this.metadataIndex = new MetadataIndexManager(this.storage)
+      
+      // Initialize core graph index
+      this.graphIndex = new GraphAdjacencyIndex(this.storage)
+      
+      // Rebuild indexes if needed for existing data
+      await this.rebuildIndexesIfNeeded()
 
       // Initialize augmentations
       await this.augmentationRegistry.initializeAll({
@@ -180,20 +191,27 @@ export class Brainy<T = any> {
       // Add to index
       await this.index.addItem({ id, vector })
 
+      // Prepare metadata object with data field included
+      const metadata = {
+        ...(typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data) ? params.data : {}),
+        ...params.metadata,
+        _data: params.data, // Store the raw data in metadata
+        noun: params.type,
+        service: params.service,
+        createdAt: Date.now()
+      }
+
       // Save to storage
       await this.storage.saveNoun({
         id,
         vector,
         connections: new Map(),
         level: 0,
-        metadata: {
-          ...(typeof params.data === 'object' && params.data !== null ? params.data : {}),
-          ...params.metadata,
-          noun: params.type,
-          service: params.service,
-          createdAt: Date.now()
-        }
+        metadata
       })
+
+      // Add to metadata index for fast filtering
+      await this.metadataIndex.addToIndex(id, metadata)
 
       return id
     })
@@ -212,22 +230,34 @@ export class Brainy<T = any> {
         return null
       }
 
-      // Extract metadata - separate user metadata from system metadata
-      const { noun: nounType, service, createdAt, updatedAt, ...userMetadata } = noun.metadata || {}
-      
-      // Construct entity from noun
-      const entity: Entity<T> = {
-        id: noun.id,
-        vector: noun.vector,
-        type: (nounType as NounType) || NounType.Thing,
-        metadata: userMetadata as T,
-        service: service as string,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: updatedAt as number
-      }
-
-      return entity
+      // Use the common conversion method
+      return this.convertNounToEntity(noun)
     })
+  }
+
+  /**
+   * Convert a noun from storage to an entity
+   */
+  private async convertNounToEntity(noun: any): Promise<Entity<T>> {
+    // Extract metadata - separate user metadata from system metadata
+    const { noun: nounType, service, createdAt, updatedAt, _data, ...userMetadata } = noun.metadata || {}
+    
+    const entity: Entity<T> = {
+      id: noun.id,
+      vector: noun.vector,
+      type: (nounType as NounType) || NounType.Thing,
+      metadata: userMetadata as T,
+      service: service as string,
+      createdAt: (createdAt as number) || Date.now(),
+      updatedAt: updatedAt as number
+    }
+    
+    // Only add data field if it exists
+    if (_data !== undefined) {
+      entity.data = _data
+    }
+    
+    return entity
   }
 
   /**
@@ -262,24 +292,32 @@ export class Brainy<T = any> {
         : params.metadata || existing.metadata
 
       // Merge data objects if both old and new are objects
-      const dataFields = typeof params.data === 'object' && params.data !== null
+      const dataFields = typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data)
         ? params.data
         : {}
+
+      // Prepare updated metadata object with data field
+      const updatedMetadata = {
+        ...newMetadata,
+        ...dataFields,
+        _data: params.data !== undefined ? params.data : existing.data, // Update the data field
+        noun: params.type || existing.type,
+        service: existing.service,
+        createdAt: existing.createdAt,
+        updatedAt: Date.now()
+      }
 
       await this.storage.saveNoun({
         id: params.id,
         vector,
         connections: new Map(),
         level: 0,
-        metadata: {
-          ...newMetadata,
-          ...dataFields,
-          noun: params.type || existing.type,
-          service: existing.service,
-          createdAt: existing.createdAt,
-          updatedAt: Date.now()
-        }
+        metadata: updatedMetadata
       })
+
+      // Update metadata index - remove old entry and add new one
+      await this.metadataIndex.removeFromIndex(params.id)
+      await this.metadataIndex.addToIndex(params.id, updatedMetadata)
     })
   }
 
@@ -290,8 +328,11 @@ export class Brainy<T = any> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('delete', { id }, async () => {
-      // Remove from index
+      // Remove from vector index
       await this.index.removeItem(id)
+
+      // Remove from metadata index
+      await this.metadataIndex.removeFromIndex(id)
 
       // Delete from storage
       await this.storage.deleteNoun(id)
@@ -365,6 +406,9 @@ export class Brainy<T = any> {
 
       await this.storage.saveVerb(verb)
 
+      // Add to graph index for O(1) lookups
+      await this.graphIndex.addVerb(verb)
+
       // Create bidirectional if requested
       if (params.bidirectional) {
         const reverseId = uuidv4()
@@ -378,6 +422,8 @@ export class Brainy<T = any> {
         } as any
         
         await this.storage.saveVerb(reverseVerb)
+        // Add reverse relationship to graph index too
+        await this.graphIndex.addVerb(reverseVerb)
       }
 
       return id
@@ -391,6 +437,9 @@ export class Brainy<T = any> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('unrelate', { id }, async () => {
+      // Remove from graph index
+      await this.graphIndex.removeVerb(id)
+      // Remove from storage
       await this.storage.deleteVerb(id)
     })
   }
@@ -437,6 +486,7 @@ export class Brainy<T = any> {
 
   /**
    * Unified find method - supports natural language and structured queries
+   * Implements Triple Intelligence with parallel search optimization
    */
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
@@ -448,55 +498,68 @@ export class Brainy<T = any> {
     return this.augmentationRegistry.execute('find', params, async () => {
       let results: Result<T>[] = []
 
-      // Vector search
-      if (params.query || params.vector) {
-        const vector = params.vector || (await this.embed(params.query!))
-        const limit = params.limit || 10
-
-        // Search index - returns array of [id, score] tuples
-        const searchResults = await this.index.search(vector, limit * 2) // Get extra for filtering
-
-        // Hydrate results
-        for (const [id, score] of searchResults) {
-          const entity = await this.get(id)
-          if (entity) {
+      // Handle empty query - return paginated results from storage
+      const hasSearchCriteria = params.query || params.vector || params.where || 
+                               params.type || params.service || params.near || params.connected
+      
+      if (!hasSearchCriteria) {
+        const limit = params.limit || 20
+        const offset = params.offset || 0
+        
+        const storageResults = await this.storage.getNouns({ 
+          pagination: { limit: limit + offset, offset: 0 } 
+        })
+        
+        for (let i = offset; i < Math.min(offset + limit, storageResults.items.length); i++) {
+          const noun = storageResults.items[i]
+          if (noun) {
+            const entity = await this.convertNounToEntity(noun)
             results.push({
-              id,
-              score,
+              id: noun.id,
+              score: 1.0, // All results equally relevant for empty query
               entity
             })
           }
         }
+        
+        return results
       }
 
-      // Proximity search
+      // Execute parallel searches for optimal performance
+      const searchPromises: Promise<Result<T>[]>[] = []
+      
+      // Vector search component
+      if (params.query || params.vector) {
+        searchPromises.push(this.executeVectorSearch(params))
+      }
+      
+      // Proximity search component
       if (params.near) {
-        const nearEntity = await this.get(params.near.id)
-        if (nearEntity) {
-          const nearResults = await this.index.search(
-            nearEntity.vector,
-            params.limit || 10
-          )
-
-          for (const [id, score] of nearResults) {
-            if (score >= (params.near.threshold || 0.7)) {
-              const entity = await this.get(id)
-              if (entity) {
-                results.push({
-                  id,
-                  score,
-                  entity
-                })
-              }
-            }
-          }
+        searchPromises.push(this.executeProximitySearch(params))
+      }
+      
+      // Execute searches in parallel
+      if (searchPromises.length > 0) {
+        const searchResults = await Promise.all(searchPromises)
+        for (const batch of searchResults) {
+          results.push(...batch)
         }
       }
 
-      // Apply O(log n) metadata filtering using MetadataIndexManager
+      // Remove duplicate results from parallel searches
+      if (results.length > 0) {
+        const uniqueResults = new Map<string, Result<T>>()
+        for (const result of results) {
+          const existing = uniqueResults.get(result.id)
+          if (!existing || result.score > existing.score) {
+            uniqueResults.set(result.id, result)
+          }
+        }
+        results = Array.from(uniqueResults.values())
+      }
+
+      // Apply O(log n) metadata filtering using core MetadataIndexManager
       if (params.where || params.type || params.service) {
-        const metadataIndex = await this.getMetadataIndex()
-        
         // Build filter object for metadata index
         const filter: any = {}
         if (params.where) Object.assign(filter, params.where)
@@ -506,19 +569,39 @@ export class Brainy<T = any> {
         }
         if (params.service) filter.service = params.service
         
-        const filteredIds = await metadataIndex.getIdsForFilter(filter)
+        const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
         
-        // Only keep results that match the metadata filter
-        const filteredIdSet = new Set(filteredIds)
-        results = results.filter((r) => filteredIdSet.has(r.id))
+        // CRITICAL FIX: Handle both cases properly
+        if (results.length > 0) {
+          // Filter existing results (from vector search)
+          const filteredIdSet = new Set(filteredIds)
+          results = results.filter((r) => filteredIdSet.has(r.id))
+        } else {
+          // Create results from metadata matches (metadata-only query)
+          for (const id of filteredIds) {
+            const entity = await this.get(id)
+            if (entity) {
+              results.push({
+                id,
+                score: 1.0, // All metadata matches are equally relevant
+                entity
+              })
+            }
+          }
+        }
       }
 
-      // Graph constraints
+      // Graph search component with O(1) traversal
       if (params.connected) {
-        results = await this.applyGraphConstraints(results, params.connected)
+        results = await this.executeGraphSearch(params, results)
+      }
+      
+      // Apply fusion scoring if requested
+      if (params.fusion && results.length > 0) {
+        results = this.applyFusionScoring(results, params.fusion)
       }
 
-      // Sort by score and limit
+      // Sort by score and apply pagination
       results.sort((a, b) => b.score - a.score)
       const limit = params.limit || 10
       const offset = params.offset || 0
@@ -800,27 +883,16 @@ export class Brainy<T = any> {
    */
   getTripleIntelligence(): TripleIntelligenceSystem {
     if (!this._tripleIntelligence) {
-      // For now, pass minimal parameters to avoid errors
-      // This will be properly initialized when needed
+      // Use core components directly - no lazy loading needed
       this._tripleIntelligence = new TripleIntelligenceSystem(
-        null as any,  // metadataIndex
-        this.index as any,
-        null as any,  // graphIndex
+        this.metadataIndex,
+        this.index,
+        this.graphIndex,
         async (text: string) => this.embedder(text),
         this.storage
       )
     }
     return this._tripleIntelligence
-  }
-
-  /**
-   * Get Metadata Index Manager for O(log n) filtering
-   */
-  private async getMetadataIndex(): Promise<MetadataIndexManager> {
-    if (!this._metadataIndex) {
-      this._metadataIndex = new MetadataIndexManager(this.storage)
-    }
-    return this._metadataIndex
   }
 
   /**
@@ -891,42 +963,229 @@ export class Brainy<T = any> {
   // ============= HELPER METHODS =============
 
   /**
-   * Parse natural language query
+   * Parse natural language query using advanced NLP with 220+ patterns
+   * The embedding model is always available as it's core to Brainy's functionality
    */
   private async parseNaturalQuery(query: string): Promise<FindParams<T>> {
+    // Initialize NLP processor if needed (lazy loading)
     if (!this._nlp) {
       this._nlp = new NaturalLanguageProcessor(this as any)
+      await this._nlp.init() // Ensure pattern library is loaded
     }
-    const parsed = await this._nlp.processNaturalQuery(query)
-    return parsed as FindParams<T>
+    
+    // Process with our advanced pattern library (220+ patterns with embeddings)
+    const tripleQuery = await this._nlp.processNaturalQuery(query)
+    
+    // Convert TripleQuery to FindParams
+    const params: FindParams<T> = {}
+    
+    // Handle vector search
+    if (tripleQuery.like || tripleQuery.similar) {
+      params.query = typeof tripleQuery.like === 'string' ? tripleQuery.like : 
+                     typeof tripleQuery.similar === 'string' ? tripleQuery.similar : query
+    } else if (!tripleQuery.where && !tripleQuery.connected) {
+      // Default to vector search if no other criteria specified
+      params.query = query
+    }
+    
+    // Handle metadata filtering
+    if (tripleQuery.where) {
+      params.where = tripleQuery.where as Partial<T>
+    }
+    
+    // Handle graph relationships
+    if (tripleQuery.connected) {
+      params.connected = {
+        to: Array.isArray(tripleQuery.connected.to) ? tripleQuery.connected.to[0] : tripleQuery.connected.to,
+        from: Array.isArray(tripleQuery.connected.from) ? tripleQuery.connected.from[0] : tripleQuery.connected.from,
+        via: tripleQuery.connected.type as any,
+        depth: tripleQuery.connected.depth,
+        direction: tripleQuery.connected.direction
+      }
+    }
+    
+    // Handle other options
+    if (tripleQuery.limit) params.limit = tripleQuery.limit
+    if (tripleQuery.offset) params.offset = tripleQuery.offset
+    
+    return this.enhanceNLPResult(params, query)
+  }
+  
+  /**
+   * Enhance NLP results with fusion scoring
+   */
+  private enhanceNLPResult(params: FindParams<T>, _originalQuery: string): FindParams<T> {
+    // Add fusion scoring for complex queries
+    if (params.query && params.where && Object.keys(params.where).length > 0) {
+      params.fusion = params.fusion || {
+        strategy: 'adaptive',
+        weights: {
+          vector: 0.6,
+          field: 0.3,
+          graph: 0.1
+        }
+      }
+    }
+    return params
   }
 
   /**
-   * Apply graph constraints to results
+   * Execute vector search component
+   */
+  private async executeVectorSearch(params: FindParams<T>): Promise<Result<T>[]> {
+    const vector = params.vector || (await this.embed(params.query!))
+    const limit = params.limit || 10
+    
+    const searchResults = await this.index.search(vector, limit * 2)
+    const results: Result<T>[] = []
+    
+    for (const [id, distance] of searchResults) {
+      const entity = await this.get(id)
+      if (entity) {
+        const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
+        results.push({ id, score, entity })
+      }
+    }
+    
+    return results
+  }
+  
+  /**
+   * Execute proximity search component
+   */
+  private async executeProximitySearch(params: FindParams<T>): Promise<Result<T>[]> {
+    if (!params.near) return []
+    
+    const nearEntity = await this.get(params.near.id)
+    if (!nearEntity) return []
+    
+    const nearResults = await this.index.search(
+      nearEntity.vector,
+      params.limit || 10
+    )
+    
+    const results: Result<T>[] = []
+    for (const [id, distance] of nearResults) {
+      const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
+      
+      if (score >= (params.near.threshold || 0.7)) {
+        const entity = await this.get(id)
+        if (entity) {
+          results.push({ id, score, entity })
+        }
+      }
+    }
+    
+    return results
+  }
+  
+  /**
+   * Execute graph search component with O(1) traversal
+   */
+  private async executeGraphSearch(params: FindParams<T>, existingResults: Result<T>[]): Promise<Result<T>[]> {
+    if (!params.connected) return existingResults
+    
+    const { from, to, direction = 'both' } = params.connected
+    const connectedIds: string[] = []
+    
+    if (from) {
+      const neighbors = await this.graphIndex.getNeighbors(from, direction)
+      connectedIds.push(...neighbors)
+    }
+    
+    if (to) {
+      const reverseDirection = direction === 'in' ? 'out' : direction === 'out' ? 'in' : 'both'
+      const neighbors = await this.graphIndex.getNeighbors(to, reverseDirection)
+      connectedIds.push(...neighbors)
+    }
+    
+    // Filter existing results to only connected entities
+    if (existingResults.length > 0) {
+      const connectedIdSet = new Set(connectedIds)
+      return existingResults.filter(r => connectedIdSet.has(r.id))
+    }
+    
+    // Create results from connected entities
+    const results: Result<T>[] = []
+    for (const id of connectedIds) {
+      const entity = await this.get(id)
+      if (entity) {
+        results.push({
+          id,
+          score: 1.0,
+          entity
+        })
+      }
+    }
+    
+    return results
+  }
+  
+  /**
+   * Apply fusion scoring for multi-source results
+   */
+  private applyFusionScoring(results: Result<T>[], fusionType: any): Result<T>[] {
+    // Implement different fusion strategies
+    const strategy = typeof fusionType === 'string' ? fusionType : fusionType.strategy || 'weighted'
+    
+    switch (strategy) {
+      case 'max':
+        // Use maximum score from any source
+        return results
+        
+      case 'average':
+        // Average scores from multiple sources
+        const scoreMap = new Map<string, number[]>()
+        for (const result of results) {
+          const scores = scoreMap.get(result.id) || []
+          scores.push(result.score)
+          scoreMap.set(result.id, scores)
+        }
+        
+        return results.map(r => ({
+          ...r,
+          score: scoreMap.get(r.id)!.reduce((a, b) => a + b, 0) / scoreMap.get(r.id)!.length
+        }))
+        
+      case 'weighted':
+      default:
+        // Weighted combination based on source importance
+        const weights = fusionType.weights || { vector: 0.7, metadata: 0.2, graph: 0.1 }
+        return results.map(r => ({
+          ...r,
+          score: r.score * (weights.vector || 1.0)
+        }))
+    }
+  }
+
+  /**
+   * Apply graph constraints using O(1) GraphAdjacencyIndex - TRUE Triple Intelligence!
    */
   private async applyGraphConstraints(
     results: Result<T>[],
     constraints: any
   ): Promise<Result<T>[]> {
-    // Filter by graph connections
+    // Filter by graph connections using fast graph index
     if (constraints.to || constraints.from) {
       const filtered: Result<T>[] = []
       
       for (const result of results) {
+        let hasConnection = false
+        
         if (constraints.to) {
-          const verbs = await this.storage.getVerbsBySource(result.id)
-          const hasConnection = verbs.some(v => v.targetId === constraints.to)
-          if (hasConnection) {
-            filtered.push(result)
-          }
+          // Check if this entity connects TO the target (O(1) lookup)
+          const outgoingNeighbors = await this.graphIndex.getNeighbors(result.id, 'out')
+          hasConnection = outgoingNeighbors.includes(constraints.to)
         }
         
-        if (constraints.from) {
-          const verbs = await this.storage.getVerbsByTarget(result.id)
-          const hasConnection = verbs.some(v => v.sourceId === constraints.from)
-          if (hasConnection) {
-            filtered.push(result)
-          }
+        if (constraints.from && !hasConnection) {
+          // Check if this entity connects FROM the source (O(1) lookup)
+          const incomingNeighbors = await this.graphIndex.getNeighbors(result.id, 'in')
+          hasConnection = incomingNeighbors.includes(constraints.from)
+        }
+        
+        if (hasConnection) {
+          filtered.push(result)
         }
       }
       
@@ -1056,6 +1315,34 @@ export class Brainy<T = any> {
       realtime: config?.realtime ?? false,
       multiTenancy: config?.multiTenancy ?? false,
       telemetry: config?.telemetry ?? false
+    }
+  }
+
+  /**
+   * Rebuild indexes if there's existing data but empty indexes
+   */
+  private async rebuildIndexesIfNeeded(): Promise<void> {
+    try {
+      // Check if storage has data
+      const entities = await this.storage.getNouns({ pagination: { limit: 1 } })
+      if (entities.totalCount === 0 || entities.items.length === 0) {
+        // No data in storage, no rebuild needed
+        return
+      }
+
+      // Check if metadata index is empty
+      const metadataStats = await this.metadataIndex.getStats()
+      if (metadataStats.totalEntries === 0) {
+        console.log('🔄 Rebuilding metadata index for existing data...')
+        await this.metadataIndex.rebuild()
+        const newStats = await this.metadataIndex.getStats()
+        console.log(`✅ Metadata index rebuilt: ${newStats.totalEntries} entries`)
+      }
+
+      // Note: GraphAdjacencyIndex will rebuild itself as relationships are added
+      // Vector index should already be populated if storage has data
+    } catch (error) {
+      console.warn('Warning: Could not check or rebuild indexes:', error)
     }
   }
 

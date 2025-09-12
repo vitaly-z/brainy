@@ -107,10 +107,10 @@ export class MetadataIndexManager {
       if (loaded) {
         this.sortedIndices.set(field, loaded)
       } else {
-        // Create new sorted index
+        // Create new sorted index - NOT dirty since we maintain incrementally
         this.sortedIndices.set(field, {
           values: [],
-          isDirty: true,
+          isDirty: false,  // Clean by default with incremental updates
           fieldType: 'mixed'
         })
       }
@@ -165,6 +165,127 @@ export class MetadataIndexManager {
     sortedIndex.isDirty = false
   }
   
+  /**
+   * Detect field type from value
+   */
+  private detectFieldType(value: any): 'number' | 'date' | 'string' | 'mixed' {
+    if (typeof value === 'number' && !isNaN(value)) return 'number'
+    if (value instanceof Date) return 'date'
+    return 'string'
+  }
+
+  /**
+   * Compare two values based on field type for sorting
+   */
+  private compareValues(a: any, b: any, fieldType: string): number {
+    switch (fieldType) {
+      case 'number':
+        return (a as number) - (b as number)
+      case 'date':
+        return (a as Date).getTime() - (b as Date).getTime()
+      case 'string':
+      default:
+        const aStr = String(a)
+        const bStr = String(b)
+        return aStr < bStr ? -1 : aStr > bStr ? 1 : 0
+    }
+  }
+
+  /**
+   * Binary search to find insertion position for a value
+   * Returns the index where the value should be inserted to maintain sorted order
+   */
+  private findInsertPosition(sortedArray: Array<[any, Set<string>]>, value: any, fieldType: string): number {
+    if (sortedArray.length === 0) return 0
+    
+    let left = 0
+    let right = sortedArray.length - 1
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2)
+      const midVal = sortedArray[mid][0]
+      
+      const comparison = this.compareValues(midVal, value, fieldType)
+      
+      if (comparison < 0) {
+        left = mid + 1
+      } else if (comparison > 0) {
+        right = mid - 1
+      } else {
+        return mid // Value already exists at this position
+      }
+    }
+    
+    return left // Insert position
+  }
+
+  /**
+   * Incrementally update sorted index when adding an ID
+   */
+  private updateSortedIndexAdd(field: string, value: any, id: string): void {
+    // Ensure sorted index exists
+    if (!this.sortedIndices.has(field)) {
+      this.sortedIndices.set(field, {
+        values: [],
+        isDirty: false,
+        fieldType: this.detectFieldType(value)
+      })
+    }
+    
+    const sortedIndex = this.sortedIndices.get(field)!
+    const normalizedValue = this.normalizeValue(value)
+    
+    // Find where this value should be in the sorted array
+    const insertPos = this.findInsertPosition(
+      sortedIndex.values, 
+      normalizedValue, 
+      sortedIndex.fieldType
+    )
+    
+    if (insertPos < sortedIndex.values.length && 
+        sortedIndex.values[insertPos][0] === normalizedValue) {
+      // Value already exists, just add the ID to the existing Set
+      sortedIndex.values[insertPos][1].add(id)
+    } else {
+      // New value, insert at the correct position
+      sortedIndex.values.splice(insertPos, 0, [normalizedValue, new Set([id])])
+    }
+    
+    // Mark as clean since we're maintaining it incrementally
+    sortedIndex.isDirty = false
+  }
+
+  /**
+   * Incrementally update sorted index when removing an ID
+   */
+  private updateSortedIndexRemove(field: string, value: any, id: string): void {
+    const sortedIndex = this.sortedIndices.get(field)
+    if (!sortedIndex || sortedIndex.values.length === 0) return
+    
+    const normalizedValue = this.normalizeValue(value)
+    
+    // Binary search to find the value
+    const pos = this.findInsertPosition(
+      sortedIndex.values,
+      normalizedValue,
+      sortedIndex.fieldType
+    )
+    
+    if (pos < sortedIndex.values.length && 
+        sortedIndex.values[pos][0] === normalizedValue) {
+      // Remove the ID from the Set
+      sortedIndex.values[pos][1].delete(id)
+      
+      // If no IDs left for this value, remove the entire entry
+      if (sortedIndex.values[pos][1].size === 0) {
+        sortedIndex.values.splice(pos, 1)
+      }
+    }
+    
+    // Keep it clean
+    sortedIndex.isDirty = false
+  }
+
   /**
    * Binary search for range start (inclusive or exclusive)
    */
@@ -221,11 +342,18 @@ export class MetadataIndexManager {
     includeMin: boolean = true,
     includeMax: boolean = true
   ): Promise<string[]> {
-    // Ensure sorted index exists and is up to date
+    // Ensure sorted index exists
     await this.ensureSortedIndex(field)
-    await this.buildSortedIndex(field)
     
-    const sortedIndex = this.sortedIndices.get(field)
+    // With incremental updates, we should rarely need to rebuild
+    // Only rebuild if it's marked dirty (e.g., after a bulk load or migration)
+    let sortedIndex = this.sortedIndices.get(field)
+    if (sortedIndex?.isDirty) {
+      prodLog.warn(`MetadataIndex: Sorted index for field '${field}' was dirty, rebuilding...`)
+      await this.buildSortedIndex(field)
+      sortedIndex = this.sortedIndices.get(field)
+    }
+    
     if (!sortedIndex || sortedIndex.values.length === 0) return []
     
     const sorted = sortedIndex.values
@@ -369,13 +497,8 @@ export class MetadataIndexManager {
   async addToIndex(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(metadata)
     
-    // Mark sorted indices as dirty when adding new data
-    for (const { field } of fields) {
-      const sortedIndex = this.sortedIndices.get(field)
-      if (sortedIndex) {
-        sortedIndex.isDirty = true
-      }
-    }
+    // Track which fields we're updating for incremental sorted index maintenance
+    const updatedFields = new Set<string>()
     
     for (let i = 0; i < fields.length; i++) {
       const { field, value } = fields[i]
@@ -398,6 +521,15 @@ export class MetadataIndexManager {
       entry.ids.add(id)
       entry.lastUpdated = Date.now()
       this.dirtyEntries.add(key)
+      
+      // Incrementally update sorted index for this field
+      if (!updatedFields.has(field)) {
+        this.updateSortedIndexAdd(field, value, id)
+        updatedFields.add(field)
+      } else {
+        // Multiple values for same field - still update
+        this.updateSortedIndexAdd(field, value, id)
+      }
       
       // Update field index
       await this.updateFieldIndex(field, value, 1)
@@ -488,6 +620,9 @@ export class MetadataIndexManager {
           entry.lastUpdated = Date.now()
           this.dirtyEntries.add(key)
           
+          // Incrementally update sorted index when removing
+          this.updateSortedIndexRemove(field, value, id)
+          
           // Update field index
           await this.updateFieldIndex(field, value, -1)
           
@@ -508,6 +643,9 @@ export class MetadataIndexManager {
           entry.ids.delete(id)
           entry.lastUpdated = Date.now()
           this.dirtyEntries.add(key)
+          
+          // Incrementally update sorted index
+          this.updateSortedIndexRemove(entry.field, entry.value, id)
           
           if (entry.ids.size === 0) {
             this.indexCache.delete(key)

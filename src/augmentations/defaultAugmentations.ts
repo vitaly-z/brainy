@@ -11,7 +11,6 @@
 import { Brainy } from '../brainy.js'
 import { BaseAugmentation } from './brainyAugmentation.js'
 import { CacheAugmentation } from './cacheAugmentation.js'
-import { IndexAugmentation } from './indexAugmentation.js'
 import { MetricsAugmentation } from './metricsAugmentation.js'
 import { MonitoringAugmentation } from './monitoringAugmentation.js'
 import { UniversalDisplayAugmentation } from './universalDisplayAugmentation.js'
@@ -26,7 +25,6 @@ import { UniversalDisplayAugmentation } from './universalDisplayAugmentation.js'
 export function createDefaultAugmentations(
   config: {
     cache?: boolean | Record<string, any>
-    index?: boolean | Record<string, any>
     metrics?: boolean | Record<string, any>
     monitoring?: boolean | Record<string, any>
     display?: boolean | Record<string, any>
@@ -40,11 +38,7 @@ export function createDefaultAugmentations(
     augmentations.push(new CacheAugmentation(cacheConfig))
   }
 
-  // Index augmentation (was MetadataIndex)
-  if (config.index !== false) {
-    const indexConfig = typeof config.index === 'object' ? config.index : {}
-    augmentations.push(new IndexAugmentation(indexConfig))
-  }
+  // Note: Index augmentation removed - metadata indexing is now core functionality
 
   // Metrics augmentation (was StatisticsCollector)
   if (config.metrics !== false) {
@@ -94,11 +88,9 @@ export const AugmentationHelpers = {
   },
 
   /**
-   * Get index augmentation
+   * Note: Index augmentation removed - metadata indexing is now core functionality
+   * Use brain.metadataIndex directly instead
    */
-  getIndex(brain: Brainy): IndexAugmentation | null {
-    return getAugmentation<IndexAugmentation>(brain, 'index')
-  },
 
   /**
    * Get metrics augmentation

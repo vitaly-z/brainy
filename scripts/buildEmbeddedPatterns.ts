@@ -45,20 +45,11 @@ async function buildEmbeddedPatterns() {
       
       for (const example of pattern.examples || []) {
         try {
-          // Add the example temporarily to get its embedding
-          const id = await brain.add({
-            data: example,
-            type: 'document' // Use document type for text
-          })
-          
-          // Get the entity with its embedding
-          const entity = await brain.get(id)
-          if (entity?.vector && Array.isArray(entity.vector)) {
-            embeddings.push(entity.vector)
+          // Use brain's embed method directly - no add/delete needed!
+          const embedding = await (brain as any).embed(example)
+          if (embedding && Array.isArray(embedding)) {
+            embeddings.push(embedding)
           }
-          
-          // Remove the temporary entity
-          await brain.delete(id)
         } catch (error) {
           console.warn(`  ⚠️ Failed to embed example: "${example}"`)
         }

@@ -16,6 +16,7 @@ export interface Entity<T = any> {
   id: string
   vector: Vector
   type: NounType
+  data?: any
   metadata?: T
   service?: string
   createdAt: number
@@ -163,7 +164,9 @@ export interface GraphConstraints {
   to?: string                // Connected to this entity
   from?: string              // Connected from this entity
   via?: VerbType | VerbType[] // Via these relationship types
+  type?: VerbType | VerbType[] // Alias for via
   depth?: number             // Max traversal depth (default: 1)
+  direction?: 'in' | 'out' | 'both' // Direction of traversal (default: 'both')
   bidirectional?: boolean    // Consider both directions
 }
 
