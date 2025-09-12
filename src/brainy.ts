@@ -895,6 +895,60 @@ export class Brainy<T = any> {
     return this._tripleIntelligence
   }
 
+  // ============= METADATA INTELLIGENCE API =============
+  
+  /**
+   * Get all indexed field names currently in the metadata index
+   * Essential for dynamic query building and NLP field discovery
+   */
+  async getAvailableFields(): Promise<string[]> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getFilterFields()
+  }
+  
+  /**
+   * Get field statistics including cardinality and query patterns
+   * Used for query optimization and understanding data distribution
+   */
+  async getFieldStatistics(): Promise<Map<string, any>> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getFieldStatistics()
+  }
+  
+  /**
+   * Get fields sorted by cardinality for optimal filtering
+   * Lower cardinality fields are better for initial filtering
+   */
+  async getFieldsWithCardinality(): Promise<Array<{
+    field: string
+    cardinality: number
+    distribution: string
+  }>> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getFieldsWithCardinality()
+  }
+  
+  /**
+   * Get optimal query plan for a given set of filters
+   * Returns field processing order and estimated cost
+   */
+  async getOptimalQueryPlan(filters: Record<string, any>): Promise<{
+    strategy: 'exact' | 'range' | 'hybrid'
+    fieldOrder: string[]
+    estimatedCost: number
+  }> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getOptimalQueryPlan(filters)
+  }
+  
+  /**
+   * Get filter values for a specific field (for UI dropdowns, etc)
+   */
+  async getFieldValues(field: string): Promise<string[]> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getFilterValues(field)
+  }
+
   /**
    * Create a streaming pipeline
    */
