@@ -13,6 +13,7 @@ import { Vector } from '../coreTypes.js'
 import { TripleQuery } from '../triple/TripleIntelligence.js'
 import { Brainy } from '../brainy.js'
 import { PatternLibrary } from './patternLibrary.js'
+import { NounType, VerbType } from '../types/graphTypes.js'
 
 export interface NaturalQueryIntent {
   type: 'vector' | 'field' | 'graph' | 'combined'
@@ -49,6 +50,17 @@ export class NaturalLanguageProcessor {
   private initialized: boolean = false
   private embeddingCache: Map<string, Vector> = new Map()
   
+  // Field discovery with semantic matching
+  private fieldEmbeddings: Map<string, Vector> = new Map()
+  private fieldNames: string[] = []
+  private lastFieldRefresh: number = 0
+  private readonly FIELD_REFRESH_INTERVAL = 60000 // Refresh every minute
+  
+  // Type embeddings for NounType and VerbType matching
+  private nounTypeEmbeddings: Map<string, Vector> = new Map()
+  private verbTypeEmbeddings: Map<string, Vector> = new Map()
+  private typeEmbeddingsInitialized: boolean = false
+  
   constructor(brain: Brainy) {
     this.brain = brain
     this.patternLibrary = new PatternLibrary(brain)
@@ -78,8 +90,257 @@ export class NaturalLanguageProcessor {
   private async ensureInitialized(): Promise<void> {
     if (!this.initialized) {
       await this.patternLibrary.init()
+      await this.initializeTypeEmbeddings() // Embed all noun/verb types
+      await this.refreshFieldEmbeddings() // Load field embeddings
       this.initialized = true
     }
+  }
+  
+  /**
+   * Initialize embeddings for all NounTypes and VerbTypes
+   * These are fixed types that never change - perfect for caching
+   */
+  private async initializeTypeEmbeddings(): Promise<void> {
+    if (this.typeEmbeddingsInitialized) return
+    
+    // Embed all NounTypes (30+ types)
+    for (const [key, value] of Object.entries(NounType)) {
+      if (typeof value === 'string') {
+        // Embed both the key (Person) and value (person)
+        const keyEmbedding = await this.getEmbedding(key)
+        const valueEmbedding = await this.getEmbedding(value)
+        
+        this.nounTypeEmbeddings.set(key, keyEmbedding)
+        this.nounTypeEmbeddings.set(value, valueEmbedding)
+        
+        // Also embed common variations
+        const spaceSeparated = key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
+        if (spaceSeparated !== value) {
+          const variantEmbedding = await this.getEmbedding(spaceSeparated)
+          this.nounTypeEmbeddings.set(spaceSeparated, variantEmbedding)
+        }
+      }
+    }
+    
+    // Embed all VerbTypes (40+ types)
+    for (const [key, value] of Object.entries(VerbType)) {
+      if (typeof value === 'string') {
+        const keyEmbedding = await this.getEmbedding(key)
+        const valueEmbedding = await this.getEmbedding(value)
+        
+        this.verbTypeEmbeddings.set(key, keyEmbedding)
+        this.verbTypeEmbeddings.set(value, valueEmbedding)
+        
+        // Common variations for verbs
+        const spaceSeparated = key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
+        if (spaceSeparated !== value) {
+          const variantEmbedding = await this.getEmbedding(spaceSeparated)
+          this.verbTypeEmbeddings.set(spaceSeparated, variantEmbedding)
+        }
+      }
+    }
+    
+    this.typeEmbeddingsInitialized = true
+  }
+  
+  /**
+   * Find best matching NounType using semantic similarity
+   */
+  private async findBestNounType(term: string): Promise<{
+    type: string | null
+    confidence: number
+  }> {
+    const termEmbedding = await this.getEmbedding(term)
+    
+    let bestMatch: string | null = null
+    let bestScore = 0
+    
+    for (const [typeName, typeEmbedding] of this.nounTypeEmbeddings) {
+      const similarity = this.cosineSimilarity(termEmbedding, typeEmbedding)
+      if (similarity > bestScore && similarity > 0.75) { // Higher threshold for types
+        bestScore = similarity
+        bestMatch = typeName
+      }
+    }
+    
+    // Map back to the actual NounType value
+    if (bestMatch) {
+      for (const [key, value] of Object.entries(NounType)) {
+        if (key === bestMatch || value === bestMatch || 
+            key.toLowerCase() === bestMatch.toLowerCase()) {
+          return { type: value as string, confidence: bestScore }
+        }
+      }
+    }
+    
+    return { type: null, confidence: 0 }
+  }
+  
+  /**
+   * Find best matching VerbType using semantic similarity
+   */
+  private async findBestVerbType(term: string): Promise<{
+    type: string | null
+    confidence: number
+  }> {
+    const termEmbedding = await this.getEmbedding(term)
+    
+    let bestMatch: string | null = null
+    let bestScore = 0
+    
+    for (const [typeName, typeEmbedding] of this.verbTypeEmbeddings) {
+      const similarity = this.cosineSimilarity(termEmbedding, typeEmbedding)
+      if (similarity > bestScore && similarity > 0.75) {
+        bestScore = similarity
+        bestMatch = typeName
+      }
+    }
+    
+    // Map back to the actual VerbType value
+    if (bestMatch) {
+      for (const [key, value] of Object.entries(VerbType)) {
+        if (key === bestMatch || value === bestMatch || 
+            key.toLowerCase() === bestMatch.toLowerCase()) {
+          return { type: value as string, confidence: bestScore }
+        }
+      }
+    }
+    
+    return { type: null, confidence: 0 }
+  }
+  
+  /**
+   * Refresh field embeddings from metadata index
+   * Creates embeddings for all indexed fields for semantic matching
+   */
+  private async refreshFieldEmbeddings(): Promise<void> {
+    const now = Date.now()
+    if (now - this.lastFieldRefresh < this.FIELD_REFRESH_INTERVAL) {
+      return // Skip if recently refreshed
+    }
+    
+    try {
+      // Get actual indexed fields from metadata
+      this.fieldNames = await this.brain.getAvailableFields()
+      
+      // Create embeddings for each field name for semantic matching
+      for (const field of this.fieldNames) {
+        if (!this.fieldEmbeddings.has(field)) {
+          // Embed the field name itself
+          const fieldEmbedding = await this.getEmbedding(field)
+          this.fieldEmbeddings.set(field, fieldEmbedding)
+          
+          // Also embed common variations
+          const variations = this.getFieldVariations(field)
+          for (const variant of variations) {
+            const variantEmbedding = await this.getEmbedding(variant)
+            this.fieldEmbeddings.set(variant, variantEmbedding)
+          }
+        }
+      }
+      
+      this.lastFieldRefresh = now
+    } catch (error) {
+      console.warn('Failed to refresh field embeddings:', error)
+    }
+  }
+  
+  /**
+   * Generate common variations of field names for better matching
+   */
+  private getFieldVariations(field: string): string[] {
+    const variations: string[] = []
+    
+    // camelCase to space separated: publishDate -> publish date
+    const spaceSeparated = field.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
+    variations.push(spaceSeparated)
+    
+    // snake_case to space separated: created_at -> created at
+    const underscoreRemoved = field.replace(/_/g, ' ')
+    variations.push(underscoreRemoved)
+    
+    // Common abbreviations
+    const abbreviations: Record<string, string[]> = {
+      'date': ['dt', 'time', 'timestamp'],
+      'created': ['creation', 'made'],
+      'updated': ['modified', 'changed'],
+      'author': ['writer', 'creator', 'by'],
+      'category': ['cat', 'type', 'kind'],
+      'description': ['desc', 'about', 'summary']
+    }
+    
+    for (const [key, abbrevs] of Object.entries(abbreviations)) {
+      if (field.toLowerCase().includes(key)) {
+        variations.push(...abbrevs)
+      }
+    }
+    
+    return variations
+  }
+  
+  /**
+   * Find best matching field using semantic similarity
+   * Returns field name and confidence score
+   */
+  private async findBestMatchingField(term: string): Promise<{
+    field: string | null
+    confidence: number
+  }> {
+    // Ensure fields are loaded
+    await this.refreshFieldEmbeddings()
+    
+    if (this.fieldNames.length === 0) {
+      return { field: null, confidence: 0 }
+    }
+    
+    // Get embedding for the search term
+    const termEmbedding = await this.getEmbedding(term)
+    
+    // Find most similar field using cosine similarity
+    let bestMatch: string | null = null
+    let bestScore = 0
+    
+    for (const [fieldName, fieldEmbedding] of this.fieldEmbeddings) {
+      const similarity = this.cosineSimilarity(termEmbedding, fieldEmbedding)
+      if (similarity > bestScore && similarity > 0.7) { // 0.7 threshold for semantic match
+        bestScore = similarity
+        bestMatch = fieldName
+      }
+    }
+    
+    // Map back to actual field name if it was a variation
+    if (bestMatch && !this.fieldNames.includes(bestMatch)) {
+      // Find the original field this variation belongs to
+      for (const field of this.fieldNames) {
+        const variations = this.getFieldVariations(field)
+        if (variations.includes(bestMatch)) {
+          bestMatch = field
+          break
+        }
+      }
+    }
+    
+    return { field: bestMatch, confidence: bestScore }
+  }
+  
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: Vector, b: Vector): number {
+    if (a.length !== b.length) return 0
+    
+    let dotProduct = 0
+    let normA = 0
+    let normB = 0
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i]
+      normA += a[i] * a[i]
+      normB += b[i] * b[i]
+    }
+    
+    if (normA === 0 || normB === 0) return 0
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
   }
   
   /**
@@ -126,20 +387,80 @@ export class NaturalLanguageProcessor {
       }
     }
     
-    // Step 4: Fall back to hybrid approach if no pattern matches well
-    return this.hybridParse(naturalQuery, queryEmbedding)
+    // Step 4: Use intelligent field-aware parsing instead of fallback
+    return this.intelligentParse(naturalQuery, queryEmbedding)
   }
   
   /**
-   * Hybrid parse when pattern matching fails
+   * Intelligent parse using dynamic field discovery and semantic matching
+   * NO FALLBACKS - uses actual indexed fields and entities
    */
-  private async hybridParse(query: string, queryEmbedding: Vector): Promise<TripleQuery> {
-    // Analyze intent using keywords only (no recursive searches)
+  private async intelligentParse(query: string, queryEmbedding: Vector): Promise<TripleQuery> {
+    // Step 1: Analyze intent and extract structure
     const intent = await this.analyzeIntent(query)
     
-    // Build query based on intent alone - no entity extraction needed
-    // The vector search will handle finding relevant entities
-    return this.buildQuery(query, intent, [])
+    // Step 2: Extract query terms
+    const queryTerms = query.split(/\s+/).filter(term => term.length > 2)
+    
+    // Step 3: Find matching fields and entities using semantic similarity
+    const entityMatches = await this.findEntityMatches(queryTerms)
+    
+    // Step 4: Build structured query from matches
+    const tripleQuery: TripleQuery = {}
+    
+    // Separate fields from entities
+    const fieldMatches = entityMatches.filter(m => m.type === 'field')
+    const entityRefs = entityMatches.filter(m => m.type === 'entity')
+    
+    // Build metadata filters from field matches
+    if (fieldMatches.length > 0) {
+      // Use field cardinality to optimize query order
+      fieldMatches.sort((a, b) => (a.cardinality || 0) - (b.cardinality || 0))
+      
+      tripleQuery.where = {}
+      for (const match of fieldMatches) {
+        // Extract value for this field from query
+        const valuePattern = new RegExp(`${match.term}\\s*(?:is|=|:)?\\s*(\\S+)`, 'i')
+        const valueMatch = query.match(valuePattern)
+        
+        if (valueMatch) {
+          tripleQuery.where[match.field] = valueMatch[1]
+        }
+      }
+    }
+    
+    // Build graph connections from entity references
+    if (entityRefs.length > 0) {
+      tripleQuery.connected = {
+        to: entityRefs[0].id
+      }
+    }
+    
+    // Use remaining terms for vector search
+    const usedTerms = new Set([...fieldMatches.map(m => m.term), ...entityRefs.map(m => m.term)])
+    const searchTerms = queryTerms.filter(term => !usedTerms.has(term))
+    
+    if (searchTerms.length > 0) {
+      tripleQuery.like = searchTerms.join(' ')
+    } else if (!tripleQuery.where || Object.keys(tripleQuery.where).length === 0) {
+      // If no specific filters, use the full query for vector search
+      tripleQuery.like = query
+    }
+    
+    // Add query optimization hints based on field statistics
+    if (fieldMatches.length > 0) {
+      const queryPlan = await this.brain.getOptimalQueryPlan(tripleQuery.where || {})
+      
+      // Attach optimization hints as a separate property
+      const hints: any = tripleQuery
+      hints.optimizationHints = {
+        fieldOrder: queryPlan.fieldOrder,
+        strategy: queryPlan.strategy,
+        estimatedCost: queryPlan.estimatedCost
+      }
+    }
+    
+    return tripleQuery
   }
   
   /**
@@ -446,15 +767,39 @@ export class NaturalLanguageProcessor {
   }
   
   /**
-   * Find entity matches using Brainy's search capabilities
+   * Find entity matches using semantic similarity for fields and vector search for entities
    */
   private async findEntityMatches(terms: string[]): Promise<any[]> {
     const matches: any[] = []
     
+    // Get field statistics for optimization hints
+    const fieldStats = await this.brain.getFieldStatistics()
+    
     for (const term of terms) {
       try {
+        // First, check if term matches a field using semantic similarity
+        const fieldMatch = await this.findBestMatchingField(term)
+        
+        if (fieldMatch.field && fieldMatch.confidence > 0.7) {
+          const stats = fieldStats.get(fieldMatch.field)
+          matches.push({
+            term,
+            type: 'field',
+            field: fieldMatch.field,
+            confidence: fieldMatch.confidence,
+            cardinality: stats?.cardinality.uniqueValues,
+            distribution: stats?.cardinality.distribution,
+            indexType: stats?.indexType
+          })
+          // Skip entity search if we found a field match
+          continue
+        }
+        
         // Search for similar entities in the knowledge base
-        const results = await this.brain.find(term)
+        const results = await this.brain.find({
+          query: term,
+          limit: 5
+        })
         
         for (const result of results) {
           if (result.score > 0.8) { // High similarity threshold
@@ -467,16 +812,6 @@ export class NaturalLanguageProcessor {
             })
           }
         }
-        
-        // Check if term matches known field names
-        if (this.isKnownField(term)) {
-          matches.push({
-            term,
-            type: 'field',
-            field: this.mapToFieldName(term),
-            confidence: 0.9
-          })
-        }
       } catch (error) {
         // If search fails, continue with other terms
         console.debug(`Failed to search for term: ${term}`, error)
@@ -486,31 +821,8 @@ export class NaturalLanguageProcessor {
     return matches
   }
   
-  /**
-   * Check if term is a known field name
-   */
-  private isKnownField(term: string): boolean {
-    const knownFields = [
-      'year', 'date', 'created', 'published', 'author', 'title',
-      'citations', 'views', 'score', 'rating', 'category', 'type'
-    ]
-    
-    return knownFields.includes(term.toLowerCase())
-  }
-  
-  /**
-   * Map colloquial terms to actual field names
-   */
-  private mapToFieldName(term: string): string {
-    const fieldMappings: Record<string, string> = {
-      'published': 'publishDate',
-      'created': 'createdAt',
-      'author': 'authorId',
-      'citations': 'citationCount'
-    }
-    
-    return fieldMappings[term.toLowerCase()] || term.toLowerCase()
-  }
+  // REMOVED: isKnownField and mapToFieldName - now using semantic field matching
+  // The findBestMatchingField method with embeddings replaces these hardcoded approaches
 
   /**
    * Find similar successful queries from history
