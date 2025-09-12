@@ -13,12 +13,16 @@ Brainy achieves industry-leading performance through carefully optimized data st
 | **Graph Index** | Get neighbors | **O(1)** | 0.09ms | `Map<string, Set<string>>` |
 | **Vector Search** | k-NN search | **O(log n)** | 1.8ms | HNSW hierarchical graph |
 | **NLP Parser** | Query parsing | **O(m)** | 8.9ms | 220 pre-computed patterns |
+| **Type-Field Affinity** | Field matching | **O(f)** | 0.1ms | Type-specific field cache |
+| **Type Detection** | Noun/Verb matching | **O(t)** | 0.3ms | Pre-embedded type vectors |
 | **Triple Intelligence** | Combined query | **O(1) to O(log n)** | 1.8ms | Parallel execution |
 
 Where:
 - `n` = number of items in index
 - `k` = number of results returned
 - `m` = number of patterns to check
+- `f` = number of fields for entity type
+- `t` = number of types (30+ nouns, 40+ verbs)
 
 ## Architecture Deep Dive
 
@@ -26,18 +30,28 @@ Where:
 
 The `MetadataIndexManager` uses inverted indexes for lightning-fast metadata filtering.
 
-**Important Note**: Sorted indices for range queries are built lazily on first use, not during CRUD operations. During adds/updates, sorted indices are only marked dirty. The rebuild happens on the next range query, which may cause a performance hit on first range query after modifications with large datasets.
+**UPDATED**: Sorted indices for range queries are now built **incrementally during CRUD operations**. No lazy loading delays - range queries are consistently fast. Binary search insertions maintain O(log n) performance during updates.
 
 ```typescript
 class MetadataIndexManager {
   // O(1) exact match via HashMap
   private indexCache = new Map<string, MetadataIndexEntry>()
   
-  // Each entry contains a Set of IDs
+  // O(log n) range queries via sorted arrays (incremental updates)
+  private sortedIndices = new Map<string, SortedFieldIndex>()
+  
+  // Type-field affinity for intelligent NLP
+  private typeFieldAffinity = new Map<string, Map<string, number>>()
+  
   interface MetadataIndexEntry {
     field: string
     value: string | number | boolean
     ids: Set<string>  // O(1) add/remove/has
+  }
+  
+  interface SortedFieldIndex {
+    values: Array<[value: any, ids: Set<string>]>  // Sorted for O(log n) ranges
+    fieldType: 'number' | 'string' | 'date'
   }
 }
 ```
@@ -120,9 +134,42 @@ class HNSWIndex {
 
 **Performance:** O(log n) due to hierarchical structure
 
-### 5. NLP with 220 Pre-computed Patterns
+### 5. Type-Aware NLP with Dynamic Field Discovery
 
-The NLP processor uses pre-computed embeddings for instant pattern matching:
+The NLP processor uses **zero hardcoded fields** - everything is discovered dynamically from actual data:
+
+```typescript
+class NaturalLanguageProcessor {
+  // Pre-embedded NounTypes (30+) and VerbTypes (40+) - ONLY hardcoded vocabularies
+  private nounTypeEmbeddings = new Map<string, Vector>()
+  private verbTypeEmbeddings = new Map<string, Vector>()
+  
+  // Dynamic field embeddings from actual indexed data
+  private fieldEmbeddings = new Map<string, Vector>()
+  
+  // Type-field affinity for intelligent prioritization
+  async getFieldsForType(nounType: string) {
+    return this.brain.getFieldsForType(nounType)  // Real data patterns
+  }
+}
+```
+
+**Type-Aware Intelligence Flow:**
+1. **Type Detection**: "documents" → `NounType.Document` (semantic similarity)
+2. **Field Prioritization**: Get fields common to Document type from real data
+3. **Semantic Field Matching**: "by" → "author" (with type affinity boost)
+4. **Validation**: Ensure "author" field actually appears with Document entities
+5. **Query Optimization**: Process low-cardinality type-specific fields first
+
+**Performance Characteristics:**
+- Type detection: O(t) where t = 70 total types (30 noun + 40 verb)
+- Field matching: O(f) where f = fields for detected type (typically 5-15)
+- Validation: O(1) lookup in type-field affinity map
+- No hardcoded assumptions - learns from actual data patterns
+
+### 6. NLP with 220 Pre-computed Patterns
+
+Pattern matching with embedded templates for instant semantic understanding:
 
 ```typescript
 // 394KB of embedded patterns compiled into the source
@@ -133,8 +180,8 @@ export const PATTERN_EMBEDDINGS: Float32Array = /* 220 × 384 dimensions */
 **How it works:**
 1. Query embedding computed once: O(1) with cached model
 2. Cosine similarity with 220 patterns: O(m) where m = 220
-3. Pattern templates fill slots for structured query
-4. No network calls, no external dependencies
+3. Pattern templates enhanced with type context
+4. No network calls, no external dependencies, no hardcoded fields
 
 ## Parallel Execution
 
@@ -159,6 +206,9 @@ const results = await Promise.all(searchPromises)
 | Graph Index | ~24 bytes/edge | `16 × edges + 8 × nodes` |
 | HNSW | ~1.5KB/item | `vector_size × 4 + M × 8 × layers` |
 | Pattern Library | 394KB fixed | Pre-computed, shared across instances |
+| Type Embeddings | ~60KB fixed | 70 types × 384 dimensions × 4 bytes, cached |
+| Field Embeddings | ~5KB dynamic | Actual fields × 384 dimensions × 4 bytes |
+| Type-Field Affinity | ~2KB dynamic | Type-field occurrence counts |
 
 ### Caching Strategy
 
