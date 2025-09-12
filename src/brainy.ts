@@ -948,6 +948,37 @@ export class Brainy<T = any> {
     await this.ensureInitialized()
     return this.metadataIndex.getFilterValues(field)
   }
+  
+  /**
+   * Get fields that commonly appear with a specific entity type
+   * Essential for type-aware NLP parsing
+   */
+  async getFieldsForType(nounType: string): Promise<Array<{
+    field: string
+    affinity: number
+    occurrences: number
+    totalEntities: number
+  }>> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getFieldsForType(nounType)
+  }
+  
+  /**
+   * Get comprehensive type-field affinity statistics
+   * Useful for understanding data patterns and NLP optimization
+   */
+  async getTypeFieldAffinityStats(): Promise<{
+    totalTypes: number
+    averageFieldsPerType: number
+    typeBreakdown: Record<string, {
+      totalEntities: number
+      uniqueFields: number
+      topFields: Array<{field: string; affinity: number}>
+    }>
+  }> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getTypeFieldAffinityStats()
+  }
 
   /**
    * Create a streaming pipeline

@@ -95,6 +95,10 @@ export class MetadataIndexManager {
   private readonly TIMESTAMP_PRECISION_MS = 60000 // 1 minute buckets
   private readonly FLOAT_PRECISION = 2 // decimal places
   
+  // Type-Field Affinity Tracking for intelligent NLP
+  private typeFieldAffinity = new Map<string, Map<string, number>>() // nounType -> field -> count
+  private totalEntitiesByType = new Map<string, number>() // nounType -> total count
+  
   // Unified cache for coordinated memory management
   private unifiedCache: UnifiedCache
 
@@ -691,6 +695,9 @@ export class MetadataIndexManager {
         this.updateCardinalityStats(field, value, 'add')
       }
       
+      // Track type-field affinity for intelligent NLP
+      this.updateTypeFieldAffinity(id, field, value, 'add')
+      
       // Incrementally update sorted index for this field
       if (!updatedFields.has(field)) {
         this.updateSortedIndexAdd(field, value, id)
@@ -793,6 +800,11 @@ export class MetadataIndexManager {
           // Update cardinality statistics
           if (hadId && entry.ids.size === 0) {
             this.updateCardinalityStats(field, value, 'remove')
+          }
+          
+          // Track type-field affinity for intelligent NLP
+          if (hadId) {
+            this.updateTypeFieldAffinity(id, field, value, 'remove')
           }
           
           // Incrementally update sorted index when removing
@@ -1867,5 +1879,148 @@ export class MetadataIndexManager {
     }
     
     return stats
+  }
+  
+  /**
+   * Update type-field affinity tracking for intelligent NLP
+   * Tracks which fields commonly appear with which entity types
+   */
+  private updateTypeFieldAffinity(entityId: string, field: string, value: any, operation: 'add' | 'remove'): void {
+    // Only track affinity for non-system fields
+    if (this.config.excludeFields.includes(field)) return
+    
+    // Get the entity type from the "noun" field for this entity
+    let entityType: string | null = null
+    
+    // Find the noun type for this entity
+    for (const [key, entry] of this.indexCache.entries()) {
+      if (key.startsWith('noun:') && entry.ids.has(entityId)) {
+        entityType = key.split(':', 2)[1]
+        break
+      }
+    }
+    
+    if (!entityType) return // No type found, skip affinity tracking
+    
+    // Initialize affinity tracking for this type
+    if (!this.typeFieldAffinity.has(entityType)) {
+      this.typeFieldAffinity.set(entityType, new Map())
+    }
+    if (!this.totalEntitiesByType.has(entityType)) {
+      this.totalEntitiesByType.set(entityType, 0)
+    }
+    
+    const typeFields = this.typeFieldAffinity.get(entityType)!
+    
+    if (operation === 'add') {
+      // Increment field count for this type
+      const currentCount = typeFields.get(field) || 0
+      typeFields.set(field, currentCount + 1)
+      
+      // Update total entities of this type (only count once per entity)
+      if (field === 'noun') {
+        this.totalEntitiesByType.set(entityType, this.totalEntitiesByType.get(entityType)! + 1)
+      }
+    } else if (operation === 'remove') {
+      // Decrement field count for this type
+      const currentCount = typeFields.get(field) || 0
+      if (currentCount > 1) {
+        typeFields.set(field, currentCount - 1)
+      } else {
+        typeFields.delete(field)
+      }
+      
+      // Update total entities of this type
+      if (field === 'noun') {
+        const total = this.totalEntitiesByType.get(entityType)!
+        if (total > 1) {
+          this.totalEntitiesByType.set(entityType, total - 1)
+        } else {
+          this.totalEntitiesByType.delete(entityType)
+          this.typeFieldAffinity.delete(entityType)
+        }
+      }
+    }
+  }
+  
+  /**
+   * Get fields that commonly appear with a specific entity type
+   * Returns fields with their affinity scores (0-1)
+   */
+  async getFieldsForType(nounType: string): Promise<Array<{
+    field: string
+    affinity: number
+    occurrences: number
+    totalEntities: number
+  }>> {
+    const typeFields = this.typeFieldAffinity.get(nounType)
+    const totalEntities = this.totalEntitiesByType.get(nounType)
+    
+    if (!typeFields || !totalEntities) {
+      return []
+    }
+    
+    const fieldsWithAffinity: Array<{
+      field: string
+      affinity: number
+      occurrences: number
+      totalEntities: number
+    }> = []
+    
+    for (const [field, count] of typeFields.entries()) {
+      const affinity = count / totalEntities // 0-1 score
+      fieldsWithAffinity.push({
+        field,
+        affinity,
+        occurrences: count,
+        totalEntities
+      })
+    }
+    
+    // Sort by affinity (most common fields first)
+    fieldsWithAffinity.sort((a, b) => b.affinity - a.affinity)
+    
+    return fieldsWithAffinity
+  }
+  
+  /**
+   * Get type-field affinity statistics for analysis
+   */
+  async getTypeFieldAffinityStats(): Promise<{
+    totalTypes: number
+    averageFieldsPerType: number
+    typeBreakdown: Record<string, {
+      totalEntities: number
+      uniqueFields: number
+      topFields: Array<{field: string; affinity: number}>
+    }>
+  }> {
+    const typeBreakdown: Record<string, any> = {}
+    let totalFields = 0
+    
+    for (const [nounType, fieldsMap] of this.typeFieldAffinity.entries()) {
+      const totalEntities = this.totalEntitiesByType.get(nounType) || 0
+      const fields = Array.from(fieldsMap.entries())
+      
+      // Get top 5 fields for this type
+      const topFields = fields
+        .map(([field, count]) => ({ field, affinity: count / totalEntities }))
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 5)
+      
+      typeBreakdown[nounType] = {
+        totalEntities,
+        uniqueFields: fieldsMap.size,
+        topFields
+      }
+      
+      totalFields += fieldsMap.size
+    }
+    
+    return {
+      totalTypes: this.typeFieldAffinity.size,
+      averageFieldsPerType: totalFields / Math.max(1, this.typeFieldAffinity.size),
+      typeBreakdown
+    }
   }
 }
