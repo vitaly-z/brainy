@@ -316,7 +316,7 @@ export class Brainy<T = any> {
       })
 
       // Update metadata index - remove old entry and add new one
-      await this.metadataIndex.removeFromIndex(params.id)
+      await this.metadataIndex.removeFromIndex(params.id, existing.metadata)
       await this.metadataIndex.addToIndex(params.id, updatedMetadata)
     })
   }
