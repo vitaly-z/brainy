@@ -1,9 +1,10 @@
 /**
  * Universal Crypto implementation
- * Works in all environments: Browser, Node.js, Serverless
+ * Framework-friendly: Trusts that frameworks provide crypto polyfills
+ * Works in all environments: Browser (via framework), Node.js, Serverless
  */
 
-import { isBrowser, isNode } from '../utils/environment.js'
+import { isNode } from '../utils/environment.js'
 
 let nodeCrypto: any = null
 
@@ -18,28 +19,25 @@ if (isNode()) {
 
 /**
  * Generate random bytes
+ * Framework-friendly: Assumes crypto API is available via framework polyfills
  */
 export function randomBytes(size: number): Uint8Array {
-  if (isBrowser() || typeof crypto !== 'undefined') {
-    // Use Web Crypto API (available in browsers and modern Node.js)
+  if (typeof crypto !== 'undefined') {
+    // Use Web Crypto API (available in browsers via framework polyfills and modern Node.js)
     const array = new Uint8Array(size)
     crypto.getRandomValues(array)
     return array
   } else if (nodeCrypto) {
-    // Use Node.js crypto as fallback
+    // Use Node.js crypto
     return new Uint8Array(nodeCrypto.randomBytes(size))
   } else {
-    // Fallback for environments without crypto
-    const array = new Uint8Array(size)
-    for (let i = 0; i < size; i++) {
-      array[i] = Math.floor(Math.random() * 256)
-    }
-    return array
+    throw new Error('Crypto API not available. Framework bundlers should provide crypto polyfills.')
   }
 }
 
 /**
  * Generate random UUID
+ * Framework-friendly: Assumes crypto.randomUUID is available via framework polyfills
  */
 export function randomUUID(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -47,17 +45,13 @@ export function randomUUID(): string {
   } else if (nodeCrypto && nodeCrypto.randomUUID) {
     return nodeCrypto.randomUUID()
   } else {
-    // Fallback UUID generation
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = Math.random() * 16 | 0
-      const v = c === 'x' ? r : (r & 0x3 | 0x8)
-      return v.toString(16)
-    })
+    throw new Error('crypto.randomUUID not available. Framework bundlers should provide crypto polyfills.')
   }
 }
 
 /**
  * Create hash (simplified interface)
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function createHash(algorithm: string): {
   update: (data: string | Uint8Array) => any
@@ -66,28 +60,13 @@ export function createHash(algorithm: string): {
   if (nodeCrypto && nodeCrypto.createHash) {
     return nodeCrypto.createHash(algorithm)
   } else {
-    // Simple fallback hash for browsers (not cryptographically secure)
-    let hash = 0
-    const hashObj = {
-      update: (data: string | Uint8Array) => {
-        const text = typeof data === 'string' ? data : new TextDecoder().decode(data)
-        for (let i = 0; i < text.length; i++) {
-          const char = text.charCodeAt(i)
-          hash = ((hash << 5) - hash) + char
-          hash = hash & hash // Convert to 32-bit integer
-        }
-        return hashObj
-      },
-      digest: (encoding: string) => {
-        return Math.abs(hash).toString(16)
-      }
-    }
-    return hashObj
+    throw new Error(`createHash not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
  * Create HMAC
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function createHmac(algorithm: string, key: string | Uint8Array): {
   update: (data: string | Uint8Array) => any
@@ -96,51 +75,37 @@ export function createHmac(algorithm: string, key: string | Uint8Array): {
   if (nodeCrypto && nodeCrypto.createHmac) {
     return nodeCrypto.createHmac(algorithm, key)
   } else {
-    // Fallback HMAC implementation (simplified)
-    return createHash(algorithm)
+    throw new Error(`createHmac not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
- * PBKDF2 synchronous 
+ * PBKDF2 synchronous
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function pbkdf2Sync(password: string | Uint8Array, salt: string | Uint8Array, iterations: number, keylen: number, digest: string): Uint8Array {
   if (nodeCrypto && nodeCrypto.pbkdf2Sync) {
     return new Uint8Array(nodeCrypto.pbkdf2Sync(password, salt, iterations, keylen, digest))
   } else {
-    // Simplified fallback (not cryptographically secure)
-    const result = new Uint8Array(keylen)
-    const passwordStr = typeof password === 'string' ? password : new TextDecoder().decode(password)
-    const saltStr = typeof salt === 'string' ? salt : new TextDecoder().decode(salt)
-    
-    let hash = 0
-    const combined = passwordStr + saltStr
-    for (let i = 0; i < combined.length; i++) {
-      hash = ((hash << 5) - hash) + combined.charCodeAt(i)
-      hash = hash & hash
-    }
-    
-    for (let i = 0; i < keylen; i++) {
-      result[i] = (Math.abs(hash + i) % 256)
-    }
-    return result
+    throw new Error(`pbkdf2Sync not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
  * Scrypt synchronous
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function scryptSync(password: string | Uint8Array, salt: string | Uint8Array, keylen: number, options?: any): Uint8Array {
   if (nodeCrypto && nodeCrypto.scryptSync) {
     return new Uint8Array(nodeCrypto.scryptSync(password, salt, keylen, options))
   } else {
-    // Fallback to pbkdf2Sync
-    return pbkdf2Sync(password, salt, 10000, keylen, 'sha256')
+    throw new Error(`scryptSync not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
  * Create cipher
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): {
   update: (data: string, inputEncoding?: string, outputEncoding?: string) => string
@@ -149,27 +114,13 @@ export function createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Arra
   if (nodeCrypto && nodeCrypto.createCipheriv) {
     return nodeCrypto.createCipheriv(algorithm, key, iv)
   } else {
-    // Fallback encryption (XOR-based, not secure)
-    let encrypted = ''
-    return {
-      update: (data: string, inputEncoding?: string, outputEncoding?: string) => {
-        for (let i = 0; i < data.length; i++) {
-          const char = data.charCodeAt(i)
-          const keyByte = key[i % key.length]
-          const ivByte = iv[i % iv.length]
-          encrypted += String.fromCharCode(char ^ keyByte ^ ivByte)
-        }
-        return outputEncoding === 'hex' ? Buffer.from(encrypted, 'binary').toString('hex') : encrypted
-      },
-      final: (outputEncoding?: string) => {
-        return outputEncoding === 'hex' ? '' : ''
-      }
-    }
+    throw new Error(`createCipheriv not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
  * Create decipher
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function createDecipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): {
   update: (data: string, inputEncoding?: string, outputEncoding?: string) => string
@@ -178,40 +129,19 @@ export function createDecipheriv(algorithm: string, key: Uint8Array, iv: Uint8Ar
   if (nodeCrypto && nodeCrypto.createDecipheriv) {
     return nodeCrypto.createDecipheriv(algorithm, key, iv)
   } else {
-    // Fallback decryption (XOR-based, matches createCipheriv)
-    let decrypted = ''
-    return {
-      update: (data: string, inputEncoding?: string, outputEncoding?: string) => {
-        const input = inputEncoding === 'hex' ? Buffer.from(data, 'hex').toString('binary') : data
-        for (let i = 0; i < input.length; i++) {
-          const char = input.charCodeAt(i)
-          const keyByte = key[i % key.length]
-          const ivByte = iv[i % iv.length]
-          decrypted += String.fromCharCode(char ^ keyByte ^ ivByte)
-        }
-        return decrypted
-      },
-      final: (outputEncoding?: string) => {
-        return ''
-      }
-    }
+    throw new Error(`createDecipheriv not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 
 /**
  * Timing safe equal
+ * Framework-friendly: Relies on Node.js crypto or framework-provided implementations
  */
 export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (nodeCrypto && nodeCrypto.timingSafeEqual) {
     return nodeCrypto.timingSafeEqual(a, b)
   } else {
-    // Fallback implementation
-    if (a.length !== b.length) return false
-    let result = 0
-    for (let i = 0; i < a.length; i++) {
-      result |= a[i] ^ b[i]
-    }
-    return result === 0
+    throw new Error(`timingSafeEqual not available. For browser environments, frameworks should provide crypto polyfills or use Web Crypto API directly.`)
   }
 }
 

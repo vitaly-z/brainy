@@ -1,9 +1,7 @@
 /**
  * Universal UUID implementation
- * Works in all environments: Browser, Node.js, Serverless
+ * Framework-friendly: Works in all environments
  */
-
-import { isBrowser, isNode } from '../utils/environment.js'
 
 export function v4(): string {
   // Use crypto.randomUUID if available (Node.js 19+, modern browsers)

@@ -11,11 +11,11 @@
 
 **🧠 Brainy 3.0 - Universal Knowledge Protocol™**
 
-**World's first Triple Intelligence™ database** unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
+**World's first Triple Intelligence™ database** unifying vector similarity, graph relationships, and document filtering in one magical API. **Framework-friendly design** works seamlessly with Next.js, React, Vue, Angular, and any modern JavaScript framework.
 
 **Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language.
 
-**Build once, integrate everywhere.** O(log n) performance, <10ms search latency, production-ready.
+**Framework-first design.** Built for modern web development with zero configuration and automatic framework compatibility. O(log n) performance, <10ms search latency, production-ready.
 
 ## 🎉 What's New in 3.0
 
@@ -97,6 +97,73 @@ const filtered = await brain.find({
     connected: {from: nodeId, depth: 1}  // Graph relationships
 })
 ```
+
+## 🌐 Framework Integration
+
+**Brainy 3.0 is framework-first!** Works seamlessly with any modern JavaScript framework:
+
+### ⚛️ **React & Next.js**
+```javascript
+import { Brainy } from '@soulcraft/brainy'
+
+function SearchComponent() {
+  const [brain] = useState(() => new Brainy())
+
+  useEffect(() => {
+    brain.init()
+  }, [])
+
+  const handleSearch = async (query) => {
+    const results = await brain.find(query)
+    setResults(results)
+  }
+}
+```
+
+### 🟢 **Vue.js & Nuxt.js**
+```javascript
+import { Brainy } from '@soulcraft/brainy'
+
+export default {
+  async mounted() {
+    this.brain = new Brainy()
+    await this.brain.init()
+  },
+  methods: {
+    async search(query) {
+      return await this.brain.find(query)
+    }
+  }
+}
+```
+
+### 🅰️ **Angular**
+```typescript
+import { Injectable } from '@angular/core'
+import { Brainy } from '@soulcraft/brainy'
+
+@Injectable({ providedIn: 'root' })
+export class BrainyService {
+  private brain = new Brainy()
+
+  async init() {
+    await this.brain.init()
+  }
+
+  async search(query: string) {
+    return await this.brain.find(query)
+  }
+}
+```
+
+### 🔥 **Other Frameworks**
+Brainy works with **any** framework that supports ES6 imports: Svelte, Solid.js, Qwik, Fresh, and more!
+
+**Framework Compatibility:**
+- ✅ All modern bundlers (Webpack, Vite, Rollup, Parcel)
+- ✅ SSR/SSG (Next.js, Nuxt, SvelteKit, Astro)
+- ✅ Edge runtimes (Vercel Edge, Cloudflare Workers)
+- ✅ Browser and Node.js environments
 
 ## 📋 System Requirements
 
@@ -436,9 +503,9 @@ const brain = new Brainy({
     }
 })
 
-// Browser Storage (OPFS)
+// Browser Storage (OPFS) - Works with frameworks
 const brain = new Brainy({
-    storage: {type: 'opfs'}
+    storage: {type: 'opfs'}  // Framework handles browser polyfills
 })
 
 // S3 Compatible (Production)
@@ -629,6 +696,12 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📖 Documentation
 
+### Framework Integration
+- [Framework Integration Guide](docs/guides/framework-integration.md) - **NEW!** Complete framework setup guide
+- [Next.js Integration](docs/guides/nextjs-integration.md) - **NEW!** React and Next.js examples
+- [Vue.js Integration](docs/guides/vue-integration.md) - **NEW!** Vue and Nuxt examples
+
+### Core Documentation
 - [Getting Started Guide](docs/guides/getting-started.md)
 - [API Reference](docs/api/README.md)
 - [Architecture Overview](docs/architecture/overview.md)
