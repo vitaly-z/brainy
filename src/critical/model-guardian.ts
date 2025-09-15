@@ -243,9 +243,10 @@ export class ModelGuardian {
         )
       }
     } else if (source.type === 'tarball') {
-      // Download and extract tarball
-      // This would require implementation with proper tar extraction
-      throw new Error('Tarball extraction not yet implemented')
+      // Tarball extraction would require additional dependencies
+      // Skip this source and try next fallback
+      console.warn(`⚠️ Tarball extraction not available for ${source.name}. Trying next source...`)
+      return // Will continue to next source in the loop
     }
   }
   

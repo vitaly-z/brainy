@@ -540,14 +540,10 @@ export class ImprovedNeuralAPI {
       
       while (hasMoreVerbs && processedCount < maxRelationships) {
         // Get batch of verbs using proper pagination API
-        const verbResult = await this.brain.getVerbs({
-          pagination: { 
-            offset: offset,
-            limit: batchSize
-          }
-        })
-        const verbBatch = verbResult.data
-        
+        // Get all items and process in chunks (simplified approach)
+        const allItems = await this.brain.find({ query: '', limit: Math.min(1000, maxRelationships) })
+        const verbBatch = allItems.slice(offset, offset + batchSize)
+
         if (verbBatch.length === 0) {
           hasMoreVerbs = false
           break
@@ -688,10 +684,10 @@ export class ImprovedNeuralAPI {
       const minSimilarity = options.minSimilarity || 0.1
       
       // Use HNSW index for efficient neighbor search
-      const searchResults = await this.brain.search('', { 
-        ...options,
+      const searchResults = await this.brain.find({
+        query: '',
         limit: limit * 2, // Get more than needed for filtering
-        metadata: options.includeMetadata ? {} : undefined
+        where: options.includeMetadata ? {} : undefined
       })
 
       // Filter and sort neighbors
@@ -746,7 +742,7 @@ export class ImprovedNeuralAPI {
       }
 
       // Get item data
-      const item = await this.brain.getNoun(id)
+      const item = await this.brain.get(id)
       if (!item) {
         throw new Error(`Item with ID ${id} not found`)
       }
@@ -1417,8 +1413,8 @@ export class ImprovedNeuralAPI {
   // Similarity implementation methods
   private async _similarityById(id1: string, id2: string, options: SimilarityOptions): Promise<number | SimilarityResult> {
     // Get vectors for both items
-    const item1 = await this.brain.getNoun(id1)
-    const item2 = await this.brain.getNoun(id2)
+    const item1 = await this.brain.get(id1)
+    const item2 = await this.brain.get(id2)
     
     if (!item1 || !item2) {
       return 0
@@ -1482,7 +1478,7 @@ export class ImprovedNeuralAPI {
     if (this._isVector(input)) {
       return input
     } else if (this._isId(input)) {
-      const item = await this.brain.getNoun(input)
+      const item = await this.brain.get(input)
       return item?.vector || []
     } else if (typeof input === 'string') {
       return await this.brain.embed(input)
@@ -1584,7 +1580,7 @@ export class ImprovedNeuralAPI {
     
     // Get all verbs connecting the items
     for (const sourceId of itemIds) {
-      const sourceVerbs = await this.brain.getVerbsForNoun(sourceId)
+      const sourceVerbs = await this.brain.getRelations(sourceId)
       
       for (const verb of sourceVerbs) {
         const targetId = verb.target
@@ -1757,7 +1753,7 @@ export class ImprovedNeuralAPI {
   private async _getItemsWithMetadata(itemIds: string[]): Promise<ItemWithMetadata[]> {
     const items = await Promise.all(
       itemIds.map(async id => {
-        const noun = await this.brain.getNoun(id)
+        const noun = await this.brain.get(id)
         if (!noun) {
           return null
         }
@@ -1797,23 +1793,28 @@ export class ImprovedNeuralAPI {
   // Placeholder implementations for complex operations
   private async _getAllItemIds(): Promise<string[]> {
     // Get all noun IDs from the brain
-    const stats = await this.brain.getStatistics()
-    if (!stats.totalNodes || stats.totalNodes === 0) {
+    // Get total item count using find with empty query
+    const allItems = await this.brain.find({ query: '', limit: Number.MAX_SAFE_INTEGER })
+    const stats = { totalNouns: allItems.length || 0 }
+    if (!stats.totalNouns || stats.totalNouns === 0) {
       return []
     }
     
     // Get nouns with pagination (limit to 10000 for performance)
-    const limit = Math.min(stats.totalNodes, 10000)
-    const result = await this.brain.getNouns({
-      pagination: { limit }
+    const limit = Math.min(stats.totalNouns, 10000)
+    const result = await this.brain.find({
+      query: '',
+      limit
     })
     
     return result.map((item: any) => item.id).filter((id: any) => id)
   }
 
   private async _getTotalItemCount(): Promise<number> {
-    const stats = await this.brain.getStatistics()
-    return stats.totalNodes || 0
+    // Get total item count using find with empty query
+    const allItems = await this.brain.find({ query: '', limit: Number.MAX_SAFE_INTEGER })
+    const stats = { totalNouns: allItems.length || 0 }
+    return stats.totalNouns || 0
   }
 
   // ===== GRAPH ALGORITHM SUPPORTING METHODS =====
@@ -1997,7 +1998,7 @@ export class ImprovedNeuralAPI {
   private async _getItemsWithVectors(itemIds: string[]): Promise<Array<{id: string, vector: number[]}>> {
     const items = await Promise.all(
       itemIds.map(async id => {
-        const noun = await this.brain.getNoun(id)
+        const noun = await this.brain.get(id)
         return {
           id,
           vector: noun?.vector || []
@@ -2691,7 +2692,7 @@ export class ImprovedNeuralAPI {
   private async _getRecentSample(itemIds: string[], sampleSize: number): Promise<string[]> {
     const items = await Promise.all(
       itemIds.map(async id => {
-        const noun = await this.brain.getNoun(id)
+        const noun = await this.brain.get(id)
         return {
           id,
           createdAt: noun?.createdAt || new Date(0)
@@ -2711,8 +2712,8 @@ export class ImprovedNeuralAPI {
   private async _getImportantSample(itemIds: string[], sampleSize: number): Promise<string[]> {
     const items = await Promise.all(
       itemIds.map(async id => {
-        const verbs = await this.brain.getVerbsForNoun(id)
-        const noun = await this.brain.getNoun(id)
+        const verbs = await this.brain.getRelations(id)
+        const noun = await this.brain.get(id)
         
         // Calculate importance score
         const connectionScore = verbs.length

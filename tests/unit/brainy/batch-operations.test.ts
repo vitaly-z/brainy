@@ -27,11 +27,10 @@ describe('Brainy Batch Operations', () => {
       expect(result).toBeDefined()
       expect(result.successful).toBeDefined()
       expect(result.failed).toBeDefined()
-      expect(deleteResult.successful).toHaveLength
-      expect(deleteResult.successful).toHaveLength(3)
-      
+      expect(result.successful).toHaveLength(3)
+
       // Verify all were added
-      for (const id of deleteResult.successful) {
+      for (const id of result.successful) {
         const entity = await brain.get(id)
         expect(entity).toBeDefined()
       }
@@ -49,11 +48,11 @@ describe('Brainy Batch Operations', () => {
       const result = await brain.addMany({ items: entities })
       const duration = Date.now() - startTime
       
-      expect(deleteResult.successful).toHaveLength(batchSize)
+      expect(result.successful).toHaveLength(batchSize)
       expect(duration).toBeLessThan(1000) // Should be fast
-      
+
       // Verify a sample
-      const sampleEntity = await brain.get(ids[50])
+      const sampleEntity = await brain.get(result.successful[50])
       expect(sampleEntity?.metadata?.index).toBe(50)
     })
     
@@ -67,13 +66,13 @@ describe('Brainy Batch Operations', () => {
       
       const result = await brain.addMany({ items: entities })
       
-      expect(deleteResult.successful).toHaveLength(4)
-      
+      expect(result.successful).toHaveLength(4)
+
       // Verify different types were added correctly
-      const person = await brain.get(ids[0])
+      const person = await brain.get(result.successful[0])
       expect(person?.type).toBe(NounType.Person)
-      
-      const org = await brain.get(ids[1])
+
+      const org = await brain.get(result.successful[1])
       expect(org?.type).toBe(NounType.Organization)
     })
     
@@ -87,7 +86,7 @@ describe('Brainy Batch Operations', () => {
       try {
         const result = await brain.addMany({ items: entities })
         // Some implementations might skip invalid entries
-        expect(ids.length).toBeLessThanOrEqual(3)
+        expect(result.successful.length).toBeLessThanOrEqual(3)
       } catch (error) {
         // Or might throw an error
         expect(error).toBeDefined()
@@ -104,8 +103,8 @@ describe('Brainy Batch Operations', () => {
       const result = await brain.addMany({ items: entities })
       
       // Verify order is maintained
-      for (let i = 0; i < ids.length; i++) {
-        const entity = await brain.get(ids[i])
+      for (let i = 0; i < result.successful.length; i++) {
+        const entity = await brain.get(result.successful[i])
         expect(entity?.metadata?.order).toBe(i)
       }
     })
@@ -120,7 +119,7 @@ describe('Brainy Batch Operations', () => {
       const result = await brain.addMany({ items: entities })
       
       // All should have vectors
-      for (const id of deleteResult.successful) {
+      for (const id of result.successful) {
         const entity = await brain.get(id)
         expect(entity?.vector).toBeDefined()
         expect(entity?.vector?.length).toBeGreaterThan(0)
@@ -133,13 +132,14 @@ describe('Brainy Batch Operations', () => {
     
     beforeEach(async () => {
       // Create test entities to update
-      testIds = await brain.addMany({
+      const result = await brain.addMany({
         items: [
           { data: 'Update Test 1', type: NounType.Thing, metadata: { version: 1 } },
           { data: 'Update Test 2', type: NounType.Thing, metadata: { version: 1 } },
           { data: 'Update Test 3', type: NounType.Thing, metadata: { version: 1 } }
         ]
       })
+      testIds = result.successful
     })
     
     it('should update multiple entities at once', async () => {
@@ -202,14 +202,15 @@ describe('Brainy Batch Operations', () => {
     
     it('should handle large batch updates efficiently', async () => {
       // Create many entities
-      const manyIds = await brain.addMany({
+      const manyResult = await brain.addMany({
         items: Array.from({ length: 100 }, (_, i) => ({
           data: `Bulk ${i}`,
           type: NounType.Thing,
           metadata: { counter: 0 }
         }))
       })
-      
+      const manyIds = manyResult.successful
+
       // Update all at once
       const updates = manyIds.map(id => ({
         id,
@@ -252,13 +253,14 @@ describe('Brainy Batch Operations', () => {
     
     beforeEach(async () => {
       // Create test entities to delete
-      testIds = await brain.addMany({
+      const result = await brain.addMany({
         items: Array.from({ length: 5 }, (_, i) => ({
           data: `Delete Test ${i}`,
           type: NounType.Thing,
           metadata: { deleteMe: true }
         }))
       })
+      testIds = result.successful
     })
     
     it('should delete multiple entities at once', async () => {
@@ -319,13 +321,14 @@ describe('Brainy Batch Operations', () => {
     
     it('should handle large batch deletions efficiently', async () => {
       // Create many entities
-      const manyIds = await brain.addMany({
+      const manyResult = await brain.addMany({
         items: Array.from({ length: 100 }, (_, i) => ({
           data: `Bulk Delete ${i}`,
           type: NounType.Thing
         }))
       })
-      
+      const manyIds = manyResult.successful
+
       const startTime = Date.now()
       await brain.deleteMany({ ids: manyIds })
       const duration = Date.now() - startTime
@@ -356,12 +359,13 @@ describe('Brainy Batch Operations', () => {
       expect(await brain.get(testIds[2])).toBeDefined()
     })
   })
-  
+
+  describe('relateMany - Batch Relationship Creation', () => {
     let entities: string[]
-    
+
     beforeEach(async () => {
       // Create test entities
-      entities = await brain.addMany({
+      const result = await brain.addMany({
         items: [
           { data: 'Person A', type: NounType.Person },
           { data: 'Person B', type: NounType.Person },
@@ -370,6 +374,7 @@ describe('Brainy Batch Operations', () => {
           { data: 'Company Y', type: NounType.Organization }
         ]
       })
+      entities = result.successful
     })
     
     it('should create multiple relationships at once', async () => {
@@ -379,7 +384,8 @@ describe('Brainy Batch Operations', () => {
         { from: entities[2], to: entities[4], type: VerbType.MemberOf }
       ]
       
-      
+      const relationIds = await brain.relateMany({ items: relationships })
+
       expect(relationIds).toBeDefined()
       expect(Array.isArray(relationIds)).toBe(true)
       expect(relationIds).toHaveLength(3)
@@ -396,7 +402,8 @@ describe('Brainy Batch Operations', () => {
         { from: entities[3], to: entities[4], type: VerbType.CompetesWith }
       ]
       
-      
+      const relationIds = await brain.relateMany({ items: relationships })
+
       expect(relationIds).toHaveLength(3)
       
       // Verify different types
@@ -419,7 +426,8 @@ describe('Brainy Batch Operations', () => {
         { from: entities[1], to: entities[0], type: VerbType.FriendOf } // Reverse
       ]
       
-      
+      const relationIds = await brain.relateMany({ items: relationships })
+
       expect(relationIds).toHaveLength(2)
       
       // Both should have the relationship
@@ -432,18 +440,19 @@ describe('Brainy Batch Operations', () => {
     
     it('should handle large batch of relationships', async () => {
       // Create many entities
-      const manyPeople = await brain.addMany({
+      const manyPeopleResult = await brain.addMany({
         items: Array.from({ length: 50 }, (_, i) => ({
           data: `Person ${i}`,
           type: NounType.Person
         }))
       })
-      
-      const company = await brain.add({ 
-        data: 'Big Company', 
-        type: NounType.Organization 
+      const manyPeople = manyPeopleResult.successful
+
+      const company = await brain.add({
+        data: 'Big Company',
+        type: NounType.Organization
       })
-      
+
       // All people work at the company
       const relationships = manyPeople.map(person => ({
         from: person,
@@ -452,8 +461,9 @@ describe('Brainy Batch Operations', () => {
       }))
       
       const startTime = Date.now()
+      const relationIds = await brain.relateMany({ items: relationships })
       const duration = Date.now() - startTime
-      
+
       expect(relationIds).toHaveLength(50)
       expect(duration).toBeLessThan(1000) // Should be fast
       
@@ -471,6 +481,7 @@ describe('Brainy Batch Operations', () => {
       
       try {
         // Should skip invalid and continue
+        const relationIds = await brain.relateMany({ items: relationships })
         expect(relationIds.length).toBeLessThanOrEqual(3)
       } catch (error) {
         // Or might throw - that's ok too
@@ -478,7 +489,7 @@ describe('Brainy Batch Operations', () => {
       }
     })
   })
-  
+
   describe('Batch Operations Performance', () => {
     it('should perform better than individual operations', async () => {
       const itemCount = 50
@@ -502,7 +513,8 @@ describe('Brainy Batch Operations', () => {
       
       // Time batch addition
       const batchStart = Date.now()
-      const batchIds = await brain.addMany({ items })
+      const batchResult = await brain.addMany({ items })
+      const batchIds = batchResult.successful
       const batchTime = Date.now() - batchStart
       
       // Batch should be significantly faster
@@ -515,25 +527,27 @@ describe('Brainy Batch Operations', () => {
     
     it('should handle mixed batch operations efficiently', async () => {
       // Create initial dataset
-      const initialIds = await brain.addMany({
+      const initialResult = await brain.addMany({
         items: Array.from({ length: 20 }, (_, i) => ({
           data: `Initial ${i}`,
           type: NounType.Thing,
           metadata: { version: 1 }
         }))
       })
-      
+      const initialIds = initialResult.successful
+
       // Perform multiple batch operations
       const startTime = Date.now()
-      
+
       // 1. Add more entities
-      const newIds = await brain.addMany({
+      const newResult = await brain.addMany({
         items: Array.from({ length: 20 }, (_, i) => ({
           data: `New ${i}`,
           type: NounType.Thing
         }))
       })
-      
+      const newIds = newResult.successful
+
       // 2. Update initial entities
       await brain.updateMany({
         items: initialIds.map(id => ({

@@ -9,11 +9,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { Brainy } from '../../src/brainy.js'
 import { GraphAdjacencyIndex } from '../../src/graph/graphAdjacencyIndex.js'
 import { NounType, VerbType } from '../../src/types/graphTypes.js'
-import { MemoryStorageAdapter } from '../../src/storage/adapters/memoryStorage.js'
+import { MemoryStorage } from '../../src/storage/adapters/memoryStorage.js'
 import { GraphVerb } from '../../src/coreTypes.js'
 
 // Mock storage adapter for controlled testing
-class MockStorageAdapter extends MemoryStorageAdapter {
+class MockStorageAdapter extends MemoryStorage {
   private shouldFail = false
   private failOperation: string | null = null
 
