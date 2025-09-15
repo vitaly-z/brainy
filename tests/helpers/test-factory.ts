@@ -26,8 +26,8 @@ export function generateTestId(prefix = 'test'): string {
   return `${prefix}_${uuidv4().slice(0, 8)}_${Date.now()}`
 }
 
-// Generate test vector (realistic 1536-dimensional vector like OpenAI)
-export function generateTestVector(dimension = 1536): Vector {
+// Generate test vector (384-dimensional vector matching all-MiniLM-L6-v2)
+export function generateTestVector(dimension = 384): Vector {
   // Generate a deterministic but varied embedding
   const vector = new Array(dimension)
   for (let i = 0; i < dimension; i++) {

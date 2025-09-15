@@ -9,44 +9,36 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
-**🧠 Brainy 3.0 - Planet-Scale Universal Knowledge Protocol™**
+**🧠 Brainy 3.0 - Universal Knowledge Protocol™**
 
-**World's first Triple Intelligence™ database**—now with true distributed scaling, enterprise features, and
-production-ready performance. Unifying vector similarity, graph relationships, and document filtering in one magical
-API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
+**World's first Triple Intelligence™ database** unifying vector similarity, graph relationships, and document filtering in one magical API. Model ANY data from ANY domain using 31 standardized noun types × 40 verb types.
 
-**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector,
-graph, document) into one unified query interface, now with horizontal scaling across multiple nodes. This breakthrough
-enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language
-at enterprise scale.
+**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language.
 
-**Build once, integrate everywhere.** O(log n) performance, <10ms search latency, distributed across unlimited nodes.
+**Build once, integrate everywhere.** O(log n) performance, <10ms search latency, production-ready.
 
 ## 🎉 What's New in 3.0
 
-### 🌐 **Zero-Config Distributed System** (Industry First!)
+### 🧠 **Triple Intelligence™ Engine**
 
-- **Storage-Based Coordination**: No Consul/etcd/Zookeeper needed - uses your S3/GCS!
-- **Automatic Node Discovery**: Nodes find each other via storage
-- **Intelligent Sharding**: Domain-aware data placement for optimal queries
-- **Live Shard Migration**: Zero-downtime data movement with streaming
-- **Auto-Rebalancing**: Handles node joins/leaves automatically
+- **Vector Search**: HNSW-powered semantic similarity
+- **Graph Relationships**: Navigate connected knowledge
+- **Document Filtering**: MongoDB-style metadata queries
+- **Unified API**: All three in a single query interface
 
-### 🏢 **Enterprise Features**
+### 🎯 **Clean API Design**
 
-- **Distributed Scaling**: Horizontal sharding across unlimited nodes
-- **Read/Write Separation**: Optimized nodes for different workloads
-- **Multi-Tenancy**: Customer isolation with shared infrastructure
-- **Rate Limiting & Audit**: Production-ready governance
-- **Geographic Distribution**: Global nodes with local performance
+- **Modern Syntax**: `brain.add()`, `brain.find()`, `brain.relate()`
+- **Type Safety**: Full TypeScript integration
+- **Zero Config**: Works out of the box with memory storage
+- **Consistent Parameters**: Clean, predictable API surface
 
-### ⚡ **Performance Breakthroughs**
+### ⚡ **Performance & Reliability**
 
-- **<10ms Search**: Even with 10K+ items per node
-- **Linear Write Scaling**: Add nodes for more throughput
-- **Smart Query Planning**: Routes queries to optimal shards
-- **Streaming Ingestion**: Handle firehoses (Bluesky, Twitter, etc.)
-- **100+ Concurrent Ops**: Production-tested at scale
+- **<10ms Search**: Fast semantic queries
+- **384D Vectors**: Optimized embeddings (all-MiniLM-L6-v2)
+- **Built-in Caching**: Intelligent result caching
+- **Production Ready**: Thoroughly tested core functionality
 
 ## ⚡ Quick Start - Zero Configuration
 
@@ -57,38 +49,51 @@ npm install @soulcraft/brainy
 ### 🎯 **True Zero Configuration**
 
 ```javascript
-import {BrainyData} from '@soulcraft/brainy'
+import {Brainy} from '@soulcraft/brainy'
 
 // Just this - auto-detects everything!
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
-// Add entities (nouns) with automatic embedding
-const jsId = await brain.addNoun("JavaScript is a programming language", 'concept', {
-    type: "language",
-    year: 1995,
-    paradigm: "multi-paradigm"
+// Add entities with automatic embedding
+const jsId = await brain.add({
+    data: "JavaScript is a programming language",
+    type: "concept",
+    metadata: {
+        type: "language",
+        year: 1995,
+        paradigm: "multi-paradigm"
+    }
 })
 
-const nodeId = await brain.addNoun("Node.js runtime environment", 'concept', {
-    type: "runtime",
-    year: 2009,
-    platform: "server-side"
+const nodeId = await brain.add({
+    data: "Node.js runtime environment",
+    type: "concept",
+    metadata: {
+        type: "runtime",
+        year: 2009,
+        platform: "server-side"
+    }
 })
 
-// Create relationships (verbs) between entities
-await brain.addVerb(nodeId, jsId, "executes", {
-    since: 2009,
-    performance: "high"
+// Create relationships between entities
+await brain.relate({
+    from: nodeId,
+    to: jsId,
+    type: "executes",
+    metadata: {
+        since: 2009,
+        performance: "high"
+    }
 })
 
 // Natural language search with graph relationships
-const results = await brain.find("programming languages used by server runtimes")
+const results = await brain.find({query: "programming languages used by server runtimes"})
 
 // Triple Intelligence: vector + metadata + relationships
 const filtered = await brain.find({
-    like: "JavaScript",                    // Vector similarity
-    where: {type: "language"},           // Metadata filtering  
+    query: "JavaScript",                  // Vector similarity
+    where: {type: "language"},           // Metadata filtering
     connected: {from: nodeId, depth: 1}  // Graph relationships
 })
 ```
@@ -139,27 +144,23 @@ await brain.find("Documentation about authentication from last month")
 
 ### 🎯 Zero Configuration Philosophy
 
-Brainy 2.9+ automatically configures **everything**:
+Brainy 3.0 automatically configures **everything**:
 
 ```javascript
-import {BrainyData, PresetName} from '@soulcraft/brainy'
+import {Brainy} from '@soulcraft/brainy'
 
 // 1. Pure zero-config - detects everything
-const brain = new BrainyData()
+const brain = new Brainy()
 
-// 2. Environment presets (strongly typed)
-const devBrain = new BrainyData(PresetName.DEVELOPMENT)     // Memory + verbose
-const prodBrain = new BrainyData(PresetName.PRODUCTION)      // Disk + optimized
-const miniBrain = new BrainyData(PresetName.MINIMAL)         // Q8 + minimal features
+// 2. Custom configuration
+const brain = new Brainy({
+  storage: { type: 'memory' },
+  embeddings: { model: 'all-MiniLM-L6-v2' },
+  cache: { enabled: true, maxSize: 1000 }
+})
 
-// 3. Distributed architecture presets
-const writer = new BrainyData(PresetName.WRITER)             // Write-only instance
-const reader = new BrainyData(PresetName.READER)             // Read-only + caching
-const ingestion = new BrainyData(PresetName.INGESTION_SERVICE) // High-throughput
-const searchAPI = new BrainyData(PresetName.SEARCH_API)      // Low-latency search
-
-// 4. Custom zero-config (type-safe)
-const customBrain = new BrainyData({
+// 3. Production configuration
+const customBrain = new Brainy({
     mode: 'production',
     model: 'q8',           // Optimized model (99% accuracy, 75% smaller)
     storage: 'cloud',     // or 'memory', 'disk', 'auto'
@@ -188,15 +189,15 @@ Most users **never need this** - zero-config handles everything. For advanced us
 
 ```javascript
 // Model is always Q8 for optimal performance
-const brain = new BrainyData()  // Uses Q8 automatically
+const brain = new Brainy()  // Uses Q8 automatically
 
 // Storage control (auto-detected by default)
-const memoryBrain = new BrainyData({storage: 'memory'})     // RAM only
-const diskBrain = new BrainyData({storage: 'disk'})         // Local filesystem  
-const cloudBrain = new BrainyData({storage: 'cloud'})       // S3/GCS/R2
+const memoryBrain = new Brainy({storage: 'memory'})     // RAM only
+const diskBrain = new Brainy({storage: 'disk'})         // Local filesystem  
+const cloudBrain = new Brainy({storage: 'cloud'})       // S3/GCS/R2
 
 // Legacy full config (still supported)
-const legacyBrain = new BrainyData({
+const legacyBrain = new Brainy({
     storage: {forceMemoryStorage: true}
 })
 ```
@@ -278,12 +279,12 @@ const exported = await brain.export({format: 'json'})
 
 ```javascript
 // Single node (default)
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {type: 's3', options: {bucket: 'my-data'}}
 })
 
 // Distributed cluster - just add one flag!
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {type: 's3', options: {bucket: 'my-data'}},
     distributed: true  // That's it! Everything else is automatic
 })
@@ -301,7 +302,7 @@ const brain = new BrainyData({
 
 ```javascript
 // Ingestion nodes (optimized for writes)
-const ingestionNode = new BrainyData({
+const ingestionNode = new Brainy({
     storage: {type: 's3', options: {bucket: 'social-data'}},
     distributed: true,
     writeOnly: true  // Optimized for high-throughput writes
@@ -317,7 +318,7 @@ blueskyStream.on('post', async (post) => {
 })
 
 // Search nodes (optimized for queries)
-const searchNode = new BrainyData({
+const searchNode = new Brainy({
     storage: {type: 's3', options: {bucket: 'social-data'}},
     distributed: true,
     readOnly: true  // Optimized for fast queries
@@ -423,12 +424,12 @@ Brainy supports multiple storage backends:
 
 ```javascript
 // Memory (default for testing)
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {type: 'memory'}
 })
 
 // FileSystem (Node.js)
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {
         type: 'filesystem',
         path: './data'
@@ -436,12 +437,12 @@ const brain = new BrainyData({
 })
 
 // Browser Storage (OPFS)
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {type: 'opfs'}
 })
 
 // S3 Compatible (Production)
-const brain = new BrainyData({
+const brain = new Brainy({
     storage: {
         type: 's3',
         bucket: 'my-bucket',
@@ -562,7 +563,7 @@ Brainy includes enterprise-grade capabilities at no extra cost. **No premium tie
 - **Built-in monitoring** with metrics and health checks
 - **Production ready** with circuit breakers and backpressure
 
-📖 **[Read the full Enterprise Features guide →](docs/ENTERPRISE-FEATURES.md)**
+📖 **Enterprise features coming in Brainy 3.1** - Stay tuned!
 
 ## 📊 Benchmarks
 
@@ -576,11 +577,9 @@ Brainy includes enterprise-grade capabilities at no extra cost. **No premium tie
 | Bulk Import (1000 items)         | 2.3s        | +8MB     |
 | **Production Scale (10M items)** | **5.8ms**   | **12GB** |
 
-## 🔄 Migration from 1.x
+## 🔄 Migration from 2.x
 
-See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
-
-Key changes:
+Key changes for upgrading to 3.0:
 
 - Search methods consolidated into `search()` and `find()`
 - Result format now includes full objects with metadata

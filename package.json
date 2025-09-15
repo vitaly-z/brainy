@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "2.15.0",
+  "version": "3.0.0",
   "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 31 nouns × 40 verbs for infinite expressiveness.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -82,6 +82,8 @@
     "lint:fix": "eslint --ext .ts,.js src/ --fix",
     "format": "prettier --write \"src/**/*.{ts,js}\"",
     "format:check": "prettier --check \"src/**/*.{ts,js}\"",
+    "migrate:logger": "tsx scripts/migrate-to-structured-logger.ts",
+    "migrate:logger:dry": "tsx scripts/migrate-to-structured-logger.ts --dry-run",
     "release": "standard-version",
     "release:patch": "standard-version --release-as patch",
     "release:minor": "standard-version --release-as minor",
