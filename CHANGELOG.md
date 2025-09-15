@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.0.1](https://github.com/soulcraftlabs/brainy/compare/v2.14.3...v3.0.1) (2025-09-15)
+
+**Brainy 3.0 Production Release** - World's first Triple Intelligence™ database unifying vector, graph, and document search
+
+### Features
+
+* **new api**: Complete API redesign with add(), find(), update(), delete(), relate() methods
+* **triple intelligence**: Unified vector, graph, and document search in one API
+* **comprehensive validation**: Zero-config validation system with production-ready type safety
+* **neural clustering**: Advanced clustering with clusterFast(), clusterLarge(), and hierarchical algorithms
+* **augmentation system**: Built-in cache, display, and metrics augmentations
+* **extensive testing**: 100+ comprehensive tests covering all APIs and edge cases
+
+### BREAKING CHANGES
+
+* All previous APIs (addNoun, findNoun, etc.) have been replaced with new 3.0 APIs
+* See README.md for complete migration guide from 2.x to 3.0
+
 ## [2.14.0](https://github.com/soulcraftlabs/brainy/compare/v2.13.0...v2.14.0) (2025-09-02)
 
 
