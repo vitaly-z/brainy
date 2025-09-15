@@ -15,17 +15,8 @@
     "./src/setup.ts",
     "./src/utils/textEncoding.ts"
   ],
-  "browser": {
-    "fs": false,
-    "fs/promises": false,
-    "path": "path-browserify",
-    "crypto": "crypto-browserify",
-    "./dist/cortex/cortex.js": "./dist/browserFramework.js"
-  },
   "exports": {
     ".": {
-      "browser": "./dist/browserFramework.js",
-      "node": "./dist/index.js",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
@@ -44,10 +35,6 @@
     "./utils/textEncoding": {
       "import": "./dist/utils/textEncoding.js",
       "types": "./dist/utils/textEncoding.d.ts"
-    },
-    "./browserFramework": {
-      "import": "./dist/browserFramework.js",
-      "types": "./dist/browserFramework.d.ts"
     },
     "./universal": {
       "import": "./dist/universal/index.js",

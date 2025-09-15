@@ -34,6 +34,7 @@ import {
   GetRelationsParams,
   AddManyParams,
   DeleteManyParams,
+  RelateManyParams,
   BatchResult,
   BrainyConfig
 } from './types/brainy.types.js'
@@ -831,6 +832,74 @@ export class Brainy<T = any> {
 
     result.duration = Date.now() - startTime
     return result
+  }
+
+  /**
+   * Create multiple relationships with batch processing
+   */
+  async relateMany(params: RelateManyParams<T>): Promise<string[]> {
+    await this.ensureInitialized()
+
+    const result: BatchResult<string> = {
+      successful: [],
+      failed: [],
+      total: params.items.length,
+      duration: 0
+    }
+
+    const startTime = Date.now()
+    const chunkSize = params.chunkSize || 100
+
+    for (let i = 0; i < params.items.length; i += chunkSize) {
+      const chunk = params.items.slice(i, i + chunkSize)
+
+      if (params.parallel) {
+        // Process chunk in parallel
+        const promises = chunk.map(async (item) => {
+          try {
+            const relationId = await this.relate(item)
+            result.successful.push(relationId)
+          } catch (error: any) {
+            result.failed.push({
+              item,
+              error: error.message || 'Unknown error'
+            })
+            if (!params.continueOnError) {
+              throw error
+            }
+          }
+        })
+
+        await Promise.all(promises)
+      } else {
+        // Process chunk sequentially
+        for (const item of chunk) {
+          try {
+            const relationId = await this.relate(item)
+            result.successful.push(relationId)
+          } catch (error: any) {
+            result.failed.push({
+              item,
+              error: error.message || 'Unknown error'
+            })
+            if (!params.continueOnError) {
+              throw error
+            }
+          }
+        }
+      }
+
+      // Report progress
+      if (params.onProgress) {
+        params.onProgress(
+          result.successful.length + result.failed.length,
+          result.total
+        )
+      }
+    }
+
+    result.duration = Date.now() - startTime
+    return result.successful
   }
 
   /**
