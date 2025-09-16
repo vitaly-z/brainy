@@ -18,6 +18,7 @@ export interface CacheConfig {
   ttl?: number
   enabled?: boolean
   invalidateOnWrite?: boolean
+  silent?: boolean  // Silent mode support
 }
 
 /**
@@ -80,6 +81,11 @@ export class CacheAugmentation extends BaseAugmentation {
             type: 'boolean',
             default: true,
             description: 'Automatically invalidate cache on data modifications'
+          },
+          silent: {
+            type: 'boolean',
+            default: false,
+            description: 'Suppress all console output'
           }
         },
         additionalProperties: false
