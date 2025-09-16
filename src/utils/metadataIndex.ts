@@ -1507,12 +1507,33 @@ export class MetadataIndexManager {
       const nounLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
       let hasMoreNouns = true
       let totalNounsProcessed = 0
-      
-      while (hasMoreNouns) {
+      let consecutiveEmptyBatches = 0
+      const MAX_ITERATIONS = 10000 // Safety limit to prevent infinite loops
+      let iterations = 0
+
+      while (hasMoreNouns && iterations < MAX_ITERATIONS) {
+        iterations++
         const result = await this.storage.getNouns({
           pagination: { offset: nounOffset, limit: nounLimit }
         })
-        
+
+        // CRITICAL SAFETY CHECK: Prevent infinite loop on empty results
+        if (result.items.length === 0) {
+          consecutiveEmptyBatches++
+          if (consecutiveEmptyBatches >= 3) {
+            prodLog.warn('⚠️ Breaking metadata rebuild loop: received 3 consecutive empty batches')
+            break
+          }
+          // If hasMore is true but items are empty, it's likely a bug
+          if (result.hasMore) {
+            prodLog.warn(`⚠️ Storage returned empty items but hasMore=true at offset ${nounOffset}`)
+            hasMoreNouns = false // Force exit
+            break
+          }
+        } else {
+          consecutiveEmptyBatches = 0 // Reset counter on non-empty batch
+        }
+
         // CRITICAL FIX: Use batch metadata reading to prevent socket exhaustion
         const nounIds = result.items.map(noun => noun.id)
         
@@ -1581,12 +1602,32 @@ export class MetadataIndexManager {
       const verbLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
       let hasMoreVerbs = true
       let totalVerbsProcessed = 0
-      
-      while (hasMoreVerbs) {
+      let consecutiveEmptyVerbBatches = 0
+      let verbIterations = 0
+
+      while (hasMoreVerbs && verbIterations < MAX_ITERATIONS) {
+        verbIterations++
         const result = await this.storage.getVerbs({
           pagination: { offset: verbOffset, limit: verbLimit }
         })
-        
+
+        // CRITICAL SAFETY CHECK: Prevent infinite loop on empty results
+        if (result.items.length === 0) {
+          consecutiveEmptyVerbBatches++
+          if (consecutiveEmptyVerbBatches >= 3) {
+            prodLog.warn('⚠️ Breaking verb metadata rebuild loop: received 3 consecutive empty batches')
+            break
+          }
+          // If hasMore is true but items are empty, it's likely a bug
+          if (result.hasMore) {
+            prodLog.warn(`⚠️ Storage returned empty verb items but hasMore=true at offset ${verbOffset}`)
+            hasMoreVerbs = false // Force exit
+            break
+          }
+        } else {
+          consecutiveEmptyVerbBatches = 0 // Reset counter on non-empty batch
+        }
+
         // CRITICAL FIX: Use batch verb metadata reading to prevent socket exhaustion
         const verbIds = result.items.map(verb => verb.id)
         
@@ -1647,11 +1688,19 @@ export class MetadataIndexManager {
         await this.yieldToEventLoop()
       }
       
+      // Check if we hit iteration limits
+      if (iterations >= MAX_ITERATIONS) {
+        prodLog.error(`❌ Metadata noun rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
+      }
+      if (verbIterations >= MAX_ITERATIONS) {
+        prodLog.error(`❌ Metadata verb rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
+      }
+
       // Flush to storage with final yield
       prodLog.debug('💾 Flushing metadata index to storage...')
       await this.flush()
       await this.yieldToEventLoop()
-      
+
       prodLog.info(`✅ Metadata index rebuild completed! Processed ${totalNounsProcessed} nouns and ${totalVerbsProcessed} verbs`)
       prodLog.info(`🎯 Initial indexing may show minor socket timeouts - this is expected and doesn't affect data processing`)
       

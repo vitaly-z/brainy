@@ -343,6 +343,10 @@ export interface BrainyConfig {
   realtime?: boolean        // Enable real-time updates
   multiTenancy?: boolean    // Enable service isolation
   telemetry?: boolean       // Send anonymous usage stats
+
+  // Logging configuration
+  verbose?: boolean         // Enable verbose logging
+  silent?: boolean          // Suppress all logging output
 }
 
 // ============= Neural API Types =============

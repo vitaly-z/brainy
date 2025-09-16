@@ -414,10 +414,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // Apply offset if needed (some adapters might not support offset)
         const items = result.items.slice(offset)
 
+        // CRITICAL SAFETY CHECK: Prevent infinite loops
+        // If we have no items but hasMore is true, force hasMore to false
+        // This prevents pagination bugs from causing infinite loops
+        const safeHasMore = items.length > 0 ? result.hasMore : false
+
         return {
           items,
           totalCount: result.totalCount || totalCount,
-          hasMore: result.hasMore,
+          hasMore: safeHasMore,
           nextCursor: result.nextCursor
         }
       }
@@ -606,10 +611,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // Apply offset if needed (some adapters might not support offset)
         const items = result.items.slice(offset)
 
+        // CRITICAL SAFETY CHECK: Prevent infinite loops
+        // If we have no items but hasMore is true, force hasMore to false
+        // This prevents pagination bugs from causing infinite loops
+        const safeHasMore = items.length > 0 ? result.hasMore : false
+
         return {
           items,
           totalCount: result.totalCount || totalCount,
-          hasMore: result.hasMore,
+          hasMore: safeHasMore,
           nextCursor: result.nextCursor
         }
       }
