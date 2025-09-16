@@ -1,11 +1,19 @@
 /**
  * Metrics Augmentation - Optional Performance & Usage Metrics
- * 
- * Replaces the hardcoded StatisticsCollector in Brainy with an optional augmentation.
- * Tracks performance metrics, usage patterns, and system statistics.
- * 
+ *
+ * IMPORTANT: This is SEPARATE from core counting (brain.counts.*) which is always enabled.
+ *
+ * Core counting provides O(1) entity/relationship counts for scalability.
+ * This augmentation provides performance analytics and observability.
+ *
+ * Features:
+ * - Search performance tracking (latency, throughput)
+ * - Cache hit/miss rates
+ * - Operation timing analysis
+ * - Usage pattern insights
+ *
  * Zero-config: Automatically enabled for observability
- * Can be disabled or customized via augmentation registry
+ * Can be disabled via augmentation registry without affecting core performance
  */
 
 import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
@@ -267,12 +275,18 @@ export class MetricsAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Get current metrics
+   * Get current metrics (performance analytics only)
+   *
+   * NOTE: For production counting (entities, relationships), use:
+   * - brain.counts.entities() - O(1) total count
+   * - brain.counts.byType() - O(1) type-specific counts
+   * - brain.counts.relationships() - O(1) relationship counts
    */
   getStatistics() {
     if (!this.statisticsCollector) {
       return {
         enabled: false,
+        note: 'For core counting, use brain.counts.* APIs which are always available',
         totalSearches: 0,
         totalUpdates: 0,
         contentTypes: {},
@@ -287,6 +301,7 @@ export class MetricsAugmentation extends BaseAugmentation {
 
     return {
       enabled: true,
+      note: 'Performance analytics only. Core counting available via brain.counts.*',
       ...this.statisticsCollector.getStatistics()
     }
   }

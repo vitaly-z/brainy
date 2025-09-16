@@ -22,6 +22,7 @@ import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
 import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
+import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
 import {
   Entity,
@@ -597,20 +598,55 @@ export class Brainy<T = any> {
         
         // CRITICAL FIX: Handle both cases properly
         if (results.length > 0) {
-          // Filter existing results (from vector search)
+          // OPTIMIZED: Filter existing results (from vector search) efficiently
           const filteredIdSet = new Set(filteredIds)
           results = results.filter((r) => filteredIdSet.has(r.id))
+
+          // Apply early pagination for vector + metadata queries
+          const limit = params.limit || 10
+          const offset = params.offset || 0
+
+          // If we have enough filtered results, sort and paginate early
+          if (results.length >= offset + limit) {
+            results.sort((a, b) => b.score - a.score)
+            results = results.slice(offset, offset + limit)
+
+            // Load entities only for the paginated results
+            for (const result of results) {
+              if (!result.entity) {
+                const entity = await this.get(result.id)
+                if (entity) {
+                  result.entity = entity
+                }
+              }
+            }
+
+            // Early return if no other processing needed
+            if (!params.connected && !params.fusion) {
+              return results
+            }
+          }
         } else {
-          // Create results from metadata matches (metadata-only query)
-          for (const id of filteredIds) {
+          // OPTIMIZED: Apply pagination to filtered IDs BEFORE loading entities
+          const limit = params.limit || 10
+          const offset = params.offset || 0
+          const pageIds = filteredIds.slice(offset, offset + limit)
+
+          // Load only entities for current page - O(page_size) instead of O(total_results)
+          for (const id of pageIds) {
             const entity = await this.get(id)
             if (entity) {
               results.push({
                 id,
                 score: 1.0, // All metadata matches are equally relevant
-                entity
+                entity: entity as Entity<T>
               })
             }
+          }
+
+          // Early return for metadata-only queries with pagination applied
+          if (!params.query && !params.connected) {
+            return results
           }
         }
       }
@@ -625,11 +661,12 @@ export class Brainy<T = any> {
         results = this.applyFusionScoring(results, params.fusion)
       }
 
-      // Sort by score and apply pagination
+      // OPTIMIZED: Sort first, then apply efficient pagination
       results.sort((a, b) => b.score - a.score)
       const limit = params.limit || 10
       const offset = params.offset || 0
 
+      // Efficient pagination - only slice what we need
       return results.slice(offset, offset + limit)
     })
     
@@ -1098,27 +1135,19 @@ export class Brainy<T = any> {
   }> {
     await this.ensureInitialized()
     
-    // Get all entities count - use getNouns with high limit
-    const entitiesResult = await this.storage.getNouns({ 
-      pagination: { limit: 10000 }
-    })
-    const entities = entitiesResult.totalCount || entitiesResult.items.length
+    // O(1) entity counting using existing MetadataIndexManager
+    const entities = this.metadataIndex.getTotalEntityCount()
+
+    // O(1) count by type using existing index tracking
+    const typeCountsMap = this.metadataIndex.getAllEntityCounts()
+    const types: Record<string, number> = Object.fromEntries(typeCountsMap)
+
+    // O(1) relationships count using GraphAdjacencyIndex
+    const relationships = this.graphIndex.getTotalRelationshipCount()
     
-    // Get relationships count - use getVerbs with high limit
-    const verbsResult = await this.storage.getVerbs({ 
-      pagination: { limit: 10000 }
-    })
-    const relationships = verbsResult.totalCount || verbsResult.items.length
-    
-    // Count by type
-    const types: Record<string, number> = {}
-    for (const entity of entitiesResult.items) {
-      const type = (entity.metadata?.noun as string) || 'unknown'
-      types[type] = (types[type] || 0) + 1
-    }
-    
-    // Get unique services
-    const services = [...new Set(entitiesResult.items.map((e: any) => e.metadata?.service).filter(Boolean))] as string[]
+    // Get unique services - O(log n) using index
+    const serviceValues = await this.metadataIndex.getFilterValues('service')
+    const services = serviceValues.filter(Boolean)
     
     // Calculate density (relationships per entity)
     const density = entities > 0 ? relationships / entities : 0
@@ -1129,6 +1158,264 @@ export class Brainy<T = any> {
       types,
       services,
       density
+    }
+  }
+
+  /**
+   * Efficient Pagination API - Production-scale pagination using index-first approach
+   * Automatically optimizes based on query type and applies pagination at the index level
+   */
+  get pagination() {
+    return {
+      // Get paginated results with automatic optimization
+      find: async (params: FindParams<T> & { page?: number, pageSize?: number }) => {
+        const page = params.page || 1
+        const pageSize = params.pageSize || 10
+        const offset = (page - 1) * pageSize
+
+        return this.find({
+          ...params,
+          limit: pageSize,
+          offset
+        })
+      },
+
+      // Get total count for pagination UI (O(1) when possible)
+      count: async (params: Omit<FindParams<T>, 'limit' | 'offset'>) => {
+        // For simple type queries, use O(1) index counting
+        if (params.type && !params.query && !params.where && !params.connected) {
+          const types = Array.isArray(params.type) ? params.type : [params.type]
+          return types.reduce((sum, type) => sum + this.metadataIndex.getEntityCountByType(type), 0)
+        }
+
+        // For complex queries, use metadata index for efficient counting
+        if (params.where || params.service) {
+          let filter: any = {}
+          if (params.where) Object.assign(filter, params.where)
+          if (params.service) filter.service = params.service
+          if (params.type) {
+            const types = Array.isArray(params.type) ? params.type : [params.type]
+            if (types.length === 1) {
+              filter.noun = types[0]
+            } else {
+              const baseFilter = { ...filter }
+              filter = {
+                anyOf: types.map(type => ({ noun: type, ...baseFilter }))
+              }
+            }
+          }
+
+          const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+          return filteredIds.length
+        }
+
+        // Fallback: total entity count
+        return this.metadataIndex.getTotalEntityCount()
+      },
+
+      // Get pagination metadata
+      meta: async (params: FindParams<T> & { page?: number, pageSize?: number }) => {
+        const page = params.page || 1
+        const pageSize = params.pageSize || 10
+        const totalCount = await this.pagination.count(params)
+        const totalPages = Math.ceil(totalCount / pageSize)
+
+        return {
+          page,
+          pageSize,
+          totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        }
+      }
+    }
+  }
+
+  /**
+   * Streaming API - Process millions of entities with constant memory using existing Pipeline
+   * Integrates with index-based optimizations for maximum efficiency
+   */
+  get streaming(): {
+    entities: (filter?: Partial<FindParams<T>>) => AsyncGenerator<Entity<T>>
+    search: (params: FindParams<T>, batchSize?: number) => AsyncGenerator<{ id: string; score: number; entity: Entity<T> }>
+    relationships: (filter?: { type?: string; sourceId?: string; targetId?: string }) => AsyncGenerator<any>
+    pipeline: (source: AsyncIterable<any>) => any
+    process: (processor: (entity: Entity<T>) => Promise<Entity<T>>, filter?: Partial<FindParams<T>>, options?: { batchSize: number; parallel: number }) => Promise<void>
+  } {
+    return {
+      // Stream all entities with optional filtering
+      entities: async function* (this: Brainy<T>, filter?: Partial<FindParams<T>>) {
+        if (filter?.type || filter?.where || filter?.service) {
+          // Use MetadataIndexManager for efficient filtered streaming
+          let filterObj: any = {}
+          if (filter.where) Object.assign(filterObj, filter.where)
+          if (filter.service) filterObj.service = filter.service
+          if (filter.type) {
+            const types = Array.isArray(filter.type) ? filter.type : [filter.type]
+            if (types.length === 1) {
+              filterObj.noun = types[0]
+            } else {
+              const baseFilterObj = { ...filterObj }
+              filterObj = {
+                anyOf: types.map(type => ({ noun: type, ...baseFilterObj }))
+              }
+            }
+          }
+
+          const filteredIds = await this.metadataIndex.getIdsForFilter(filterObj)
+
+          // Stream filtered entities in batches for memory efficiency
+          const batchSize = 100
+          for (let i = 0; i < filteredIds.length; i += batchSize) {
+            const batchIds = filteredIds.slice(i, i + batchSize)
+            for (const id of batchIds) {
+              const entity = await this.get(id)
+              if (entity) yield entity as Entity<T>
+            }
+          }
+        } else {
+          // Stream all entities using storage adapter pagination
+          let offset = 0
+          const batchSize = 100
+          let hasMore = true
+
+          while (hasMore) {
+            const result = await this.storage.getNouns({
+              pagination: { offset, limit: batchSize }
+            })
+
+            for (const noun of result.items) {
+              // Convert HNSWNoun to Entity<T>
+              yield noun as unknown as Entity<T>
+            }
+
+            hasMore = result.hasMore
+            offset += batchSize
+          }
+        }
+      }.bind(this),
+
+      // Stream search results efficiently
+      search: async function* (this: Brainy<T>, params: FindParams<T>, batchSize = 50) {
+        const originalLimit = params.limit
+        let offset = 0
+        let hasMore = true
+
+        while (hasMore) {
+          const batchResults = await this.find({
+            ...params,
+            limit: batchSize,
+            offset
+          })
+
+          for (const result of batchResults) {
+            yield result
+          }
+
+          hasMore = batchResults.length === batchSize
+          offset += batchSize
+
+          // Respect original limit if specified
+          if (originalLimit && offset >= originalLimit) {
+            break
+          }
+        }
+      }.bind(this),
+
+      // Stream relationships efficiently
+      relationships: async function* (this: Brainy<T>, filter?: { type?: string, sourceId?: string, targetId?: string }) {
+        let offset = 0
+        const batchSize = 100
+        let hasMore = true
+
+        while (hasMore) {
+          const result = await this.storage.getVerbs({
+            pagination: { offset, limit: batchSize },
+            filter
+          })
+
+          for (const verb of result.items) {
+            yield verb
+          }
+
+          hasMore = result.hasMore
+          offset += batchSize
+        }
+      }.bind(this),
+
+      // Create processing pipeline from stream
+      pipeline: (source: AsyncIterable<any>) => {
+        return createPipeline(this).source(source)
+      },
+
+      // Batch process entities with Pipeline system
+      process: async function (this: Brainy<T>,
+        processor: (entity: Entity<T>) => Promise<Entity<T>>,
+        filter?: Partial<FindParams<T>>,
+        options = { batchSize: 50, parallel: 4 }
+      ) {
+        return createPipeline(this)
+          .source(this.streaming.entities(filter))
+          .batch(options.batchSize)
+          .parallelSink(async (batch: Entity<T>[]) => {
+            await Promise.all(batch.map(processor))
+          }, options.parallel)
+          .run()
+      }.bind(this)
+    }
+  }
+
+  /**
+   * O(1) Count API - Production-scale counting using existing indexes
+   * Works across all storage adapters (FileSystem, OPFS, S3, Memory)
+   */
+  get counts() {
+    return {
+      // O(1) total entity count
+      entities: () => this.metadataIndex.getTotalEntityCount(),
+
+      // O(1) total relationship count
+      relationships: () => this.graphIndex.getTotalRelationshipCount(),
+
+      // O(1) count by type
+      byType: (type?: string) => {
+        if (type) {
+          return this.metadataIndex.getEntityCountByType(type)
+        }
+        return Object.fromEntries(this.metadataIndex.getAllEntityCounts())
+      },
+
+      // O(1) count by relationship type
+      byRelationshipType: (type?: string) => {
+        if (type) {
+          return this.graphIndex.getRelationshipCountByType(type)
+        }
+        return Object.fromEntries(this.graphIndex.getAllRelationshipCounts())
+      },
+
+      // O(1) count by field-value criteria
+      byCriteria: async (field: string, value: any) => {
+        return this.metadataIndex.getCountForCriteria(field, value)
+      },
+
+      // Get all type counts as Map for performance-critical operations
+      getAllTypeCounts: () => this.metadataIndex.getAllEntityCounts(),
+
+      // Get complete statistics
+      getStats: () => {
+        const entityStats = {
+          total: this.metadataIndex.getTotalEntityCount(),
+          byType: Object.fromEntries(this.metadataIndex.getAllEntityCounts())
+        }
+        const relationshipStats = this.graphIndex.getRelationshipStats()
+
+        return {
+          entities: entityStats,
+          relationships: relationshipStats,
+          density: entityStats.total > 0 ? relationshipStats.totalRelationships / entityStats.total : 0
+        }
+      }
     }
   }
 

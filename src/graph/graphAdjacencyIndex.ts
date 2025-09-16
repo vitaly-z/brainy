@@ -54,6 +54,9 @@ export class GraphAdjacencyIndex {
   private rebuildStartTime = 0
   private totalRelationshipsIndexed = 0
 
+  // Production-scale relationship counting by type
+  private relationshipCountsByType = new Map<string, number>()
+
   constructor(storage: StorageAdapter, config: GraphIndexConfig = {}) {
     this.storage = storage
     this.config = {
@@ -107,10 +110,61 @@ export class GraphAdjacencyIndex {
   }
 
   /**
-   * Get relationship count
+   * Get total relationship count - O(1) operation
    */
   size(): number {
     return this.verbIndex.size
+  }
+
+  /**
+   * Get relationship count by type - O(1) operation using existing tracking
+   */
+  getRelationshipCountByType(type: string): number {
+    return this.relationshipCountsByType.get(type) || 0
+  }
+
+  /**
+   * Get total relationship count - O(1) operation
+   */
+  getTotalRelationshipCount(): number {
+    return this.verbIndex.size
+  }
+
+  /**
+   * Get all relationship types and their counts - O(1) operation
+   */
+  getAllRelationshipCounts(): Map<string, number> {
+    return new Map(this.relationshipCountsByType)
+  }
+
+  /**
+   * Get relationship statistics with enhanced counting information
+   */
+  getRelationshipStats(): {
+    totalRelationships: number
+    relationshipsByType: Record<string, number>
+    uniqueSourceNodes: number
+    uniqueTargetNodes: number
+    totalNodes: number
+  } {
+    const totalRelationships = this.verbIndex.size
+    const relationshipsByType = Object.fromEntries(this.relationshipCountsByType)
+    const uniqueSourceNodes = this.sourceIndex.size
+    const uniqueTargetNodes = this.targetIndex.size
+
+    // Calculate total unique nodes (source ∪ target)
+    const allNodes = new Set<string>()
+    this.sourceIndex.keys().forEach(id => allNodes.add(id))
+    this.targetIndex.keys().forEach(id => allNodes.add(id))
+    const totalNodes = allNodes.size
+
+    return {
+      totalRelationships,
+      relationshipsByType,
+      uniqueSourceNodes,
+      uniqueTargetNodes,
+      totalNodes
+    }
   }
 
   /**
@@ -142,6 +196,13 @@ export class GraphAdjacencyIndex {
     await this.cacheIndexEntry(verb.sourceId, 'source')
     await this.cacheIndexEntry(verb.targetId, 'target')
 
+    // Update type-specific counts atomically
+    const verbType = verb.type || 'unknown'
+    this.relationshipCountsByType.set(
+      verbType,
+      (this.relationshipCountsByType.get(verbType) || 0) + 1
+    )
+
     const elapsed = performance.now() - startTime
     this.totalRelationshipsIndexed++
 
@@ -162,6 +223,15 @@ export class GraphAdjacencyIndex {
 
     // Remove from verb cache
     this.verbIndex.delete(verbId)
+
+    // Update type-specific counts atomically
+    const verbType = verb.type || 'unknown'
+    const currentCount = this.relationshipCountsByType.get(verbType) || 0
+    if (currentCount > 1) {
+      this.relationshipCountsByType.set(verbType, currentCount - 1)
+    } else {
+      this.relationshipCountsByType.delete(verbType)
+    }
 
     // Remove from source index
     const sourceNeighbors = this.sourceIndex.get(verb.sourceId)
