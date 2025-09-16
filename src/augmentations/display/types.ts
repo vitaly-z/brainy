@@ -12,18 +12,21 @@ import type { VectorDocument, GraphVerb } from '../../coreTypes.js'
 export interface DisplayConfig {
   /** Enable/disable the augmentation */
   enabled: boolean
-  
+
   /** LRU cache size for computed display fields */
   cacheSize: number
-  
+
   /** Use lazy computation (recommended for performance) */
   lazyComputation: boolean
-  
+
   /** Batch processing size for multiple requests */
   batchSize: number
-  
+
   /** Minimum confidence threshold for AI type detection */
   confidenceThreshold: number
+
+  /** Silent mode - suppress all console output */
+  silent?: boolean
   
   // No icon configuration needed - clean, minimal approach
   

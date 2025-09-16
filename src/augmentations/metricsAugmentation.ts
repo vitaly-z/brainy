@@ -28,6 +28,7 @@ export interface MetricsConfig {
   trackStorageSizes?: boolean
   persistMetrics?: boolean
   metricsInterval?: number
+  silent?: boolean  // New: Silent mode support
 }
 
 /**

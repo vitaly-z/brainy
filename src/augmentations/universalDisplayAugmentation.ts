@@ -290,9 +290,14 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
    */
   private createExploreMethod(entity: any) {
     return async (): Promise<void> => {
+      // Respect silent mode
+      if (this.config.silent) {
+        return
+      }
+
       console.log(`\n📋 Entity Exploration: ${entity.id || 'unknown'}`)
       console.log('━'.repeat(50))
-      
+
       // Show user data
       console.log('\n👤 User Data:')
       const userData = entity.metadata || entity
@@ -313,7 +318,7 @@ export class UniversalDisplayAugmentation extends BaseAugmentation {
       } catch (error) {
         console.log(`  Error computing display fields: ${error}`)
       }
-      
+
       console.log('')
     }
   }

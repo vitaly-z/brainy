@@ -57,6 +57,14 @@ export class Brainy<T = any> {
   private augmentationRegistry: AugmentationRegistry
   private config: Required<BrainyConfig>
 
+  // Silent mode state
+  private originalConsole?: {
+    log: typeof console.log
+    info: typeof console.info
+    warn: typeof console.warn
+    error: typeof console.error
+  }
+
   // Sub-APIs (lazy-loaded)
   private _neural?: ImprovedNeuralAPI
   private _nlp?: NaturalLanguageProcessor
@@ -109,7 +117,22 @@ export class Brainy<T = any> {
 
     // Configure logging based on config options
     if (this.config.silent) {
-      configureLogger({ level: -1 as LogLevel })  // Suppress all logs
+      // Store original console methods for restoration
+      this.originalConsole = {
+        log: console.log,
+        info: console.info,
+        warn: console.warn,
+        error: console.error
+      }
+
+      // Override all console methods to completely silence output
+      console.log = () => {}
+      console.info = () => {}
+      console.warn = () => {}
+      console.error = () => {}
+
+      // Also configure logger for silent mode
+      configureLogger({ level: LogLevel.SILENT })  // Suppress all logs
     } else if (this.config.verbose) {
       configureLogger({ level: LogLevel.DEBUG })  // Enable verbose logging
     }
@@ -1739,8 +1762,19 @@ export class Brainy<T = any> {
   private setupAugmentations(): AugmentationRegistry {
     const registry = new AugmentationRegistry()
 
-    // Register default augmentations
-    const defaults = createDefaultAugmentations(this.config.augmentations)
+    // Register default augmentations with silent mode support
+    const augmentationConfig = {
+      ...this.config.augmentations,
+      // Pass silent mode to all augmentations
+      ...(this.config.silent && {
+        cache: this.config.augmentations?.cache !== false ? { ...this.config.augmentations?.cache, silent: true } : false,
+        metrics: this.config.augmentations?.metrics !== false ? { ...this.config.augmentations?.metrics, silent: true } : false,
+        display: this.config.augmentations?.display !== false ? { ...this.config.augmentations?.display, silent: true } : false,
+        monitoring: this.config.augmentations?.monitoring !== false ? { ...this.config.augmentations?.monitoring, silent: true } : false
+      })
+    }
+
+    const defaults = createDefaultAugmentations(augmentationConfig)
     for (const aug of defaults) {
       registry.register(aug)
     }
@@ -1828,6 +1862,15 @@ export class Brainy<T = any> {
       if ('shutdown' in aug && typeof aug.shutdown === 'function') {
         await aug.shutdown()
       }
+    }
+
+    // Restore console methods if silent mode was enabled
+    if (this.config.silent && this.originalConsole) {
+      console.log = this.originalConsole.log as typeof console.log
+      console.info = this.originalConsole.info as typeof console.info
+      console.warn = this.originalConsole.warn as typeof console.warn
+      console.error = this.originalConsole.error as typeof console.error
+      this.originalConsole = undefined
     }
 
     // Storage doesn't have close in current interface

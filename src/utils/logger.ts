@@ -7,6 +7,7 @@
 import { isProductionEnvironment, getLogLevel } from './environment.js'
 
 export enum LogLevel {
+  SILENT = -1,  // New: Completely silent mode
   ERROR = 0,
   WARN = 1,
   INFO = 2,
@@ -66,7 +67,7 @@ class Logger {
     // Convert environment log level to Logger LogLevel
     switch (envLogLevel) {
       case 'silent':
-        this.config.level = -1 as LogLevel // Below ERROR to silence all logs
+        this.config.level = LogLevel.SILENT
         break
       case 'error':
         this.config.level = LogLevel.ERROR
@@ -106,6 +107,11 @@ class Logger {
   }
   
   private shouldLog(level: LogLevel, module: string): boolean {
+    // Silent mode - never log anything
+    if (this.config.level === LogLevel.SILENT) {
+      return false
+    }
+
     // Check module-specific level first
     if (this.config.modules && this.config.modules[module] !== undefined) {
       return level <= this.config.modules[module]
