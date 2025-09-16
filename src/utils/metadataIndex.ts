@@ -1461,19 +1461,63 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get index statistics
+   * Get count of entities by type - O(1) operation using existing tracking
+   * This exposes the production-ready counting that's already maintained
+   */
+  getEntityCountByType(type: string): number {
+    return this.totalEntitiesByType.get(type) || 0
+  }
+
+  /**
+   * Get total count of all entities - O(1) operation
+   */
+  getTotalEntityCount(): number {
+    let total = 0
+    for (const count of this.totalEntitiesByType.values()) {
+      total += count
+    }
+    return total
+  }
+
+  /**
+   * Get all entity types and their counts - O(1) operation
+   */
+  getAllEntityCounts(): Map<string, number> {
+    return new Map(this.totalEntitiesByType)
+  }
+
+  /**
+   * Get count of entities matching field-value criteria - O(1) lookup from existing indexes
+   */
+  async getCountForCriteria(field: string, value: any): Promise<number> {
+    const key = this.getIndexKey(field, value)
+    let entry = this.indexCache.get(key)
+
+    if (!entry) {
+      const loadedEntry = await this.loadIndexEntry(key)
+      if (loadedEntry) {
+        entry = loadedEntry
+        this.indexCache.set(key, entry)
+      }
+    }
+
+    return entry ? entry.ids.size : 0
+  }
+
+  /**
+   * Get index statistics with enhanced counting information
    */
   async getStats(): Promise<MetadataIndexStats> {
     const fields = new Set<string>()
     let totalEntries = 0
     let totalIds = 0
-    
+
     for (const entry of this.indexCache.values()) {
       fields.add(entry.field)
       totalEntries++
       totalIds += entry.ids.size
     }
-    
+
     return {
       totalEntries,
       totalIds,
