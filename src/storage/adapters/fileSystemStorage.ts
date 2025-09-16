@@ -623,9 +623,25 @@ export class FileSystemStorage extends BaseStorage {
       
       // Get page of files
       const pageFiles = nounFiles.slice(startIndex, startIndex + limit)
-      
-      // Load nouns
+
+      // Load nouns - count actual successfully loaded items
       const items: HNSWNoun[] = []
+      let successfullyLoaded = 0
+      let totalValidFiles = 0
+
+      // First pass: count total valid files (for accurate totalCount)
+      // This is necessary to fix the pagination bug
+      for (const file of nounFiles) {
+        try {
+          // Just check if file exists and is readable
+          await fs.promises.access(path.join(this.nounsDir, file), fs.constants.R_OK)
+          totalValidFiles++
+        } catch {
+          // File not readable, skip
+        }
+      }
+
+      // Second pass: load the current page
       for (const file of pageFiles) {
         try {
           const data = await fs.promises.readFile(
@@ -633,7 +649,7 @@ export class FileSystemStorage extends BaseStorage {
             'utf-8'
           )
           const noun = JSON.parse(data)
-          
+
           // Apply filter if provided
           if (options.filter) {
             // Simple filter implementation
@@ -646,21 +662,24 @@ export class FileSystemStorage extends BaseStorage {
             }
             if (!matches) continue
           }
-          
+
           items.push(noun)
+          successfullyLoaded++
         } catch (error) {
           console.warn(`Failed to read noun file ${file}:`, error)
         }
       }
-      
-      const hasMore = startIndex + limit < nounFiles.length
+
+      // CRITICAL FIX: hasMore should be based on actual valid files, not just file count
+      // Also check if we actually loaded any items from this page
+      const hasMore = (startIndex + limit < totalValidFiles) && (successfullyLoaded > 0 || startIndex === 0)
       const nextCursor = hasMore && pageFiles.length > 0
         ? pageFiles[pageFiles.length - 1].replace('.json', '')
         : undefined
-      
+
       return {
         items,
-        totalCount: nounFiles.length,
+        totalCount: totalValidFiles, // Use actual valid file count, not all files
         hasMore,
         nextCursor
       }

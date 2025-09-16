@@ -189,7 +189,9 @@ export const PATTERNS_METADATA = {
   }
 }
 
-console.log(\`🧠 Brainy Pattern Library loaded: \${EMBEDDED_PATTERNS.length} patterns, \${(PATTERNS_METADATA.sizeBytes.total / 1024).toFixed(1)}KB total\`)
+// Only log if not suppressed - controlled by logging configuration
+import { prodLog } from '../utils/logger.js'
+prodLog.info(\`🧠 Brainy Pattern Library loaded: \${EMBEDDED_PATTERNS.length} patterns, \${(PATTERNS_METADATA.sizeBytes.total / 1024).toFixed(1)}KB total\`)
 `
 
   // Write the TypeScript file

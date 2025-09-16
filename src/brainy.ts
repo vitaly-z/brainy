@@ -22,6 +22,7 @@ import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
 import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
+import { configureLogger, LogLevel } from './utils/logger.js'
 import {
   Entity,
   Relation,
@@ -94,13 +95,22 @@ export class Brainy<T = any> {
         storage: { ...this.config.storage, ...configOverrides.storage },
         model: { ...this.config.model, ...configOverrides.model },
         index: { ...this.config.index, ...configOverrides.index },
-        augmentations: { ...this.config.augmentations, ...configOverrides.augmentations }
+        augmentations: { ...this.config.augmentations, ...configOverrides.augmentations },
+        verbose: configOverrides.verbose ?? this.config.verbose,
+        silent: configOverrides.silent ?? this.config.silent
       }
-      
+
       // Set dimensions if provided
       if (dimensions) {
         this.dimensions = dimensions
       }
+    }
+
+    // Configure logging based on config options
+    if (this.config.silent) {
+      configureLogger({ level: -1 as LogLevel })  // Suppress all logs
+    } else if (this.config.verbose) {
+      configureLogger({ level: LogLevel.DEBUG })  // Enable verbose logging
     }
 
     try {
@@ -1487,7 +1497,9 @@ export class Brainy<T = any> {
       warmup: config?.warmup ?? false,
       realtime: config?.realtime ?? false,
       multiTenancy: config?.multiTenancy ?? false,
-      telemetry: config?.telemetry ?? false
+      telemetry: config?.telemetry ?? false,
+      verbose: config?.verbose ?? false,
+      silent: config?.silent ?? false
     }
   }
 
