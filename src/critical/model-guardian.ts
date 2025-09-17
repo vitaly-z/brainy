@@ -11,11 +11,8 @@
  * 4. System MUST fail fast if model unavailable in production
  */
 
-import { existsSync } from 'node:fs'
-import { readFile, mkdir, writeFile, stat } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
-import { createHash } from 'node:crypto'
 import { env } from '@huggingface/transformers'
+import { createHash } from '../universal/crypto.js'
 
 // CRITICAL: These values MUST NEVER CHANGE
 const CRITICAL_MODEL_CONFIG = {
@@ -102,8 +99,8 @@ export class ModelGuardian {
       return
     }
     
-    // Step 2: In production, FAIL FAST
-    if (process.env.NODE_ENV === 'production' && !process.env.BRAINY_ALLOW_RUNTIME_DOWNLOAD) {
+    // Step 2: In production, FAIL FAST (Node.js only)
+    if (typeof window === 'undefined' && process.env.NODE_ENV === 'production' && !process.env.BRAINY_ALLOW_RUNTIME_DOWNLOAD) {
       throw new Error(
         '🚨 CRITICAL FAILURE: Transformer model not found in production!\n' +
         'The model is REQUIRED for Brainy to function.\n' +
@@ -147,7 +144,18 @@ export class ModelGuardian {
    * Verify the local model files exist and are correct
    */
   private async verifyLocalModel(): Promise<boolean> {
-    const modelBasePath = join(this.modelPath, ...CRITICAL_MODEL_CONFIG.modelName.split('/'))
+    // Browser doesn't have local file access
+    if (typeof window !== 'undefined') {
+      console.log('⚠️ Model verification skipped in browser environment')
+      return false
+    }
+
+    // Dynamically import Node.js modules
+    const fs = await import('node:fs')
+    const fsPromises = await import('node:fs/promises')
+    const path = await import('node:path')
+
+    const modelBasePath = path.join(this.modelPath, ...CRITICAL_MODEL_CONFIG.modelName.split('/'))
     console.log(`🔍 Debug: Checking model at path: ${modelBasePath}`)
     console.log(`🔍 Debug: Model path components: ${this.modelPath} + ${CRITICAL_MODEL_CONFIG.modelName.split('/')}`)
     
@@ -159,17 +167,17 @@ export class ModelGuardian {
     ]
     
     for (const file of criticalFiles) {
-      const filePath = join(modelBasePath, file)
+      const filePath = path.join(modelBasePath, file)
       console.log(`🔍 Debug: Checking file: ${filePath}`)
-      
-      if (!existsSync(filePath)) {
+
+      if (!fs.existsSync(filePath)) {
         console.log(`❌ Missing critical file: ${file} at ${filePath}`)
         return false
       }
       
       // Verify size for critical files
       if (CRITICAL_MODEL_CONFIG.modelSize[file]) {
-        const stats = await stat(filePath)
+        const stats = await fsPromises.stat(filePath)
         const expectedSize = CRITICAL_MODEL_CONFIG.modelSize[file]
         
         if (Math.abs(stats.size - expectedSize) > 1000) { // Allow 1KB variance
@@ -263,24 +271,37 @@ export class ModelGuardian {
    * Detect where models should be stored
    */
   private detectModelPath(): string {
-    const candidates = [
-      process.env.BRAINY_MODELS_PATH,
-      './models',
-      join(process.cwd(), 'models'),
-      join(process.env.HOME || '', '.brainy', 'models'),
-      '/opt/models', // Lambda/container path
-      env.cacheDir
-    ]
-    
-    for (const path of candidates) {
-      if (path && existsSync(path)) {
-        const modelPath = join(path, ...CRITICAL_MODEL_CONFIG.modelName.split('/'))
-        if (existsSync(join(modelPath, 'onnx', 'model.onnx'))) {
-          return path // Return the models directory, not its parent
+    // Browser always uses default path
+    if (typeof window !== 'undefined') {
+      return './models'
+    }
+
+    // Use require for synchronous access in Node.js
+    try {
+      const fs = require('node:fs')
+      const path = require('node:path')
+
+      const candidates = [
+        process.env.BRAINY_MODELS_PATH,
+        './models',
+        path.join(process.cwd(), 'models'),
+        path.join(process.env.HOME || '', '.brainy', 'models'),
+        '/opt/models', // Lambda/container path
+        env.cacheDir
+      ]
+
+      for (const candidatePath of candidates) {
+        if (candidatePath && fs.existsSync(candidatePath)) {
+          const modelPath = path.join(candidatePath, ...CRITICAL_MODEL_CONFIG.modelName.split('/'))
+          if (fs.existsSync(path.join(modelPath, 'onnx', 'model.onnx'))) {
+            return candidatePath // Return the models directory, not its parent
+          }
         }
       }
+    } catch (e) {
+      // If Node.js modules not available, return default
     }
-    
+
     // Default
     return './models'
   }

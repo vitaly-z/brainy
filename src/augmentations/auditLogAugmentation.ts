@@ -5,7 +5,7 @@
 
 import { BaseAugmentation } from './brainyAugmentation.js'
 import { AugmentationManifest } from './manifest.js'
-import { createHash } from 'node:crypto'
+import { createHash } from '../universal/crypto.js'
 
 export interface AuditLogConfig {
   enabled?: boolean

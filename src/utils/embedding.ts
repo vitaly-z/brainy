@@ -197,8 +197,8 @@ export class TransformerEmbedding implements EmbeddingModel {
         const { createRequire } = await import('module')
         const require = createRequire(import.meta.url)
         
-        const path = require('path')
-        const fs = require('fs')
+        const path = require('node:path')
+        const fs = require('node:fs')
 
         // Try to resolve the package location
         try {
