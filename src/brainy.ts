@@ -1736,7 +1736,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private async setupStorage(): Promise<StorageAdapter> {
     const storage = await createStorage({
-      type: this.config.storage?.type || 'memory',
+      type: this.config.storage?.type || 'auto',
       ...this.config.storage?.options
     })
     return storage
@@ -1790,8 +1790,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private normalizeConfig(config?: BrainyConfig): Required<BrainyConfig> {
     // Validate storage configuration
-    if (config?.storage?.type && !['memory', 'filesystem', 'opfs', 'remote'].includes(config.storage.type)) {
-      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: memory, filesystem, opfs, remote`)
+    if (config?.storage?.type && !['auto', 'memory', 'filesystem', 'opfs', 'remote', 's3', 'r2', 'gcs'].includes(config.storage.type)) {
+      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: auto, memory, filesystem, opfs, remote, s3, r2, gcs`)
     }
 
     // Validate model configuration
@@ -1813,7 +1813,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     return {
-      storage: config?.storage || { type: 'memory' },
+      storage: config?.storage || { type: 'auto' },
       model: config?.model || { type: 'fast' },
       index: config?.index || {},
       cache: config?.cache ?? true,
