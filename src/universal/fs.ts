@@ -86,13 +86,54 @@ class NodeFS implements UniversalFS {
   }
 }
 
+// Browser-safe no-op implementation
+class BrowserFS implements UniversalFS {
+  async readFile(path: string, encoding = 'utf-8'): Promise<string> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+
+  async writeFile(path: string, data: string, encoding = 'utf-8'): Promise<void> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+
+  async mkdir(path: string, options = { recursive: true }): Promise<void> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return false // Always return false in browser
+  }
+
+  async readdir(path: string): Promise<string[]>
+  async readdir(path: string, options: { withFileTypes: true }): Promise<{ name: string, isDirectory(): boolean, isFile(): boolean }[]>
+  async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | { name: string, isDirectory(): boolean, isFile(): boolean }[]> {
+    if (options?.withFileTypes) {
+      return []
+    }
+    return []
+  }
+
+  async unlink(path: string): Promise<void> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+
+  async stat(path: string): Promise<{ isFile(): boolean, isDirectory(): boolean }> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+
+  async access(path: string, mode?: number): Promise<void> {
+    throw new Error('File system operations not available in browser. Use OPFS, Memory, or S3 storage adapters instead.')
+  }
+}
+
 // Create the appropriate filesystem implementation
 let fsImpl: UniversalFS
 
 if (isNode() && nodeFs) {
   fsImpl = new NodeFS()
 } else {
-  throw new Error('File system operations not available. Framework bundlers should provide fs polyfills or use storage adapters like OPFS, Memory, or S3.')
+  // Use browser-safe no-op implementation instead of throwing
+  fsImpl = new BrowserFS()
 }
 
 // Export the filesystem operations
