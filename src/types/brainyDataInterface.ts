@@ -1,11 +1,14 @@
 /**
- * BrainyInterface
- * 
- * This interface defines the methods from Brainy that are used by serverSearchAugmentations.ts.
- * It's used to break the circular dependency between brainyData.ts and serverSearchAugmentations.ts.
+ * BrainyInterface - Modern API Only
+ *
+ * This interface defines the MODERN methods from Brainy 3.0.
+ * Used to break circular dependencies while enforcing modern API usage.
+ *
+ * NO DEPRECATED METHODS - Only clean, modern API patterns.
  */
 
 import { Vector } from '../coreTypes.js'
+import { AddParams, RelateParams, Result, Entity, FindParams, SimilarParams } from './brainy.types.js'
 
 export interface BrainyInterface<T = unknown> {
   /**
@@ -14,47 +17,39 @@ export interface BrainyInterface<T = unknown> {
   init(): Promise<void>
 
   /**
-   * Get a noun by ID
-   * @param id The ID of the noun to get
+   * Modern add method - unified entity creation
+   * @param params Parameters for adding entities
+   * @returns The ID of the created entity
    */
-  getNoun(id: string): Promise<unknown>
+  add(params: AddParams<T>): Promise<string>
 
   /**
-   * @deprecated Use add() instead - it's smart by default now
-   * Add a noun (entity with vector and metadata) to the database
-   * @param data Text string or vector representation (will auto-embed strings)
-   * @param nounType Required noun type (one of 31 types)
-   * @param metadata Optional metadata to associate with the noun
-   * @returns The ID of the added noun
+   * Modern relate method - unified relationship creation
+   * @param params Parameters for creating relationships
+   * @returns The ID of the created relationship
    */
-  addNoun(data: string | Vector, nounType: string, metadata?: T): Promise<string>
+  relate(params: RelateParams<T>): Promise<string>
 
   /**
-   * Search for text in the database
-   * @param text The text to search for
-   * @param limit Maximum number of results to return
-   * @returns Search results
+   * Modern find method - unified search and discovery
+   * @param query Search query or parameters object
+   * @returns Array of search results
    */
-  searchText(text: string, limit?: number): Promise<unknown[]>
+  find(query: string | FindParams<T>): Promise<Result<T>[]>
 
   /**
-   * @deprecated Use relate() instead
-   * Create a relationship (verb) between two entities
-   * @param sourceId The ID of the source entity
-   * @param targetId The ID of the target entity
-   * @param verbType The type of relationship
-   * @param metadata Optional metadata about the relationship
-   * @returns The ID of the created verb
+   * Modern get method - retrieve entities by ID
+   * @param id The entity ID to retrieve
+   * @returns Entity or null if not found
    */
-  addVerb(sourceId: string, targetId: string, verbType: string, metadata?: unknown): Promise<string>
+  get(id: string): Promise<Entity<T> | null>
 
   /**
-   * Find entities similar to a given entity ID
-   * @param id ID of the entity to find similar entities for
-   * @param options Additional options
-   * @returns Array of search results with similarity scores
+   * Modern similar method - find similar entities
+   * @param params Parameters for similarity search
+   * @returns Array of similar entities with scores
    */
-  findSimilar(id: string, options?: { limit?: number }): Promise<unknown[]>
+  similar(params: SimilarParams<T>): Promise<Result<T>[]>
 
   /**
    * Generate embedding vector from text

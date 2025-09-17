@@ -194,7 +194,7 @@ export class APIServerAugmentation extends BaseAugmentation {
     app.post('/api/add', async (req: any, res: any) => {
       try {
         const { content, metadata } = req.body
-        const id = await this.context!.brain.addNoun(content, 'Content', metadata)
+        const id = await this.context!.brain.add({ data: content, type: 'content', metadata })
         res.json({ success: true, id })
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message })
@@ -368,7 +368,7 @@ export class APIServerAugmentation extends BaseAugmentation {
         break
         
       case 'add':
-        const id = await this.context!.brain.addNoun(msg.content, 'Content', msg.metadata)
+        const id = await this.context!.brain.add({ data: msg.content, type: 'content', metadata: msg.metadata })
         socket.send(JSON.stringify({
           type: 'addResult',
           requestId: msg.requestId,

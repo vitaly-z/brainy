@@ -8,9 +8,10 @@
 
 import { v4 as uuidv4 } from '../universal/uuid.js'
 import { BrainyInterface } from '../types/brainyDataInterface.js'
-import { 
-  MCPRequest, 
-  MCPResponse, 
+import { NounType } from '../types/graphTypes.js'
+import {
+  MCPRequest,
+  MCPResponse,
   MCPDataAccessRequest,
   MCPRequestType,
   MCP_VERSION
@@ -75,7 +76,7 @@ export class BrainyMCPAdapter {
       )
     }
 
-    const noun = await this.brainyData.getNoun(id)
+    const noun = await this.brainyData.get(id)
     
     if (!noun) {
       return this.createErrorResponse(
@@ -104,7 +105,7 @@ export class BrainyMCPAdapter {
       )
     }
 
-    const results = await this.brainyData.searchText(query, k)
+    const results = await this.brainyData.find({ query, limit: k })
     return this.createSuccessResponse(request.requestId, results)
   }
 
@@ -124,8 +125,8 @@ export class BrainyMCPAdapter {
       )
     }
 
-    // Add data directly using addNoun
-    const id = await this.brainyData.addNoun(text, 'document', metadata)
+    // Add data using modern API (interface only supports modern methods)
+    const id = await this.brainyData.add({ data: text, type: NounType.Document, metadata })
     return this.createSuccessResponse(request.requestId, { id })
   }
 

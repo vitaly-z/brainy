@@ -194,8 +194,8 @@ export class ImportManager {
               _confidence: item.confidence
             }
             
-            // Add to brain using proper API signature: addNoun(vectorOrData, nounType, metadata)
-            const id = await this.brain.addNoun(dataToImport, nounType || 'content', metadata)
+            // Add to brain using modern API signature
+            const id = await this.brain.add({ data: dataToImport, type: nounType || 'content', metadata })
             result.nouns.push(id)
             result.stats.imported++
             return id
@@ -229,13 +229,13 @@ export class ImportManager {
             verbType = match.type
           }
           
-          const verbId = await this.brain.addVerb(
-            rel.sourceId,
-            rel.targetId,
-            verbType as VerbType,
-            rel.metadata,
-            rel.weight
-          )
+          const verbId = await this.brain.relate({
+            from: rel.sourceId,
+            to: rel.targetId,
+            type: verbType as VerbType,
+            metadata: rel.metadata,
+            weight: rel.weight
+          })
           
           result.verbs.push(verbId)
           result.stats.relationships++
