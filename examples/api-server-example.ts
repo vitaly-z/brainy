@@ -16,9 +16,9 @@ async function main() {
   await brain.init()
   
   // 2. Add some sample data
-  await brain.addNoun("The quick brown fox", 'Content', { type: "sentence", category: "animals" })
-  await brain.addNoun("Machine learning models", 'Content', { type: "tech", category: "AI" })
-  await brain.addNoun("Natural language processing", 'Content', { type: "tech", category: "NLP" })
+  await brain.add({ data: "The quick brown fox", type: 'content', metadata: { type: "sentence", category: "animals" } })
+  await brain.add({ data: "Machine learning models", type: 'content', metadata: { type: "tech", category: "AI" } })
+  await brain.add({ data: "Natural language processing", type: 'content', metadata: { type: "tech", category: "NLP" } })
   
   // 3. Create and register the API Server augmentation
   const apiServer = new APIServerAugmentation({

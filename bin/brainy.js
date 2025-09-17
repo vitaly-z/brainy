@@ -546,7 +546,7 @@ program
       metadata.encrypted = true
     }
     
-    const id = await brainyInstance.addNoun(processedData, metadata)
+    const id = await brainyInstance.add({ data: processedData, type: 'content', metadata })
     console.log(colors.success(`✅ Added successfully! ID: ${id}`))
   }))
 
@@ -1337,9 +1337,8 @@ program
     }
     
     try {
-      // In 2.0 API, addNoun takes (data, metadata) - type goes in metadata
-      metadata.type = options.type
-      const id = await brainy.addNoun(name, metadata)
+      // Use modern 3.0 API with parameter object
+      const id = await brainy.add({ data: name, type: options.type, metadata })
       
       console.log(colors.success('✅ Noun added successfully!'))
       console.log(colors.info(`🆔 ID: ${id}`))
@@ -1506,7 +1505,7 @@ program
       
       // Use the provided type or fall back to RelatedTo
       const verbType = VerbType[options.type] || options.type
-      const id = await brainy.addVerb(source, target, verbType, metadata)
+      const id = await brainy.relate({ from: source, to: target, type: verbType, metadata })
       
       console.log(colors.success('✅ Relationship added successfully!'))
       console.log(colors.info(`🆔 ID: ${id}`))

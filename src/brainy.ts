@@ -41,12 +41,15 @@ import {
   BrainyConfig
 } from './types/brainy.types.js'
 import { NounType, VerbType } from './types/graphTypes.js'
+import { BrainyInterface } from './types/brainyDataInterface.js'
 
 /**
  * The main Brainy class - Clean, Beautiful, Powerful
  * REAL IMPLEMENTATION - No stubs, no mocks
+ *
+ * Implements BrainyInterface to ensure consistency across integrations
  */
-export class Brainy<T = any> {
+export class Brainy<T = any> implements BrainyInterface<T> {
   // Core components
   private index!: HNSWIndex | HNSWIndexOptimized
   private storage!: StorageAdapter
@@ -1707,7 +1710,7 @@ export class Brainy<T = any> {
   /**
    * Embed data into vector
    */
-  private async embed(data: any): Promise<Vector> {
+  async embed(data: any): Promise<Vector> {
     return this.embedder(data)
   }
 

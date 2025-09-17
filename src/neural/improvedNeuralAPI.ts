@@ -3285,7 +3285,7 @@ export class ImprovedNeuralAPI {
       if (clusters.length === 0) break
       
       try {
-        const noun = await this.brain.getNoun(itemId)
+        const noun = await this.brain.get(itemId)
         const itemVector = noun?.vector || []
         if (itemVector.length === 0) continue
         

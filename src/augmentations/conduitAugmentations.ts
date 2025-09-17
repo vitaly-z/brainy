@@ -204,18 +204,18 @@ export class WebSocketConduitAugmentation extends BaseConduitAugmentation {
     try {
       switch (operation) {
         case 'addNoun':
-          await this.context?.brain.addNoun(params.content, params.metadata)
+          await this.context?.brain.add({ data: params.content, type: 'content', metadata: params.metadata })
           break
         case 'deleteNoun':
           await this.context?.brain.deleteNoun(params.id)
           break
         case 'addVerb':
-          await this.context?.brain.addVerb(
-            params.source,
-            params.target,
-            params.verb,
-            params.metadata
-          )
+          await this.context?.brain.relate({
+            from: params.source,
+            to: params.target,
+            type: params.verb,
+            metadata: params.metadata
+          })
           break
       }
     } catch (error) {
@@ -269,6 +269,6 @@ export class WebSocketConduitAugmentation extends BaseConduitAugmentation {
  * await conduit.establishConnection('ws://localhost:3000/ws')
  * 
  * // Now operations sync automatically!
- * await clientBrain.addNoun('synced data', { source: 'client' })
+ * await clientBrain.add({ data: 'synced data', type: 'content', metadata: { source: 'client' } })
  * // This will automatically sync to the server
  */

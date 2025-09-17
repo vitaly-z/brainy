@@ -318,15 +318,18 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
 
     it('should handle nested metadata queries', async () => {
       // Add items with nested metadata
-      await brain.addNoun('Advanced framework test', {
-        framework: {
-          name: 'Next.js',
-          version: '13.0',
-          features: ['SSR', 'API', 'Routing']
-        },
-        tech: {
-          language: 'JavaScript',
-          runtime: 'Node.js'
+      await brain.add({
+        data: 'Advanced framework test',
+        type: 'content',
+        metadata: {
+          framework: {
+            name: 'Next.js',
+            version: '13.0',
+            features: ['SSR', 'API', 'Routing']
+          },
+          tech: {
+            language: 'JavaScript',
+            runtime: 'Node.js'
         }
       })
 
@@ -426,10 +429,14 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       const ids = []
 
       for (const item of performanceData) {
-        const id = await brain.addNoun(item.content, { 
-          category: item.category,
-          priority: item.priority,
-          timestamp: item.timestamp
+        const id = await brain.add({
+          data: item.content,
+          type: 'content',
+          metadata: {
+            category: item.category,
+            priority: item.priority,
+            timestamp: item.timestamp
+          }
         })
         ids.push(id)
       }
