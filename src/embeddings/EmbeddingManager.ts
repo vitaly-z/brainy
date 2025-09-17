@@ -18,8 +18,8 @@
 
 import { Vector, EmbeddingFunction } from '../coreTypes.js'
 import { pipeline, env } from '@huggingface/transformers'
-import { existsSync } from 'fs'
-import { join } from 'path'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 // Types
 export type ModelPrecision = 'q8' | 'fp32'

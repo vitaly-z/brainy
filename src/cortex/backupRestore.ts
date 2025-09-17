@@ -350,8 +350,8 @@ export class BackupRestore {
 
   private async compressData(data: string): Promise<string> {
     // Use zlib gzip compression
-    const { gzip } = await import('zlib')
-    const { promisify } = await import('util')
+    const { gzip } = await import('node:zlib')
+    const { promisify } = await import('node:util')
     const gzipAsync = promisify(gzip)
     
     const compressed = await gzipAsync(Buffer.from(data, 'utf-8'))
@@ -360,8 +360,8 @@ export class BackupRestore {
 
   private async decompressData(data: string): Promise<string> {
     // Use zlib gunzip decompression
-    const { gunzip } = await import('zlib')
-    const { promisify } = await import('util')
+    const { gunzip } = await import('node:zlib')
+    const { promisify } = await import('node:util')
     const gunzipAsync = promisify(gunzip)
     
     const compressed = Buffer.from(data, 'base64')
@@ -371,7 +371,7 @@ export class BackupRestore {
 
   private async encryptData(data: string, password: string): Promise<string> {
     // Use crypto module for AES-256 encryption
-    const crypto = await import('crypto')
+    const crypto = await import('node:crypto')
     
     // Generate key from password
     const key = crypto.createHash('sha256').update(password).digest()
@@ -387,7 +387,7 @@ export class BackupRestore {
 
   private async decryptData(data: string, password: string): Promise<string> {
     // Use crypto module for AES-256 decryption
-    const crypto = await import('crypto')
+    const crypto = await import('node:crypto')
     
     // Split IV and encrypted data
     const [ivString, encrypted] = data.split(':')
@@ -487,7 +487,7 @@ export class BackupRestore {
 
   private async calculateChecksum(data: string): Promise<string> {
     // Use crypto module for SHA-256 checksum
-    const crypto = await import('crypto')
+    const crypto = await import('node:crypto')
     return crypto.createHash('sha256').update(data).digest('hex')
   }
 

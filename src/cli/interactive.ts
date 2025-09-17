@@ -371,7 +371,7 @@ export async function promptFileOrUrl(
       const data = await promptDataInput('import')
       // Save to temp file and return path
       const tmpFile = `/tmp/brainy-import-${Date.now()}.json`
-      const { writeFileSync } = await import('fs')
+      const { writeFileSync } = await import('node:fs')
       writeFileSync(tmpFile, data)
       return tmpFile
     default:
@@ -392,7 +392,7 @@ async function promptFilePath(action: string): Promise<string> {
         return 'Please enter a file path'
       }
       
-      const { existsSync } = await import('fs')
+      const { existsSync } = await import('node:fs')
       if (action === 'import' && !existsSync(input)) {
         return `File not found: ${input}`
       }

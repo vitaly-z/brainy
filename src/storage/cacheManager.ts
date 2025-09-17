@@ -463,7 +463,7 @@ export class CacheManager<T extends HNSWNode | Edge | HNSWVerb> {
       if (this.environment === Environment.NODE) {
         try {
           // Use dynamic import for OS module
-          const os = await import('os')
+          const os = await import('node:os')
           
           // Get actual system memory information
           const totalMemory = os.totalmem()

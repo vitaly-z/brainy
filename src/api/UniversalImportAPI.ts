@@ -132,7 +132,7 @@ export class UniversalImportAPI {
    */
   async importFromFile(filePath: string): Promise<NeuralImportResult> {
     // Read the actual file content
-    const { readFileSync } = await import('fs')
+    const { readFileSync } = await import('node:fs')
     const ext = filePath.split('.').pop()?.toLowerCase() || 'txt'
     
     try {

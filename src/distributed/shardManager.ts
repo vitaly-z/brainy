@@ -3,8 +3,8 @@
  * Implements consistent hashing for data distribution across shards
  */
 
-import { createHash } from 'crypto'
-import { EventEmitter } from 'events'
+import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 
 export interface ShardConfig {
   shardCount?: number

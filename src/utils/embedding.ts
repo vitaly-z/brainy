@@ -6,8 +6,8 @@
 import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
 import { executeInThread } from './workerUtils.js'
 import { isBrowser } from './environment.js'
-import { join } from 'path'
-import { existsSync } from 'fs'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 // @ts-ignore - Transformers.js is now the primary embedding library
 import { pipeline, env } from '@huggingface/transformers'
 

@@ -3,8 +3,8 @@
  * Uses WebSocket + HTTP for maximum compatibility
  */
 
-import * as http from 'http'
-import { EventEmitter } from 'events'
+import * as http from 'node:http'
+import { EventEmitter } from 'node:events'
 import { WebSocket } from 'ws'
 
 // Use dynamic imports for Node.js specific modules
@@ -378,7 +378,7 @@ export class NetworkTransport extends EventEmitter {
     
     try {
       // Query Kubernetes API for pod endpoints
-      const https = await import('https')
+      const https = await import('node:https')
       const response = await new Promise<any>((resolve, reject) => {
         https.get(
           `${apiServer}/api/v1/namespaces/${namespace}/endpoints/${serviceName}`,

@@ -115,7 +115,7 @@ export class APIServerAugmentation extends BaseAugmentation {
       const express = await import('express').catch(() => null)
       const cors = await import('cors').catch(() => null)
       const ws = await import('ws').catch(() => null)
-      const { createServer } = await import('http')
+      const { createServer } = await import('node:http')
       
       if (!express || !cors || !ws) {
         this.log('Express, cors, or ws not available. Install with: npm install express cors ws', 'error')

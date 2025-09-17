@@ -8,9 +8,9 @@
  * - Default values from schema
  */
 
-import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { JSONSchema } from './manifest.js'
 
 /**
@@ -446,8 +446,8 @@ export class AugmentationConfigResolver {
       throw new Error('Cannot save configuration files in browser environment')
     }
     
-    const fs = await import('fs')
-    const path = await import('path')
+    const fs = await import('node:fs')
+    const path = await import('node:path')
     
     const configPath = filepath || this.options.configPaths?.[0] || '.brainyrc'
     const augId = this.options.augmentationId

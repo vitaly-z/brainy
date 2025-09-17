@@ -11,10 +11,10 @@
  * 4. System MUST fail fast if model unavailable in production
  */
 
-import { existsSync } from 'fs'
-import { readFile, mkdir, writeFile, stat } from 'fs/promises'
-import { join, dirname } from 'path'
-import { createHash } from 'crypto'
+import { existsSync } from 'node:fs'
+import { readFile, mkdir, writeFile, stat } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
+import { createHash } from 'node:crypto'
 import { env } from '@huggingface/transformers'
 
 // CRITICAL: These values MUST NEVER CHANGE
@@ -207,8 +207,8 @@ export class ModelGuardian {
    */
   private async computeFileHash(filePath: string): Promise<string> {
     try {
-      const { readFile } = await import('fs/promises')
-      const { createHash } = await import('crypto')
+      const { readFile } = await import('node:fs/promises')
+      const { createHash } = await import('node:crypto')
       const fileBuffer = await readFile(filePath)
       const hash = createHash('sha256').update(fileBuffer).digest('hex')
       return hash

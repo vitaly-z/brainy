@@ -247,7 +247,7 @@ export class AutoConfiguration {
     // Node.js memory detection
     if (isNode()) {
       try {
-        const os = await import('os')
+        const os = await import('node:os')
         availableMemory = os.totalmem() * 0.7 // Use 70% of total memory
         cpuCores = os.cpus().length
       } catch (error) {

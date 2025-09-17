@@ -143,7 +143,7 @@ export class DataAPI {
     // Compress if requested
     if (compress) {
       // Import zlib for compression
-      const { gzipSync } = await import('zlib')
+      const { gzipSync } = await import('node:zlib')
       const jsonString = JSON.stringify(backupData)
       const compressed = gzipSync(Buffer.from(jsonString))
       

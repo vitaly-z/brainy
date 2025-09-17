@@ -6,7 +6,7 @@
 
 import chalk from 'chalk'
 import ora from 'ora'
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { Brainy } from '../../brainy.js'
 import { BrainyTypes, NounType, VerbType } from '../../index.js'
 

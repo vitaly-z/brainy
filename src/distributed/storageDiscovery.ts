@@ -4,8 +4,8 @@
  * REAL PRODUCTION CODE - No mocks, no stubs!
  */
 
-import { EventEmitter } from 'events'
-import * as os from 'os'
+import { EventEmitter } from 'node:events'
+import * as os from 'node:os'
 import { StorageAdapter } from '../coreTypes.js'
 
 export interface NodeInfo {

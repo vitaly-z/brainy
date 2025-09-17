@@ -11,7 +11,8 @@ let nodePath: any = null
 // Dynamic import for Node.js path (only in Node.js environment)
 if (isNode()) {
   try {
-    nodePath = await import('path')
+    // Use node: protocol to prevent bundler polyfilling (requires Node 22+)
+    nodePath = await import('node:path')
   } catch {
     // Ignore import errors in non-Node environments
   }

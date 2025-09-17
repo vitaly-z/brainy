@@ -4,11 +4,11 @@
  * REAL PRODUCTION CODE - Handles millions of operations
  */
 
-import * as http from 'http'
-import * as https from 'https'
-import { EventEmitter } from 'events'
-import * as net from 'net'
-import { URL } from 'url'
+import * as http from 'node:http'
+import * as https from 'node:https'
+import { EventEmitter } from 'node:events'
+import * as net from 'node:net'
+import { URL } from 'node:url'
 
 export interface TransportMessage {
   id: string

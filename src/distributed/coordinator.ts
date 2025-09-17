@@ -3,9 +3,9 @@
  * Provides leader election, consensus, and coordination for distributed instances
  */
 
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import { NetworkTransport, NetworkMessage } from './networkTransport.js'
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 
 export interface NodeInfo {
   id: string
