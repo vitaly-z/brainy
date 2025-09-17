@@ -311,7 +311,7 @@ export type AggregateMetric =
 export interface BrainyConfig {
   // Storage configuration
   storage?: {
-    type: 'memory' | 'filesystem' | 's3' | 'r2' | 'opfs'
+    type: 'auto' | 'memory' | 'filesystem' | 's3' | 'r2' | 'opfs' | 'gcs'
     options?: any
   }
   
