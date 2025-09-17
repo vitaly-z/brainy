@@ -26,8 +26,8 @@ const brain = new BrainyData({
 })
 
 // Automatically prevents duplicate entities
-await brain.addNoun("Same content", { id: "123" }) // Added
-await brain.addNoun("Same content", { id: "123" }) // Skipped (duplicate)
+await brain.add("Same content", { id: "123" }) // Added
+await brain.add("Same content", { id: "123" }) // Skipped (duplicate)
 ```
 
 **Benefits:**
@@ -85,8 +85,8 @@ const brain = new BrainyData({
 })
 
 // Relationships automatically get intelligent scores
-await brain.addVerb(user1, product1, "viewed", { timestamp: Date.now() })
-await brain.addVerb(user1, product1, "purchased", { timestamp: Date.now() })
+await brain.relate(user1, product1, "viewed", { timestamp: Date.now() })
+await brain.relate(user1, product1, "purchased", { timestamp: Date.now() })
 // Automatically calculates relationship strength based on multiple factors
 
 // Query using intelligent scores
@@ -122,7 +122,7 @@ const brain = new BrainyData({
 })
 
 // Automatically extracts and registers entities
-await brain.addNoun(
+await brain.add(
   "Apple CEO Tim Cook announced the new iPhone 15 in Cupertino",
   { type: "news" }
 )
@@ -160,7 +160,7 @@ const brain = new BrainyData({
 
 // Operations are automatically batched
 for (let i = 0; i < 10000; i++) {
-  await brain.addNoun(`Item ${i}`)  // Internally batched
+  await brain.add(`Item ${i}`)  // Internally batched
 }
 // Processes in optimized batches of 100
 ```
@@ -223,7 +223,7 @@ const brain = new BrainyData({
 })
 
 // Data automatically compressed/decompressed
-await brain.addNoun(largeDocument)  // Compressed before storage
+await brain.add(largeDocument)  // Compressed before storage
 const doc = await brain.getNoun(id)  // Decompressed on retrieval
 ```
 

@@ -34,21 +34,23 @@ That's it! No configuration needed. Brainy automatically:
 
 ```javascript
 // Add a simple string
-await brain.addNoun("JavaScript is a versatile programming language", 'concept')
+await brain.add("JavaScript is a versatile programming language", { nounType: 'concept' })
 
 // Add with metadata
-await brain.addNoun("React is a JavaScript library", 'concept', {
+await brain.add("React is a JavaScript library", {
+  nounType: 'concept',
   type: "library",
   category: "frontend",
   popularity: "high"
 })
 
 // Add structured data
-await brain.addNoun({
+await brain.add({
   title: "Introduction to TypeScript",
   content: "TypeScript adds static typing to JavaScript",
   author: "John Doe"
-}, 'document', {
+}, {
+  nounType: 'document',
   type: "article",
   date: "2024-01-15"
 })
@@ -94,7 +96,7 @@ const documents = [
 ]
 
 for (const doc of documents) {
-  await brain.addNoun(doc.content, {
+  await brain.add(doc.content, {
     filename: doc.file,
     type: 'documentation',
     indexed: new Date().toISOString()
@@ -122,7 +124,7 @@ class ChatWithMemory {
   }
   
   async addMessage(role, content) {
-    await this.brain.addNoun(content, {
+    await this.brain.add(content, {
       role,
       sessionId: this.sessionId,
       timestamp: Date.now()
@@ -177,7 +179,7 @@ for (const file of files) {
   // Extract functions
   const functions = content.match(/function\s+(\w+)|const\s+(\w+)\s*=/g) || []
   
-  await brain.addNoun(content, {
+  await brain.add(content, {
     file,
     type: 'code',
     language: 'javascript',

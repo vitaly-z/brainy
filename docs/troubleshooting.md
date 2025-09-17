@@ -159,7 +159,7 @@ const brain = new BrainyData({
 
 2. **Verify embedding generation**
    ```typescript
-   const id = await brain.addNoun("test content", 'content')
+   const id = await brain.add("test content", { nounType: 'content' })
    const item = await brain.get(id)
    console.log('Item:', item) // Should have metadata and vector
    ```
@@ -193,7 +193,8 @@ const brain = new BrainyData({
 3. **Check data quality**
    ```typescript
    // Ensure consistent, descriptive content
-   await brain.addNoun("Domestic cat - small carnivorous mammal", 'content', {
+   await brain.add("Domestic cat - small carnivorous mammal", {
+     nounType: 'content',
      category: "animals",
      subcategory: "pets"
    })
@@ -250,7 +251,7 @@ const brain = new BrainyData({
    // Process in batches instead of loading all at once
    for (let i = 0; i < data.length; i += 100) {
      const batch = data.slice(i, i + 100)
-     await Promise.all(batch.map(item => brain.addNoun(item, 'content')))
+     await Promise.all(batch.map(item => brain.add(item, { nounType: 'content' })))
    }
    ```
 
@@ -366,7 +367,7 @@ try {
   const brain = new BrainyData()
   await brain.init()
   
-  const id = await brain.addNoun("health check", 'content')
+  const id = await brain.add("health check", { nounType: 'content' })
   const results = await brain.search("health")
   
   console.log('✅ Brainy is working correctly')

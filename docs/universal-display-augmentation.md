@@ -29,8 +29,8 @@ const brainy = new BrainyData()
 await brainy.init()
 
 // Add some data
-const personId = await brainy.addNoun('John Doe', { 
-  type: 'Person', 
+const personId = await brainy.add('John Doe', {
+  type: 'Person',
   role: 'CEO',
   company: 'Acme Corp'
 })

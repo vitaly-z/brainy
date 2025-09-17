@@ -164,7 +164,7 @@ async execute(op, params, next) {
 
 Common operations in Brainy:
 - `'storage'` - Storage resolution (special)
-- `'add'`, `'addNoun'` - Adding data
+- `'add'` - Adding data
 - `'search'`, `'similar'` - Searching
 - `'update'`, `'delete'` - Modifications
 - `'saveNoun'`, `'saveVerb'` - Storage operations

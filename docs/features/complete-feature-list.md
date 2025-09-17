@@ -391,7 +391,7 @@ const brain = new BrainyData()
 await brain.init()
 
 // Add data (auto-detects type)
-await brain.addNoun('Content here')
+await brain.add('Content here')
 
 // Search with natural language
 const results = await brain.find('related content from last week')

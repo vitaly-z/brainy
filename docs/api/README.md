@@ -12,7 +12,7 @@ const brain = new BrainyData()  // Zero config!
 await brain.init()
 
 // Add data (text auto-embeds!)
-await brain.addNoun('The future of AI is here', 'content')
+await brain.add('The future of AI is here', { nounType: 'content' })
 
 // Search with Triple Intelligence
 const results = await brain.find({
@@ -295,7 +295,7 @@ Brainy uses its own clean, readable operators:
 ### Basic Usage
 ```typescript
 // Add data
-const id = await brain.addNoun('Quantum computing breakthrough', {
+const id = await brain.add('Quantum computing breakthrough', {
   category: 'technology',
   year: 2024,
   importance: 'high'
@@ -322,14 +322,14 @@ const articles = await brain.find({
 ### Creating Knowledge Graphs
 ```typescript
 // Add entities
-const ai = await brain.addNoun('Artificial Intelligence', 'concept')
-const ml = await brain.addNoun('Machine Learning', 'concept')
-const dl = await brain.addNoun('Deep Learning', 'concept')
+const ai = await brain.add('Artificial Intelligence', { nounType: 'concept' })
+const ml = await brain.add('Machine Learning', { nounType: 'concept' })
+const dl = await brain.add('Deep Learning', { nounType: 'concept' })
 
 // Create relationships
-await brain.addVerb(ml, ai, 'subset_of')
-await brain.addVerb(dl, ml, 'subset_of')
-await brain.addVerb(dl, ai, 'enables')
+await brain.relate(ml, ai, 'subset_of')
+await brain.relate(dl, ml, 'subset_of')
+await brain.relate(dl, ai, 'enables')
 
 // Traverse the graph
 const aiEcosystem = await brain.find({

@@ -69,19 +69,19 @@ const brain = new BrainyData()
 await brain.init()
 
 // Add entities (nouns)
-const articleId = await brain.addNoun("Revolutionary AI Breakthrough", {
+const articleId = await brain.add("Revolutionary AI Breakthrough", {
   type: "article",
   category: "technology",
   rating: 4.8
 })
 
-const authorId = await brain.addNoun("Dr. Sarah Chen", {
+const authorId = await brain.add("Dr. Sarah Chen", {
   type: "person",
   role: "researcher"
 })
 
 // Create relationships (verbs)
-await brain.addVerb(authorId, articleId, "authored", {
+await brain.relate(authorId, articleId, "authored", {
   date: "2024-01-15",
   contribution: "primary"
 })

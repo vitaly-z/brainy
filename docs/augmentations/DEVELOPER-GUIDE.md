@@ -10,7 +10,7 @@ import { BaseAugmentation, BrainyAugmentation, AugmentationContext } from '@soul
 export class MyFirstAugmentation extends BaseAugmentation {
   readonly name = 'my-first-augmentation'
   readonly timing = 'after' as const       // When to run: before | after | both
-  readonly operations = ['addNoun'] as const  // Which operations to hook
+  readonly operations = ['add'] as const  // Which operations to hook
   readonly priority = 10                    // Execution order (lower = first)
   
   protected async onInit(): Promise<void> {
@@ -24,7 +24,7 @@ export class MyFirstAugmentation extends BaseAugmentation {
     context?: AugmentationContext
   ): Promise<T | void> {
     // Your augmentation logic
-    if (operation === 'addNoun') {
+    if (operation === 'add') {
       console.log('Noun added:', params.noun)
       // You can access the brain instance
       const stats = await context?.brain.getStatistics()
@@ -53,7 +53,7 @@ brain.augmentations.register(new MyFirstAugmentation())
 await brain.init()
 
 // Now your augmentation runs automatically!
-await brain.addNoun('Hello World')
+await brain.add('Hello World')
 // Console: "Noun added: { id: '...', vector: [...], metadata: {} }"
 ```
 
@@ -75,7 +75,7 @@ await brain.init()  // Calls aug.initialize() internally
 
 ### 3. Execution Phase
 ```typescript
-await brain.addNoun('data')  // Your execute() method runs
+await brain.add('data')  // Your execute() method runs
 ```
 
 ### 4. Shutdown Phase
@@ -93,7 +93,7 @@ class ValidationAugmentation extends BaseAugmentation {
   readonly timing = 'before' as const
   
   async execute<T>(operation: string, params: any): Promise<any> {
-    if (operation === 'addNoun') {
+    if (operation === 'add') {
       // Validate and/or modify params
       if (!params.content) {
         throw new Error('Content required')
@@ -146,14 +146,14 @@ class TimingAugmentation extends BaseAugmentation {
 ### Core Operations You Can Hook
 ```typescript
 readonly operations = [
-  'addNoun',        // Adding data
-  'updateNoun',     // Updating data
-  'deleteNoun',     // Deleting data
-  'getNoun',        // Retrieving data
+  'add',            // Adding data
+  'update',         // Updating data
+  'delete',         // Deleting data
+  'get',            // Retrieving data
   'search',         // Searching
   'find',           // Triple Intelligence queries
-  'addVerb',        // Adding relationships
-  'deleteVerb',     // Removing relationships
+  'relate',         // Adding relationships
+  'unrelate',       // Removing relationships
   'clear',          // Clearing data
   'all'            // Hook ALL operations
 ] as const
@@ -162,7 +162,7 @@ readonly operations = [
 ### Example: Multi-Operation Hook
 ```typescript
 class AuditAugmentation extends BaseAugmentation {
-  readonly operations = ['addNoun', 'updateNoun', 'deleteNoun'] as const
+  readonly operations = ['add', 'update', 'delete'] as const
   
   async execute<T>(operation: string, params: any): Promise<void> {
     // Log all data modifications
@@ -209,7 +209,7 @@ class ContextAwareAugmentation extends BaseAugmentation {
 class BackupAugmentation extends BaseAugmentation {
   readonly name = 'backup'
   readonly timing = 'after' as const
-  readonly operations = ['addNoun', 'updateNoun', 'deleteNoun'] as const
+  readonly operations = ['add', 'update', 'delete'] as const
   readonly priority = 5
   
   private changes = 0
@@ -272,11 +272,11 @@ class RateLimitAugmentation extends BaseAugmentation {
 class EncryptionAugmentation extends BaseAugmentation {
   readonly name = 'encryption'
   readonly timing = 'both' as const
-  readonly operations = ['addNoun', 'getNoun'] as const
+  readonly operations = ['add', 'get'] as const
   readonly priority = 90  // Run early
   
   async execute<T>(operation: string, params: any): Promise<any> {
-    if (operation === 'addNoun') {
+    if (operation === 'add') {
       // Encrypt before storing
       if (params.metadata?.sensitive) {
         params.content = await this.encrypt(params.content)
@@ -284,8 +284,8 @@ class EncryptionAugmentation extends BaseAugmentation {
       }
       return params
     }
-    
-    if (operation === 'getNoun' && params.result?.encrypted) {
+
+    if (operation === 'get' && params.result?.encrypted) {
       // Decrypt after retrieval
       params.result.content = await this.decrypt(params.result.content)
       delete params.result.encrypted
@@ -316,11 +316,11 @@ describe('MyAugmentation', () => {
     await brain.init()
     
     // Trigger the augmentation
-    await brain.addNoun('test data')
-    
+    await brain.add('test data')
+
     // Verify it was called
     expect(executeSpy).toHaveBeenCalledWith(
-      'addNoun',
+      'add',
       expect.objectContaining({ content: 'test data' }),
       expect.any(Object)
     )
@@ -431,7 +431,7 @@ my-augmentation/
     "type": "augmentation",
     "class": "CustomAugmentation",
     "timing": "after",
-    "operations": ["addNoun"],
+    "operations": ["add"],
     "priority": 10
   }
 }

@@ -54,7 +54,7 @@ const claudeBrain = await brain.connectModel('claude-3')
 const llamaBrain = await brain.connectModel('llama-2')
 
 // All models understand the same noun-verb structure
-const knowledge = await brain.addNoun("Quantum Computer", { type: "thing" })
+const knowledge = await brain.add("Quantum Computer", { type: "thing" })
 // Any model can now reason about this knowledge
 ```
 
@@ -123,20 +123,20 @@ Nouns represent any entity in your system:
 
 ```typescript
 // Add any entity as a noun
-const personId = await brain.addNoun("John Smith, Senior Engineer", {
+const personId = await brain.add("John Smith, Senior Engineer", {
   type: "person",
   department: "engineering",
   skills: ["TypeScript", "React", "Node.js"]
 })
 
-const documentId = await brain.addNoun("Q3 2024 Financial Report", {
+const documentId = await brain.add("Q3 2024 Financial Report", {
   type: "document",
   category: "financial",
   confidential: true,
   created: "2024-10-01"
 })
 
-const conceptId = await brain.addNoun("Machine Learning", {
+const conceptId = await brain.add("Machine Learning", {
   type: "concept",
   domain: "technology",
   complexity: "advanced"
@@ -158,17 +158,17 @@ Verbs define how nouns relate to each other:
 
 ```typescript
 // Create relationships between entities
-await brain.addVerb(personId, documentId, "authored", {
+await brain.relate(personId, documentId, "authored", {
   role: "primary_author",
   contribution: "80%"
 })
 
-await brain.addVerb(documentId, conceptId, "discusses", {
+await brain.relate(documentId, conceptId, "discusses", {
   sections: ["methodology", "results"],
   depth: "detailed"
 })
 
-await brain.addVerb(personId, conceptId, "expert_in", {
+await brain.relate(personId, conceptId, "expert_in", {
   years_experience: 5,
   certification: "Advanced ML Certification"
 })
@@ -190,14 +190,14 @@ Every verb includes:
 
 ```typescript
 // Think naturally about your data
-const taskId = await brain.addNoun("Implement payment system")
-const userId = await brain.addNoun("Alice Johnson")
-const projectId = await brain.addNoun("E-commerce Platform")
+const taskId = await brain.add("Implement payment system")
+const userId = await brain.add("Alice Johnson")
+const projectId = await brain.add("E-commerce Platform")
 
 // Express relationships clearly
-await brain.addVerb(userId, taskId, "assigned_to")
-await brain.addVerb(taskId, projectId, "part_of")
-await brain.addVerb(userId, projectId, "manages")
+await brain.relate(userId, taskId, "assigned_to")
+await brain.relate(taskId, projectId, "part_of")
+await brain.relate(userId, projectId, "manages")
 ```
 
 ### 2. Semantic Understanding
@@ -219,14 +219,14 @@ No rigid schema requirements:
 
 ```typescript
 // Add any noun type without schema changes
-await brain.addNoun("New IoT Sensor", { 
+await brain.add("New IoT Sensor", { 
   type: "device",
   protocol: "MQTT",
   location: "Building A"
 })
 
 // Create new relationship types on the fly
-await brain.addVerb(sensorId, buildingId, "monitors", {
+await brain.relate(sensorId, buildingId, "monitors", {
   metrics: ["temperature", "humidity"],
   interval: "5 minutes"
 })
@@ -263,13 +263,13 @@ Track how relationships change over time:
 
 ```typescript
 // Relationships with temporal data
-await brain.addVerb(employeeId, companyId, "worked_at", {
+await brain.relate(employeeId, companyId, "worked_at", {
   from: "2020-01-01",
   to: "2023-12-31",
   position: "Senior Developer"
 })
 
-await brain.addVerb(employeeId, newCompanyId, "works_at", {
+await brain.relate(employeeId, newCompanyId, "works_at", {
   from: "2024-01-01",
   position: "Tech Lead"
 })
@@ -284,24 +284,24 @@ const employment = await brain.find("where did John work in 2022")
 
 ```typescript
 // Documents and their relationships
-const paperId = await brain.addNoun("Neural Networks Paper", {
+const paperId = await brain.add("Neural Networks Paper", {
   type: "research_paper",
   year: 2024
 })
 
-const authorId = await brain.addNoun("Dr. Sarah Chen", {
+const authorId = await brain.add("Dr. Sarah Chen", {
   type: "researcher"
 })
 
-const topicId = await brain.addNoun("Deep Learning", {
+const topicId = await brain.add("Deep Learning", {
   type: "topic"
 })
 
 // Rich relationship network
-await brain.addVerb(authorId, paperId, "authored")
-await brain.addVerb(paperId, topicId, "covers")
-await brain.addVerb(paperId, otherPaperId, "cites")
-await brain.addVerb(authorId, topicId, "researches")
+await brain.relate(authorId, paperId, "authored")
+await brain.relate(paperId, topicId, "covers")
+await brain.relate(paperId, otherPaperId, "cites")
+await brain.relate(authorId, topicId, "researches")
 
 // Query the knowledge graph
 const related = await brain.find("papers about deep learning by Sarah Chen")
@@ -311,16 +311,16 @@ const related = await brain.find("papers about deep learning by Sarah Chen")
 
 ```typescript
 // Users and connections
-const user1 = await brain.addNoun("Alice", { type: "user" })
-const user2 = await brain.addNoun("Bob", { type: "user" })
-const post = await brain.addNoun("Great article on AI!", { type: "post" })
+const user1 = await brain.add("Alice", { type: "user" })
+const user2 = await brain.add("Bob", { type: "user" })
+const post = await brain.add("Great article on AI!", { type: "post" })
 
 // Social interactions
-await brain.addVerb(user1, user2, "follows")
-await brain.addVerb(user2, user1, "follows") // Mutual
-await brain.addVerb(user1, post, "created")
-await brain.addVerb(user2, post, "liked")
-await brain.addVerb(user2, post, "shared")
+await brain.relate(user1, user2, "follows")
+await brain.relate(user2, user1, "follows") // Mutual
+await brain.relate(user1, post, "created")
+await brain.relate(user2, post, "liked")
+await brain.relate(user2, post, "shared")
 
 // Find social patterns
 const influencers = await brain.find("users with most followers who post about AI")
@@ -330,25 +330,25 @@ const influencers = await brain.find("users with most followers who post about A
 
 ```typescript
 // Products and purchases
-const product = await brain.addNoun("Wireless Headphones", {
+const product = await brain.add("Wireless Headphones", {
   type: "product",
   price: 99.99,
   category: "electronics"
 })
 
-const customer = await brain.addNoun("Customer #12345", {
+const customer = await brain.add("Customer #12345", {
   type: "customer",
   tier: "premium"
 })
 
 // Purchase relationships
-await brain.addVerb(customer, product, "purchased", {
+await brain.relate(customer, product, "purchased", {
   date: "2024-01-15",
   quantity: 1,
   price: 99.99
 })
 
-await brain.addVerb(customer, product, "reviewed", {
+await brain.relate(customer, product, "reviewed", {
   rating: 5,
   text: "Excellent sound quality!"
 })
@@ -361,16 +361,16 @@ const recs = await brain.find("products purchased by customers who bought headph
 
 ```typescript
 // Projects, tasks, and teams
-const project = await brain.addNoun("Website Redesign", { type: "project" })
-const task = await brain.addNoun("Update homepage", { type: "task" })
-const developer = await brain.addNoun("Jane Developer", { type: "person" })
-const designer = await brain.addNoun("John Designer", { type: "person" })
+const project = await brain.add("Website Redesign", { type: "project" })
+const task = await brain.add("Update homepage", { type: "task" })
+const developer = await brain.add("Jane Developer", { type: "person" })
+const designer = await brain.add("John Designer", { type: "person" })
 
 // Work relationships
-await brain.addVerb(task, project, "belongs_to")
-await brain.addVerb(developer, task, "assigned_to")
-await brain.addVerb(designer, developer, "collaborates_with")
-await brain.addVerb(task, otherTask, "depends_on")
+await brain.relate(task, project, "belongs_to")
+await brain.relate(developer, task, "assigned_to")
+await brain.relate(designer, developer, "collaborates_with")
+await brain.relate(task, otherTask, "depends_on")
 
 // Project queries
 const blockers = await brain.find("tasks that depend on incomplete tasks")
@@ -383,7 +383,7 @@ const workload = await brain.find("people assigned to multiple active projects")
 
 ```typescript
 // Some relationships are naturally bidirectional
-await brain.addVerb(user1, user2, "friend_of", { bidirectional: true })
+await brain.relate(user1, user2, "friend_of", { bidirectional: true })
 // Automatically creates inverse relationship
 ```
 
@@ -391,7 +391,7 @@ await brain.addVerb(user1, user2, "friend_of", { bidirectional: true })
 
 ```typescript
 // Add strength/weight to relationships
-await brain.addVerb(doc1, doc2, "similar_to", {
+await brain.relate(doc1, doc2, "similar_to", {
   similarity_score: 0.95,
   algorithm: "cosine"
 })
@@ -426,8 +426,8 @@ const results = await brain.find({
 
 ```typescript
 // Relationships about relationships
-const verbId = await brain.addVerb(user1, user2, "recommends")
-await brain.addVerb(user3, verbId, "endorses", {
+const verbId = await brain.relate(user1, user2, "recommends")
+await brain.relate(user3, verbId, "endorses", {
   reason: "Accurate recommendation",
   trust_score: 0.9
 })
@@ -536,9 +536,9 @@ const results = await brain.find({
 // SELECT * FROM users JOIN orders ON users.id = orders.user_id
 
 // Use noun-verb relationships
-const userId = await brain.addNoun("User", userData)
-const orderId = await brain.addNoun("Order", orderData)
-await brain.addVerb(userId, orderId, "placed")
+const userId = await brain.add("User", userData)
+const orderId = await brain.add("Order", orderData)
+await brain.relate(userId, orderId, "placed")
 
 // Query naturally
 const userOrders = await brain.find({
@@ -552,10 +552,10 @@ const userOrders = await brain.find({
 // { user: { orders: [...] } }
 
 // Use explicit relationships
-const userId = await brain.addNoun("User", userData)
+const userId = await brain.add("User", userData)
 for (const order of orders) {
-  const orderId = await brain.addNoun("Order", order)
-  await brain.addVerb(userId, orderId, "has_order")
+  const orderId = await brain.add("Order", order)
+  await brain.relate(userId, orderId, "has_order")
 }
 ```
 
@@ -580,7 +580,7 @@ The Noun-Verb taxonomy is designed to represent **all human knowledge** through 
 
 ##### 1. **Person** - Individual human entities
 ```typescript
-await brain.addNoun("Albert Einstein", {
+await brain.add("Albert Einstein", {
   type: "person",
   role: "physicist",
   born: "1879-03-14"
@@ -589,7 +589,7 @@ await brain.addNoun("Albert Einstein", {
 
 ##### 2. **Organization** - Collective entities
 ```typescript
-await brain.addNoun("OpenAI", {
+await brain.add("OpenAI", {
   type: "organization",
   industry: "AI research",
   founded: 2015
@@ -598,7 +598,7 @@ await brain.addNoun("OpenAI", {
 
 ##### 3. **Location** - Geographic and spatial entities
 ```typescript
-await brain.addNoun("San Francisco", {
+await brain.add("San Francisco", {
   type: "location",
   category: "city",
   coordinates: [37.7749, -122.4194]
@@ -607,7 +607,7 @@ await brain.addNoun("San Francisco", {
 
 ##### 4. **Thing** - Physical objects
 ```typescript
-await brain.addNoun("Tesla Model 3", {
+await brain.add("Tesla Model 3", {
   type: "thing",
   category: "vehicle",
   manufacturer: "Tesla"
@@ -616,7 +616,7 @@ await brain.addNoun("Tesla Model 3", {
 
 ##### 5. **Concept** - Abstract ideas and intangibles
 ```typescript
-await brain.addNoun("Machine Learning", {
+await brain.add("Machine Learning", {
   type: "concept",
   domain: "technology",
   complexity: "advanced"
@@ -625,7 +625,7 @@ await brain.addNoun("Machine Learning", {
 
 ##### 6. **Event** - Temporal occurrences
 ```typescript
-await brain.addNoun("Product Launch 2024", {
+await brain.add("Product Launch 2024", {
   type: "event",
   date: "2024-09-15",
   attendees: 500
@@ -636,7 +636,7 @@ await brain.addNoun("Product Launch 2024", {
 
 ##### 7. **Document** - Text-based files
 ```typescript
-await brain.addNoun("Quarterly Report", {
+await brain.add("Quarterly Report", {
   type: "document",
   format: "PDF",
   pages: 47
@@ -645,7 +645,7 @@ await brain.addNoun("Quarterly Report", {
 
 ##### 8. **Media** - Non-text media files
 ```typescript
-await brain.addNoun("Product Demo Video", {
+await brain.add("Product Demo Video", {
   type: "media",
   format: "MP4",
   duration: "5:30"
@@ -654,7 +654,7 @@ await brain.addNoun("Product Demo Video", {
 
 ##### 9. **File** - Generic digital files
 ```typescript
-await brain.addNoun("config.json", {
+await brain.add("config.json", {
   type: "file",
   size: "2KB",
   modified: Date.now()
@@ -663,7 +663,7 @@ await brain.addNoun("config.json", {
 
 ##### 10. **Message** - Communication content
 ```typescript
-await brain.addNoun("Support ticket #1234", {
+await brain.add("Support ticket #1234", {
   type: "message",
   priority: "high",
   channel: "email"
@@ -672,7 +672,7 @@ await brain.addNoun("Support ticket #1234", {
 
 ##### 11. **Content** - Generic content
 ```typescript
-await brain.addNoun("Landing page copy", {
+await brain.add("Landing page copy", {
   type: "content",
   category: "marketing",
   language: "en"
@@ -683,7 +683,7 @@ await brain.addNoun("Landing page copy", {
 
 ##### 12. **Collection** - Groups of items
 ```typescript
-await brain.addNoun("Premium Features", {
+await brain.add("Premium Features", {
   type: "collection",
   items: 25,
   category: "features"
@@ -692,7 +692,7 @@ await brain.addNoun("Premium Features", {
 
 ##### 13. **Dataset** - Structured data collections
 ```typescript
-await brain.addNoun("Customer Analytics", {
+await brain.add("Customer Analytics", {
   type: "dataset",
   records: 10000,
   schema: "v2"
@@ -703,7 +703,7 @@ await brain.addNoun("Customer Analytics", {
 
 ##### 14. **Product** - Commercial offerings
 ```typescript
-await brain.addNoun("Pro Subscription", {
+await brain.add("Pro Subscription", {
   type: "product",
   price: 99.99,
   tier: "premium"
@@ -712,7 +712,7 @@ await brain.addNoun("Pro Subscription", {
 
 ##### 15. **Service** - Service offerings
 ```typescript
-await brain.addNoun("Cloud Hosting", {
+await brain.add("Cloud Hosting", {
   type: "service",
   sla: "99.9%",
   region: "us-west"
@@ -721,7 +721,7 @@ await brain.addNoun("Cloud Hosting", {
 
 ##### 16. **User** - User accounts
 ```typescript
-await brain.addNoun("user@example.com", {
+await brain.add("user@example.com", {
   type: "user",
   tier: "enterprise",
   created: Date.now()
@@ -730,7 +730,7 @@ await brain.addNoun("user@example.com", {
 
 ##### 17. **Task** - Actions and todos
 ```typescript
-await brain.addNoun("Deploy v2.0", {
+await brain.add("Deploy v2.0", {
   type: "task",
   priority: "high",
   assignee: "devops"
@@ -739,7 +739,7 @@ await brain.addNoun("Deploy v2.0", {
 
 ##### 18. **Project** - Organized initiatives
 ```typescript
-await brain.addNoun("Website Redesign", {
+await brain.add("Website Redesign", {
   type: "project",
   deadline: "2024-12-31",
   status: "active"
@@ -750,7 +750,7 @@ await brain.addNoun("Website Redesign", {
 
 ##### 19. **Process** - Workflows and procedures
 ```typescript
-await brain.addNoun("CI/CD Pipeline", {
+await brain.add("CI/CD Pipeline", {
   type: "process",
   steps: 7,
   automated: true
@@ -759,7 +759,7 @@ await brain.addNoun("CI/CD Pipeline", {
 
 ##### 20. **State** - Conditions or status
 ```typescript
-await brain.addNoun("System Health", {
+await brain.add("System Health", {
   type: "state",
   status: "operational",
   uptime: "99.99%"
@@ -768,7 +768,7 @@ await brain.addNoun("System Health", {
 
 ##### 21. **Role** - Positions or responsibilities
 ```typescript
-await brain.addNoun("Admin Role", {
+await brain.add("Admin Role", {
   type: "role",
   permissions: ["read", "write", "delete"],
   level: "superuser"
@@ -777,7 +777,7 @@ await brain.addNoun("Admin Role", {
 
 ##### 22. **Topic** - Subjects or themes
 ```typescript
-await brain.addNoun("Machine Learning", {
+await brain.add("Machine Learning", {
   type: "topic",
   field: "AI",
   popularity: "high"
@@ -786,7 +786,7 @@ await brain.addNoun("Machine Learning", {
 
 ##### 23. **Language** - Languages or linguistic entities
 ```typescript
-await brain.addNoun("English", {
+await brain.add("English", {
   type: "language",
   iso_code: "en",
   speakers_millions: 1500
@@ -795,7 +795,7 @@ await brain.addNoun("English", {
 
 ##### 24. **Currency** - Monetary units
 ```typescript
-await brain.addNoun("US Dollar", {
+await brain.add("US Dollar", {
   type: "currency",
   symbol: "$",
   code: "USD"
@@ -804,7 +804,7 @@ await brain.addNoun("US Dollar", {
 
 ##### 25. **Measurement** - Metrics or quantities
 ```typescript
-await brain.addNoun("Temperature Reading", {
+await brain.add("Temperature Reading", {
   type: "measurement",
   value: 23.5,
   unit: "celsius"
@@ -815,7 +815,7 @@ await brain.addNoun("Temperature Reading", {
 
 ##### 26. **Hypothesis** - Scientific theories and propositions
 ```typescript
-await brain.addNoun("String Theory", {
+await brain.add("String Theory", {
   type: "hypothesis",
   field: "physics",
   status: "unproven"
@@ -824,7 +824,7 @@ await brain.addNoun("String Theory", {
 
 ##### 27. **Experiment** - Studies and research trials
 ```typescript
-await brain.addNoun("Clinical Trial XYZ", {
+await brain.add("Clinical Trial XYZ", {
   type: "experiment",
   phase: 3,
   participants: 1000
@@ -835,7 +835,7 @@ await brain.addNoun("Clinical Trial XYZ", {
 
 ##### 28. **Contract** - Legal agreements and terms
 ```typescript
-await brain.addNoun("Service Agreement", {
+await brain.add("Service Agreement", {
   type: "contract",
   duration: "2 years",
   value: 100000
@@ -844,7 +844,7 @@ await brain.addNoun("Service Agreement", {
 
 ##### 29. **Regulation** - Laws and compliance requirements
 ```typescript
-await brain.addNoun("GDPR", {
+await brain.add("GDPR", {
   type: "regulation",
   jurisdiction: "EU",
   category: "data protection"
@@ -855,7 +855,7 @@ await brain.addNoun("GDPR", {
 
 ##### 30. **Interface** - APIs and protocols
 ```typescript
-await brain.addNoun("REST API", {
+await brain.add("REST API", {
   type: "interface",
   version: "v2",
   endpoints: 45
@@ -864,7 +864,7 @@ await brain.addNoun("REST API", {
 
 ##### 31. **Resource** - Infrastructure and compute assets
 ```typescript
-await brain.addNoun("Database Server", {
+await brain.add("Database Server", {
   type: "resource",
   capacity: "1TB",
   availability: "99.9%"
@@ -877,214 +877,214 @@ await brain.addNoun("Database Server", {
 
 ##### 1. **RelatedTo** - Generic relationship (default)
 ```typescript
-await brain.addVerb(entityA, entityB, "relatedTo")
+await brain.relate(entityA, entityB, "relatedTo")
 ```
 
 ##### 2. **Contains** - Containment relationship
 ```typescript
-await brain.addVerb(folderId, fileId, "contains")
+await brain.relate(folderId, fileId, "contains")
 ```
 
 ##### 3. **PartOf** - Part-whole relationship
 ```typescript
-await brain.addVerb(componentId, systemId, "partOf")
+await brain.relate(componentId, systemId, "partOf")
 ```
 
 ##### 4. **LocatedAt** - Spatial relationship
 ```typescript
-await brain.addVerb(deviceId, locationId, "locatedAt")
+await brain.relate(deviceId, locationId, "locatedAt")
 ```
 
 ##### 5. **References** - Citation relationship
 ```typescript
-await brain.addVerb(paperId, sourceId, "references")
+await brain.relate(paperId, sourceId, "references")
 ```
 
 #### Temporal/Causal Types (5)
 
 ##### 6. **Precedes** - Temporal sequence (before)
 ```typescript
-await brain.addVerb(event1Id, event2Id, "precedes")
+await brain.relate(event1Id, event2Id, "precedes")
 ```
 
 ##### 7. **Succeeds** - Temporal sequence (after)
 ```typescript
-await brain.addVerb(event2Id, event1Id, "succeeds")
+await brain.relate(event2Id, event1Id, "succeeds")
 ```
 
 ##### 8. **Causes** - Causal relationship
 ```typescript
-await brain.addVerb(actionId, effectId, "causes")
+await brain.relate(actionId, effectId, "causes")
 ```
 
 ##### 9. **DependsOn** - Dependency relationship
 ```typescript
-await brain.addVerb(moduleId, libraryId, "dependsOn")
+await brain.relate(moduleId, libraryId, "dependsOn")
 ```
 
 ##### 10. **Requires** - Necessity relationship
 ```typescript
-await brain.addVerb(taskId, resourceId, "requires")
+await brain.relate(taskId, resourceId, "requires")
 ```
 
 #### Creation/Transformation Types (5)
 
 ##### 11. **Creates** - Creation relationship
 ```typescript
-await brain.addVerb(authorId, documentId, "creates")
+await brain.relate(authorId, documentId, "creates")
 ```
 
 ##### 12. **Transforms** - Transformation relationship
 ```typescript
-await brain.addVerb(processId, dataId, "transforms")
+await brain.relate(processId, dataId, "transforms")
 ```
 
 ##### 13. **Becomes** - State change relationship
 ```typescript
-await brain.addVerb(caterpillarId, butterflyId, "becomes")
+await brain.relate(caterpillarId, butterflyId, "becomes")
 ```
 
 ##### 14. **Modifies** - Modification relationship
 ```typescript
-await brain.addVerb(editorId, fileId, "modifies")
+await brain.relate(editorId, fileId, "modifies")
 ```
 
 ##### 15. **Consumes** - Consumption relationship
 ```typescript
-await brain.addVerb(processId, resourceId, "consumes")
+await brain.relate(processId, resourceId, "consumes")
 ```
 
 #### Ownership/Attribution Types (4)
 
 ##### 16. **Owns** - Ownership relationship
 ```typescript
-await brain.addVerb(userId, assetId, "owns")
+await brain.relate(userId, assetId, "owns")
 ```
 
 ##### 17. **AttributedTo** - Attribution relationship
 ```typescript
-await brain.addVerb(quoteId, authorId, "attributedTo")
+await brain.relate(quoteId, authorId, "attributedTo")
 ```
 
 ##### 18. **CreatedBy** - Creation attribution
 ```typescript
-await brain.addVerb(productId, teamId, "createdBy")
+await brain.relate(productId, teamId, "createdBy")
 ```
 
 ##### 19. **BelongsTo** - Belonging relationship
 ```typescript
-await brain.addVerb(itemId, collectionId, "belongsTo")
+await brain.relate(itemId, collectionId, "belongsTo")
 ```
 
 #### Social/Organizational Types (9)
 
 ##### 20. **MemberOf** - Membership relationship
 ```typescript
-await brain.addVerb(userId, organizationId, "memberOf")
+await brain.relate(userId, organizationId, "memberOf")
 ```
 
 ##### 21. **WorksWith** - Professional relationship
 ```typescript
-await brain.addVerb(employee1Id, employee2Id, "worksWith")
+await brain.relate(employee1Id, employee2Id, "worksWith")
 ```
 
 ##### 22. **FriendOf** - Friendship relationship
 ```typescript
-await brain.addVerb(user1Id, user2Id, "friendOf")
+await brain.relate(user1Id, user2Id, "friendOf")
 ```
 
 ##### 23. **Follows** - Following relationship
 ```typescript
-await brain.addVerb(followerId, influencerId, "follows")
+await brain.relate(followerId, influencerId, "follows")
 ```
 
 ##### 24. **Likes** - Liking relationship
 ```typescript
-await brain.addVerb(userId, postId, "likes")
+await brain.relate(userId, postId, "likes")
 ```
 
 ##### 25. **ReportsTo** - Reporting relationship
 ```typescript
-await brain.addVerb(employeeId, managerId, "reportsTo")
+await brain.relate(employeeId, managerId, "reportsTo")
 ```
 
 ##### 26. **Supervises** - Supervisory relationship
 ```typescript
-await brain.addVerb(managerId, employeeId, "supervises")
+await brain.relate(managerId, employeeId, "supervises")
 ```
 
 ##### 27. **Mentors** - Mentorship relationship
 ```typescript
-await brain.addVerb(seniorId, juniorId, "mentors")
+await brain.relate(seniorId, juniorId, "mentors")
 ```
 
 ##### 28. **Communicates** - Communication relationship
 ```typescript
-await brain.addVerb(sender, receiver, "communicates")
+await brain.relate(sender, receiver, "communicates")
 ```
 
 #### Descriptive/Functional Types (8)
 
 ##### 29. **Describes** - Descriptive relationship
 ```typescript
-await brain.addVerb(documentId, conceptId, "describes")
+await brain.relate(documentId, conceptId, "describes")
 ```
 
 ##### 30. **Defines** - Definition relationship
 ```typescript
-await brain.addVerb(glossaryId, termId, "defines")
+await brain.relate(glossaryId, termId, "defines")
 ```
 
 ##### 31. **Categorizes** - Categorization relationship
 ```typescript
-await brain.addVerb(taxonomyId, itemId, "categorizes")
+await brain.relate(taxonomyId, itemId, "categorizes")
 ```
 
 ##### 32. **Measures** - Measurement relationship
 ```typescript
-await brain.addVerb(sensorId, metricId, "measures")
+await brain.relate(sensorId, metricId, "measures")
 ```
 
 ##### 33. **Evaluates** - Evaluation relationship
 ```typescript
-await brain.addVerb(reviewerId, proposalId, "evaluates")
+await brain.relate(reviewerId, proposalId, "evaluates")
 ```
 
 ##### 34. **Uses** - Utilization relationship
 ```typescript
-await brain.addVerb(applicationId, libraryId, "uses")
+await brain.relate(applicationId, libraryId, "uses")
 ```
 
 ##### 35. **Implements** - Implementation relationship
 ```typescript
-await brain.addVerb(classId, interfaceId, "implements")
+await brain.relate(classId, interfaceId, "implements")
 ```
 
 ##### 36. **Extends** - Extension relationship
 ```typescript
-await brain.addVerb(childClassId, parentClassId, "extends")
+await brain.relate(childClassId, parentClassId, "extends")
 ```
 
 #### Enhanced Relationships (4)
 
 ##### 37. **Inherits** - Inheritance relationship
 ```typescript
-await brain.addVerb(childId, parentId, "inherits")
+await brain.relate(childId, parentId, "inherits")
 ```
 
 ##### 38. **Conflicts** - Conflict relationship
 ```typescript
-await brain.addVerb(policy1Id, policy2Id, "conflicts")
+await brain.relate(policy1Id, policy2Id, "conflicts")
 ```
 
 ##### 39. **Synchronizes** - Synchronization relationship
 ```typescript
-await brain.addVerb(service1Id, service2Id, "synchronizes")
+await brain.relate(service1Id, service2Id, "synchronizes")
 ```
 
 ##### 40. **Competes** - Competition relationship
 ```typescript
-await brain.addVerb(company1Id, company2Id, "competes")
+await brain.relate(company1Id, company2Id, "competes")
 ```
 
 ## Coverage Completeness Analysis
@@ -1104,19 +1104,19 @@ Instead of adding dozens more verb types, we use metadata for specificity:
 
 ```typescript
 // Instead of adding "approves" verb:
-await brain.addVerb(managerId, requestId, "evaluates", { 
+await brain.relate(managerId, requestId, "evaluates", { 
   result: "approved",
   timestamp: Date.now()
 })
 
 // Instead of adding "shares" verb:
-await brain.addVerb(userId, documentId, "communicates", { 
+await brain.relate(userId, documentId, "communicates", { 
   action: "shared",
   permissions: "read-only"
 })
 
 // Instead of adding "delegates" verb:
-await brain.addVerb(managerId, taskId, "creates", { 
+await brain.relate(managerId, taskId, "creates", { 
   delegatedTo: employeeId,
   authority: "full"
 })
@@ -1128,21 +1128,21 @@ Even exotic scenarios work with our current types:
 
 ```typescript
 // Quantum computing
-const qubitId = await brain.addNoun("Qubit-1", {
+const qubitId = await brain.add("Qubit-1", {
   type: "thing",
   subtype: "quantum_bit",
   superposition: [0.707, 0.707]
 })
 
 // Cryptocurrency transactions
-const txId = await brain.addNoun("Bitcoin Transfer", {
+const txId = await brain.add("Bitcoin Transfer", {
   type: "event",
   subtype: "blockchain_transaction",
   hash: "1A2B3C..."
 })
 
 // AI model training
-const modelId = await brain.addNoun("Neural Network", {
+const modelId = await brain.add("Neural Network", {
   type: "process",
   subtype: "ml_model",
   architecture: "transformer"
@@ -1166,198 +1166,198 @@ The combination of **24 noun types** and **40 verb types** creates **960 basic c
 ### Healthcare & Medical
 ```typescript
 // Patient records with medical history
-const patientId = await brain.addNoun("John Doe", { 
+const patientId = await brain.add("John Doe", { 
   type: "person", 
   subtype: "patient",
   mrn: "12345"
 })
 
-const diagnosisId = await brain.addNoun("Type 2 Diabetes", { 
+const diagnosisId = await brain.add("Type 2 Diabetes", { 
   type: "state",
   subtype: "diagnosis",
   icd10: "E11.9"
 })
 
-const medicationId = await brain.addNoun("Metformin", { 
+const medicationId = await brain.add("Metformin", { 
   type: "thing",
   subtype: "medication",
   dosage: "500mg"
 })
 
 // Medical relationships
-await brain.addVerb(patientId, diagnosisId, "diagnoses")
-await brain.addVerb(medicationId, diagnosisId, "treats")
-await brain.addVerb(doctorId, patientId, "treats")
+await brain.relate(patientId, diagnosisId, "diagnoses")
+await brain.relate(medicationId, diagnosisId, "treats")
+await brain.relate(doctorId, patientId, "treats")
 ```
 
 ### Finance & Banking
 ```typescript
 // Financial instruments and transactions
-const accountId = await brain.addNoun("Checking Account", {
+const accountId = await brain.add("Checking Account", {
   type: "thing",
   subtype: "account",
   balance: 10000
 })
 
-const transactionId = await brain.addNoun("Wire Transfer", {
+const transactionId = await brain.add("Wire Transfer", {
   type: "event",
   subtype: "transaction",
   amount: 5000
 })
 
-const regulationId = await brain.addNoun("GDPR Compliance", {
+const regulationId = await brain.add("GDPR Compliance", {
   type: "concept",
   subtype: "regulation"
 })
 
 // Financial relationships
-await brain.addVerb(customerId, accountId, "owns")
-await brain.addVerb(transactionId, accountId, "modifies")
-await brain.addVerb(accountId, regulationId, "compliesWith")
+await brain.relate(customerId, accountId, "owns")
+await brain.relate(transactionId, accountId, "modifies")
+await brain.relate(accountId, regulationId, "compliesWith")
 ```
 
 ### Manufacturing & Supply Chain
 ```typescript
 // Production and logistics
-const factoryId = await brain.addNoun("Plant #3", {
+const factoryId = await brain.add("Plant #3", {
   type: "location",
   subtype: "facility"
 })
 
-const assemblyLineId = await brain.addNoun("Assembly Line A", {
+const assemblyLineId = await brain.add("Assembly Line A", {
   type: "process",
   subtype: "production"
 })
 
-const componentId = await brain.addNoun("Circuit Board v2", {
+const componentId = await brain.add("Circuit Board v2", {
   type: "thing",
   subtype: "component"
 })
 
 // Manufacturing relationships
-await brain.addVerb(assemblyLineId, componentId, "produces")
-await brain.addVerb(componentId, productId, "partOf")
-await brain.addVerb(supplierId, componentId, "supplies")
+await brain.relate(assemblyLineId, componentId, "produces")
+await brain.relate(componentId, productId, "partOf")
+await brain.relate(supplierId, componentId, "supplies")
 ```
 
 ### Education & Learning
 ```typescript
 // Educational content and progress
-const courseId = await brain.addNoun("Machine Learning 101", {
+const courseId = await brain.add("Machine Learning 101", {
   type: "collection",
   subtype: "course"
 })
 
-const lessonId = await brain.addNoun("Neural Networks", {
+const lessonId = await brain.add("Neural Networks", {
   type: "content",
   subtype: "lesson"
 })
 
-const assessmentId = await brain.addNoun("Final Exam", {
+const assessmentId = await brain.add("Final Exam", {
   type: "event",
   subtype: "assessment"
 })
 
 // Educational relationships
-await brain.addVerb(studentId, courseId, "enrolledIn")
-await brain.addVerb(courseId, lessonId, "contains")
-await brain.addVerb(studentId, assessmentId, "completed")
+await brain.relate(studentId, courseId, "enrolledIn")
+await brain.relate(courseId, lessonId, "contains")
+await brain.relate(studentId, assessmentId, "completed")
 ```
 
 ### Legal & Compliance
 ```typescript
 // Legal documents and cases
-const contractId = await brain.addNoun("Service Agreement", {
+const contractId = await brain.add("Service Agreement", {
   type: "document",
   subtype: "contract"
 })
 
-const clauseId = await brain.addNoun("Liability Clause", {
+const clauseId = await brain.add("Liability Clause", {
   type: "content",
   subtype: "clause"
 })
 
-const caseId = await brain.addNoun("Case #2024-1234", {
+const caseId = await brain.add("Case #2024-1234", {
   type: "event",
   subtype: "legal_case"
 })
 
 // Legal relationships
-await brain.addVerb(contractId, clauseId, "contains")
-await brain.addVerb(party1Id, contractId, "signedBy")
-await brain.addVerb(caseId, contractId, "references")
+await brain.relate(contractId, clauseId, "contains")
+await brain.relate(party1Id, contractId, "signedBy")
+await brain.relate(caseId, contractId, "references")
 ```
 
 ### Retail & E-commerce
 ```typescript
 // Products and customer behavior
-const productId = await brain.addNoun("iPhone 15", {
+const productId = await brain.add("iPhone 15", {
   type: "product",
   sku: "IP15-128-BLK"
 })
 
-const cartId = await brain.addNoun("Shopping Cart", {
+const cartId = await brain.add("Shopping Cart", {
   type: "collection",
   subtype: "cart"
 })
 
-const promotionId = await brain.addNoun("Black Friday Sale", {
+const promotionId = await brain.add("Black Friday Sale", {
   type: "event",
   subtype: "promotion"
 })
 
 // Retail relationships
-await brain.addVerb(customerId, productId, "views")
-await brain.addVerb(cartId, productId, "contains")
-await brain.addVerb(promotionId, productId, "applies")
+await brain.relate(customerId, productId, "views")
+await brain.relate(cartId, productId, "contains")
+await brain.relate(promotionId, productId, "applies")
 ```
 
 ### Real Estate
 ```typescript
 // Properties and transactions
-const propertyId = await brain.addNoun("123 Main St", {
+const propertyId = await brain.add("123 Main St", {
   type: "location",
   subtype: "property"
 })
 
-const listingId = await brain.addNoun("MLS #789", {
+const listingId = await brain.add("MLS #789", {
   type: "document",
   subtype: "listing"
 })
 
-const inspectionId = await brain.addNoun("Home Inspection", {
+const inspectionId = await brain.add("Home Inspection", {
   type: "event",
   subtype: "inspection"
 })
 
 // Real estate relationships
-await brain.addVerb(ownerId, propertyId, "owns")
-await brain.addVerb(listingId, propertyId, "describes")
-await brain.addVerb(inspectionId, propertyId, "evaluates")
+await brain.relate(ownerId, propertyId, "owns")
+await brain.relate(listingId, propertyId, "describes")
+await brain.relate(inspectionId, propertyId, "evaluates")
 ```
 
 ### Government & Public Sector
 ```typescript
 // Civic data and services
-const citizenId = await brain.addNoun("Citizen #123", {
+const citizenId = await brain.add("Citizen #123", {
   type: "person",
   subtype: "citizen"
 })
 
-const permitId = await brain.addNoun("Building Permit", {
+const permitId = await brain.add("Building Permit", {
   type: "document",
   subtype: "permit"
 })
 
-const departmentId = await brain.addNoun("Planning Dept", {
+const departmentId = await brain.add("Planning Dept", {
   type: "organization",
   subtype: "government"
 })
 
 // Government relationships
-await brain.addVerb(citizenId, permitId, "requests")
-await brain.addVerb(departmentId, permitId, "issues")
-await brain.addVerb(permitId, propertyId, "authorizes")
+await brain.relate(citizenId, permitId, "requests")
+await brain.relate(departmentId, permitId, "issues")
+await brain.relate(permitId, propertyId, "authorizes")
 ```
 
 ### Why This Covers All Knowledge
@@ -1379,27 +1379,27 @@ Every piece of human knowledge falls into one of these categories:
 Simple types combine to represent complex knowledge:
 ```typescript
 // Complex knowledge from simple building blocks
-const researchPaper = await brain.addNoun("AI Ethics Study", {
+const researchPaper = await brain.add("AI Ethics Study", {
   type: "document"
 })
 
-const researcher = await brain.addNoun("Dr. Smith", {
+const researcher = await brain.add("Dr. Smith", {
   type: "person"
 })
 
-const institution = await brain.addNoun("MIT", {
+const institution = await brain.add("MIT", {
   type: "organization"
 })
 
-const concept = await brain.addNoun("AI Ethics", {
+const concept = await brain.add("AI Ethics", {
   type: "concept"
 })
 
 // Rich knowledge graph emerges
-await brain.addVerb(researcher, researchPaper, "authors")
-await brain.addVerb(researcher, institution, "affiliated")
-await brain.addVerb(researchPaper, concept, "explores")
-await brain.addVerb(institution, researchPaper, "publishes")
+await brain.relate(researcher, researchPaper, "authors")
+await brain.relate(researcher, institution, "affiliated")
+await brain.relate(researchPaper, concept, "explores")
+await brain.relate(institution, researchPaper, "publishes")
 ```
 
 #### 4. **Domain Independence**
@@ -1407,40 +1407,40 @@ The same types work across all domains:
 
 **Science:**
 ```typescript
-await brain.addNoun("H2O", { type: "thing", category: "molecule" })
-await brain.addNoun("Photosynthesis", { type: "process" })
-await brain.addVerb(moleculeId, processId, "participates")
+await brain.add("H2O", { type: "thing", category: "molecule" })
+await brain.add("Photosynthesis", { type: "process" })
+await brain.relate(moleculeId, processId, "participates")
 ```
 
 **Business:**
 ```typescript
-await brain.addNoun("Q3 Revenue", { type: "metric", value: 10000000 })
-await brain.addNoun("Sales Team", { type: "organization" })
-await brain.addVerb(teamId, metricId, "achieves")
+await brain.add("Q3 Revenue", { type: "metric", value: 10000000 })
+await brain.add("Sales Team", { type: "organization" })
+await brain.relate(teamId, metricId, "achieves")
 ```
 
 **Social:**
 ```typescript
-await brain.addNoun("John", { type: "person" })
-await brain.addNoun("Community Group", { type: "organization" })
-await brain.addVerb(personId, groupId, "joins")
+await brain.add("John", { type: "person" })
+await brain.add("Community Group", { type: "organization" })
+await brain.relate(personId, groupId, "joins")
 ```
 
 #### 5. **Temporal Coverage**
 Handles all temporal aspects:
 ```typescript
 // Past
-await brain.addVerb(personId, companyId, "worked", {
+await brain.relate(personId, companyId, "worked", {
   from: "2010", to: "2020"
 })
 
 // Present
-await brain.addVerb(personId, projectId, "manages", {
+await brain.relate(personId, projectId, "manages", {
   since: "2024-01-01"
 })
 
 // Future
-await brain.addVerb(eventId, venueId, "scheduled", {
+await brain.relate(eventId, venueId, "scheduled", {
   date: "2025-06-15"
 })
 ```
@@ -1449,13 +1449,13 @@ await brain.addVerb(eventId, venueId, "scheduled", {
 Supports all levels of abstraction:
 ```typescript
 // Micro level
-await brain.addNoun("Electron", { type: "thing", scale: "quantum" })
+await brain.add("Electron", { type: "thing", scale: "quantum" })
 
 // Macro level
-await brain.addNoun("Solar System", { type: "place", scale: "astronomical" })
+await brain.add("Solar System", { type: "place", scale: "astronomical" })
 
 // Abstract level
-await brain.addNoun("Justice", { type: "concept", domain: "philosophy" })
+await brain.add("Justice", { type: "concept", domain: "philosophy" })
 ```
 
 ### Extensibility
@@ -1464,21 +1464,21 @@ While the core types cover all knowledge, you can extend with domain-specific su
 
 ```typescript
 // Extend person for medical domain
-await brain.addNoun("Patient #12345", {
+await brain.add("Patient #12345", {
   type: "person",
   subtype: "patient",
   medicalRecord: "MR-12345"
 })
 
 // Extend document for legal domain
-await brain.addNoun("Contract ABC", {
+await brain.add("Contract ABC", {
   type: "document",
   subtype: "contract",
   jurisdiction: "California"
 })
 
 // Custom verb for specific domain
-await brain.addVerb(lawyerId, contractId, "negotiates", {
+await brain.relate(lawyerId, contractId, "negotiates", {
   verbSubtype: "legal-action",
   billableHours: 10
 })
@@ -1519,29 +1519,29 @@ Even the most complex scenarios map naturally:
 
 ```typescript
 // String Theory - 11-dimensional physics
-const braneId = await brain.addNoun("D3-Brane", {
+const braneId = await brain.add("D3-Brane", {
   type: "concept",
   dimensions: 11,
   vibrational_modes: ["0,1", "1,0", "2,1"]
 })
 
 // Consciousness - The "hard problem" of philosophy  
-const qualiaId = await brain.addNoun("Red Qualia", {
+const qualiaId = await brain.add("Red Qualia", {
   type: "concept",
   subtype: "phenomenal_experience",
   ineffable: true
 })
 
 // Time Travel Paradoxes
-const futureEvent = await brain.addNoun("Future Effect", {
+const futureEvent = await brain.add("Future Effect", {
   type: "event",
   temporal_position: "future"
 })
-const pastCause = await brain.addNoun("Past Cause", {
+const pastCause = await brain.add("Past Cause", {
   type: "event", 
   temporal_position: "past"
 })
-await brain.addVerb(futureEvent, pastCause, "causes", {
+await brain.relate(futureEvent, pastCause, "causes", {
   paradox_type: "bootstrap"
 })
 ```

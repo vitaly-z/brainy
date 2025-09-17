@@ -20,6 +20,7 @@ export interface BrainyInterface<T = unknown> {
   getNoun(id: string): Promise<unknown>
 
   /**
+   * @deprecated Use add() instead - it's smart by default now
    * Add a noun (entity with vector and metadata) to the database
    * @param data Text string or vector representation (will auto-embed strings)
    * @param nounType Required noun type (one of 31 types)
@@ -37,6 +38,7 @@ export interface BrainyInterface<T = unknown> {
   searchText(text: string, limit?: number): Promise<unknown[]>
 
   /**
+   * @deprecated Use relate() instead
    * Create a relationship (verb) between two entities
    * @param sourceId The ID of the source entity
    * @param targetId The ID of the target entity

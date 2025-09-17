@@ -43,12 +43,12 @@ const clusters = await neural.clusters()
 
 // Example: Organize customer feedback
 const feedback = [
-  await brain.addNoun("The app crashes when I upload photos"),
-  await brain.addNoun("Photo upload feature is broken"),
-  await brain.addNoun("Great customer service!"),
-  await brain.addNoun("Support team was very helpful"),
-  await brain.addNoun("Pricing is too high"),
-  await brain.addNoun("Too expensive for what it offers")
+  await brain.add("The app crashes when I upload photos"),
+  await brain.add("Photo upload feature is broken"),
+  await brain.add("Great customer service!"),
+  await brain.add("Support team was very helpful"),
+  await brain.add("Pricing is too high"),
+  await brain.add("Too expensive for what it offers")
 ]
 
 const themes = await neural.clusters()
@@ -119,7 +119,7 @@ const neighbors = await neural.neighbors('item-id', 5)
 // - data: The actual content
 
 // Example: Recommend similar articles
-const articleId = await brain.addNoun("Guide to React Hooks")
+const articleId = await brain.add("Guide to React Hooks")
 const similar = await neural.neighbors(articleId, 3)
 
 for (const article of similar) {
@@ -166,10 +166,10 @@ const outliers = await neural.outliers(0.3)
 
 // Example: Detect spam or unusual content
 const messages = [
-  await brain.addNoun("Meeting at 3pm"),
-  await brain.addNoun("Lunch plans for tomorrow"),
-  await brain.addNoun("BUY NOW!!! AMAZING DEALS!!!"),
-  await brain.addNoun("Project deadline next week")
+  await brain.add("Meeting at 3pm"),
+  await brain.add("Lunch plans for tomorrow"),
+  await brain.add("BUY NOW!!! AMAZING DEALS!!!"),
+  await brain.add("Project deadline next week")
 ]
 
 const suspicious = await neural.outliers(0.4)
@@ -238,7 +238,7 @@ const sameTopicArticles = currentTopic.members
 // Add feedback with metadata
 const feedbackIds = []
 for (const feedback of customerFeedback) {
-  const id = await brain.addNoun(feedback.text, {
+  const id = await brain.add(feedback.text, {
     rating: feedback.rating,
     date: feedback.date,
     product: feedback.product
