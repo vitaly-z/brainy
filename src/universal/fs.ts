@@ -12,7 +12,9 @@ let nodeFs: any = null
 if (isNode()) {
   try {
     // Use node: protocol to prevent bundler polyfilling (requires Node 22+)
-    nodeFs = await import('node:fs/promises')
+    // Import main module and access promises to avoid subpath issues with bundlers
+    const fs = await import('node:fs')
+    nodeFs = fs.promises
   } catch {
     // Ignore import errors in non-Node environments
   }
