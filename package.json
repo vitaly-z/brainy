@@ -41,6 +41,11 @@
       "types": "./dist/universal/index.d.ts"
     }
   },
+  "browser": {
+    "./dist/distributed": false,
+    "./dist/cli": false,
+    "./dist/scripts": false
+  },
   "engines": {
     "node": "22.x"
   },

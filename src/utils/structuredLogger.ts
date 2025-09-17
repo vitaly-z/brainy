@@ -5,8 +5,7 @@
  */
 
 import { performance } from 'perf_hooks'
-import { hostname } from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { randomUUID } from '../universal/crypto.js'
 
 export enum LogLevel {
   SILENT = -1,
@@ -312,10 +311,20 @@ export class StructuredLogger {
     }
 
     if (this.config.includeHost) {
-      entry.host = hostname()
+      // Use dynamic import for hostname (Node.js only)
+      if (typeof window === 'undefined') {
+        try {
+          const os = require('node:os')
+          entry.host = os.hostname()
+        } catch {
+          entry.host = 'unknown'
+        }
+      } else {
+        entry.host = window.location?.hostname || 'browser'
+      }
     }
 
-    if (this.config.includeMemory) {
+    if (this.config.includeMemory && typeof process !== 'undefined' && process.memoryUsage) {
       const mem = process.memoryUsage()
       entry.performance = {
         memory: {

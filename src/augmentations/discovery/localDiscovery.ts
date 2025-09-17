@@ -1,13 +1,33 @@
 /**
  * Local Augmentation Discovery
- * 
+ *
  * Discovers augmentations installed locally in node_modules
  * and built-in augmentations that ship with Brainy
+ *
+ * NOTE: This is a Node.js-only feature that requires filesystem access
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { AugmentationManifest } from '../manifest.js'
+
+// Node.js modules - dynamically imported to avoid bundler issues
+let fs: any = null
+let path: any = null
+
+// Load Node.js modules if available
+if (typeof window === 'undefined') {
+  try {
+    fs = await import('node:fs')
+    path = await import('node:path')
+  } catch (e) {
+    // Will throw error in methods if not available
+  }
+}
+
+// Create compatibility layer for sync methods
+const existsSync = fs?.existsSync || (() => { throw new Error('Filesystem not available') })
+const readdirSync = fs?.readdirSync || (() => { throw new Error('Filesystem not available') })
+const readFileSync = fs?.readFileSync || (() => { throw new Error('Filesystem not available') })
+const join = path?.join || ((...args: string[]) => args.join('/'))
 
 export interface LocalAugmentation {
   id: string

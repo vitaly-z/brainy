@@ -7,7 +7,33 @@
 
 import { FindParams, AddParams, UpdateParams, RelateParams } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
-import * as os from 'node:os'
+
+// Dynamic import for Node.js os module
+let os: any = null
+if (typeof window === 'undefined') {
+  try {
+    os = await import('node:os')
+  } catch (e) {
+    // OS module not available
+  }
+}
+
+// Browser-safe memory detection
+const getSystemMemory = (): number => {
+  if (os) {
+    return os.totalmem()
+  }
+  // Browser fallback: assume 4GB
+  return 4 * 1024 * 1024 * 1024
+}
+
+const getAvailableMemory = (): number => {
+  if (os) {
+    return os.freemem()
+  }
+  // Browser fallback: assume 2GB available
+  return 2 * 1024 * 1024 * 1024
+}
 
 /**
  * Auto-configured limits based on system resources
@@ -27,8 +53,8 @@ class ValidationConfig {
   
   private constructor() {
     // Auto-configure based on system resources
-    const totalMemory = os.totalmem()
-    const availableMemory = os.freemem()
+    const totalMemory = getSystemMemory()
+    const availableMemory = getAvailableMemory()
     
     // Scale limits based on available memory
     // 1GB = 10K limit, 8GB = 80K limit, etc.
@@ -224,8 +250,8 @@ export function getValidationConfig() {
     maxLimit: config.maxLimit,
     maxQueryLength: config.maxQueryLength,
     maxVectorDimensions: config.maxVectorDimensions,
-    systemMemory: os.totalmem(),
-    availableMemory: os.freemem()
+    systemMemory: getSystemMemory(),
+    availableMemory: getAvailableMemory()
   }
 }
 
