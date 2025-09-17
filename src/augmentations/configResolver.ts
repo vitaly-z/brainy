@@ -8,10 +8,8 @@
  * - Default values from schema
  */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { JSONSchema } from './manifest.js'
+import { isNode } from '../utils/environment.js'
 
 /**
  * Configuration source priority (highest to lowest)
@@ -53,14 +51,32 @@ export class AugmentationConfigResolver {
   private resolved: any = {}
   
   constructor(private options: ConfigResolverOptions) {
+    // Default config paths - include home directory paths only in Node.js
+    const defaultConfigPaths = [
+      '.brainyrc',
+      '.brainyrc.json',
+      'brainy.config.json'
+    ]
+
+    // Add home directory paths in Node.js environments
+    if (isNode()) {
+      try {
+        const nodeRequire = typeof require !== 'undefined' ? require : null
+        if (nodeRequire) {
+          const path = nodeRequire('node:path')
+          const os = nodeRequire('node:os')
+          defaultConfigPaths.push(
+            path.join(os.homedir(), '.brainy', 'config.json'),
+            path.join(os.homedir(), '.brainyrc')
+          )
+        }
+      } catch {
+        // Silently continue without home directory paths
+      }
+    }
+
     this.options = {
-      configPaths: [
-        '.brainyrc',
-        '.brainyrc.json',
-        'brainy.config.json',
-        join(homedir(), '.brainy', 'config.json'),
-        join(homedir(), '.brainyrc')
-      ],
+      configPaths: defaultConfigPaths,
       envPrefix: `BRAINY_AUG_${options.augmentationId.toUpperCase()}_`,
       allowUndefined: true,
       ...options
@@ -133,32 +149,41 @@ export class AugmentationConfigResolver {
    */
   private loadFromFiles(): void {
     // Skip in browser environment
-    if (typeof process === 'undefined' || typeof window !== 'undefined') {
+    if (!isNode()) {
       return
     }
-    
-    for (const configPath of this.options.configPaths || []) {
-      try {
-        if (existsSync(configPath)) {
-          const content = readFileSync(configPath, 'utf8')
-          const config = this.parseConfigFile(content, configPath)
-          
-          // Extract augmentation-specific configuration
-          const augConfig = this.extractAugmentationConfig(config)
-          
-          if (augConfig && Object.keys(augConfig).length > 0) {
-            this.sources.push({
-              priority: ConfigPriority.FILE,
-              source: `file:${configPath}`,
-              config: augConfig
-            })
-            break // Use first found config file
+
+    try {
+      const nodeRequire = typeof require !== 'undefined' ? require : null
+      if (!nodeRequire) return
+
+      const fs = nodeRequire('node:fs')
+
+      for (const configPath of this.options.configPaths || []) {
+        try {
+          if (fs.existsSync(configPath)) {
+            const content = fs.readFileSync(configPath, 'utf8')
+            const config = this.parseConfigFile(content, configPath)
+
+            // Extract augmentation-specific configuration
+            const augConfig = this.extractAugmentationConfig(config)
+
+            if (augConfig && Object.keys(augConfig).length > 0) {
+              this.sources.push({
+                priority: ConfigPriority.FILE,
+                source: `file:${configPath}`,
+                config: augConfig
+              })
+              break // Use first found config file
+            }
           }
+        } catch (error) {
+          // Silently ignore file errors
+          console.debug(`Failed to load config from ${configPath}:`, error)
         }
-      } catch (error) {
-        // Silently ignore file errors
-        console.debug(`Failed to load config from ${configPath}:`, error)
       }
+    } catch {
+      // Silently continue if require fails
     }
   }
   
@@ -205,7 +230,7 @@ export class AugmentationConfigResolver {
    */
   private loadFromEnvironment(): void {
     // Skip in browser environment
-    if (typeof process === 'undefined' || !process.env) {
+    if (!isNode() || !process.env) {
       return
     }
     
@@ -442,16 +467,16 @@ export class AugmentationConfigResolver {
    */
   async saveToFile(filepath?: string, format: 'json' = 'json'): Promise<void> {
     // Skip in browser environment
-    if (typeof process === 'undefined' || typeof window !== 'undefined') {
+    if (!isNode()) {
       throw new Error('Cannot save configuration files in browser environment')
     }
-    
+
     const fs = await import('node:fs')
     const path = await import('node:path')
-    
+
     const configPath = filepath || this.options.configPaths?.[0] || '.brainyrc'
     const augId = this.options.augmentationId
-    
+
     // Load existing config if it exists
     let fullConfig: any = {}
     try {
