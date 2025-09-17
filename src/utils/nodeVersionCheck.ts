@@ -1,9 +1,11 @@
 /**
  * Node.js Version Compatibility Check
- * 
+ *
  * Brainy requires Node.js 22.x LTS for maximum stability with ONNX Runtime.
  * This prevents V8 HandleScope locking issues in worker threads.
  */
+
+import { isNode } from './environment.js'
 
 export interface VersionInfo {
   current: string
@@ -16,16 +18,27 @@ export interface VersionInfo {
  * Check if the current Node.js version is supported
  */
 export function checkNodeVersion(): VersionInfo {
+  // In browser environment, skip version check
+  if (!isNode()) {
+    return {
+      current: 'browser',
+      major: 0,
+      isSupported: true, // Always supported in browser
+      recommendation: 'Browser environment'
+    }
+  }
+
+  // Only access process.version in Node.js environment
   const nodeVersion = process.version
   const majorVersion = parseInt(nodeVersion.split('.')[0].substring(1))
-  
+
   const versionInfo: VersionInfo = {
     current: nodeVersion,
     major: majorVersion,
     isSupported: majorVersion === 22,
     recommendation: 'Node.js 22.x LTS'
   }
-  
+
   return versionInfo
 }
 
@@ -34,7 +47,12 @@ export function checkNodeVersion(): VersionInfo {
  */
 export function enforceNodeVersion(): void {
   const versionInfo = checkNodeVersion()
-  
+
+  // Skip enforcement in browser environment
+  if (!isNode()) {
+    return
+  }
+
   if (!versionInfo.isSupported) {
     const errorMessage = [
       '🚨 BRAINY COMPATIBILITY ERROR',
@@ -54,7 +72,7 @@ export function enforceNodeVersion(): void {
       '🔗 More info: https://github.com/soulcraftlabs/brainy#node-version',
       '━'.repeat(50)
     ].join('\n')
-    
+
     throw new Error(errorMessage)
   }
 }
@@ -64,7 +82,12 @@ export function enforceNodeVersion(): void {
  */
 export function warnNodeVersion(): boolean {
   const versionInfo = checkNodeVersion()
-  
+
+  // Skip warning in browser environment
+  if (!isNode()) {
+    return true
+  }
+
   if (!versionInfo.isSupported) {
     console.warn([
       '⚠️  BRAINY VERSION WARNING',
@@ -73,9 +96,9 @@ export function warnNodeVersion(): boolean {
       '   Consider upgrading for best stability',
       ''
     ].join('\n'))
-    
+
     return false
   }
-  
+
   return true
 }
