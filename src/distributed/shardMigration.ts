@@ -5,7 +5,7 @@
  * Uses streaming for efficient transfer of large datasets
  */
 
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import type { StorageAdapter } from '../coreTypes.js'
 import type { ShardManager } from './shardManager.js'
 import type { HTTPTransport } from './httpTransport.js'

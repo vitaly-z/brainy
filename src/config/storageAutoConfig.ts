@@ -344,8 +344,8 @@ async function isWritable(dirPath: string): Promise<boolean> {
   
   try {
     // Dynamic import fs for Node.js
-    const { promises: fs } = await import('fs')
-    const path = await import('path')
+    const { promises: fs } = await import('node:fs')
+    const path = await import('node:path')
     
     // Try to create directory if it doesn't exist
     await fs.mkdir(dirPath, { recursive: true })

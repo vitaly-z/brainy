@@ -5,8 +5,8 @@
  */
 
 import { performance } from 'perf_hooks'
-import { hostname } from 'os'
-import { randomUUID } from 'crypto'
+import { hostname } from 'node:os'
+import { randomUUID } from 'node:crypto'
 
 export enum LogLevel {
   SILENT = -1,

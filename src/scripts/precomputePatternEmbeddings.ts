@@ -20,8 +20,8 @@
 
 import { Brainy } from '../brainy.js'
 import patternData from '../patterns/library.json' assert { type: 'json' }
-import * as fs from 'fs/promises'
-import * as path from 'path'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
 
 async function precomputeEmbeddings() {
   console.log('🧠 Pre-computing pattern embeddings...')

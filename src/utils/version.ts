@@ -2,9 +2,9 @@
  * Version utilities for Brainy
  */
 
-import { readFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // Get package.json path relative to this file
 const __filename = fileURLToPath(import.meta.url)

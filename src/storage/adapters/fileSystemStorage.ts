@@ -29,8 +29,8 @@ let moduleLoadingPromise: Promise<void> | null = null
 // Try to load Node.js modules
 try {
   // Using dynamic imports to avoid issues in browser environments
-  const fsPromise = import('fs')
-  const pathPromise = import('path')
+  const fsPromise = import('node:fs')
+  const pathPromise = import('node:path')
 
   moduleLoadingPromise = Promise.all([fsPromise, pathPromise])
     .then(([fsModule, pathModule]) => {

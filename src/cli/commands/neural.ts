@@ -7,8 +7,8 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Brainy } from '../../brainyData.js';
 import { NeuralAPI } from '../../neural/neuralAPI.js';
 

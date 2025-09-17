@@ -11,7 +11,8 @@ let nodeCrypto: any = null
 // Dynamic import for Node.js crypto (only in Node.js environment)
 if (isNode()) {
   try {
-    nodeCrypto = await import('crypto')
+    // Use node: protocol to prevent bundler polyfilling (requires Node 22+)
+    nodeCrypto = await import('node:crypto')
   } catch {
     // Ignore import errors in non-Node environments
   }

@@ -11,7 +11,8 @@ let nodeFs: any = null
 // Dynamic import for Node.js fs (only in Node.js environment)
 if (isNode()) {
   try {
-    nodeFs = await import('fs/promises')
+    // Use node: protocol to prevent bundler polyfilling (requires Node 22+)
+    nodeFs = await import('node:fs/promises')
   } catch {
     // Ignore import errors in non-Node environments
   }

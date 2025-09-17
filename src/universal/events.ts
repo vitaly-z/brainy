@@ -11,7 +11,7 @@ let nodeEvents: any = null
 // Dynamic import for Node.js events (only in Node.js environment)
 if (isNode()) {
   try {
-    nodeEvents = await import('events')
+    nodeEvents = await import('node:events')
   } catch {
     // Ignore import errors in non-Node environments
   }

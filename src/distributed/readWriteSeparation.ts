@@ -3,7 +3,7 @@
  * Implements primary-replica architecture for scalable reads
  */
 
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import { DistributedCoordinator } from './coordinator.js'
 import { ShardManager } from './shardManager.js'
 import { CacheSync } from './cacheSync.js'

@@ -4,7 +4,7 @@
  * Zero-configuration approach that learns and adapts to workload characteristics
  */
 
-import { Agent as HttpsAgent } from 'https'
+import { Agent as HttpsAgent } from 'node:https'
 import { NodeHttpHandler } from '@smithy/node-http-handler'
 import { createModuleLogger } from './logger.js'
 

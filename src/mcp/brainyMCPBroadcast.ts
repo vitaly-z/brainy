@@ -12,7 +12,7 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws'
-import { createServer, IncomingMessage } from 'http'
+import { createServer, IncomingMessage } from 'node:http'
 import { BrainyMCPService } from './brainyMCPService.js'
 import { BrainyInterface } from '../types/brainyDataInterface.js'
 import { MCPServiceOptions } from '../types/mcpTypes.js'

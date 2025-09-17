@@ -237,7 +237,7 @@ export class EnhancedFileSystemClear {
     const backupDir = `${this.rootDir}-backup-${timestamp}`
     
     // Use cp -r for efficient directory copying
-    const { spawn } = await import('child_process')
+    const { spawn } = await import('node:child_process')
     
     return new Promise((resolve, reject) => {
       const cp = spawn('cp', ['-r', this.rootDir, backupDir])

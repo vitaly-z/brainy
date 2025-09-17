@@ -3,7 +3,7 @@
  * Provides cache coherence across multiple Brainy instances
  */
 
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 
 export interface CacheSyncConfig {
   nodeId: string
