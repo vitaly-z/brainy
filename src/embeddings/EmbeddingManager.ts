@@ -18,8 +18,7 @@
 
 import { Vector, EmbeddingFunction } from '../coreTypes.js'
 import { pipeline, env } from '@huggingface/transformers'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isNode } from '../utils/environment.js'
 
 // Types
 export type ModelPrecision = 'q8' | 'fp32'
@@ -124,13 +123,24 @@ export class EmbeddingManager {
       env.cacheDir = modelsPath
       env.allowLocalModels = true
       env.useFSCache = true
-      
-      // Check if models exist locally
-      const modelPath = join(modelsPath, ...this.modelName.split('/'))
-      const hasLocalModels = existsSync(modelPath)
-      
-      if (hasLocalModels) {
-        console.log('✅ Using cached models from:', modelPath)
+
+      // Check if models exist locally (only in Node.js)
+      if (isNode()) {
+        try {
+          const nodeRequire = typeof require !== 'undefined' ? require : null
+          if (nodeRequire) {
+            const path = nodeRequire('node:path')
+            const fs = nodeRequire('node:fs')
+            const modelPath = path.join(modelsPath, ...this.modelName.split('/'))
+            const hasLocalModels = fs.existsSync(modelPath)
+
+            if (hasLocalModels) {
+              console.log('✅ Using cached models from:', modelPath)
+            }
+          }
+        } catch {
+          // Silently continue if require fails
+        }
       }
       
       // Configure pipeline options for the selected precision
@@ -256,24 +266,60 @@ export class EmbeddingManager {
   
   /**
    * Get models directory path
+   * Note: In browser environments, returns a simple default path
+   * In Node.js, checks multiple locations for the models directory
    */
   private getModelsPath(): string {
-    // Check various possible locations
-    const paths = [
-      process.env.BRAINY_MODELS_PATH,
-      './models',
-      join(process.cwd(), 'models'),
-      join(process.env.HOME || '', '.brainy', 'models')
-    ]
-    
-    for (const path of paths) {
-      if (path && existsSync(path)) {
-        return path
-      }
+    // In browser environments, use a default path
+    if (!isNode()) {
+      return './models'
     }
-    
-    // Default
-    return join(process.cwd(), 'models')
+
+    // Node.js-specific model path resolution
+    // Cache the result for performance
+    if (!this.modelsPathCache) {
+      this.modelsPathCache = this.resolveModelsPathSync()
+    }
+    return this.modelsPathCache
+  }
+
+  private modelsPathCache: string | null = null
+
+  private resolveModelsPathSync(): string {
+    // For Node.js environments, we can safely assume these modules exist
+    // TypeScript will handle the imports at build time
+    // At runtime, these will only be called if isNode() is true
+
+    // Default fallback path
+    const defaultPath = './models'
+
+    try {
+      // Create a conditional require function that only works in Node
+      const nodeRequire = typeof require !== 'undefined' ? require : null
+      if (!nodeRequire) return defaultPath
+
+      const fs = nodeRequire('node:fs')
+      const path = nodeRequire('node:path')
+
+      const paths = [
+        process.env.BRAINY_MODELS_PATH,
+        './models',
+        path.join(process.cwd(), 'models'),
+        path.join(process.env.HOME || '', '.brainy', 'models')
+      ]
+
+      for (const p of paths) {
+        if (p && fs.existsSync(p)) {
+          return p
+        }
+      }
+
+      // Default Node.js path
+      return path.join(process.cwd(), 'models')
+    } catch {
+      // Fallback if require fails
+      return defaultPath
+    }
   }
   
   /**
