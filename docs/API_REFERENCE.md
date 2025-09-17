@@ -1227,9 +1227,9 @@ try {
 
 ### Old (v2.15)
 ```typescript
-brain.addNoun(data, 'document', metadata)
-brain.search(query, 10)
-brain.getStatistics()
+brain.add({ data, type: NounType.Document, metadata })
+brain.find({ query, limit: 10 })
+brain.insights()
 ```
 
 ### New (v3.0)

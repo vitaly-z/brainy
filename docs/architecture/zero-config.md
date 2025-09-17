@@ -208,7 +208,7 @@ class DynamicBatcher {
 
 // Automatically applied during bulk operations
 for (const item of millionItems) {
-  await brain.addNoun(item)  // Internally batched optimally
+  await brain.add(item)  // Internally batched optimally
 }
 ```
 

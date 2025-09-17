@@ -56,7 +56,7 @@ await brain.init()
 
 ```typescript
 // Add entities (nouns) with automatic embedding generation
-const id = await brain.addNoun("The quick brown fox jumps over the lazy dog", {
+const id = await brain.add("The quick brown fox jumps over the lazy dog", {
   category: "demo",
   timestamp: Date.now()
 })
@@ -64,9 +64,9 @@ const id = await brain.addNoun("The quick brown fox jumps over the lazy dog", {
 console.log(`Added noun with ID: ${id}`)
 
 // Add relationships (verbs) between entities
-const sourceId = await brain.addNoun("John Smith", 'person')
-const targetId = await brain.addNoun("TechCorp", 'organization')
-await brain.addVerb(sourceId, targetId, "works_at", {
+const sourceId = await brain.add("John Smith", { nounType: 'person' })
+const targetId = await brain.add("TechCorp", { nounType: 'organization' })
+await brain.relate(sourceId, targetId, "works_at", {
   position: "Engineer",
   since: "2024"
 })
@@ -118,7 +118,7 @@ const documents = [
 ]
 
 for (const doc of documents) {
-  await brain.addNoun(doc.content, {
+  await brain.add(doc.content, {
     title: doc.title,
     type: "document"
   })
@@ -132,7 +132,7 @@ const results = await brain.search("how do neural networks work")
 
 ```typescript
 // Add user interactions as nouns
-const interactionId = await brain.addNoun("user viewed product", {
+const interactionId = await brain.add("user viewed product", {
   userId: "user123",
   productId: "product456",
   action: "view",
@@ -140,9 +140,9 @@ const interactionId = await brain.addNoun("user viewed product", {
 })
 
 // Create relationships between users and products
-const userId = await brain.addNoun("user123", 'user')
-const productId = await brain.addNoun("product456", 'product')
-await brain.addVerb(userId, productId, "viewed", {
+const userId = await brain.add("user123", { nounType: 'user' })
+const productId = await brain.add("product456", { nounType: 'product' })
+await brain.relate(userId, productId, "viewed", {
   timestamp: Date.now()
 })
 
@@ -161,18 +161,18 @@ const similar = await brain.find({
 
 ```typescript
 // Add entities (nouns) to the knowledge graph
-const personId = await brain.addNoun("John Smith, Software Engineer", {
+const personId = await brain.add("John Smith, Software Engineer", {
   type: "person",
   role: "engineer"
 })
 
-const companyId = await brain.addNoun("TechCorp, Innovation Leader", {
+const companyId = await brain.add("TechCorp, Innovation Leader", {
   type: "company",
   industry: "technology"
 })
 
 // Create relationship
-await brain.addVerb(personId, companyId, "works_at", {
+await brain.relate(personId, companyId, "works_at", {
   since: "2020",
   position: "Senior Engineer"
 })
@@ -203,7 +203,7 @@ const brain = new BrainyData({
 // Process streaming data
 async function processStream(item) {
   // Entity registry prevents duplicate nouns
-  const id = await brain.addNoun(item.content, {
+  const id = await brain.add(item.content, {
     externalId: item.id,
     timestamp: item.timestamp
   })
@@ -264,7 +264,7 @@ const brain = new BrainyData({
 // Good - batch operations for nouns
 const items = ["item1", "item2", "item3"]
 for (const item of items) {
-  await brain.addNoun(item, { batch: true })
+  await brain.add(item, { batch: true })
 }
 
 // Create relationships efficiently
@@ -273,7 +273,7 @@ const relationships = [
   { source: id2, target: id3, type: "similar" }
 ]
 for (const rel of relationships) {
-  await brain.addVerb(rel.source, rel.target, rel.type)
+  await brain.relate(rel.source, rel.target, rel.type)
 }
 ```
 
@@ -307,7 +307,7 @@ const brain = new BrainyData({
 
 ```typescript
 try {
-  await brain.addNoun("content", metadata)
+  await brain.add("content", metadata)
 } catch (error) {
   if (error.code === 'STORAGE_FULL') {
     console.error('Storage is full')

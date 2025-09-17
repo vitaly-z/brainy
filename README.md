@@ -315,10 +315,10 @@ const results = await brain.find({
 
 ```javascript
 // Create entities (nouns)
-const id = await brain.addNoun(data, nounType, metadata)
+const id = await brain.add(data, { nounType: nounType, ...metadata })
 
 // Create relationships (verbs)
-const verbId = await brain.addVerb(sourceId, targetId, "relationType", {
+const verbId = await brain.relate(sourceId, targetId, "relationType", {
     strength: 0.9,
     bidirectional: false
 })
@@ -377,7 +377,8 @@ const ingestionNode = new Brainy({
 
 // Process Bluesky firehose
 blueskyStream.on('post', async (post) => {
-    await ingestionNode.addNoun(post, 'social-post', {
+    await ingestionNode.add(post, {
+        nounType: 'social-post',
         platform: 'bluesky',
         author: post.author,
         timestamp: post.createdAt
@@ -415,27 +416,30 @@ const trending = await searchNode.find('trending AI topics', {
 
 ```javascript
 // Store documentation with rich relationships
-const apiGuide = await brain.addNoun("REST API Guide", 'document', {
+const apiGuide = await brain.add("REST API Guide", {
+    nounType: 'document',
     title: "API Guide",
     category: "documentation",
     version: "2.0"
 })
 
-const author = await brain.addNoun("Jane Developer", 'person', {
+const author = await brain.add("Jane Developer", {
+    nounType: 'person',
     type: "person",
     role: "tech-lead"
 })
 
-const project = await brain.addNoun("E-commerce Platform", 'project', {
+const project = await brain.add("E-commerce Platform", {
+    nounType: 'project',
     type: "project",
     status: "active"
 })
 
 // Create knowledge graph
-await brain.addVerb(author, apiGuide, "authored", {
+await brain.relate(author, apiGuide, "authored", {
     date: "2024-03-15"
 })
-await brain.addVerb(apiGuide, project, "documents", {
+await brain.relate(apiGuide, project, "documents", {
     coverage: "complete"
 })
 
@@ -457,25 +461,28 @@ const similar = await brain.search(existingContent, {
 
 ```javascript
 // Store conversation with relationships
-const userId = await brain.addNoun("User 123", 'user', {
+const userId = await brain.add("User 123", {
+    nounType: 'user',
     type: "user",
     tier: "premium"
 })
 
-const messageId = await brain.addNoun(userMessage, 'message', {
+const messageId = await brain.add(userMessage, {
+    nounType: 'message',
     type: "message",
     timestamp: Date.now(),
     session: "abc"
 })
 
-const topicId = await brain.addNoun("Product Support", 'topic', {
+const topicId = await brain.add("Product Support", {
+    nounType: 'topic',
     type: "topic",
     category: "support"
 })
 
 // Link conversation elements
-await brain.addVerb(userId, messageId, "sent")
-await brain.addVerb(messageId, topicId, "about")
+await brain.relate(userId, messageId, "sent")
+await brain.relate(messageId, topicId, "about")
 
 // Retrieve context with relationships
 const context = await brain.find({
@@ -595,7 +602,7 @@ for (const cluster of feedbackClusters) {
 }
 
 // Find related documents
-const docId = await brain.addNoun("Machine learning guide", 'document')
+const docId = await brain.add("Machine learning guide", { nounType: 'document' })
 const similar = await neural.neighbors(docId, 5)
 // Returns 5 most similar documents
 

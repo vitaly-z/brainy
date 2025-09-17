@@ -184,7 +184,7 @@ const brain = new BrainyData({ wal: true })
 **Purpose**: High-speed deduplication for real-time data
 ```typescript
 // Prevents duplicate entities in streaming scenarios
-brain.addNoun(data) // Automatically deduplicated
+brain.add(data) // Automatically deduplicated
 ```
 
 ### AutoRegisterEntitiesAugmentation

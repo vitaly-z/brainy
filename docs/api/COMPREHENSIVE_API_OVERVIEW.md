@@ -19,13 +19,13 @@ const brain = new BrainyData({ storage: { path: './my-data' } })
 
 #### **2. Data Operations (CRUD)**
 ```typescript
-// ✅ CONSISTENT: Always (data, type, metadata) pattern
-await brain.addNoun(content, NounType.Person, { role: 'Engineer' })
-await brain.addNoun(content, NounType.Document, { title: 'API Guide' })
+// ✅ CONSISTENT: Always (data, metadata) pattern with nounType in metadata
+await brain.add(content, { nounType: NounType.Person, role: 'Engineer' })
+await brain.add(content, { nounType: NounType.Document, title: 'API Guide' })
 
-// ✅ CONSISTENT: Always (source, target, type, metadata) pattern  
-await brain.addVerb(sourceId, targetId, VerbType.RelatedTo, { strength: 0.8 })
-await brain.addVerb(sourceId, targetId, VerbType.Contains, { confidence: 0.9 })
+// ✅ CONSISTENT: Always (source, target, type, metadata) pattern
+await brain.relate(sourceId, targetId, VerbType.RelatedTo, { strength: 0.8 })
+await brain.relate(sourceId, targetId, VerbType.Contains, { confidence: 0.9 })
 
 // ✅ CONSISTENT: Batch versions take arrays
 await brain.addNouns([...])  // Array of noun objects
@@ -58,10 +58,10 @@ await brain.related(id, limit?)   // Returns simple array
 #### **Main Data Operations** (Direct on `brain`)
 ```typescript
 // Core CRUD - most common operations
-brain.addNoun(content, type, metadata?)
-brain.addNouns(items[])
-brain.addVerb(source, target, type, metadata?)  
-brain.addVerbs(items[])
+brain.add(content, metadata)
+brain.addNouns(items[])  // Batch operation - unchanged
+brain.relate(source, target, type, metadata?)
+brain.addVerbs(items[])  // Batch operation - unchanged
 
 brain.search(query, options?)
 brain.find(naturalLanguageQuery, options?)  // Triple Intelligence
@@ -138,7 +138,7 @@ brain.storage.vacuum()
 const brain = new BrainyData()
 await brain.init()
 
-await brain.addNoun('My first document', NounType.Document)
+await brain.add('My first document', { nounType: NounType.Document })
 const results = await brain.search('document')
 const similar = await brain.similar('text1', 'text2')
 const groups = await brain.clusters()
@@ -193,9 +193,9 @@ for await (const batch of brain.neural.clusterStream({ batchSize: 50 })) {
 
 #### **1. Data-First Pattern**
 ```typescript
-// Always: (data, type/config, optional_metadata)
-brain.addNoun(content, NounType.Document, metadata?)
-brain.addVerb(source, target, VerbType.RelatedTo, metadata?)
+// Always: (data, config/metadata, optional_params)
+brain.add(content, metadata)  // nounType now in metadata
+brain.relate(source, target, VerbType.RelatedTo, metadata?)
 brain.search(query, options?)
 brain.similar(a, b, options?)
 ```
@@ -270,8 +270,8 @@ try {
 import { BrainyData, NounType, VerbType } from '@soulcraft/brainy'
 
 const brain = new BrainyData()
-await brain.addNoun('content', NounType.Document, { title: 'My Doc' })
-//                              ^^^^^^^^^^^^^^^^  // IDE autocomplete!
+await brain.add('content', { nounType: NounType.Document, title: 'My Doc' })
+//                          ^^^^^^^^^^^^^^^^  // IDE autocomplete!
 ```
 
 ### **✅ 5. Flexible Configuration**
@@ -306,7 +306,7 @@ const brain = new BrainyData({
  * @param type - Relationship type (VerbType enum)
  * @param metadata - Optional relationship metadata
  */
-brain.addVerb(source, target, type, metadata?)
+brain.relate(source, target, type, metadata?)
 ```
 
 ### **2. Error Context Enhancement**

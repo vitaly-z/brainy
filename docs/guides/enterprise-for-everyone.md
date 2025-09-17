@@ -404,7 +404,7 @@ const brain = new BrainyData()
 await brain.init()
 
 // You're now running the same tech as Fortune 500 companies
-await brain.addNoun("Your data is enterprise-grade", {
+await brain.add("Your data is enterprise-grade", {
   secure: true,
   durable: true,
   scalable: true,

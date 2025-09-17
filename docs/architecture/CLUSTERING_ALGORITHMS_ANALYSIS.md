@@ -47,7 +47,7 @@ VerbType: RelatedTo, Contains, PartOf, Causes, CreatedBy, etc.
 #### **4. Graph Structure** 
 ```typescript
 // VERB RELATIONSHIPS CREATE RICH GRAPH
-await brain.addVerb(sourceId, targetId, VerbType.Causes, { strength: 0.8 })
+await brain.relate(sourceId, targetId, VerbType.Causes, { strength: 0.8 })
 ```
 
 **Graph-based clustering potential:**
