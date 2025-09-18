@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 31 nouns × 40 verbs for infinite expressiveness.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -44,7 +44,12 @@
   "browser": {
     "./dist/distributed": false,
     "./dist/cli": false,
-    "./dist/scripts": false
+    "./dist/scripts": false,
+    "./dist/cortex": false,
+    "./dist/cortex/neuralImport.js": false,
+    "./dist/cortex/performanceMonitor.js": false,
+    "./dist/cortex/healthCheck.js": false,
+    "./dist/cortex/backupRestore.js": false
   },
   "engines": {
     "node": "22.x"
