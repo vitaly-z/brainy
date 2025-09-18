@@ -6,8 +6,6 @@
 import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
 import { executeInThread } from './workerUtils.js'
 import { isBrowser } from './environment.js'
-import { join } from 'node:path'
-import { existsSync } from 'node:fs'
 // @ts-ignore - Transformers.js is now the primary embedding library
 import { pipeline, env } from '@huggingface/transformers'
 
@@ -338,14 +336,21 @@ export class TransformerEmbedding implements EmbeddingModel {
       
       try {
         // For Q8 models, we need to explicitly specify the model file
-        if (actualType === 'q8') {
-          // Check if quantized model exists
-          const modelPath = join(cacheDir, this.options.model, 'onnx', 'model_quantized.onnx')
-          if (existsSync(modelPath)) {
-            this.logger('log', '✅ Q8 model found locally')
-          } else {
-            this.logger('warn', '⚠️ Q8 model not found')
-            actualType = 'q8' // Always Q8
+        if (actualType === 'q8' && !isBrowser()) {
+          try {
+            // Check if quantized model exists (Node.js only)
+            const { join } = await import('node:path')
+            const { existsSync } = await import('node:fs')
+            const modelPath = join(cacheDir, this.options.model, 'onnx', 'model_quantized.onnx')
+            if (existsSync(modelPath)) {
+              this.logger('log', '✅ Q8 model found locally')
+            } else {
+              this.logger('warn', '⚠️ Q8 model not found')
+              actualType = 'q8' // Always Q8
+            }
+          } catch (error) {
+            // Skip model path check in browser or if imports fail
+            this.logger('log', '🌐 Skipping local model check in browser environment')
           }
         }
         
