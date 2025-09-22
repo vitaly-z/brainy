@@ -157,14 +157,15 @@ export class NaturalLanguageProcessor {
   
   /**
    * Find similar queries from history (without using Brainy)
+   * NOTE: Currently unused - reserved for future query caching optimization
    */
   private findSimilarQueries(embedding: Vector): Array<{
     query: string
     result: TripleQuery
     similarity: number
   }> {
-    // Simple similarity check against recent history
-    // This is just a placeholder - real implementation would use cosine similarity
+    // Not implemented - not required for core functionality
+    // Would implement cosine similarity against queryHistory if needed
     return []
   }
   

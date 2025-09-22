@@ -404,15 +404,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       // Check if the adapter has a paginated method for getting nouns
       if (typeof (this as any).getNounsWithPagination === 'function') {
-        // Use the adapter's paginated method
+        // Use the adapter's paginated method - pass offset directly to adapter
         const result = await (this as any).getNounsWithPagination({
           limit,
+          offset,  // Let the adapter handle offset for O(1) operation
           cursor,
           filter: options?.filter
         })
 
-        // Apply offset if needed (some adapters might not support offset)
-        const items = result.items.slice(offset)
+        // Don't slice here - the adapter should handle offset efficiently
+        const items = result.items
 
         // CRITICAL SAFETY CHECK: Prevent infinite loops
         // If we have no items but hasMore is true, force hasMore to false

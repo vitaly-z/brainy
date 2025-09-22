@@ -25,6 +25,12 @@ import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
 import {
+  DistributedCoordinator,
+  ShardManager,
+  CacheSync,
+  ReadWriteSeparation
+} from './distributed/index.js'
+import {
   Entity,
   Relation,
   Result,
@@ -60,6 +66,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private augmentationRegistry: AugmentationRegistry
   private config: Required<BrainyConfig>
 
+  // Distributed components (optional)
+  private coordinator?: DistributedCoordinator
+  private shardManager?: ShardManager
+  private cacheSync?: CacheSync
+  private readWriteSeparation?: ReadWriteSeparation
+
   // Silent mode state
   private originalConsole?: {
     log: typeof console.log
@@ -85,7 +97,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     this.distance = cosineDistance
     this.embedder = this.setupEmbedder()
     this.augmentationRegistry = this.setupAugmentations()
-    
+
+    // Setup distributed components if enabled
+    if (this.config.distributed?.enabled) {
+      this.setupDistributedComponents()
+    }
+
     // Index and storage are initialized in init() because they may need each other
   }
 
@@ -173,6 +190,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
       })
+
+      // Connect distributed components to storage
+      await this.connectDistributedStorage()
 
       // Warm up if configured
       if (this.config.warmup) {
@@ -360,6 +380,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Delete an entity
    */
   async delete(id: string): Promise<void> {
+    // Handle invalid IDs gracefully
+    if (!id || typeof id !== 'string') {
+      return // Silently return for invalid IDs
+    }
+
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('delete', { id }, async () => {
@@ -385,6 +410,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const allVerbs = [...verbs, ...targetVerbs]
 
       for (const verb of allVerbs) {
+        // Remove from graph index first
+        await this.graphIndex.removeVerb(verb.id)
+        // Then delete from storage
         await this.storage.deleteVerb(verb.id)
       }
     })
@@ -536,18 +564,63 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const result = await this.augmentationRegistry.execute('find', params, async () => {
       let results: Result<T>[] = []
 
-      // Handle empty query - return paginated results from storage
-      const hasSearchCriteria = params.query || params.vector || params.where || 
-                               params.type || params.service || params.near || params.connected
-      
-      if (!hasSearchCriteria) {
+      // Distinguish between search criteria (need vector search) and filter criteria (metadata only)
+      // Treat empty string query as no query
+      const hasVectorSearchCriteria = (params.query && params.query.trim() !== '') || params.vector || params.near
+      const hasFilterCriteria = params.where || params.type || params.service
+      const hasGraphCriteria = params.connected
+
+      // Handle metadata-only queries (no vector search needed)
+      if (!hasVectorSearchCriteria && !hasGraphCriteria && hasFilterCriteria) {
+        // Build filter for metadata index
+        let filter: any = {}
+        if (params.where) Object.assign(filter, params.where)
+        if (params.service) filter.service = params.service
+
+        if (params.type) {
+          const types = Array.isArray(params.type) ? params.type : [params.type]
+          if (types.length === 1) {
+            filter.noun = types[0]
+          } else {
+            filter = {
+              anyOf: types.map(type => ({
+                noun: type,
+                ...filter
+              }))
+            }
+          }
+        }
+
+        // Get filtered IDs and paginate BEFORE loading entities
+        const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+        const limit = params.limit || 10
+        const offset = params.offset || 0
+        const pageIds = filteredIds.slice(offset, offset + limit)
+
+        // Load entities for the paginated results
+        for (const id of pageIds) {
+          const entity = await this.get(id)
+          if (entity) {
+            results.push({
+              id,
+              score: 1.0, // All metadata-filtered results equally relevant
+              entity
+            })
+          }
+        }
+
+        return results
+      }
+
+      // Handle completely empty query - return all results paginated
+      if (!hasVectorSearchCriteria && !hasFilterCriteria && !hasGraphCriteria) {
         const limit = params.limit || 20
         const offset = params.offset || 0
-        
-        const storageResults = await this.storage.getNouns({ 
-          pagination: { limit: limit + offset, offset: 0 } 
+
+        const storageResults = await this.storage.getNouns({
+          pagination: { limit: limit + offset, offset: 0 }
         })
-        
+
         for (let i = offset; i < Math.min(offset + limit, storageResults.items.length); i++) {
           const noun = storageResults.items[i]
           if (noun) {
@@ -559,7 +632,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             })
           }
         }
-        
+
         return results
       }
 
@@ -1001,6 +1074,24 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._nlp = undefined
       this._tripleIntelligence = undefined
     })
+  }
+
+  /**
+   * Get total count of nouns - O(1) operation
+   * @returns Promise that resolves to the total number of nouns
+   */
+  async getNounCount(): Promise<number> {
+    await this.ensureInitialized()
+    return this.storage.getNounCount()
+  }
+
+  /**
+   * Get total count of verbs - O(1) operation
+   * @returns Promise that resolves to the total number of verbs
+   */
+  async getVerbCount(): Promise<number> {
+    await this.ensureInitialized()
+    return this.storage.getVerbCount()
   }
 
   // ============= SUB-APIS =============
@@ -1812,18 +1903,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       throw new Error(`Invalid index efSearch: ${config.index.efSearch}. Must be between 1 and 1000`)
     }
 
+    // Auto-detect distributed mode based on environment and configuration
+    const distributedConfig = this.autoDetectDistributed(config?.distributed)
+
     return {
       storage: config?.storage || { type: 'auto' },
       model: config?.model || { type: 'fast' },
       index: config?.index || {},
       cache: config?.cache ?? true,
       augmentations: config?.augmentations || {},
+      distributed: distributedConfig as any, // Type will be fixed when used
       warmup: config?.warmup ?? false,
       realtime: config?.realtime ?? false,
       multiTenancy: config?.multiTenancy ?? false,
       telemetry: config?.telemetry ?? false,
       verbose: config?.verbose ?? false,
-      silent: config?.silent ?? false
+      silent: config?.silent ?? false,
+      // New performance options with smart defaults
+      disableAutoRebuild: config?.disableAutoRebuild ?? false,  // false = auto-decide based on size
+      disableMetrics: config?.disableMetrics ?? false,
+      disableAutoOptimize: config?.disableAutoOptimize ?? false,
+      batchWrites: config?.batchWrites ?? true,
+      maxConcurrentOperations: config?.maxConcurrentOperations ?? 10
     }
   }
 
@@ -1834,18 +1935,51 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     try {
       // Check if storage has data
       const entities = await this.storage.getNouns({ pagination: { limit: 1 } })
-      if (entities.totalCount === 0 || entities.items.length === 0) {
+      const totalCount = entities.totalCount || 0
+
+      if (totalCount === 0) {
         // No data in storage, no rebuild needed
         return
       }
 
+      // Intelligent decision: Auto-rebuild only for small datasets
+      // For large datasets, use lazy loading for optimal performance
+      const AUTO_REBUILD_THRESHOLD = 1000 // Only auto-rebuild if < 1000 items
+
       // Check if metadata index is empty
       const metadataStats = await this.metadataIndex.getStats()
-      if (metadataStats.totalEntries === 0) {
-        console.log('🔄 Rebuilding metadata index for existing data...')
+      if (metadataStats.totalEntries === 0 && totalCount > 0) {
+        if (totalCount < AUTO_REBUILD_THRESHOLD) {
+          // Small dataset - rebuild for convenience
+          if (!this.config.silent) {
+            console.log(`🔄 Small dataset (${totalCount} items) - rebuilding index for optimal performance...`)
+          }
+          await this.metadataIndex.rebuild()
+          const newStats = await this.metadataIndex.getStats()
+          if (!this.config.silent) {
+            console.log(`✅ Index rebuilt: ${newStats.totalEntries} entries`)
+          }
+        } else {
+          // Large dataset - use lazy loading
+          if (!this.config.silent) {
+            console.log(`⚡ Large dataset (${totalCount} items) - using lazy loading for optimal startup performance`)
+            console.log('💡 Tip: Indexes will build automatically as you use the system')
+          }
+        }
+      }
+
+      // Override with explicit config if provided
+      if (this.config.disableAutoRebuild === true) {
+        if (!this.config.silent) {
+          console.log('⚡ Auto-rebuild explicitly disabled via config')
+        }
+        return
+      } else if (this.config.disableAutoRebuild === false && metadataStats.totalEntries === 0) {
+        // Explicitly enabled - rebuild regardless of size
+        if (!this.config.silent) {
+          console.log('🔄 Auto-rebuild explicitly enabled - rebuilding index...')
+        }
         await this.metadataIndex.rebuild()
-        const newStats = await this.metadataIndex.getStats()
-        console.log(`✅ Metadata index rebuilt: ${newStats.totalEntries} entries`)
       }
 
       // Note: GraphAdjacencyIndex will rebuild itself as relationships are added
@@ -1879,6 +2013,132 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Storage doesn't have close in current interface
     // We'll just mark as not initialized
     this.initialized = false
+  }
+
+  /**
+   * Intelligently auto-detect distributed configuration
+   * Zero-config: Automatically determines best distributed settings
+   */
+  private autoDetectDistributed(config?: BrainyConfig['distributed']): BrainyConfig['distributed'] {
+    // If explicitly disabled, respect that
+    if (config?.enabled === false) {
+      return config
+    }
+
+    // Auto-detect based on environment variables (common in production)
+    const envEnabled = process.env.BRAINY_DISTRIBUTED === 'true' ||
+                      process.env.NODE_ENV === 'production' ||
+                      process.env.CLUSTER_SIZE ||
+                      process.env.KUBERNETES_SERVICE_HOST // Running in K8s
+
+    // Auto-detect based on storage type (S3/R2/GCS implies distributed)
+    const storageImpliesDistributed =
+      this.config?.storage?.type === 's3' ||
+      this.config?.storage?.type === 'r2' ||
+      this.config?.storage?.type === 'gcs'
+
+    // If not explicitly configured but environment suggests distributed
+    if (!config && (envEnabled || storageImpliesDistributed)) {
+      return {
+        enabled: true,
+        nodeId: process.env.HOSTNAME || process.env.NODE_ID || `node-${Date.now()}`,
+        nodes: process.env.BRAINY_NODES?.split(',') || [],
+        coordinatorUrl: process.env.BRAINY_COORDINATOR || undefined,
+        shardCount: parseInt(process.env.BRAINY_SHARDS || '64'),
+        replicationFactor: parseInt(process.env.BRAINY_REPLICAS || '3'),
+        consensus: process.env.BRAINY_CONSENSUS as any || 'raft',
+        transport: process.env.BRAINY_TRANSPORT as any || 'http'
+      }
+    }
+
+    // Merge with provided config, applying intelligent defaults
+    return config ? {
+      ...config,
+      nodeId: config.nodeId || process.env.HOSTNAME || `node-${Date.now()}`,
+      shardCount: config.shardCount || 64,
+      replicationFactor: config.replicationFactor || 3,
+      consensus: config.consensus || 'raft',
+      transport: config.transport || 'http'
+    } : undefined
+  }
+
+  /**
+   * Setup distributed components with zero-config intelligence
+   */
+  private setupDistributedComponents(): void {
+    const distConfig = this.config.distributed
+    if (!distConfig?.enabled) return
+
+    console.log('🌍 Initializing distributed mode:', {
+      nodeId: distConfig.nodeId,
+      shards: distConfig.shardCount,
+      replicas: distConfig.replicationFactor
+    })
+
+    // Initialize coordinator for consensus
+    this.coordinator = new DistributedCoordinator({
+      nodeId: distConfig.nodeId,
+      address: distConfig.coordinatorUrl?.split(':')[0] || 'localhost',
+      port: parseInt(distConfig.coordinatorUrl?.split(':')[1] || '8080'),
+      nodes: distConfig.nodes
+    })
+
+    // Start the coordinator to establish leadership
+    this.coordinator.start().catch(err => {
+      console.warn('Coordinator start failed (will retry on init):', err.message)
+    })
+
+    // Initialize shard manager for data distribution
+    this.shardManager = new ShardManager({
+      shardCount: distConfig.shardCount,
+      replicationFactor: distConfig.replicationFactor,
+      virtualNodes: 150, // Optimal for consistent distribution
+      autoRebalance: true
+    })
+
+    // Initialize cache synchronization
+    this.cacheSync = new CacheSync({
+      nodeId: distConfig.nodeId!,
+      syncInterval: 1000
+    } as any)
+
+    // Initialize read/write separation if we have replicas
+    // Note: Will be properly initialized after coordinator starts
+    if (distConfig.replicationFactor && distConfig.replicationFactor > 1) {
+      // Defer creation until coordinator is ready
+      setTimeout(() => {
+        this.readWriteSeparation = new ReadWriteSeparation(
+          {
+            nodeId: distConfig.nodeId!,
+            consistencyLevel: 'eventual',
+            role: 'replica', // Start as replica, will promote if leader
+            syncInterval: 5000
+          },
+          this.coordinator!,
+          this.shardManager!,
+          this.cacheSync!
+        )
+      }, 100)
+    }
+  }
+
+  /**
+   * Pass distributed components to storage adapter
+   */
+  private async connectDistributedStorage(): Promise<void> {
+    if (!this.config.distributed?.enabled) return
+
+    // Check if storage supports distributed operations
+    if ('setDistributedComponents' in this.storage) {
+      (this.storage as any).setDistributedComponents({
+        coordinator: this.coordinator,
+        shardManager: this.shardManager,
+        cacheSync: this.cacheSync,
+        readWriteSeparation: this.readWriteSeparation
+      })
+
+      console.log('✅ Distributed storage connected')
+    }
   }
 }
 

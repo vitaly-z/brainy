@@ -243,7 +243,7 @@ describe('Brainy.add()', () => {
       // Act & Assert
       await assertRejectsWithError(
         brain.add(params),
-        'must provide either data or vector'
+        'Invalid add() parameters: Missing required field \'data\''
       )
     })
     
@@ -257,7 +257,7 @@ describe('Brainy.add()', () => {
       // Act & Assert
       await assertRejectsWithError(
         brain.add(params),
-        'invalid NounType'
+        'Invalid NounType: \'invalid_type\''
       )
     })
     
@@ -343,7 +343,7 @@ describe('Brainy.add()', () => {
       })
       
       // Act & Assert - Empty string is not valid data
-      await expect(brain.add(params)).rejects.toThrow('must provide either data or vector')
+      await expect(brain.add(params)).rejects.toThrow('Invalid add() parameters: Missing required field \'data\'')
     })
     
     it('should handle very long text content', async () => {

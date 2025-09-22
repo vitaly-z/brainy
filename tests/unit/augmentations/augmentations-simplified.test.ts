@@ -13,6 +13,7 @@ describe('Brainy Built-in Augmentations', () => {
 
   beforeEach(async () => {
     brain = new Brainy({
+      storage: { type: 'memory' },
       augmentations: {
         cache: { enabled: true, maxSize: 1000 },
         display: { enabled: true },
@@ -478,6 +479,7 @@ describe('Brainy Built-in Augmentations', () => {
     it('should respect augmentation configuration', async () => {
       // Test that augmentations can be configured
       const configuredBrain = new Brainy({
+        storage: { type: 'memory' },
         augmentations: {
           cache: {
             enabled: true,
@@ -509,6 +511,7 @@ describe('Brainy Built-in Augmentations', () => {
 
     it('should work with disabled augmentations', async () => {
       const minimalBrain = new Brainy({
+        storage: { type: 'memory' },
         augmentations: {
           cache: { enabled: false },
           display: { enabled: false },

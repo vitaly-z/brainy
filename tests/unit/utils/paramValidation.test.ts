@@ -134,14 +134,14 @@ describe('Zero-Config Parameter Validation', () => {
     it('should require either data or vector', () => {
       expect(() => validateAddParams({
         type: NounType.Document
-      } as AddParams)).toThrow('must provide either data or vector')
+      } as AddParams)).toThrow('Invalid add() parameters: Missing required field \'data\'')
     })
     
     it('should validate NounType', () => {
       expect(() => validateAddParams({
         data: 'test',
         type: 'InvalidType' as any
-      })).toThrow('invalid NounType: InvalidType')
+      })).toThrow('Invalid NounType: \'InvalidType\'')
     })
     
     it('should validate vector dimensions', () => {

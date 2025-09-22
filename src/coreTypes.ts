@@ -596,4 +596,16 @@ export interface StorageAdapter {
   
   // NOTE: getAllNouns and getAllVerbs have been removed to prevent expensive full scans.
   // Use getNouns() and getVerbs() with pagination instead.
+
+  /**
+   * Get total count of nouns in storage - O(1) operation
+   * @returns Promise that resolves to the total number of nouns
+   */
+  getNounCount(): Promise<number>
+
+  /**
+   * Get total count of verbs in storage - O(1) operation
+   * @returns Promise that resolves to the total number of verbs
+   */
+  getVerbCount(): Promise<number>
 }

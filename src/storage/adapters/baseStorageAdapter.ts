@@ -5,6 +5,7 @@
 
 import { StatisticsData, StorageAdapter } from '../../coreTypes.js'
 import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/fieldNameTracking.js'
+import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
 /**
  * Base class for storage adapters that implements statistics tracking
@@ -865,4 +866,162 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     }
     return stats
   }
+
+  // =============================================
+  // Universal O(1) Count Management
+  // =============================================
+
+  // Universal count tracking - O(1) operations
+  protected totalNounCount = 0
+  protected totalVerbCount = 0
+  protected entityCounts: Map<string, number> = new Map() // type -> count
+  protected verbCounts: Map<string, number> = new Map() // verb type -> count
+  protected countCache: Map<string, { count: number; timestamp: number }> = new Map()
+  protected readonly COUNT_CACHE_TTL = 60000 // 1 minute cache TTL
+
+  /**
+   * Get total noun count - O(1) operation
+   * @returns Promise that resolves to the total number of nouns
+   */
+  async getNounCount(): Promise<number> {
+    return this.totalNounCount
+  }
+
+  /**
+   * Get total verb count - O(1) operation
+   * @returns Promise that resolves to the total number of verbs
+   */
+  async getVerbCount(): Promise<number> {
+    return this.totalVerbCount
+  }
+
+  /**
+   * Increment count for entity type - O(1) operation
+   * Protected by storage-specific mechanisms (mutex, distributed consensus, etc.)
+   * @param type The entity type
+   */
+  protected incrementEntityCount(type: string): void {
+    // For distributed scenarios, this is aggregated across shards
+    // For single-node, this is protected by storage-specific locking
+    this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
+    this.totalNounCount++
+    // Update cache
+    this.countCache.set('nouns_count', {
+      count: this.totalNounCount,
+      timestamp: Date.now()
+    })
+  }
+
+  /**
+   * Thread-safe increment for concurrent scenarios
+   * Uses mutex for single-node, distributed consensus for multi-node
+   */
+  protected async incrementEntityCountSafe(type: string): Promise<void> {
+    // Single-node mutex protection (distributed mode handled by coordinator)
+    const mutex = getGlobalMutex()
+    await mutex.runExclusive(`count-entity-${type}`, async () => {
+      this.incrementEntityCount(type)
+      // Persist counts periodically
+      if (this.totalNounCount % 10 === 0) {
+        await this.persistCounts()
+      }
+    })
+  }
+
+  /**
+   * Decrement count for entity type - O(1) operation
+   * @param type The entity type
+   */
+  protected decrementEntityCount(type: string): void {
+    const current = this.entityCounts.get(type) || 0
+    if (current > 1) {
+      this.entityCounts.set(type, current - 1)
+    } else {
+      this.entityCounts.delete(type)
+    }
+    if (this.totalNounCount > 0) {
+      this.totalNounCount--
+    }
+    // Update cache
+    this.countCache.set('nouns_count', {
+      count: this.totalNounCount,
+      timestamp: Date.now()
+    })
+  }
+
+  /**
+   * Thread-safe decrement for concurrent scenarios
+   */
+  protected async decrementEntityCountSafe(type: string): Promise<void> {
+    const mutex = getGlobalMutex()
+    await mutex.runExclusive(`count-entity-${type}`, async () => {
+      this.decrementEntityCount(type)
+      if (this.totalNounCount % 10 === 0) {
+        await this.persistCounts()
+      }
+    })
+  }
+
+  /**
+   * Increment verb count - O(1) operation with mutex protection
+   * @param type The verb type
+   */
+  protected async incrementVerbCount(type: string): Promise<void> {
+    const mutex = getGlobalMutex()
+    await mutex.runExclusive(`count-verb-${type}`, async () => {
+      this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
+      this.totalVerbCount++
+      // Update cache
+      this.countCache.set('verbs_count', {
+        count: this.totalVerbCount,
+        timestamp: Date.now()
+      })
+
+      // Persist counts immediately for consistency
+      if (this.totalVerbCount % 10 === 0) {
+        await this.persistCounts()
+      }
+    })
+  }
+
+  /**
+   * Decrement verb count - O(1) operation with mutex protection
+   * @param type The verb type
+   */
+  protected async decrementVerbCount(type: string): Promise<void> {
+    const mutex = getGlobalMutex()
+    await mutex.runExclusive(`count-verb-${type}`, async () => {
+      const current = this.verbCounts.get(type) || 0
+      if (current > 1) {
+        this.verbCounts.set(type, current - 1)
+      } else {
+        this.verbCounts.delete(type)
+      }
+      if (this.totalVerbCount > 0) {
+        this.totalVerbCount--
+      }
+      // Update cache
+      this.countCache.set('verbs_count', {
+        count: this.totalVerbCount,
+        timestamp: Date.now()
+      })
+
+      // Persist counts immediately for consistency
+      if (this.totalVerbCount % 10 === 0) {
+        await this.persistCounts()
+      }
+    })
+  }
+
+  /**
+   * Initialize counts from storage - must be implemented by each adapter
+   * @protected
+   */
+  protected abstract initializeCounts(): Promise<void>
+
+  /**
+   * Persist counts to storage - must be implemented by each adapter
+   * @protected
+   */
+  protected abstract persistCounts(): Promise<void>
 }

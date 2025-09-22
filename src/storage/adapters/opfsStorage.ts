@@ -1564,4 +1564,77 @@ export class OPFSStorage extends BaseStorage {
       nextCursor
     }
   }
+
+  /**
+   * Initialize counts from OPFS storage
+   */
+  protected async initializeCounts(): Promise<void> {
+    try {
+      // Try to load existing counts from counts.json
+      const systemDir = await this.rootDir!.getDirectoryHandle('system', { create: true })
+      const countsFile = await systemDir.getFileHandle('counts.json')
+      const file = await countsFile.getFile()
+      const data = await file.text()
+      const counts = JSON.parse(data)
+
+      // Restore counts from OPFS
+      this.entityCounts = new Map(Object.entries(counts.entityCounts || {}))
+      this.verbCounts = new Map(Object.entries(counts.verbCounts || {}))
+      this.totalNounCount = counts.totalNounCount || 0
+      this.totalVerbCount = counts.totalVerbCount || 0
+    } catch (error) {
+      // If counts don't exist, initialize by scanning (one-time operation)
+      await this.initializeCountsFromScan()
+    }
+  }
+
+  /**
+   * Initialize counts by scanning OPFS (fallback for missing counts file)
+   */
+  private async initializeCountsFromScan(): Promise<void> {
+    try {
+      // Count nouns
+      let nounCount = 0
+      for await (const [, ] of this.nounsDir!.entries()) {
+        nounCount++
+      }
+      this.totalNounCount = nounCount
+
+      // Count verbs
+      let verbCount = 0
+      for await (const [, ] of this.verbsDir!.entries()) {
+        verbCount++
+      }
+      this.totalVerbCount = verbCount
+
+      // Save initial counts
+      await this.persistCounts()
+    } catch (error) {
+      console.error('Error initializing counts from OPFS scan:', error)
+    }
+  }
+
+  /**
+   * Persist counts to OPFS storage
+   */
+  protected async persistCounts(): Promise<void> {
+    try {
+      const systemDir = await this.rootDir!.getDirectoryHandle('system', { create: true })
+      const countsFile = await systemDir.getFileHandle('counts.json', { create: true })
+      const writable = await countsFile.createWritable()
+
+      const counts = {
+        entityCounts: Object.fromEntries(this.entityCounts),
+        verbCounts: Object.fromEntries(this.verbCounts),
+        totalNounCount: this.totalNounCount,
+        totalVerbCount: this.totalVerbCount,
+        lastUpdated: new Date().toISOString()
+      }
+
+      await writable.write(JSON.stringify(counts))
+      await writable.close()
+    } catch (error) {
+      console.error('Error persisting counts to OPFS:', error)
+    }
+  }
 }

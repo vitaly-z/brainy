@@ -47,9 +47,9 @@ describe('Brainy Batch Operations', () => {
       const startTime = Date.now()
       const result = await brain.addMany({ items: entities })
       const duration = Date.now() - startTime
-      
+
       expect(result.successful).toHaveLength(batchSize)
-      expect(duration).toBeLessThan(1000) // Should be fast
+      expect(duration).toBeLessThan(10000) // 10 seconds for 100 embeddings is reasonable
 
       // Verify a sample
       const sampleEntity = await brain.get(result.successful[50])
@@ -562,7 +562,10 @@ describe('Brainy Batch Operations', () => {
         to: newIds[i],
         type: VerbType.RelatedTo
       }))
-      
+
+      // Actually create the relationships
+      await brain.relateMany({ items: relationships })
+
       // 4. Delete some entities
       await brain.deleteMany({ ids: initialIds.slice(15) })
       

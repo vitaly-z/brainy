@@ -337,12 +337,31 @@ export interface BrainyConfig {
   
   // Augmentations
   augmentations?: Record<string, any>
-  
+
+  // Distributed configuration
+  distributed?: {
+    enabled: boolean
+    nodeId?: string
+    nodes?: string[]           // Other nodes in cluster
+    coordinatorUrl?: string    // Coordinator endpoint
+    shardCount?: number        // Number of shards (default: 64)
+    replicationFactor?: number // Number of replicas (default: 3)
+    consensus?: 'raft' | 'none' // Consensus mechanism
+    transport?: 'tcp' | 'http' | 'udp'
+  }
+
   // Advanced options
   warmup?: boolean          // Warm up on init
   realtime?: boolean        // Enable real-time updates
   multiTenancy?: boolean    // Enable service isolation
   telemetry?: boolean       // Send anonymous usage stats
+
+  // Performance tuning options for production
+  disableAutoRebuild?: boolean     // Disable automatic index rebuilding on init
+  disableMetrics?: boolean         // Completely disable metrics collection
+  disableAutoOptimize?: boolean    // Disable automatic index optimization
+  batchWrites?: boolean            // Enable write batching for better performance
+  maxConcurrentOperations?: number // Limit concurrent file operations
 
   // Logging configuration
   verbose?: boolean         // Enable verbose logging

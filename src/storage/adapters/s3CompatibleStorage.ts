@@ -120,7 +120,13 @@ export class S3CompatibleStorage extends BaseStorage {
   // Write buffers for bulk operations
   private nounWriteBuffer: WriteBuffer<HNSWNode> | null = null
   private verbWriteBuffer: WriteBuffer<Edge> | null = null
-  
+
+  // Distributed components (optional)
+  private coordinator?: any // DistributedCoordinator
+  private shardManager?: any // ShardManager
+  private cacheSync?: any // CacheSync
+  private readWriteSeparation?: any // ReadWriteSeparation
+
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
   
@@ -346,6 +352,61 @@ export class S3CompatibleStorage extends BaseStorage {
         `Failed to initialize ${this.serviceType} storage: ${error}`
       )
     }
+  }
+
+  /**
+   * Set distributed components for multi-node coordination
+   * Zero-config: Automatically optimizes based on components provided
+   */
+  public setDistributedComponents(components: {
+    coordinator?: any
+    shardManager?: any
+    cacheSync?: any
+    readWriteSeparation?: any
+  }): void {
+    this.coordinator = components.coordinator
+    this.shardManager = components.shardManager
+    this.cacheSync = components.cacheSync
+    this.readWriteSeparation = components.readWriteSeparation
+
+    // Auto-configure based on what's available
+    if (this.shardManager) {
+      console.log(`🎯 S3 Storage: Sharding enabled with ${this.shardManager.config?.shardCount || 64} shards`)
+    }
+
+    if (this.coordinator) {
+      console.log(`🤝 S3 Storage: Distributed coordination active (node: ${this.coordinator.nodeId})`)
+    }
+
+    if (this.cacheSync) {
+      console.log('🔄 S3 Storage: Cache synchronization enabled')
+    }
+
+    if (this.readWriteSeparation) {
+      console.log(`📖 S3 Storage: Read/write separation with ${this.readWriteSeparation.config?.replicationFactor || 3}x replication`)
+    }
+  }
+
+  /**
+   * Get the S3 key for a noun, using sharding if available
+   */
+  private getNounKey(id: string): string {
+    if (this.shardManager) {
+      const shardId = this.shardManager.getShardForKey(id)
+      return `shards/${shardId}/${this.nounPrefix}${id}.json`
+    }
+    return `${this.nounPrefix}${id}.json`
+  }
+
+  /**
+   * Get the S3 key for a verb, using sharding if available
+   */
+  private getVerbKey(id: string): string {
+    if (this.shardManager) {
+      const shardId = this.shardManager.getShardForKey(id)
+      return `shards/${shardId}/${this.verbPrefix}${id}.json`
+    }
+    return `${this.verbPrefix}${id}.json`
   }
 
   /**
@@ -895,7 +956,8 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the PutObjectCommand only when needed
       const { PutObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.nounPrefix}${node.id}.json`
+      // Use sharding if available
+      const key = this.getNounKey(node.id)
       const body = JSON.stringify(serializableNode, null, 2)
 
       this.logger.trace(`Saving to key: ${key}`)
@@ -1324,11 +1386,11 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the PutObjectCommand only when needed
       const { PutObjectCommand } = await import('@aws-sdk/client-s3')
 
-      // Save the edge to S3-compatible storage
+      // Save the edge to S3-compatible storage using sharding if available
       await this.s3Client!.send(
         new PutObjectCommand({
           Bucket: this.bucketName,
-          Key: `${this.verbPrefix}${edge.id}.json`,
+          Key: this.getVerbKey(edge.id),
           Body: JSON.stringify(serializableEdge, null, 2),
           ContentType: 'application/json'
         })
@@ -3401,6 +3463,98 @@ export class S3CompatibleStorage extends BaseStorage {
       items: filteredNodes,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
+    }
+  }
+
+  /**
+   * Initialize counts from S3 storage
+   */
+  protected async initializeCounts(): Promise<void> {
+    const countsKey = `${this.systemPrefix}counts.json`
+
+    try {
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+
+      // Try to load existing counts
+      const response = await this.s3Client!.send(new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: countsKey
+      }))
+
+      if (response.Body) {
+        const data = await response.Body.transformToString()
+        const counts = JSON.parse(data)
+
+        // Restore counts from S3
+        this.entityCounts = new Map(Object.entries(counts.entityCounts || {}))
+        this.verbCounts = new Map(Object.entries(counts.verbCounts || {}))
+        this.totalNounCount = counts.totalNounCount || 0
+        this.totalVerbCount = counts.totalVerbCount || 0
+      }
+    } catch (error: any) {
+      if (error.name !== 'NoSuchKey') {
+        console.error('Error loading counts from S3:', error)
+      }
+      // If counts don't exist, initialize by scanning (one-time operation)
+      await this.initializeCountsFromScan()
+    }
+  }
+
+  /**
+   * Initialize counts by scanning S3 (fallback for missing counts file)
+   */
+  private async initializeCountsFromScan(): Promise<void> {
+    // This is expensive but only happens once for legacy data
+    // In production, counts are maintained incrementally
+    try {
+      const { ListObjectsV2Command } = await import('@aws-sdk/client-s3')
+
+      // Count nouns
+      const nounResponse = await this.s3Client!.send(new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: this.nounPrefix
+      }))
+      this.totalNounCount = nounResponse.Contents?.filter((obj: any) => obj.Key?.endsWith('.json')).length || 0
+
+      // Count verbs
+      const verbResponse = await this.s3Client!.send(new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: this.verbPrefix
+      }))
+      this.totalVerbCount = verbResponse.Contents?.filter((obj: any) => obj.Key?.endsWith('.json')).length || 0
+
+      // Save initial counts
+      await this.persistCounts()
+    } catch (error) {
+      console.error('Error initializing counts from S3 scan:', error)
+    }
+  }
+
+  /**
+   * Persist counts to S3 storage
+   */
+  protected async persistCounts(): Promise<void> {
+    const countsKey = `${this.systemPrefix}counts.json`
+
+    try {
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+
+      const counts = {
+        entityCounts: Object.fromEntries(this.entityCounts),
+        verbCounts: Object.fromEntries(this.verbCounts),
+        totalNounCount: this.totalNounCount,
+        totalVerbCount: this.totalVerbCount,
+        lastUpdated: new Date().toISOString()
+      }
+
+      await this.s3Client!.send(new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: countsKey,
+        Body: JSON.stringify(counts),
+        ContentType: 'application/json'
+      }))
+    } catch (error) {
+      console.error('Error persisting counts to S3:', error)
     }
   }
 }

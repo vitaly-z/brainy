@@ -38,6 +38,8 @@ export class MemoryStorage extends BaseStorage {
    * Save a noun to storage
    */
   protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
+    const isNew = !this.nouns.has(noun.id)
+
     // Create a deep copy to avoid reference issues
     const nounCopy: HNSWNoun = {
       id: noun.id,
@@ -54,6 +56,12 @@ export class MemoryStorage extends BaseStorage {
 
     // Save the noun directly in the nouns map
     this.nouns.set(noun.id, nounCopy)
+
+    // Update counts for new entities
+    if (isNew) {
+      const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
+      this.incrementEntityCount(type)
+    }
   }
 
   /**
@@ -246,6 +254,11 @@ export class MemoryStorage extends BaseStorage {
    * Delete a noun from storage
    */
   protected async deleteNoun_internal(id: string): Promise<void> {
+    const noun = this.nouns.get(id)
+    if (noun) {
+      const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
+      this.decrementEntityCount(type)
+    }
     this.nouns.delete(id)
   }
 
@@ -253,6 +266,8 @@ export class MemoryStorage extends BaseStorage {
    * Save a verb to storage
    */
   protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
+    const isNew = !this.verbs.has(verb.id)
+
     // Create a deep copy to avoid reference issues
     const verbCopy: HNSWVerb = {
       id: verb.id,
@@ -267,6 +282,9 @@ export class MemoryStorage extends BaseStorage {
 
     // Save the verb directly in the verbs map
     this.verbs.set(verb.id, verbCopy)
+
+    // Count tracking will be handled in saveVerbMetadata_internal
+    // since HNSWVerb doesn't contain type information
   }
 
   /**
@@ -496,7 +514,8 @@ export class MemoryStorage extends BaseStorage {
    * Delete a verb from storage
    */
   protected async deleteVerb_internal(id: string): Promise<void> {
-    // Delete the verb directly from the verbs map
+    // Count tracking will be handled when verb metadata is deleted
+    // since HNSWVerb doesn't contain type information
     this.verbs.delete(id)
   }
 
@@ -561,7 +580,14 @@ export class MemoryStorage extends BaseStorage {
    * Save verb metadata to storage (internal implementation)
    */
   protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
+    const isNew = !this.verbMetadata.has(id)
     this.verbMetadata.set(id, JSON.parse(JSON.stringify(metadata)))
+
+    // Update counts for new verbs
+    if (isNew) {
+      const type = metadata?.verb || metadata?.type || 'default'
+      this.incrementVerbCount(type)
+    }
   }
 
   /**
@@ -680,5 +706,36 @@ export class MemoryStorage extends BaseStorage {
     
     // Since this is in-memory, there's no need for fallback mechanisms
     // to check multiple storage locations
+  }
+
+  /**
+   * Initialize counts from in-memory storage - O(1) operation
+   */
+  protected async initializeCounts(): Promise<void> {
+    // For memory storage, initialize counts from current in-memory state
+    this.totalNounCount = this.nouns.size
+    this.totalVerbCount = this.verbMetadata.size
+
+    // Initialize type-based counts by scanning current data
+    this.entityCounts.clear()
+    this.verbCounts.clear()
+
+    for (const noun of this.nouns.values()) {
+      const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
+      this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
+    }
+
+    for (const verbMetadata of this.verbMetadata.values()) {
+      const type = verbMetadata?.verb || verbMetadata?.type || 'default'
+      this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
+    }
+  }
+
+  /**
+   * Persist counts to storage - no-op for memory storage
+   */
+  protected async persistCounts(): Promise<void> {
+    // No persistence needed for in-memory storage
+    // Counts are always accurate from the live data structures
   }
 }

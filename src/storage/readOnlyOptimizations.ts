@@ -9,9 +9,9 @@ import { HNSWNoun, Vector } from '../coreTypes.js'
 enum CompressionType {
   NONE = 'none',
   GZIP = 'gzip',
-  BROTLI = 'brotli',
   QUANTIZATION = 'quantization',
   HYBRID = 'hybrid'
+  // BROTLI removed - was not actually implemented
 }
 
 // Vector quantization methods
@@ -107,10 +107,7 @@ export class ReadOnlyOptimizations {
         compressedData = await this.gzipCompress(gzipBuffer.slice(0))
         break
         
-      case CompressionType.BROTLI:
-        const brotliBuffer = new Float32Array(vector).buffer
-        compressedData = await this.brotliCompress(brotliBuffer.slice(0))
-        break
+      // Brotli removed - was not implemented
         
       case CompressionType.HYBRID:
         // First quantize, then compress
@@ -151,9 +148,7 @@ export class ReadOnlyOptimizations {
         const gzipDecompressed = await this.gzipDecompress(compressedData)
         return Array.from(new Float32Array(gzipDecompressed))
         
-      case CompressionType.BROTLI:
-        const brotliDecompressed = await this.brotliDecompress(compressedData)
-        return Array.from(new Float32Array(brotliDecompressed))
+      // Brotli removed - was not implemented
         
       case CompressionType.HYBRID:
         const gzipStage = await this.gzipDecompress(compressedData)
@@ -302,22 +297,7 @@ export class ReadOnlyOptimizations {
     }
   }
 
-  /**
-   * Brotli compression (placeholder - similar to GZIP)
-   */
-  private async brotliCompress(data: ArrayBuffer): Promise<ArrayBuffer> {
-    // Would implement Brotli compression here
-    console.warn('Brotli compression not implemented, falling back to GZIP')
-    return this.gzipCompress(data)
-  }
-
-  /**
-   * Brotli decompression (placeholder)
-   */
-  private async brotliDecompress(compressedData: ArrayBuffer): Promise<ArrayBuffer> {
-    console.warn('Brotli decompression not implemented, falling back to GZIP')
-    return this.gzipDecompress(compressedData)
-  }
+  // Brotli methods removed - were not implemented
 
   /**
    * Create prebuilt index segments for faster loading
@@ -375,8 +355,7 @@ export class ReadOnlyOptimizations {
     switch (this.config.compression.metadataCompression) {
       case CompressionType.GZIP:
         return this.gzipCompress(data.buffer.slice(0) as ArrayBuffer)
-      case CompressionType.BROTLI:
-        return this.brotliCompress(data.buffer.slice(0) as ArrayBuffer)
+      // Brotli removed - was not implemented
       default:
         return data.buffer.slice(0) as ArrayBuffer
     }
@@ -437,9 +416,7 @@ export class ReadOnlyOptimizations {
       case CompressionType.GZIP:
         decompressed = await this.gzipDecompress(compressedData)
         break
-      case CompressionType.BROTLI:
-        decompressed = await this.brotliDecompress(compressedData)
-        break
+      // Brotli removed - was not implemented
       default:
         decompressed = compressedData
         break

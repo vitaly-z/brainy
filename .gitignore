@@ -62,6 +62,11 @@ TODO_PRIVATE.md
 
 # Strategy and planning documents (private)
 .strategy/
+PRODUCTION_*.md
+DISTRIBUTED_*.md
+*_ASSESSMENT.md
+*_ANALYSIS.md
+*_TRUTH*.md
 
 # Models (downloaded at runtime)
 models/

@@ -165,12 +165,29 @@ export function validateFindParams(params: FindParams): void {
 export function validateAddParams(params: AddParams): void {
   // Universal truth: must have data or vector
   if (!params.data && !params.vector) {
-    throw new Error('must provide either data or vector')
+    throw new Error(
+      `Invalid add() parameters: Missing required field 'data'\n` +
+      `\nReceived: ${JSON.stringify({
+        type: params.type,
+        hasMetadata: !!params.metadata,
+        hasId: !!params.id
+      }, null, 2)}\n` +
+      `\nExpected one of:\n` +
+      `  { data: 'text to store', type?: 'note', metadata?: {...} }\n` +
+      `  { vector: [0.1, 0.2, ...], type?: 'embedding', metadata?: {...} }\n` +
+      `\nExamples:\n` +
+      `  await brain.add({ data: 'Machine learning is AI', type: 'concept' })\n` +
+      `  await brain.add({ data: { title: 'Doc', content: '...' }, type: 'document' })`
+    )
   }
   
   // Validate noun type
   if (!Object.values(NounType).includes(params.type)) {
-    throw new Error(`invalid NounType: ${params.type}`)
+    throw new Error(
+      `Invalid NounType: '${params.type}'\n` +
+      `\nValid types: ${Object.values(NounType).join(', ')}\n` +
+      `\nExample: await brain.add({ data: 'text', type: NounType.Note })`
+    )
   }
   
   // Validate vector dimensions if provided
@@ -227,8 +244,10 @@ export function validateRelateParams(params: RelateParams): void {
     throw new Error('cannot create self-referential relationship')
   }
   
-  // Validate verb type
-  if (!Object.values(VerbType).includes(params.type)) {
+  // Validate verb type - default to RelatedTo if not specified
+  if (params.type === undefined) {
+    params.type = VerbType.RelatedTo
+  } else if (!Object.values(VerbType).includes(params.type)) {
     throw new Error(`invalid VerbType: ${params.type}`)
   }
   

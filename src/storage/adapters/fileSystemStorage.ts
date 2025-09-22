@@ -53,6 +53,13 @@ try {
  * Uses the file system to store data in the specified directory structure
  */
 export class FileSystemStorage extends BaseStorage {
+  // FileSystem-specific count persistence
+  private countsFilePath?: string // Will be set after init
+
+  // Intelligent sharding configuration
+  private readonly shardingDepth: number = 2 // 0=flat, 1=ab/, 2=ab/cd/
+  private readonly SHARDING_THRESHOLD = 1000 // Enable deep sharding at 1k files
+  private cachedShardingDepth?: number // Cache sharding depth for consistency
   private rootDir: string
   private nounsDir!: string
   private verbsDir!: string
@@ -64,6 +71,8 @@ export class FileSystemStorage extends BaseStorage {
   private lockDir!: string
   private useDualWrite: boolean = true  // Write to both locations during migration
   private activeLocks: Set<string> = new Set()
+  private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
+  private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
 
   /**
    * Initialize the storage adapter
@@ -140,6 +149,16 @@ export class FileSystemStorage extends BaseStorage {
       // Create the locks directory if it doesn't exist
       await this.ensureDirectoryExists(this.lockDir)
 
+      // Initialize count management
+      this.countsFilePath = path.join(this.systemDir, 'counts.json')
+      await this.initializeCounts()
+
+      // Cache sharding depth for consistency during this session
+      this.cachedShardingDepth = this.getOptimalShardingDepth()
+      // Log sharding strategy for transparency
+      const strategy = this.cachedShardingDepth === 0 ? 'flat' : this.cachedShardingDepth === 1 ? 'single-level' : 'deep'
+      console.log(`📁 Using ${strategy} sharding for optimal performance (${this.totalNounCount} items)`)
+
       this.isInitialized = true
     } catch (error) {
       console.error('Error initializing FileSystemStorage:', error)
@@ -179,6 +198,9 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
+    // Check if this is a new node to update counts
+    const isNew = !(await this.fileExists(this.getNodePath(node.id)))
+
     // Convert connections Map to a serializable format
     const serializableNode = {
       ...node,
@@ -187,11 +209,23 @@ export class FileSystemStorage extends BaseStorage {
       )
     }
 
-    const filePath = path.join(this.nounsDir, `${node.id}.json`)
+    const filePath = this.getNodePath(node.id)
+    await this.ensureDirectoryExists(path.dirname(filePath))
     await fs.promises.writeFile(
       filePath,
       JSON.stringify(serializableNode, null, 2)
     )
+
+    // Update counts for new nodes (intelligent type detection)
+    if (isNew) {
+      const type = node.metadata?.type || node.metadata?.nounType || 'default'
+      this.incrementEntityCount(type)
+
+      // Persist counts periodically (every 10 operations for efficiency)
+      if (this.totalNounCount % 10 === 0) {
+        await this.persistCounts()
+      }
+    }
   }
 
   /**
@@ -200,7 +234,8 @@ export class FileSystemStorage extends BaseStorage {
   protected async getNode(id: string): Promise<HNSWNode | null> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.nounsDir, `${id}.json`)
+    // Clean, predictable path - no backward compatibility needed
+    const filePath = this.getNodePath(id)
     try {
       const data = await fs.promises.readFile(filePath, 'utf-8')
       const parsedNode = JSON.parse(data)
@@ -317,9 +352,26 @@ export class FileSystemStorage extends BaseStorage {
   protected async deleteNode(id: string): Promise<void> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.nounsDir, `${id}.json`)
+    const filePath = this.getNodePath(id)
+
+    // Load node to get type for count update
+    try {
+      const node = await this.getNode(id)
+      if (node) {
+        const type = node.metadata?.type || node.metadata?.nounType || 'default'
+        this.decrementEntityCount(type)
+      }
+    } catch {
+      // Node might not exist, that's ok
+    }
+
     try {
       await fs.promises.unlink(filePath)
+
+      // Persist counts periodically
+      if (this.totalNounCount % 10 === 0) {
+        await this.persistCounts()
+      }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
         console.error(`Error deleting node file ${filePath}:`, error)
@@ -342,7 +394,8 @@ export class FileSystemStorage extends BaseStorage {
       )
     }
 
-    const filePath = path.join(this.verbsDir, `${edge.id}.json`)
+    const filePath = this.getVerbPath(edge.id)
+    await this.ensureDirectoryExists(path.dirname(filePath))
     await fs.promises.writeFile(
       filePath,
       JSON.stringify(serializableEdge, null, 2)
@@ -355,7 +408,7 @@ export class FileSystemStorage extends BaseStorage {
   protected async getEdge(id: string): Promise<Edge | null> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.verbsDir, `${id}.json`)
+    const filePath = this.getVerbPath(id)
     try {
       const data = await fs.promises.readFile(filePath, 'utf-8')
       const parsedEdge = JSON.parse(data)
@@ -614,9 +667,14 @@ export class FileSystemStorage extends BaseStorage {
       // Sort for consistent pagination
       nounFiles.sort()
       
-      // Find starting position
+      // Find starting position - prioritize offset for O(1) operation
       let startIndex = 0
-      if (cursor) {
+      const offset = (options as any).offset  // Cast to any since offset might not be in type
+      if (offset !== undefined) {
+        // Direct offset - O(1) operation
+        startIndex = offset
+      } else if (cursor) {
+        // Cursor-based pagination
         startIndex = nounFiles.findIndex((f: string) => f.replace('.json', '') > cursor)
         if (startIndex === -1) startIndex = nounFiles.length
       }
@@ -629,17 +687,11 @@ export class FileSystemStorage extends BaseStorage {
       let successfullyLoaded = 0
       let totalValidFiles = 0
 
-      // First pass: count total valid files (for accurate totalCount)
-      // This is necessary to fix the pagination bug
-      for (const file of nounFiles) {
-        try {
-          // Just check if file exists and is readable
-          await fs.promises.access(path.join(this.nounsDir, file), fs.constants.R_OK)
-          totalValidFiles++
-        } catch {
-          // File not readable, skip
-        }
-      }
+      // Use persisted counts - O(1) operation!
+      totalValidFiles = this.totalNounCount
+
+      // No need to count files anymore - we maintain accurate counts
+      // This eliminates the O(n) operation completely
 
       // Second pass: load the current page
       for (const file of pageFiles) {
@@ -1522,6 +1574,196 @@ export class FileSystemStorage extends BaseStorage {
       totalMetadata: Math.max(storageStats.totalMetadata || 0, localStats.totalMetadata || 0),
       operations: storageStats.operations || localStats.operations,
       lastUpdated: new Date().toISOString()
+    }
+  }
+
+  // =============================================
+  // Count Management for O(1) Scalability
+  // =============================================
+
+  /**
+   * Initialize counts from filesystem storage
+   */
+  protected async initializeCounts(): Promise<void> {
+    if (!this.countsFilePath) return
+
+    try {
+      if (await this.fileExists(this.countsFilePath)) {
+        const data = await fs.promises.readFile(this.countsFilePath, 'utf-8')
+        const counts = JSON.parse(data)
+
+        // Restore entity counts
+        this.entityCounts = new Map(Object.entries(counts.entityCounts || {}))
+        this.verbCounts = new Map(Object.entries(counts.verbCounts || {}))
+        this.totalNounCount = counts.totalNounCount || 0
+        this.totalVerbCount = counts.totalVerbCount || 0
+
+        // Also populate the cache for backward compatibility
+        this.countCache.set('nouns_count', {
+          count: this.totalNounCount,
+          timestamp: Date.now()
+        })
+        this.countCache.set('verbs_count', {
+          count: this.totalVerbCount,
+          timestamp: Date.now()
+        })
+      } else {
+        // If no counts file exists, do one initial count
+        await this.initializeCountsFromDisk()
+      }
+    } catch (error) {
+      console.warn('Could not load persisted counts, will initialize from disk:', error)
+      await this.initializeCountsFromDisk()
+    }
+  }
+
+  /**
+   * Initialize counts by scanning disk (only done once)
+   */
+  private async initializeCountsFromDisk(): Promise<void> {
+    try {
+      // Count nouns
+      const nounFiles = await fs.promises.readdir(this.nounsDir)
+      const validNounFiles = nounFiles.filter((f: string) => f.endsWith('.json'))
+      this.totalNounCount = validNounFiles.length
+
+      // Count verbs
+      const verbFiles = await fs.promises.readdir(this.verbsDir)
+      const validVerbFiles = verbFiles.filter((f: string) => f.endsWith('.json'))
+      this.totalVerbCount = validVerbFiles.length
+
+      // Sample some files to get type distribution (don't read all)
+      const sampleSize = Math.min(100, validNounFiles.length)
+      for (let i = 0; i < sampleSize; i++) {
+        try {
+          const file = validNounFiles[i]
+          const data = await fs.promises.readFile(
+            path.join(this.nounsDir, file),
+            'utf-8'
+          )
+          const noun = JSON.parse(data)
+          const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
+          this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
+        } catch {
+          // Skip invalid files
+        }
+      }
+
+      // Extrapolate counts if we sampled
+      if (sampleSize < this.totalNounCount && sampleSize > 0) {
+        const multiplier = this.totalNounCount / sampleSize
+        for (const [type, count] of this.entityCounts.entries()) {
+          this.entityCounts.set(type, Math.round(count * multiplier))
+        }
+      }
+
+      await this.persistCounts()
+    } catch (error) {
+      console.error('Error initializing counts from disk:', error)
+    }
+  }
+
+  /**
+   * Persist counts to filesystem storage
+   */
+  protected async persistCounts(): Promise<void> {
+    if (!this.countsFilePath) return
+
+    try {
+      const counts = {
+        entityCounts: Object.fromEntries(this.entityCounts),
+        verbCounts: Object.fromEntries(this.verbCounts),
+        totalNounCount: this.totalNounCount,
+        totalVerbCount: this.totalVerbCount,
+        lastUpdated: new Date().toISOString()
+      }
+
+      await fs.promises.writeFile(
+        this.countsFilePath,
+        JSON.stringify(counts, null, 2)
+      )
+    } catch (error) {
+      console.error('Error persisting counts:', error)
+    }
+  }
+
+
+
+  // =============================================
+  // Intelligent Directory Sharding
+  // =============================================
+
+  /**
+   * Determine optimal sharding depth based on dataset size
+   * This is called once during initialization for consistent behavior
+   */
+  private getOptimalShardingDepth(): number {
+    // For new installations, use intelligent defaults
+    if (this.totalNounCount === 0 && this.totalVerbCount === 0) {
+      return 1 // Default to single-level sharding for new installs
+    }
+
+    const maxCount = Math.max(this.totalNounCount, this.totalVerbCount)
+
+    if (maxCount >= this.SHARDING_THRESHOLD) {
+      return 2 // Deep sharding for large datasets
+    } else if (maxCount >= 100) {
+      return 1 // Single-level sharding for medium datasets
+    } else {
+      return 1 // Always use at least single-level sharding for consistency
+    }
+  }
+
+  /**
+   * Get the path for a node with consistent sharding strategy
+   * Clean, predictable path generation
+   */
+  private getNodePath(id: string): string {
+    return this.getShardedPath(this.nounsDir, id)
+  }
+
+  /**
+   * Get the path for a verb with consistent sharding strategy
+   */
+  private getVerbPath(id: string): string {
+    return this.getShardedPath(this.verbsDir, id)
+  }
+
+  /**
+   * Universal sharded path generator
+   * Consistent across all entity types
+   */
+  private getShardedPath(baseDir: string, id: string): string {
+    const depth = this.cachedShardingDepth ?? this.getOptimalShardingDepth()
+
+    switch (depth) {
+      case 0:
+        // Flat structure: /nouns/uuid.json
+        return path.join(baseDir, `${id}.json`)
+
+      case 1:
+        // Single-level sharding: /nouns/ab/uuid.json
+        const shard1 = id.substring(0, 2)
+        return path.join(baseDir, shard1, `${id}.json`)
+
+      case 2:
+      default:
+        // Deep sharding: /nouns/ab/cd/uuid.json
+        const shard1Deep = id.substring(0, 2)
+        const shard2Deep = id.substring(2, 4)
+        return path.join(baseDir, shard1Deep, shard2Deep, `${id}.json`)
+    }
+  }
+
+  /**
+   * Check if a file exists (handles both sharded and non-sharded)
+   */
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.promises.access(filePath, fs.constants.F_OK)
+      return true
+    } catch {
+      return false
     }
   }
 }

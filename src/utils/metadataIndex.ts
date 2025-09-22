@@ -112,16 +112,41 @@ export class MetadataIndexManager {
       indexedFields: config.indexedFields ?? [],
       excludeFields: config.excludeFields ?? ['id', 'createdAt', 'updatedAt', 'embedding', 'vector', 'embeddings', 'vectors']
     }
-    
+
     // Initialize metadata cache with similar config to search cache
     this.metadataCache = new MetadataIndexCache({
       maxAge: 5 * 60 * 1000, // 5 minutes
       maxSize: 500,          // 500 entries (field indexes + value chunks)
       enabled: true
     })
-    
+
     // Get global unified cache for coordinated memory management
     this.unifiedCache = getGlobalCache()
+
+    // Lazy load counts from storage statistics on first access
+    this.lazyLoadCounts()
+  }
+
+  /**
+   * Lazy load entity counts from storage statistics (O(1) operation)
+   * This avoids rebuilding the entire index on startup
+   */
+  private async lazyLoadCounts(): Promise<void> {
+    try {
+      // Get statistics from storage (should be O(1) with our FileSystemStorage improvements)
+      const stats = await this.storage.getStatistics()
+      if (stats && stats.nounCount) {
+        // Populate entity counts from storage statistics
+        for (const [type, count] of Object.entries(stats.nounCount)) {
+          if (typeof count === 'number' && count > 0) {
+            this.totalEntitiesByType.set(type, count)
+          }
+        }
+      }
+    } catch (error) {
+      // Silently fail - counts will be populated as entities are added
+      // This maintains zero-configuration principle
+    }
   }
 
   /**

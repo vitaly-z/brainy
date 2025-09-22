@@ -25,6 +25,9 @@ export class HNSWIndex {
   private nouns: Map<string, HNSWNoun> = new Map()
   private entryPointId: string | null = null
   private maxLevel = 0
+  // Track high-level nodes for O(1) entry point selection
+  private highLevelNodes = new Map<number, Set<string>>() // level -> node IDs
+  private readonly MAX_TRACKED_LEVELS = 10 // Only track top levels for memory efficiency
   private config: HNSWConfig
   private distanceFunction: DistanceFunction
   private dimension: number | null = null
@@ -272,6 +275,15 @@ export class HNSWIndex {
 
     // Add noun to the index
     this.nouns.set(id, noun)
+
+    // Track high-level nodes for O(1) entry point selection
+    if (nounLevel >= 2 && nounLevel <= this.MAX_TRACKED_LEVELS) {
+      if (!this.highLevelNodes.has(nounLevel)) {
+        this.highLevelNodes.set(nounLevel, new Set())
+      }
+      this.highLevelNodes.get(nounLevel)!.add(id)
+    }
+
     return id
   }
 

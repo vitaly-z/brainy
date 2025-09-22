@@ -164,8 +164,8 @@ export class ImprovedNeuralAPI {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new SimilarityError(`Failed to calculate similarity: ${errorMessage}`, {
-        inputA: typeof a === 'object' ? 'vector' : String(a).substring(0, 50),
-        inputB: typeof b === 'object' ? 'vector' : String(b).substring(0, 50),
+        inputA: Array.isArray(a) ? 'vector' : typeof a === 'string' ? a.substring(0, 50) : 'unknown',
+        inputB: Array.isArray(b) ? 'vector' : typeof b === 'string' ? b.substring(0, 50) : 'unknown',
         options
       })
     }
@@ -1463,9 +1463,9 @@ export class ImprovedNeuralAPI {
 
   // Utility methods for internal operations
   private _isId(value: any): boolean {
-    return typeof value === 'string' && 
-           (value.length === 36 && value.includes('-')) || // UUID-like
-           (value.length > 10 && !value.includes(' ')) // ID-like string
+    return typeof value === 'string' &&
+           ((value.length === 36 && value.includes('-')) || // UUID-like
+            (value.length > 10 && !value.includes(' '))) // ID-like string
   }
 
   private _isVector(value: any): boolean {
@@ -1790,31 +1790,77 @@ export class ImprovedNeuralAPI {
     return groups
   }
 
-  // Placeholder implementations for complex operations
-  private async _getAllItemIds(): Promise<string[]> {
-    // Get all noun IDs from the brain
-    // Get total item count using find with empty query
-    const allItems = await this.brain.find({ query: '', limit: Number.MAX_SAFE_INTEGER })
-    const stats = { totalNouns: allItems.length || 0 }
-    if (!stats.totalNouns || stats.totalNouns === 0) {
-      return []
+  // Iterator-based implementations for scalability
+  /**
+   * Iterate through all items without loading them all at once
+   * This scales to millions of items without memory issues
+   */
+  private async *_iterateAllItems(options?: { batchSize?: number }): AsyncGenerator<any> {
+    const batchSize = options?.batchSize || 1000
+    let cursor: string | undefined
+    let hasMore = true
+
+    while (hasMore) {
+      const result = await this.brain.find({
+        query: '',
+        limit: batchSize,
+        cursor
+      })
+
+      for (const item of result.items || result) {
+        yield item
+      }
+
+      hasMore = result.hasMore || false
+      cursor = result.nextCursor
+
+      // Safety check to prevent infinite loops
+      if (!result.items || result.items.length === 0) {
+        break
+      }
     }
-    
-    // Get nouns with pagination (limit to 10000 for performance)
-    const limit = Math.min(stats.totalNouns, 10000)
-    const result = await this.brain.find({
-      query: '',
-      limit
-    })
-    
-    return result.map((item: any) => item.id).filter((id: any) => id)
   }
 
+  /**
+   * Get a sample of item IDs for operations that don't need all items
+   * This is O(1) for small samples
+   */
+  private async _getSampleItemIds(sampleSize: number = 1000): Promise<string[]> {
+    const result = await this.brain.find({
+      query: '',
+      limit: Math.min(sampleSize, 10000)  // Cap at 10k for safety
+    })
+
+    const items = result.items || result
+    return items.map((item: any) => item.entity?.id || item.id).filter((id: any) => id)
+  }
+
+  /**
+   * Get total count using the brain's O(1) counting API
+   */
   private async _getTotalItemCount(): Promise<number> {
-    // Get total item count using find with empty query
-    const allItems = await this.brain.find({ query: '', limit: Number.MAX_SAFE_INTEGER })
-    const stats = { totalNouns: allItems.length || 0 }
-    return stats.totalNouns || 0
+    // Use the brain's O(1) counting API if available
+    if (this.brain.counts && typeof this.brain.counts.entities === 'function') {
+      return await this.brain.counts.entities()
+    }
+
+    // Fallback: Get from storage statistics
+    const storage = (this.brain as any).storage
+    if (storage && typeof storage.getStatistics === 'function') {
+      const stats = await storage.getStatistics()
+      return stats?.totalNodes || 0
+    }
+
+    // Last resort: Sample and estimate
+    const sample = await this.brain.find({ query: '', limit: 1 })
+    return sample.totalCount || 0
+  }
+
+  // Deprecated: Remove methods that load everything
+  // These are kept for backward compatibility but should not be used
+  private async _getAllItemIds(): Promise<string[]> {
+    console.warn('⚠️ _getAllItemIds() is deprecated and will fail with large datasets. Use _iterateAllItems() or _getSampleItemIds() instead.')
+    return this._getSampleItemIds(10000)  // Return sample only
   }
 
   // ===== GRAPH ALGORITHM SUPPORTING METHODS =====
