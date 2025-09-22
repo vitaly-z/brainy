@@ -5,7 +5,7 @@ This guide will help you get up and running with Brainy, the multi-dimensional A
 ## Installation
 
 ```bash
-npm install brainy
+npm install @soulcraft/brainy
 ```
 
 ## Basic Setup
@@ -13,7 +13,7 @@ npm install brainy
 ### Simple Initialization
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { BrainyData } from '@soulcraft/brainy'
 
 // Create a new Brainy instance with defaults
 const brain = new BrainyData()

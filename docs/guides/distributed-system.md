@@ -2,7 +2,7 @@
 
 ## Overview
 
-Brainy 3.0 introduces a groundbreaking **zero-configuration distributed system** that transforms how vector databases scale. Unlike traditional distributed databases that require complex setup (Consul, etcd, Zookeeper), Brainy uses your existing storage (S3, GCS, R2) as the coordination layer.
+Brainy introduces a groundbreaking **zero-configuration distributed system** that transforms how vector databases scale. Unlike traditional distributed databases that require complex setup (Consul, etcd, Zookeeper), Brainy uses your existing storage (S3, GCS, R2) as the coordination layer.
 
 ## Key Innovation: Storage-Based Coordination
 

@@ -9,7 +9,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
-**🧠 Brainy 3.0 - Universal Knowledge Protocol™**
+**🧠 Brainy - Universal Knowledge Protocol™**
 
 **World's first Triple Intelligence™ database** unifying vector similarity, graph relationships, and document filtering in one magical API. **Framework-friendly design** works seamlessly with Next.js, React, Vue, Angular, and any modern JavaScript framework.
 
@@ -17,7 +17,7 @@
 
 **Framework-first design.** Built for modern web development with zero configuration and automatic framework compatibility. O(log n) performance, <10ms search latency, production-ready.
 
-## 🎉 What's New in 3.0
+## 🎉 Key Features
 
 ### 🧠 **Triple Intelligence™ Engine**
 
@@ -49,7 +49,7 @@ npm install @soulcraft/brainy
 ### 🎯 **True Zero Configuration**
 
 ```javascript
-import {Brainy} from '@soulcraft/brainy'
+import { Brainy, NounType } from '@soulcraft/brainy'
 
 // Just this - auto-detects everything!
 const brain = new Brainy()
@@ -58,7 +58,7 @@ await brain.init()
 // Add entities with automatic embedding
 const jsId = await brain.add({
     data: "JavaScript is a programming language",
-    type: "concept",
+    nounType: NounType.Concept,
     metadata: {
         type: "language",
         year: 1995,
@@ -68,7 +68,7 @@ const jsId = await brain.add({
 
 const nodeId = await brain.add({
     data: "Node.js runtime environment",
-    type: "concept",
+    nounType: NounType.Concept,
     metadata: {
         type: "runtime",
         year: 2009,
@@ -100,7 +100,7 @@ const filtered = await brain.find({
 
 ## 🌐 Framework Integration
 
-**Brainy 3.0 is framework-first!** Works seamlessly with any modern JavaScript framework:
+**Brainy is framework-first!** Works seamlessly with any modern JavaScript framework:
 
 ### ⚛️ **React & Next.js**
 ```javascript
@@ -194,7 +194,7 @@ If using nvm: `nvm use` (we provide a `.nvmrc` file)
 
 **Enabled by Triple Intelligence, standardized for everyone:**
 
-- **24 Noun Types × 40 Verb Types**: 960 base combinations
+- **31 Noun Types × 40 Verb Types**: 1,240 base combinations
 - **∞ Expressiveness**: Unlimited metadata = model ANY data
 - **One Language**: All tools, augmentations, AI models speak the same types
 - **Perfect Interoperability**: Move data between any Brainy instance
@@ -211,10 +211,10 @@ await brain.find("Documentation about authentication from last month")
 
 ### 🎯 Zero Configuration Philosophy
 
-Brainy 3.0 automatically configures **everything**:
+Brainy automatically configures **everything**:
 
 ```javascript
-import {Brainy} from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // 1. Pure zero-config - detects everything
 const brain = new Brainy()
@@ -368,6 +368,8 @@ const brain = new Brainy({
 ### Real-World Example: Social Media Firehose
 
 ```javascript
+import { Brainy, NounType } from '@soulcraft/brainy'
+
 // Ingestion nodes (optimized for writes)
 const ingestionNode = new Brainy({
     storage: {type: 's3', options: {bucket: 'social-data'}},
@@ -378,7 +380,7 @@ const ingestionNode = new Brainy({
 // Process Bluesky firehose
 blueskyStream.on('post', async (post) => {
     await ingestionNode.add(post, {
-        nounType: 'social-post',
+        nounType: NounType.Message,
         platform: 'bluesky',
         author: post.author,
         timestamp: post.createdAt
@@ -417,21 +419,19 @@ const trending = await searchNode.find('trending AI topics', {
 ```javascript
 // Store documentation with rich relationships
 const apiGuide = await brain.add("REST API Guide", {
-    nounType: 'document',
+    nounType: NounType.Document,
     title: "API Guide",
     category: "documentation",
     version: "2.0"
 })
 
 const author = await brain.add("Jane Developer", {
-    nounType: 'person',
-    type: "person",
+    nounType: NounType.Person,
     role: "tech-lead"
 })
 
 const project = await brain.add("E-commerce Platform", {
-    nounType: 'project',
-    type: "project",
+    nounType: NounType.Project,
     status: "active"
 })
 
@@ -462,21 +462,18 @@ const similar = await brain.search(existingContent, {
 ```javascript
 // Store conversation with relationships
 const userId = await brain.add("User 123", {
-    nounType: 'user',
-    type: "user",
+    nounType: NounType.User,
     tier: "premium"
 })
 
 const messageId = await brain.add(userMessage, {
-    nounType: 'message',
-    type: "message",
+    nounType: NounType.Message,
     timestamp: Date.now(),
     session: "abc"
 })
 
 const topicId = await brain.add("Product Support", {
-    nounType: 'topic',
-    type: "topic",
+    nounType: NounType.Topic,
     category: "support"
 })
 
@@ -602,7 +599,7 @@ for (const cluster of feedbackClusters) {
 }
 
 // Find related documents
-const docId = await brain.add("Machine learning guide", { nounType: 'document' })
+const docId = await brain.add("Machine learning guide", { nounType: NounType.Document })
 const similar = await neural.neighbors(docId, 5)
 // Returns 5 most similar documents
 
@@ -637,7 +634,7 @@ Brainy includes enterprise-grade capabilities at no extra cost. **No premium tie
 - **Built-in monitoring** with metrics and health checks
 - **Production ready** with circuit breakers and backpressure
 
-📖 **Enterprise features coming in Brainy 3.1** - Stay tuned!
+📖 **More enterprise features coming soon** - Stay tuned!
 
 ## 📊 Benchmarks
 
@@ -651,13 +648,14 @@ Brainy includes enterprise-grade capabilities at no extra cost. **No premium tie
 | Bulk Import (1000 items)         | 2.3s        | +8MB     |
 | **Production Scale (10M items)** | **5.8ms**   | **12GB** |
 
-## 🔄 Migration from 2.x
+## 🔄 Migration from Previous Versions
 
-Key changes for upgrading to 3.0:
+Key changes in the latest version:
 
 - Search methods consolidated into `search()` and `find()`
 - Result format now includes full objects with metadata
-- New natural language capabilities
+- Enhanced natural language capabilities
+- Distributed architecture support
 
 ## 🤝 Contributing
 
@@ -678,10 +676,10 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ### The Math of Infinite Expressiveness
 
 ```
-24 Nouns × 40 Verbs × ∞ Metadata × Triple Intelligence = Universal Protocol
+31 Nouns × 40 Verbs × ∞ Metadata × Triple Intelligence = Universal Protocol
 ```
 
-- **960 base combinations** from standardized types
+- **1,240 base combinations** from standardized types
 - **∞ domain specificity** via unlimited metadata
 - **∞ relationship depth** via graph traversal
 - **= Model ANYTHING**: From quantum physics to social networks

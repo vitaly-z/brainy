@@ -5,7 +5,7 @@ Get up and running with Brainy in 5 minutes!
 ## Installation
 
 ```bash
-npm install brainy
+npm install @soulcraft/brainy
 ```
 
 Or install globally for CLI access:
@@ -18,7 +18,7 @@ npm install -g brainy
 ### 1. Initialize Brainy
 
 ```javascript
-import { BrainyData } from 'brainy'
+import { BrainyData, NounType } from '@soulcraft/brainy'
 
 const brain = new BrainyData()
 await brain.init()
@@ -34,11 +34,11 @@ That's it! No configuration needed. Brainy automatically:
 
 ```javascript
 // Add a simple string
-await brain.add("JavaScript is a versatile programming language", { nounType: 'concept' })
+await brain.add("JavaScript is a versatile programming language", { nounType: NounType.Concept })
 
 // Add with metadata
 await brain.add("React is a JavaScript library", {
-  nounType: 'concept',
+  nounType: NounType.Concept,
   type: "library",
   category: "frontend",
   popularity: "high"
@@ -50,7 +50,7 @@ await brain.add({
   content: "TypeScript adds static typing to JavaScript",
   author: "John Doe"
 }, {
-  nounType: 'document',
+  nounType: NounType.Document,
   type: "article",
   date: "2024-01-15"
 })
@@ -77,11 +77,11 @@ const libraries = await brain.search("JavaScript", {
 ### Example 1: Document Search System
 
 ```javascript
-import { BrainyData } from 'brainy'
+import { BrainyData, NounType } from '@soulcraft/brainy'
 import fs from 'fs'
 
 const brain = new BrainyData({
-  storage: { 
+  storage: {
     type: 'filesystem',
     path: './document-index'
   }
@@ -97,6 +97,7 @@ const documents = [
 
 for (const doc of documents) {
   await brain.add(doc.content, {
+    nounType: NounType.Document,
     filename: doc.file,
     type: 'documentation',
     indexed: new Date().toISOString()
@@ -112,7 +113,7 @@ results.forEach(r => console.log(`- ${r.metadata.filename} (${(r.score * 100).to
 ### Example 2: AI Chat with Memory
 
 ```javascript
-import { BrainyData } from 'brainy'
+import { BrainyData, NounType } from '@soulcraft/brainy'
 
 const brain = new BrainyData()
 await brain.init()
@@ -125,6 +126,7 @@ class ChatWithMemory {
   
   async addMessage(role, content) {
     await this.brain.add(content, {
+      nounType: NounType.Message,
       role,
       sessionId: this.sessionId,
       timestamp: Date.now()
@@ -164,7 +166,7 @@ const response = await chat.chat("What did we discuss about JavaScript?")
 ### Example 3: Semantic Code Search
 
 ```javascript
-import { BrainyData } from 'brainy'
+import { BrainyData, NounType } from '@soulcraft/brainy'
 import { glob } from 'glob'
 import fs from 'fs'
 
@@ -180,6 +182,7 @@ for (const file of files) {
   const functions = content.match(/function\s+(\w+)|const\s+(\w+)\s*=/g) || []
   
   await brain.add(content, {
+    nounType: NounType.File,
     file,
     type: 'code',
     language: 'javascript',
