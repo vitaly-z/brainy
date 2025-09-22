@@ -18,6 +18,7 @@ build/
 
 # Runtime data
 brainy-data/
+.brainy/
 *.log
 *.pid
 *.seed
