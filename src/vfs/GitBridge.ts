@@ -387,8 +387,41 @@ export class GitBridge {
     options?: ExportOptions
   ): Promise<void> {
     // Get all relationships for files in the VFS path
-    // This would query Brainy for relationships
     const relationships: any[] = []
+
+    try {
+      // Get relationships for the specified path and its children
+      const related = await this.vfs.getRelated(vfsPath)
+      if (related && related.length > 0) {
+        relationships.push({
+          path: vfsPath,
+          relationships: related
+        })
+      }
+
+      // If it's a directory, get relationships for all files within
+      const stats = await this.vfs.stat(vfsPath)
+      if (stats.isDirectory()) {
+        const files = await this.vfs.readdir(vfsPath, { recursive: true })
+        for (const file of files) {
+          const fileName = typeof file === 'string' ? file : file.name
+          const fullPath = path.join(vfsPath, fileName)
+          try {
+            const fileRelated = await this.vfs.getRelated(fullPath)
+            if (fileRelated && fileRelated.length > 0) {
+              relationships.push({
+                path: fullPath,
+                relationships: fileRelated
+              })
+            }
+          } catch (err) {
+            // Skip files without relationships
+          }
+        }
+      }
+    } catch (err) {
+      // Path might not have relationships
+    }
 
     // Write relationships file
     const relationshipsPath = path.join(gitRepoPath, '.vfs-relationships.json')
@@ -407,7 +440,19 @@ export class GitBridge {
     const history = {
       exportedAt: Date.now(),
       vfsPath,
-      events: []  // Would contain VFS events
+      events: [] as any[]
+    }
+
+    // Get history if Knowledge Layer is enabled
+    if ('getHistory' in this.vfs && typeof (this.vfs as any).getHistory === 'function') {
+      try {
+        const events = await (this.vfs as any).getHistory(vfsPath)
+        if (events) {
+          history.events = events
+        }
+      } catch (err) {
+        // Knowledge Layer might not be enabled
+      }
     }
 
     // Write history file

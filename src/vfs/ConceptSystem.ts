@@ -680,7 +680,7 @@ export class ConceptSystem {
         concept.description || '',
         concept.domain,
         concept.category,
-        ...concept.keywords
+        ...(Array.isArray(concept.keywords) ? concept.keywords : [])
       ].join(' ')
 
       return await this.generateTextEmbedding(text)

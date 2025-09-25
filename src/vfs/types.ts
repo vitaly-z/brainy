@@ -426,6 +426,8 @@ export interface IVirtualFileSystem {
   getTodos(path: string): Promise<VFSTodo[] | undefined>
   setTodos(path: string, todos: VFSTodo[]): Promise<void>
   addTodo(path: string, todo: VFSTodo): Promise<void>
+  getMetadata(path: string): Promise<VFSMetadata | undefined>
+  setMetadata(path: string, metadata: Partial<VFSMetadata>): Promise<void>
 
   // Streaming (returns Node.js compatible streams)
   createReadStream(path: string, options?: ReadStreamOptions): NodeJS.ReadableStream

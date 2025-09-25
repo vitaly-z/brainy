@@ -187,7 +187,7 @@ export class EmbeddingManager {
   async embed(text: string | string[]): Promise<Vector> {
     // Check for unit test environment - use mocks to prevent ONNX conflicts
     const isTestMode = process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__
-    
+
     if (isTestMode) {
       // Production safeguard
       if (process.env.NODE_ENV === 'production') {
@@ -195,16 +195,26 @@ export class EmbeddingManager {
       }
       return this.getMockEmbedding(text)
     }
-    
+
     // Ensure initialized
     await this.init()
-    
+
     if (!this.model) {
       throw new Error('Model not initialized')
     }
-    
-    // Handle array input
-    const input = Array.isArray(text) ? text.join(' ') : text
+
+    // CRITICAL FIX: Ensure input is always a string
+    let input: string
+    if (Array.isArray(text)) {
+      // Join array elements, converting each to string first
+      input = text.map(t => typeof t === 'string' ? t : String(t)).join(' ')
+    } else if (typeof text === 'string') {
+      input = text
+    } else {
+      // This shouldn't happen but let's be defensive
+      console.warn('EmbeddingManager.embed received non-string input:', typeof text)
+      input = String(text)
+    }
     
     // Generate embedding
     const output = await this.model(input, {

@@ -52,50 +52,48 @@ export class KnowledgeLayer {
       // Call original VFS method first
       const result = await originalWriteFile(path, data, options)
 
-      // TEMPORARY: Disable background processing for debugging
-      if (process.env.ENABLE_KNOWLEDGE_PROCESSING === 'true') {
-        setImmediate(async () => {
+      // Process in background (non-blocking)
+      setImmediate(async () => {
+        try {
+          const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
+
+          // 1. Record the event
+          await this.eventRecorder.recordEvent({
+            type: 'write',
+            path,
+            content: buffer,
+            size: buffer.length,
+            author: options?.author || 'system'
+          })
+
+          // 2. Check for semantic versioning
           try {
-            const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
-
-            // 1. Record the event
-            await this.eventRecorder.recordEvent({
-              type: 'write',
-              path,
-              content: buffer,
-              size: buffer.length,
-              author: options?.author || 'system'
-            })
-
-            // 2. Check for semantic versioning
-            try {
-              const existingContent = await this.vfs.readFile(path).catch(() => null)
-              if (existingContent) {
-                const shouldVersion = await this.semanticVersioning.shouldVersion(existingContent, buffer)
-                if (shouldVersion) {
-                  await this.semanticVersioning.createVersion(path, buffer, {
-                    message: options?.message || 'Automatic semantic version'
-                  })
-                }
+            const existingContent = await this.vfs.readFile(path).catch(() => null)
+            if (existingContent) {
+              const shouldVersion = await this.semanticVersioning.shouldVersion(existingContent, buffer)
+              if (shouldVersion) {
+                await this.semanticVersioning.createVersion(path, buffer, {
+                  message: options?.message || 'Automatic semantic version'
+                })
               }
-            } catch (err) {
-              console.debug('Versioning check failed:', err)
             }
-
-            // 3. Extract entities
-            if (options?.extractEntities !== false) {
-              await this.entitySystem.extractEntities(path, buffer)
-            }
-
-            // 4. Extract concepts
-            if (options?.extractConcepts !== false) {
-              await this.conceptSystem.extractAndLinkConcepts(path, buffer)
-            }
-          } catch (error) {
-            console.debug('Knowledge Layer processing error:', error)
+          } catch (err) {
+            console.debug('Versioning check failed:', err)
           }
-        })
-      }
+
+          // 3. Extract entities
+          if (options?.extractEntities !== false) {
+            await this.entitySystem.extractEntities(path, buffer)
+          }
+
+          // 4. Extract concepts
+          if (options?.extractConcepts !== false) {
+            await this.conceptSystem.extractAndLinkConcepts(path, buffer)
+          }
+        } catch (error) {
+          console.debug('Knowledge Layer processing error:', error)
+        }
+      })
 
       return result
     }
@@ -234,6 +232,139 @@ export class KnowledgeLayer {
     // Temporal coupling
     (this.vfs as any).findTemporalCoupling = async (path: string, windowMs?: number) => {
       return await this.eventRecorder.findTemporalCoupling(path, windowMs)
+    }
+
+    // Entity convenience methods that wrap Brainy's core API
+    (this.vfs as any).linkEntities = async (fromEntity: string | any, toEntity: string | any, relationship: string) => {
+      // Handle both entity IDs and entity objects
+      const fromId = typeof fromEntity === 'string' ? fromEntity : fromEntity.id
+      const toId = typeof toEntity === 'string' ? toEntity : toEntity.id
+
+      // Use brain.relate to create the relationship
+      return await this.brain.relate({
+        from: fromId,
+        to: toId,
+        type: relationship as any  // VerbType or string
+      })
+    }
+
+    // Find where an entity appears across files
+    (this.vfs as any).findEntityOccurrences = async (entityId: string) => {
+      const occurrences: Array<{ path: string, context?: string }> = []
+
+      // Search for files that contain references to this entity
+      // First, get all relationships where this entity is involved
+      const relations = await this.brain.getRelations({ from: entityId })
+      const toRelations = await this.brain.getRelations({ to: entityId })
+
+      // Find file entities that relate to this entity
+      for (const rel of [...relations, ...toRelations]) {
+        try {
+          // Check if the related entity is a file
+          const relatedId = rel.from === entityId ? rel.to : rel.from
+          const entity = await this.brain.get(relatedId)
+
+          if (entity?.metadata?.vfsType === 'file' && entity?.metadata?.path) {
+            occurrences.push({
+              path: entity.metadata.path as string,
+              context: entity.data ? entity.data.toString().substring(0, 200) : undefined
+            })
+          }
+        } catch (error) {
+          // Entity might not exist, continue
+        }
+      }
+
+      // Also search for files that mention the entity name in their content
+      const entityData = await this.brain.get(entityId)
+      if (entityData?.metadata?.name) {
+        const searchResults = await this.brain.find({
+          query: entityData.metadata.name as string,
+          where: { vfsType: 'file' },
+          limit: 20
+        })
+
+        for (const result of searchResults) {
+          if (result.entity?.metadata?.path && !occurrences.some(o => o.path === result.entity.metadata.path)) {
+            occurrences.push({
+              path: result.entity.metadata.path as string,
+              context: result.entity.data ? result.entity.data.toString().substring(0, 200) : undefined
+            })
+          }
+        }
+      }
+
+      return occurrences
+    }
+
+    // Update an entity (convenience wrapper)
+    (this.vfs as any).updateEntity = async (entityId: string, updates: any) => {
+      // Get current entity from brain
+      const currentEntity = await this.brain.get(entityId)
+      if (!currentEntity) {
+        throw new Error(`Entity ${entityId} not found`)
+      }
+
+      // Merge updates
+      const updatedMetadata = {
+        ...currentEntity.metadata,
+        ...updates,
+        lastUpdated: Date.now(),
+        version: ((currentEntity.metadata?.version as number) || 0) + 1
+      }
+
+      // Update via brain
+      await this.brain.update({
+        id: entityId,
+        data: JSON.stringify(updatedMetadata),
+        metadata: updatedMetadata
+      })
+
+      return entityId
+    }
+
+    // Get entity graph (convenience wrapper)
+    (this.vfs as any).getEntityGraph = async (entityId: string, options?: { depth?: number }) => {
+      const depth = options?.depth || 2
+      const graph = { nodes: new Map(), edges: [] as any[] }
+      const visited = new Set<string>()
+
+      const traverse = async (id: string, currentDepth: number) => {
+        if (visited.has(id) || currentDepth > depth) return
+        visited.add(id)
+
+        // Add node
+        const entity = await this.brain.get(id)
+        if (entity) {
+          graph.nodes.set(id, entity)
+        }
+
+        // Get relationships
+        const relations = await this.brain.getRelations({ from: id })
+        const toRelations = await this.brain.getRelations({ to: id })
+
+        for (const rel of [...relations, ...toRelations]) {
+          graph.edges.push(rel)
+
+          // Traverse connected nodes
+          if (currentDepth < depth) {
+            const nextId = rel.from === id ? rel.to : rel.from
+            await traverse(nextId, currentDepth + 1)
+          }
+        }
+      }
+
+      await traverse(entityId, 0)
+
+      return {
+        nodes: Array.from(graph.nodes.values()),
+        edges: graph.edges
+      }
+    }
+
+    // List all entities of a specific type
+    (this.vfs as any).listEntities = async (query?: { type?: string }) => {
+      return await this.entitySystem.findEntity(query || {})
     }
   }
 

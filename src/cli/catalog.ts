@@ -6,7 +6,7 @@
  */
 
 import chalk from 'chalk'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -302,7 +302,7 @@ function saveCache(catalog: Catalog): void {
   try {
     const dir = join(homedir(), '.brainy')
     if (!existsSync(dir)) {
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
     }
     
     writeFileSync(CACHE_PATH, JSON.stringify({

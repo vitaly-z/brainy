@@ -9,11 +9,11 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
-**🧠 Brainy - Universal Knowledge Protocol™**
+**🧠 Brainy - The Knowledge Operating System**
 
-**World's first Triple Intelligence™ database** unifying vector similarity, graph relationships, and document filtering in one magical API. **Framework-friendly design** works seamlessly with Next.js, React, Vue, Angular, and any modern JavaScript framework.
+**The world's first Knowledge Operating System** where every piece of knowledge - files, concepts, entities, ideas - exists as living information that understands itself, evolves over time, and connects to everything related. Built on revolutionary Triple Intelligence™ that unifies vector similarity, graph relationships, and document filtering in one magical API.
 
-**Why Brainy Leads**: We're the first to solve the impossible—combining three different database paradigms (vector, graph, document) into one unified query interface. This breakthrough enables us to be the Universal Knowledge Protocol where all tools, augmentations, and AI models speak the same language.
+**Why Brainy Changes Everything**: Traditional systems trap knowledge in files or database rows. Brainy liberates it. Your characters exist across stories. Your concepts span projects. Your APIs remember their evolution. Every piece of knowledge - whether it's code, prose, or pure ideas - lives, breathes, and connects in a unified intelligence layer where everything understands its meaning, remembers its history, and relates to everything else.
 
 **Framework-first design.** Built for modern web development with zero configuration and automatic framework compatibility. O(log n) performance, <10ms search latency, production-ready.
 
@@ -182,7 +182,7 @@ If using nvm: `nvm use` (we provide a `.nvmrc` file)
 
 ### World's First Triple Intelligence™ Engine
 
-**The breakthrough that enables the Universal Knowledge Protocol:**
+**The breakthrough that enables The Knowledge Operating System:**
 
 - **Vector Search**: Semantic similarity with HNSW indexing
 - **Graph Relationships**: Navigate connected knowledge like Neo4j
@@ -190,7 +190,7 @@ If using nvm: `nvm use` (we provide a `.nvmrc` file)
 - **Unified in ONE API**: No separate queries, no complex joins
 - **First to solve this**: Others do vector OR graph OR document—we do ALL
 
-### Universal Knowledge Protocol with Infinite Expressiveness
+### The Knowledge Operating System with Infinite Expressiveness
 
 **Enabled by Triple Intelligence, standardized for everyone:**
 
@@ -208,6 +208,56 @@ await brain.find("Show me recent React components with tests")
 await brain.find("Popular JavaScript libraries similar to Vue")
 await brain.find("Documentation about authentication from last month")
 ```
+
+### 🧠🌐 **Knowledge Graph + Virtual Filesystem - Where Ideas Come Alive**
+
+**Store ANY knowledge. Connect EVERYTHING. Files are optional.**
+
+- **Living Knowledge**: Characters, concepts, and systems that exist independently of files
+- **Universal Connections**: Link files to entities, entities to concepts, anything to anything
+- **Semantic Intelligence**: Find knowledge by meaning, not by where it's stored
+- **Optional Files**: Use filesystem operations when helpful, pure knowledge when not
+- **Perfect Memory**: Every piece of knowledge remembers its entire history
+- **Knowledge Evolution**: Watch ideas grow and connect across time and projects
+
+```javascript
+import { Brainy } from '@soulcraft/brainy'
+
+const brain = new Brainy({ storage: { type: 'memory' } })
+await brain.init()
+const vfs = brain.vfs()
+await vfs.init()
+
+// Start with familiar files if you want
+await vfs.writeFile('/story.txt', 'A tale of adventure...')
+
+// But knowledge doesn't need files!
+const alice = await vfs.createEntity({
+  name: 'Alice',
+  type: 'character',
+  description: 'Brave explorer discovering quantum worlds'
+})
+
+const quantumPhysics = await vfs.createConcept({
+  name: 'Quantum Entanglement',
+  domain: 'physics',
+  keywords: ['superposition', 'measurement', 'correlation']
+})
+
+// Connect EVERYTHING - files, entities, concepts
+await vfs.linkEntities(alice, quantumPhysics, 'studies')
+await vfs.addRelationship('/story.txt', alice.id, 'features')
+
+// Find knowledge by meaning, not location
+const physics = await vfs.search('quantum mechanics')
+// Returns: files, entities, concepts, relationships - ALL knowledge
+
+// Knowledge transcends boundaries
+const aliceKnowledge = await vfs.getEntityGraph(alice)
+// Her relationships, appearances, evolution - her entire existence
+```
+
+**Your knowledge isn't trapped anymore.** Characters live beyond stories. APIs exist beyond code files. Concepts connect across domains. This is knowledge that happens to support files, not a filesystem that happens to store knowledge.
 
 ### 🎯 Zero Configuration Philosophy
 
@@ -661,7 +711,7 @@ Key changes in the latest version:
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## 🧠 The Universal Knowledge Protocol Explained
+## 🧠 The Knowledge Operating System Explained
 
 ### How We Achieved The Impossible
 
@@ -705,6 +755,14 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - [Framework Integration Guide](docs/guides/framework-integration.md) - **NEW!** Complete framework setup guide
 - [Next.js Integration](docs/guides/nextjs-integration.md) - **NEW!** React and Next.js examples
 - [Vue.js Integration](docs/guides/vue-integration.md) - **NEW!** Vue and Nuxt examples
+
+### Virtual Filesystem & Knowledge Layer 🧠📁
+- [VFS Core Documentation](docs/vfs/VFS_CORE.md) - **NEW!** Complete filesystem architecture and API
+- [VFS + Knowledge Layer](docs/vfs/VFS_KNOWLEDGE_LAYER.md) - **NEW!** Intelligent knowledge management features
+- [Examples & Scenarios](docs/vfs/VFS_EXAMPLES_SCENARIOS.md) - **NEW!** Real-world use cases and code
+- [VFS API Guide](docs/vfs/VFS_API_GUIDE.md) - Complete API reference
+- [Knowledge Layer API](docs/vfs/KNOWLEDGE_LAYER_API.md) - Advanced knowledge features
+- [Knowledge Layer Overview](docs/KNOWLEDGE_LAYER_OVERVIEW.md) - Non-technical guide
 
 ### Core Documentation
 - [Getting Started Guide](docs/guides/getting-started.md)

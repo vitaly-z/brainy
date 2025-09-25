@@ -24,6 +24,7 @@ export interface FileEvent {
   author?: string
   metadata?: Record<string, any>
   previousHash?: string  // For tracking changes
+  oldPath?: string  // For move/rename operations
 }
 
 /**
@@ -272,13 +273,28 @@ export class EventRecorder {
    */
   private async generateEventEmbedding(event: Omit<FileEvent, 'id' | 'timestamp'>): Promise<number[] | undefined> {
     try {
-      // For content events, generate embedding from content
-      if (event.content && event.content.length < 100000) {
-        // Use Brainy's embedding function if available
-        // This would need to be passed in or configured
-        return undefined  // Placeholder - would use actual embedding
+      // Generate embedding based on event type and content
+      let textToEmbed: string
+
+      if (event.type === 'write' || event.type === 'create') {
+        // For write/create events with content, embed the content
+        if (event.content && event.content.length < 100000) {
+          // Convert Buffer to string for text files
+          textToEmbed = Buffer.isBuffer(event.content)
+            ? event.content.toString('utf8', 0, Math.min(10240, event.content.length))
+            : String(event.content).slice(0, 10240)
+        } else {
+          // For large files or no content, create descriptive text
+          textToEmbed = `File ${event.type} event at ${event.path}, size: ${event.size || 0} bytes`
+        }
+      } else {
+        // For other events (read, delete, rename, etc), create descriptive text
+        textToEmbed = `File ${event.type} event at ${event.path}${event.oldPath ? ` from ${event.oldPath}` : ''}`
       }
-      return undefined
+
+      // Use Brainy's embed function
+      const vector = await this.brain.embed(textToEmbed)
+      return vector
     } catch (error) {
       console.error('Failed to generate event embedding:', error)
       return undefined

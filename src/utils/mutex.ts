@@ -96,17 +96,30 @@ export class FileMutex implements MutexInterface {
   private lockDir: string
   private processLocks: Map<string, () => void> = new Map()
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()
+  private modulesLoaded: boolean = false
 
   constructor(lockDir: string) {
     this.lockDir = lockDir
-    // Lazy load Node.js modules
+  }
+
+  private async loadNodeModules(): Promise<void> {
+    if (this.modulesLoaded) return
+
     if (typeof window === 'undefined') {
-      this.fs = require('fs')
-      this.path = require('path')
+      // Modern ESM-compatible dynamic imports
+      const [fs, path] = await Promise.all([
+        import('fs'),
+        import('path')
+      ])
+      this.fs = fs
+      this.path = path
+      this.modulesLoaded = true
     }
   }
 
   async acquire(key: string, timeout: number = 30000): Promise<() => void> {
+    await this.loadNodeModules()
+
     if (!this.fs || !this.path) {
       throw new Error('FileMutex is only available in Node.js environments')
     }

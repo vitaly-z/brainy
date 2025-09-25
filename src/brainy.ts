@@ -1819,9 +1819,61 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Embed data into vector
+   * Handles any data type by converting to string representation
    */
   async embed(data: any): Promise<Vector> {
-    return this.embedder(data)
+    // Handle different data types intelligently
+    let textToEmbed: string | string[]
+
+    if (typeof data === 'string') {
+      textToEmbed = data
+    } else if (Array.isArray(data)) {
+      // Array of items - convert each to string
+      textToEmbed = data.map(item => {
+        if (typeof item === 'string') return item
+        if (typeof item === 'number' || typeof item === 'boolean') return String(item)
+        if (item && typeof item === 'object') {
+          // For objects, try to extract meaningful text
+          if (item.data) return String(item.data)
+          if (item.content) return String(item.content)
+          if (item.text) return String(item.text)
+          if (item.name) return String(item.name)
+          if (item.title) return String(item.title)
+          if (item.description) return String(item.description)
+          // Fallback to JSON for complex objects
+          try {
+            return JSON.stringify(item)
+          } catch {
+            return String(item)
+          }
+        }
+        return String(item)
+      })
+    } else if (data && typeof data === 'object') {
+      // Single object - extract meaningful text
+      if (data.data) textToEmbed = String(data.data)
+      else if (data.content) textToEmbed = String(data.content)
+      else if (data.text) textToEmbed = String(data.text)
+      else if (data.name) textToEmbed = String(data.name)
+      else if (data.title) textToEmbed = String(data.title)
+      else if (data.description) textToEmbed = String(data.description)
+      else {
+        // For complex objects, create a descriptive string
+        try {
+          textToEmbed = JSON.stringify(data)
+        } catch {
+          textToEmbed = String(data)
+        }
+      }
+    } else if (data === null || data === undefined) {
+      // Handle null/undefined gracefully
+      textToEmbed = ''
+    } else {
+      // Numbers, booleans, etc - convert to string
+      textToEmbed = String(data)
+    }
+
+    return this.embedder(textToEmbed)
   }
 
   /**

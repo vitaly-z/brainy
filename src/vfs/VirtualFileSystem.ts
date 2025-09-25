@@ -846,28 +846,28 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return !compressedSignatures.some(sig => firstBytes.startsWith(sig))
   }
 
-  // Stub methods for external storage (implement based on your storage backend)
+  // External storage methods - leverages Brainy's storage adapters (memory, file, S3, R2)
   private async readExternalContent(key: string): Promise<Buffer> {
-    // Store in Brainy entity with special type for large content
+    // Read from Brainy - Brainy's storage adapter handles retrieval
     const entity = await this.brain.get(key)
-    if (!entity || !entity.metadata?.externalContent) {
+    if (!entity) {
       throw new Error(`External content not found: ${key}`)
     }
 
-    // Content stored as base64 in metadata for now
-    // In production, this would use S3/R2
-    return Buffer.from(entity.metadata.externalContent, 'base64')
+    // Content is stored in the data field
+    // Brainy handles storage/retrieval through its adapters (memory, file, S3, R2)
+    return Buffer.isBuffer(entity.data) ? entity.data : Buffer.from(entity.data)
   }
 
   private async storeExternalContent(buffer: Buffer): Promise<string> {
-    // Store as separate Brainy entity for large content
+    // Store as Brainy entity - let Brainy's storage adapter handle it
+    // Brainy automatically handles large data through its storage adapters (memory, file, S3, R2)
     const entityId = await this.brain.add({
-      data: `Large file content: ${buffer.length} bytes`,
+      data: buffer,  // Store actual buffer - Brainy will handle it efficiently
       type: NounType.File,
       metadata: {
         vfsType: 'external-storage',
         size: buffer.length,
-        externalContent: buffer.toString('base64'),
         created: Date.now()
       }
     })
@@ -890,10 +890,12 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     for (const chunkId of chunks) {
       const entity = await this.brain.get(chunkId)
-      if (!entity || !entity.metadata?.chunkData) {
+      if (!entity) {
         throw new Error(`Chunk not found: ${chunkId}`)
       }
-      buffers.push(Buffer.from(entity.metadata.chunkData, 'base64'))
+      // Read actual data from entity - Brainy handles storage
+      const chunkBuffer = Buffer.isBuffer(entity.data) ? entity.data : Buffer.from(entity.data)
+      buffers.push(chunkBuffer)
     }
 
     return Buffer.concat(buffers)
@@ -907,13 +909,13 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       const chunk = buffer.slice(i, Math.min(i + chunkSize, buffer.length))
 
       // Store each chunk as a separate entity
+      // Let Brainy handle the chunk data efficiently
       const chunkId = await this.brain.add({
-        data: `Chunk ${chunks.length + 1} of file, size: ${chunk.length}`,
+        data: chunk,  // Store actual chunk - Brainy handles it
         type: NounType.File,
         metadata: {
           vfsType: 'chunk',
           chunkIndex: chunks.length,
-          chunkData: chunk.toString('base64'),
           size: chunk.length,
           created: Date.now()
         }
@@ -1731,13 +1733,14 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const fromEntityId = await this.pathResolver.resolve(from)
     const toEntityId = await this.pathResolver.resolve(to)
 
-    // Find the relationship
+    // Find and delete the relationship
     const relations = await this.brain.getRelations({ from: fromEntityId })
     for (const relation of relations) {
       if (relation.to === toEntityId && (!type || relation.type === type)) {
-        // Delete the relationship (note: unrelate API might need adjustment)
-        // For now, we'll mark it in metadata
-        console.log(`Would remove relationship from ${from} to ${to} of type ${type || 'any'}`)
+        // Delete the relationship using brain.unrelate
+        if (relation.id) {
+          await this.brain.unrelate(relation.id)
+        }
       }
     }
 
@@ -1807,6 +1810,42 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     this.invalidateCaches(path)
   }
 
+  /**
+   * Get metadata for a file or directory
+   */
+  async getMetadata(path: string): Promise<VFSMetadata | undefined> {
+    await this.ensureInitialized()
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+
+    return entity.metadata
+  }
+
+  /**
+   * Set custom metadata for a file or directory
+   * Merges with existing metadata
+   */
+  async setMetadata(path: string, metadata: Partial<VFSMetadata>): Promise<void> {
+    await this.ensureInitialized()
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+
+    // Merge with existing metadata
+    await this.brain.update({
+      id: entityId,
+      metadata: {
+        ...entity.metadata,
+        ...metadata,
+        modified: Date.now()
+      }
+    })
+
+    // Invalidate caches
+    this.invalidateCaches(path)
+  }
+
   // ============= Knowledge Layer =============
   // Knowledge Layer methods are added by KnowledgeLayer.enable()
   // This keeps VFS pure and fast while allowing optional intelligence
@@ -1861,7 +1900,40 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   // ============= Import/Export Operations =============
 
   /**
-   * Import a directory or file from the real filesystem into VFS
+   * Import a single file from the real filesystem into VFS
+   */
+  async importFile(sourcePath: string, targetPath: string): Promise<void> {
+    const fs = await import('fs/promises')
+    const pathModule = await import('path')
+
+    // Read file from local filesystem
+    const content = await fs.readFile(sourcePath)
+    const stats = await fs.stat(sourcePath)
+
+    // Ensure parent directory exists in VFS
+    const parentPath = pathModule.dirname(targetPath)
+    if (parentPath !== '/' && parentPath !== '.') {
+      try {
+        await this.mkdir(parentPath, { recursive: true })
+      } catch (error: any) {
+        if (error.code !== 'EEXIST') throw error
+      }
+    }
+
+    // Write to VFS with metadata from source
+    await this.writeFile(targetPath, content, {
+      metadata: {
+        imported: true,
+        importedFrom: sourcePath,
+        sourceSize: stats.size,
+        sourceMtime: stats.mtime.getTime(),
+        sourceMode: stats.mode
+      }
+    })
+  }
+
+  /**
+   * Import a directory from the real filesystem into VFS
    */
   async importDirectory(sourcePath: string, options?: any): Promise<any> {
     const { DirectoryImporter } = await import('./importers/DirectoryImporter.js')
