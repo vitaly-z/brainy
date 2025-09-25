@@ -1932,9 +1932,10 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           // Traverse children
           const children = await this.readdir(currentPath)
           for (const child of children) {
-            const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
-            target[child] = {}
-            await traverse(childPath, target[child])
+            const childName = typeof child === 'string' ? child : child.name
+            const childPath = currentPath === '/' ? `/${childName}` : `${currentPath}/${childName}`
+            target[childName] = {}
+            await traverse(childPath, target[childName])
           }
         } else if (entity.metadata.vfsType === 'file') {
           // For files, include content and metadata
