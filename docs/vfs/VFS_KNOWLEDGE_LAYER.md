@@ -60,8 +60,8 @@ for (const event of history) {
   // 'rename' 2025-01-20T10:02:00Z 'alice'
 }
 
-// Search events semantically
-const events = await vfs.searchEvents('document changes')
+// Get timeline of events
+const events = await vfs.getTimeline({ from: '2025-01-01' })
 ```
 
 ### Event Types
@@ -118,11 +118,10 @@ for (const version of versions) {
 // Restore version
 await vfs.restoreVersion('/story.txt', versions[0].id)
 
-// Diff versions semantically
-const diff = await vfs.diffVersions('/story.txt', v1.id, v2.id)
-console.log(diff.additions)    // New concepts added
-console.log(diff.removals)     // Concepts removed
-console.log(diff.modifications) // Concepts changed
+// Compare versions by restoring
+const v1Content = await vfs.getVersion('/story.txt', v1.id)
+const v2Content = await vfs.getVersion('/story.txt', v2.id)
+// Compare the content as needed
 ```
 
 ### Version Triggers
@@ -203,27 +202,16 @@ await vfs.writeFile('/login.tsx', 'const LoginForm = () => {...}')
 const authFiles = await vfs.findByConcept('Authentication')
 // Returns all files related to authentication concept
 
-// Get concept map
-const conceptMap = await vfs.getConceptMap('/src')
-// Returns hierarchy of concepts in directory
-
-// Merge similar concepts
-await vfs.mergeConcepts('User Auth', 'Authentication')
-
-// Concept evolution tracking
-const evolution = await vfs.trackConceptEvolution('Authentication')
-// Shows how the concept has changed over time
+// Find files by concept
+const authFiles = await vfs.findByConcept('Authentication')
+// Returns all files related to the authentication concept
 ```
 
-### Concept Relationships
+### Working with Concepts
 ```javascript
-// Define concept relationships
-await vfs.relateConcepts('Authentication', 'Session Management', 'requires')
-await vfs.relateConcepts('Authentication', 'User Database', 'uses')
-
-// Query concept network
-const network = await vfs.getConceptNetwork('Authentication')
-// Returns graph of related concepts
+// Concepts can reference each other through their descriptions
+// and keywords, creating an implicit network of related ideas.
+// The findByConcept method searches across these relationships.
 ```
 
 ## GitBridge Integration
@@ -250,18 +238,17 @@ await vfs.exportToGit('/vfs/project', '/local/git/repo')
 // - Entities as .brainy/entities.json
 // - Concepts as .brainy/concepts.json
 
-// Sync with remote
-await vfs.syncWithGit('https://github.com/user/repo.git')
+// Export/import operations are available
+// For remote sync, use git commands after export:
+// await vfs.exportToGit('/vfs/project', '/local/repo')
+// Then use git push/pull as normal
 ```
 
-### Git Metadata Preservation
+### Git Integration
 ```javascript
-// Git metadata is preserved
-const gitMeta = await vfs.getGitMetadata('/vfs/project/file.js')
-console.log(gitMeta.lastCommit)     // Hash of last commit
-console.log(gitMeta.authors)        // List of contributors
-console.log(gitMeta.created)        // First commit date
-console.log(gitMeta.modified)       // Last commit date
+// Import from Git preserves history as events
+// Export to Git creates .brainy/ metadata directory
+// Use standard git commands for remote operations
 ```
 
 ## Knowledge Queries
@@ -276,31 +263,25 @@ const timeline = await vfs.getTimeline({
   types: ['write', 'create']
 })
 
-// Impact analysis
-const impact = await vfs.analyzeImpact('/core/auth.js')
-// Returns files that would be affected by changes
-
-// Dependency graph
-const deps = await vfs.getDependencyGraph('/src')
-// Returns import/export relationships
-
-// Knowledge search
-const results = await vfs.knowledgeSearch({
-  query: 'authentication flow',
-  includeEvents: true,
-  includeVersions: true,
-  includeEntities: true,
-  includeConcepts: true
+// Timeline queries
+const timeline = await vfs.getTimeline({
+  from: '2025-01-01',
+  to: '2025-01-31',
+  types: ['write', 'create']
 })
 
-// Collaborative insights
-const insights = await vfs.getInsights('/project')
-// Returns:
-// - Most active files
-// - Key concepts
-// - Entity relationships
-// - Development patterns
-// - Suggested improvements
+// Project statistics
+const stats = await vfs.getProjectStats('/project')
+console.log('Total files:', stats.fileCount)
+console.log('Total size:', stats.totalSize)
+console.log('Todo count:', stats.todoCount)
+
+// Search with Triple Intelligence
+const results = await vfs.search('authentication', {
+  path: '/src',
+  type: 'file',
+  limit: 20
+})
 ```
 
 ## Background Processing
@@ -319,45 +300,38 @@ await vfs.writeFile('/large-doc.txt', hugeContent)
 // 4. Entity extraction (500ms)
 // 5. Concept detection (1s)
 
-// Check processing status
-const status = await vfs.getProcessingStatus()
-console.log(status.pending)    // Number of pending operations
-console.log(status.processed)  // Number completed
-
-// Wait for processing
-await vfs.waitForProcessing()  // Blocks until all done
+// Background processing happens automatically
+// Events are recorded immediately
+// Embeddings and versions are processed asynchronously
 ```
 
-## Machine Learning Integration
+## Search and Analysis
 
-The Knowledge Layer enables ML-powered features:
+The Knowledge Layer provides powerful search and analysis capabilities:
 
 ```javascript
-// Auto-tagging
-await vfs.enableAutoTagging()
-await vfs.writeFile('/report.pdf', pdfContent)
-const tags = await vfs.getTags('/report.pdf')
-// ['financial', 'quarterly', 'revenue', 'analysis']
+// Find files by concept
+const authFiles = await vfs.findByConcept('Authentication')
+// Returns all files related to the authentication concept
 
-// Content suggestions
-const suggestions = await vfs.getSuggestions('/story.txt')
-// Returns potential next sentences based on context
-
-// Duplicate detection
-const duplicates = await vfs.findDuplicates({
-  threshold: 0.95,  // Similarity threshold
-  checkContent: true,
-  checkStructure: true
+// Get timeline of changes
+const timeline = await vfs.getTimeline({
+  from: '2025-01-01',
+  to: '2025-01-31',
+  types: ['write', 'create']
 })
+// Returns chronological list of events
 
-// Anomaly detection
-const anomalies = await vfs.detectAnomalies()
-// Returns files that don't fit patterns
+// Get project statistics
+const stats = await vfs.getProjectStats('/project')
+console.log(stats.fileCount)       // Number of files
+console.log(stats.totalSize)       // Total size in bytes
+console.log(stats.todoCount)       // Number of todos
+console.log(stats.largestFile)     // Largest file info
 
-// Smart categorization
-await vfs.enableSmartCategorization()
-const category = await vfs.getCategory('/document.txt')
-// Returns: 'technical/documentation/api'
+// Export directory to markdown
+const markdown = await vfs.exportToMarkdown('/docs')
+// Returns formatted markdown of entire directory structure
 ```
 
 ## Collaboration Features
@@ -374,18 +348,15 @@ await vfs.appendFile('/shared.txt', 'Bob\'s addition')
 
 // Get collaboration history
 const collabHistory = await vfs.getCollaborationHistory('/shared.txt')
-// Shows who did what when
+// Returns who edited the file and when:
+// [
+//   { user: 'alice', timestamp: Date, action: 'write', size: 15 },
+//   { user: 'bob', timestamp: Date, action: 'append', size: 14 }
+// ]
 
-// Conflict detection
-const conflicts = await vfs.detectConflicts('/shared.txt')
-// Returns semantic conflicts, not just line differences
-
-// Merge intelligence
-const mergeStrategy = await vfs.suggestMerge(
-  '/alice/version.txt',
-  '/bob/version.txt'
-)
-// Returns intelligent merge suggestions
+// Get all todos across project
+const allTodos = await vfs.getAllTodos('/project')
+// Returns todos from all files recursively
 ```
 
 ## Performance Impact

@@ -67,6 +67,52 @@ export class EventRecorder {
   }
 
   /**
+   * Get all events matching criteria
+   */
+  async getEvents(options?: {
+    since?: number
+    until?: number
+    types?: string[]
+    limit?: number
+  }): Promise<FileEvent[]> {
+    const limit = options?.limit || 100
+    const since = options?.since || 0
+    const until = options?.until || Date.now()
+
+    const query: any = {
+      eventType: 'file-operation'
+    }
+
+    // Add time filters
+    if (since || until) {
+      query.timestamp = {}
+      if (since) query.timestamp.$gte = since
+      if (until) query.timestamp.$lte = until
+    }
+
+    // Add type filter
+    if (options?.types && options.types.length > 0) {
+      query.type = { $in: options.types }
+    }
+
+    // Query events from Brainy
+    const results = await this.brain.find({
+      where: query,
+      type: NounType.Event,
+      limit
+    })
+
+    const events: FileEvent[] = []
+    for (const result of results) {
+      if (result.entity?.metadata) {
+        events.push(result.entity.metadata as FileEvent)
+      }
+    }
+
+    return events.sort((a, b) => b.timestamp - a.timestamp)
+  }
+
+  /**
    * Get complete history for a file
    */
   async getHistory(path: string, options?: {

@@ -366,6 +366,161 @@ export class KnowledgeLayer {
     (this.vfs as any).listEntities = async (query?: { type?: string }) => {
       return await this.entitySystem.findEntity(query || {})
     }
+
+    // Find files by concept
+    (this.vfs as any).findByConcept = async (conceptName: string): Promise<string[]> => {
+      const paths: string[] = []
+
+      // First find the concept
+      const concepts = await this.conceptSystem.findConcepts({ name: conceptName })
+      if (concepts.length === 0) {
+        return paths
+      }
+
+      const concept = concepts[0]
+
+      // Search for files that contain concept keywords
+      const searchTerms = [conceptName, ...(concept.keywords || [])].join(' ')
+      const searchResults = await this.brain.find({
+        query: searchTerms,
+        where: { vfsType: 'file' },
+        limit: 50
+      })
+
+      // Get unique paths
+      const pathSet = new Set<string>()
+      for (const result of searchResults) {
+        if (result.entity?.metadata?.path) {
+          pathSet.add(result.entity.metadata.path as string)
+        }
+      }
+
+      // Also check concept manifestations if stored
+      if (concept.manifestations) {
+        for (const manifestation of concept.manifestations) {
+          if (manifestation.filePath) {
+            pathSet.add(manifestation.filePath)
+          }
+        }
+      }
+
+      return Array.from(pathSet)
+    }
+
+    // Get timeline of events
+    (this.vfs as any).getTimeline = async (options?: {
+      from?: string | Date | number
+      to?: string | Date | number
+      types?: string[]
+      limit?: number
+    }): Promise<Array<{
+      timestamp: Date
+      type: string
+      path: string
+      user?: string
+      description: string
+    }>> => {
+      const fromTime = options?.from ? new Date(options.from).getTime() : Date.now() - 30 * 24 * 60 * 60 * 1000 // 30 days ago
+      const toTime = options?.to ? new Date(options.to).getTime() : Date.now()
+      const limit = options?.limit || 100
+
+      // Get events from event recorder
+      const events = await this.eventRecorder.getEvents({
+        since: fromTime,
+        until: toTime,
+        types: options?.types,
+        limit
+      })
+
+      // Transform to timeline format
+      return events.map(event => ({
+        timestamp: new Date(event.timestamp),
+        type: event.type,
+        path: event.path,
+        user: event.author,
+        description: `${event.type} ${event.path}${event.oldPath ? ` (from ${event.oldPath})` : ''}`
+      }))
+    }
+
+    // Get collaboration history for a file
+    (this.vfs as any).getCollaborationHistory = async (path: string): Promise<Array<{
+      user: string
+      timestamp: Date
+      action: string
+      size?: number
+    }>> => {
+      // Get all events for this path
+      const history = await this.eventRecorder.getHistory(path, { limit: 100 })
+
+      return history.map(event => ({
+        user: event.author || 'system',
+        timestamp: new Date(event.timestamp),
+        action: event.type,
+        size: event.size
+      }))
+    }
+
+    // Export to markdown format
+    (this.vfs as any).exportToMarkdown = async (path: string): Promise<string> => {
+      const markdown: string[] = []
+
+      const traverse = async (currentPath: string, depth: number = 0) => {
+        const indent = '  '.repeat(depth)
+
+        try {
+          const stats = await this.vfs.stat(currentPath)
+
+          if (stats.isDirectory()) {
+            // Add directory header
+            const name = currentPath.split('/').pop() || currentPath
+            markdown.push(`${indent}## ${name}/`)
+            markdown.push('')
+
+            // List and traverse children
+            const children = await this.vfs.readdir(currentPath)
+            for (const child of children.sort()) {
+              const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
+              await traverse(childPath, depth + 1)
+            }
+          } else {
+            // Add file content
+            const name = currentPath.split('/').pop() || currentPath
+            const extension = name.split('.').pop() || 'txt'
+
+            try {
+              const content = await this.vfs.readFile(currentPath)
+              const textContent = content.toString('utf8')
+
+              markdown.push(`${indent}### ${name}`)
+              markdown.push('')
+
+              // Add code block for code files
+              if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'go', 'rs', 'json'].includes(extension)) {
+                markdown.push(`${indent}\`\`\`${extension}`)
+                markdown.push(textContent.split('\n').map(line => `${indent}${line}`).join('\n'))
+                markdown.push(`${indent}\`\`\``)
+              } else if (extension === 'md') {
+                // Include markdown directly
+                markdown.push(textContent)
+              } else {
+                // Plain text in quotes
+                markdown.push(`${indent}> ${textContent.split('\n').join(`\n${indent}> `)}`)
+              }
+              markdown.push('')
+            } catch (error) {
+              markdown.push(`${indent}*Binary or unreadable file*`)
+              markdown.push('')
+            }
+          }
+        } catch (error) {
+          // Skip inaccessible paths
+        }
+      }
+
+      await traverse(path)
+
+      return markdown.join('\n')
+    }
   }
 
   /**

@@ -52,6 +52,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   private config: Required<Omit<VFSConfig, 'rootEntityId'>> & { rootEntityId?: string }
   private rootEntityId?: string
   private initialized = false
+  private currentUser: string = 'system'  // Track current user for collaboration
 
   // Knowledge Layer removed from core - now optional augmentation
 
@@ -1856,6 +1857,145 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   async enableKnowledgeLayer(): Promise<void> {
     const { enableKnowledgeLayer } = await import('./KnowledgeLayer.js')
     await enableKnowledgeLayer(this, this.brain)
+  }
+
+  /**
+   * Set the current user for tracking who makes changes
+   */
+  setUser(username: string): void {
+    this.currentUser = username || 'system'
+  }
+
+  /**
+   * Get the current user
+   */
+  getCurrentUser(): string {
+    return this.currentUser
+  }
+
+  /**
+   * Get all todos recursively from a path
+   */
+  async getAllTodos(path: string = '/'): Promise<VFSTodo[]> {
+    await this.ensureInitialized()
+
+    const allTodos: VFSTodo[] = []
+
+    // Get entity for this path
+    try {
+      const entityId = await this.pathResolver.resolve(path)
+      const entity = await this.getEntityById(entityId)
+
+      // Add todos from this entity
+      if (entity.metadata.todos) {
+        allTodos.push(...entity.metadata.todos)
+      }
+
+      // If it's a directory, recursively get todos from children
+      if (entity.metadata.vfsType === 'directory') {
+        const children = await this.readdir(path)
+
+        for (const child of children) {
+          const childPath = path === '/' ? `/${child}` : `${path}/${child}`
+          const childTodos = await this.getAllTodos(childPath)
+          allTodos.push(...childTodos)
+        }
+      }
+    } catch (error) {
+      // Path doesn't exist, return empty
+    }
+
+    return allTodos
+  }
+
+  /**
+   * Get project statistics for a path
+   */
+  async getProjectStats(path: string = '/'): Promise<{
+    fileCount: number
+    directoryCount: number
+    totalSize: number
+    todoCount: number
+    averageFileSize: number
+    largestFile: { path: string, size: number } | null
+    modifiedRange: { earliest: Date, latest: Date } | null
+  }> {
+    await this.ensureInitialized()
+
+    const stats = {
+      fileCount: 0,
+      directoryCount: 0,
+      totalSize: 0,
+      todoCount: 0,
+      averageFileSize: 0,
+      largestFile: null as { path: string, size: number } | null,
+      modifiedRange: null as { earliest: Date, latest: Date } | null
+    }
+
+    let earliestModified: number | null = null
+    let latestModified: number | null = null
+
+    const traverse = async (currentPath: string) => {
+      try {
+        const entityId = await this.pathResolver.resolve(currentPath)
+        const entity = await this.getEntityById(entityId)
+
+        if (entity.metadata.vfsType === 'directory') {
+          stats.directoryCount++
+
+          // Traverse children
+          const children = await this.readdir(currentPath)
+          for (const child of children) {
+            const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
+            await traverse(childPath)
+          }
+        } else if (entity.metadata.vfsType === 'file') {
+          stats.fileCount++
+          const size = entity.metadata.size || 0
+          stats.totalSize += size
+
+          // Track largest file
+          if (!stats.largestFile || size > stats.largestFile.size) {
+            stats.largestFile = { path: currentPath, size }
+          }
+
+          // Track modification times
+          const modified = entity.metadata.modified
+          if (modified) {
+            if (!earliestModified || modified < earliestModified) {
+              earliestModified = modified
+            }
+            if (!latestModified || modified > latestModified) {
+              latestModified = modified
+            }
+          }
+
+          // Count todos
+          if (entity.metadata.todos) {
+            stats.todoCount += entity.metadata.todos.length
+          }
+        }
+      } catch (error) {
+        // Skip if path doesn't exist
+      }
+    }
+
+    await traverse(path)
+
+    // Calculate averages
+    if (stats.fileCount > 0) {
+      stats.averageFileSize = Math.round(stats.totalSize / stats.fileCount)
+    }
+
+    // Set date range
+    if (earliestModified && latestModified) {
+      stats.modifiedRange = {
+        earliest: new Date(earliestModified),
+        latest: new Date(latestModified)
+      }
+    }
+
+    return stats
   }
 
 
