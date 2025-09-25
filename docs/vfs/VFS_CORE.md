@@ -273,23 +273,39 @@ await vfs.importDirectory('/local/project', { targetPath: '/vfs/project' })
 // - Preserved metadata (timestamps, permissions)
 ```
 
-### GitBridge Export
+### GitBridge Integration
 
+GitBridge provides Git import/export capabilities. It can be used in two ways:
+
+#### Option 1: Via Knowledge Layer (Recommended)
 ```javascript
-// Enable GitBridge
-const gitBridge = vfs.gitBridge
+// Enable Knowledge Layer to get Git methods
+await vfs.enableKnowledgeLayer()
 
-// Export relationships as .brainy/relationships.json
-const rels = await gitBridge.exportRelationships('/project')
+// Now Git methods are available on VFS
+await vfs.exportToGit('/project', '/local/git/repo')
+await vfs.importFromGit('/local/git/repo', '/project')
+```
 
-// Export events as .brainy/events.json
-const events = await gitBridge.exportEvents('/project')
+#### Option 2: Direct GitBridge Usage
+```javascript
+// Import and instantiate GitBridge
+import { GitBridge } from '@soulcraft/brainy'
+const gitBridge = new GitBridge(vfs, brain)
 
-// Export entities as .brainy/entities.json
-const entities = await gitBridge.exportEntities()
+// Export VFS to Git repository structure
+await gitBridge.exportToGit('/project', '/local/git/repo', {
+  preserveMetadata: true,     // Export VFS metadata as .vfs-metadata.json
+  preserveRelationships: true, // Export relationships as .vfs-relationships.json
+  preserveHistory: true        // Export event history as .vfs-history.json
+})
 
-// Export concepts as .brainy/concepts.json
-const concepts = await gitBridge.exportConcepts()
+// Import Git repository into VFS
+await gitBridge.importFromGit('/local/git/repo', '/project', {
+  preserveGitHistory: true,    // Import Git commits as VFS events
+  extractMetadata: true,        // Extract metadata from .vfs-metadata.json
+  restoreRelationships: true    // Restore relationships from .vfs-relationships.json
+})
 ```
 
 ## Performance Optimizations
@@ -354,6 +370,49 @@ VFS scales to millions of files:
 - Chunked storage for large files
 - Distributed storage backend support
 - Vector search scales with HNSW index
+
+## Method Availability
+
+### Core VFS Methods (Always Available)
+
+These methods are available immediately after VFS initialization:
+
+```javascript
+const vfs = brain.vfs()
+await vfs.init()
+
+// ✅ All these work without Knowledge Layer:
+await vfs.writeFile()      // File operations
+await vfs.readFile()
+await vfs.mkdir()           // Directory operations
+await vfs.readdir()
+await vfs.stat()            // Metadata
+await vfs.search()          // Semantic search
+await vfs.addRelationship() // Relationships
+await vfs.addTodo()         // Todo management
+await vfs.exportToJSON()    // Export
+await vfs.bulkWrite()       // Bulk operations
+```
+
+### Knowledge Layer Methods (Require Enablement)
+
+These methods are only available after enabling the Knowledge Layer:
+
+```javascript
+await vfs.enableKnowledgeLayer()
+
+// 🔮 Now these methods are available:
+await vfs.createEntity()    // Entity management
+await vfs.linkEntities()
+await vfs.createConcept()   // Concept system
+await vfs.findByConcept()
+await vfs.getVersions()     // Versioning
+await vfs.getHistory()      // History tracking
+await vfs.exportToGit()     // Git integration (wrapper)
+await vfs.importFromGit()
+await vfs.exportToMarkdown()// Export formats
+await vfs.getTimeline()     // Timeline analysis
+```
 
 ## Complete Example
 

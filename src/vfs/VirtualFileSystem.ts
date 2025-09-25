@@ -1909,6 +1909,178 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
+   * Export directory structure to JSON
+   */
+  async exportToJSON(path: string = '/'): Promise<any> {
+    await this.ensureInitialized()
+
+    const result: any = {}
+
+    const traverse = async (currentPath: string, target: any) => {
+      try {
+        const entityId = await this.pathResolver.resolve(currentPath)
+        const entity = await this.getEntityById(entityId)
+
+        if (entity.metadata.vfsType === 'directory') {
+          // Add directory metadata
+          target._meta = {
+            type: 'directory',
+            path: currentPath,
+            modified: entity.metadata.modified ? new Date(entity.metadata.modified) : undefined
+          }
+
+          // Traverse children
+          const children = await this.readdir(currentPath)
+          for (const child of children) {
+            const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
+            target[child] = {}
+            await traverse(childPath, target[child])
+          }
+        } else if (entity.metadata.vfsType === 'file') {
+          // For files, include content and metadata
+          try {
+            const content = await this.readFile(currentPath)
+            const textContent = content.toString('utf8')
+
+            // Try to parse JSON files
+            if (currentPath.endsWith('.json')) {
+              try {
+                target._content = JSON.parse(textContent)
+              } catch {
+                target._content = textContent
+              }
+            } else {
+              target._content = textContent
+            }
+          } catch {
+            // Binary or unreadable file
+            target._content = '[binary]'
+          }
+
+          target._meta = {
+            type: 'file',
+            path: currentPath,
+            size: entity.metadata.size || 0,
+            mimeType: entity.metadata.mimeType,
+            modified: entity.metadata.modified ? new Date(entity.metadata.modified) : undefined,
+            todos: entity.metadata.todos || []
+          }
+        }
+      } catch (error) {
+        // Skip inaccessible paths
+        target._error = 'inaccessible'
+      }
+    }
+
+    await traverse(path, result)
+    return result
+  }
+
+  /**
+   * Search for entities with filters
+   */
+  async searchEntities(query: {
+    type?: string
+    name?: string
+    where?: Record<string, any>
+    limit?: number
+  }): Promise<Array<{
+    id: string
+    path: string
+    type: string
+    metadata: any
+  }>> {
+    await this.ensureInitialized()
+
+    // Build query for brain.find()
+    const searchQuery: any = {
+      where: {
+        ...query.where,
+        vfsType: 'entity'
+      },
+      limit: query.limit || 100
+    }
+
+    if (query.type) {
+      searchQuery.where.entityType = query.type
+    }
+
+    if (query.name) {
+      searchQuery.query = query.name
+    }
+
+    const results = await this.brain.find(searchQuery)
+
+    return results.map(result => ({
+      id: result.id,
+      path: result.entity?.metadata?.path || '',
+      type: result.entity?.metadata?.type || result.entity?.metadata?.entityType || 'unknown',
+      metadata: result.entity?.metadata || {}
+    }))
+  }
+
+  /**
+   * Bulk write operations for performance
+   */
+  async bulkWrite(operations: Array<{
+    type: 'write' | 'delete' | 'mkdir' | 'update'
+    path: string
+    data?: Buffer | string
+    options?: any
+  }>): Promise<{
+    successful: number
+    failed: Array<{ operation: any, error: string }>
+  }> {
+    await this.ensureInitialized()
+
+    const result = {
+      successful: 0,
+      failed: [] as Array<{ operation: any, error: string }>
+    }
+
+    // Process operations in batches for better performance
+    const batchSize = 10
+    for (let i = 0; i < operations.length; i += batchSize) {
+      const batch = operations.slice(i, i + batchSize)
+
+      // Process batch in parallel
+      const promises = batch.map(async (op) => {
+        try {
+          switch (op.type) {
+            case 'write':
+              await this.writeFile(op.path, op.data || '', op.options)
+              break
+            case 'delete':
+              await this.unlink(op.path)
+              break
+            case 'mkdir':
+              await this.mkdir(op.path, op.options)
+              break
+            case 'update':
+              // Update only metadata without changing content
+              const entityId = await this.pathResolver.resolve(op.path)
+              await this.brain.update({
+                id: entityId,
+                metadata: op.options?.metadata
+              })
+              break
+          }
+          result.successful++
+        } catch (error: any) {
+          result.failed.push({
+            operation: op,
+            error: error.message || 'Unknown error'
+          })
+        }
+      })
+
+      await Promise.all(promises)
+    }
+
+    return result
+  }
+
+  /**
    * Get project statistics for a path
    */
   async getProjectStats(path: string = '/'): Promise<{

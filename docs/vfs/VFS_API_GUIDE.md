@@ -7,7 +7,7 @@ Brainy's Virtual Filesystem (VFS) provides a POSIX-like filesystem interface tha
 ## Quick Start
 
 ```typescript
-import { Brainy, VirtualFileSystem } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // Initialize Brainy
 const brain = new Brainy({
@@ -16,7 +16,7 @@ const brain = new Brainy({
 await brain.init()
 
 // Create VFS instance
-const vfs = new VirtualFileSystem(brain)
+const vfs = brain.vfs()
 await vfs.init()
 
 // Use like any filesystem
@@ -140,8 +140,8 @@ await vfs.rmdir('/projects/my-app', { recursive: true })
 // Rename/move file or directory
 await vfs.rename(oldPath: string, newPath: string): Promise<void>
 
-// Copy file (Note: Implementation needed)
-// await vfs.copy(src: string, dest: string, options?: CopyOptions): Promise<void>
+// Copy file or directory
+await vfs.copy(src: string, dest: string, options?: CopyOptions): Promise<void>
 ```
 
 **Example:**

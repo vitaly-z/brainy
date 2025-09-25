@@ -7,28 +7,47 @@ The Knowledge Layer transforms Brainy's VFS from a simple filesystem into an int
 ## Quick Start
 
 ```typescript
-import { Brainy, VirtualFileSystem, KnowledgeAugmentation } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // Initialize Brainy with VFS
 const brain = new Brainy()
 await brain.init()
 
-const vfs = new VirtualFileSystem(brain)
+const vfs = brain.vfs()
 await vfs.init()
 
-// Enable Knowledge Layer
-const knowledge = new KnowledgeAugmentation({
-  enabled: true,
-  eventRecording: { enabled: true },
-  semanticVersioning: { enabled: true, threshold: 0.3 },
-  persistentEntities: { enabled: true, autoExtract: true },
-  concepts: { enabled: true, autoLink: true },
-  gitBridge: { enabled: true }
-})
-
-await knowledge.init({ brain, vfs })
+// Enable Knowledge Layer - this augments VFS with intelligence features
+await vfs.enableKnowledgeLayer()
 
 // Now your VFS has superpowers! 🚀
+// The Knowledge Layer dynamically adds new methods to the VFS instance:
+// - Event Recording: getHistory(), reconstructAtTime()
+// - Semantic Versioning: getVersions(), restoreVersion()
+// - Entity System: createEntity(), linkEntities(), findEntityOccurrences()
+// - Concepts: createConcept(), findByConcept()
+// - Git Bridge: exportToGit(), importFromGit()
+// - And many more...
+```
+
+## How It Works: Method Augmentation
+
+The Knowledge Layer uses a powerful augmentation pattern. When you call `enableKnowledgeLayer()`:
+
+1. **Wraps Core Methods**: Intercepts existing VFS methods to add intelligence
+2. **Injects New Methods**: Dynamically adds new methods to the VFS instance
+3. **Background Processing**: Runs intelligence extraction asynchronously
+4. **Non-Breaking**: All existing code continues to work unchanged
+
+```typescript
+// Before enableKnowledgeLayer() - Core VFS only
+vfs.writeFile() ✅  // Works
+vfs.readFile() ✅   // Works
+vfs.createEntity() ❌ // Method doesn't exist
+
+// After enableKnowledgeLayer() - Enhanced VFS
+vfs.writeFile() ✅  // Still works, now with event recording
+vfs.readFile() ✅   // Still works, now tracks access patterns
+vfs.createEntity() ✅ // New method available!
 ```
 
 ## Core Components
