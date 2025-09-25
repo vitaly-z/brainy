@@ -1610,28 +1610,19 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const entityId = await this.pathResolver.resolve(path)
     const results: Array<{ path: string, relationship: string, direction: 'from' | 'to' }> = []
 
-    // Get all relationships involving this entity (both from and to)
+    // Use proper Brainy relationship API to get all relationships
     const [fromRelations, toRelations] = await Promise.all([
-      this.brain.find({
-        connected: {
-          from: entityId
-        },
-        limit: 1000
-      }),
-      this.brain.find({
-        connected: {
-          to: entityId
-        },
-        limit: 1000
-      })
+      this.brain.getRelations({ from: entityId }),
+      this.brain.getRelations({ to: entityId })
     ])
 
     // Add outgoing relationships
     for (const rel of fromRelations) {
-      if (rel.entity.metadata?.path) {
+      const targetEntity = await this.brain.get(rel.to)
+      if (targetEntity && targetEntity.metadata?.path) {
         results.push({
-          path: rel.entity.metadata.path,
-          relationship: 'related',
+          path: targetEntity.metadata.path,
+          relationship: rel.type || 'related',
           direction: 'from'
         })
       }
@@ -1639,10 +1630,11 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Add incoming relationships
     for (const rel of toRelations) {
-      if (rel.entity.metadata?.path) {
+      const sourceEntity = await this.brain.get(rel.from)
+      if (sourceEntity && sourceEntity.metadata?.path) {
         results.push({
-          path: rel.entity.metadata.path,
-          relationship: 'related',
+          path: sourceEntity.metadata.path,
+          relationship: rel.type || 'related',
           direction: 'to'
         })
       }
@@ -1657,51 +1649,39 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const entityId = await this.pathResolver.resolve(path)
     const relationships: Relation[] = []
 
-    // Get all relationships involving this entity (both from and to)
+    // Use proper Brainy relationship API
     const [fromRelations, toRelations] = await Promise.all([
-      this.brain.find({
-        connected: {
-          from: entityId
-        },
-        limit: 1000
-      }),
-      this.brain.find({
-        connected: {
-          to: entityId
-        },
-        limit: 1000
-      })
+      this.brain.getRelations({ from: entityId }),
+      this.brain.getRelations({ to: entityId })
     ])
 
-    // Add outgoing relationships (exclude parent-child relationships)
+    // Process outgoing relationships (excluding Contains for parent-child)
     for (const rel of fromRelations) {
-      if (rel.entity.metadata?.path && rel.entity.metadata?.vfsType) {
-        // Skip parent-child relationships to focus on user-defined relationships
-        const parentPath = this.getParentPath(rel.entity.metadata.path)
-        if (parentPath !== path) {  // Not a direct child
+      if (rel.type !== VerbType.Contains) {  // Skip filesystem hierarchy
+        const targetEntity = await this.brain.get(rel.to)
+        if (targetEntity && targetEntity.metadata?.path) {
           relationships.push({
-            id: crypto.randomUUID(),
-            from: path,
-            to: rel.entity.metadata.path,
-            type: VerbType.References,
-            createdAt: Date.now()
+            id: rel.id || crypto.randomUUID(),
+            from: entityId,
+            to: rel.to,
+            type: rel.type,
+            createdAt: rel.createdAt || Date.now()
           })
         }
       }
     }
 
-    // Add incoming relationships (exclude parent-child relationships)
+    // Process incoming relationships (excluding Contains for parent-child)
     for (const rel of toRelations) {
-      if (rel.entity.metadata?.path && rel.entity.metadata?.vfsType) {
-        // Skip parent-child relationships to focus on user-defined relationships
-        const parentPath = this.getParentPath(path)
-        if (rel.entity.metadata.path !== parentPath) {  // Not the parent
+      if (rel.type !== VerbType.Contains) {  // Skip filesystem hierarchy
+        const sourceEntity = await this.brain.get(rel.from)
+        if (sourceEntity && sourceEntity.metadata?.path) {
           relationships.push({
-            id: crypto.randomUUID(),
-            from: rel.entity.metadata.path,
-            to: path,
-            type: VerbType.References,
-            createdAt: Date.now()
+            id: rel.id || crypto.randomUUID(),
+            from: rel.from,
+            to: entityId,
+            type: rel.type,
+            createdAt: rel.createdAt || Date.now()
           })
         }
       }

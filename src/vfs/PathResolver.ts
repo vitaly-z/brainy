@@ -185,47 +185,35 @@ export class PathResolver {
 
   /**
    * Resolve a child entity by name within a parent directory
+   * Uses proper graph relationships instead of metadata queries
    */
   private async resolveChild(parentId: string, name: string): Promise<string | null> {
     // Check parent cache first
     const cachedChildren = this.parentCache.get(parentId)
     if (cachedChildren && cachedChildren.has(name)) {
-      // We know this child exists, find it by path since parent queries don't work
-      const parentEntity = await this.getEntity(parentId)
-      const parentPath = parentEntity.metadata.path
-      const childPath = this.joinPath(parentPath, name)
-
-      const pathResults = await this.brain.find({
-        where: { path: childPath },
-        limit: 1
-      })
-
-      if (pathResults.length > 0) {
-        return pathResults[0].entity.id
-      }
+      // Use cached knowledge to quickly find the child
+      // Still need to verify it exists
     }
 
-    // Since parent field queries don't work reliably, construct the expected path
-    // and query by path instead
-    const parentEntity = await this.getEntity(parentId)
-    const parentPath = parentEntity.metadata.path
-    const childPath = this.joinPath(parentPath, name)
-
-    const results = await this.brain.find({
-      where: { path: childPath },
-      limit: 1
+    // Use proper graph traversal to find children
+    // Get all relationships where parentId contains other entities
+    const relations = await this.brain.getRelations({
+      from: parentId,
+      type: VerbType.Contains
     })
 
-    if (results.length > 0) {
-      const childId = results[0].entity.id
+    // Find the child with matching name
+    for (const relation of relations) {
+      const childEntity = await this.brain.get(relation.to)
+      if (childEntity && childEntity.metadata?.name === name) {
+        // Update parent cache
+        if (!this.parentCache.has(parentId)) {
+          this.parentCache.set(parentId, new Set())
+        }
+        this.parentCache.get(parentId)!.add(name)
 
-      // Update parent cache
-      if (!this.parentCache.has(parentId)) {
-        this.parentCache.set(parentId, new Set())
+        return childEntity.id
       }
-      this.parentCache.get(parentId)!.add(name)
-
-      return childId
     }
 
     return null
@@ -233,33 +221,28 @@ export class PathResolver {
 
   /**
    * Get all children of a directory
+   * Uses proper graph relationships to traverse the tree
    */
   async getChildren(dirId: string): Promise<VFSEntity[]> {
-    // Use Brainy's relationship query to find all children
-    const results = await this.brain.find({
-      connected: {
-        from: dirId,
-        via: VerbType.Contains
-      },
-      limit: 10000  // Large limit for directories
+    // Use proper graph API to get all Contains relationships from this directory
+    const relations = await this.brain.getRelations({
+      from: dirId,
+      type: VerbType.Contains
     })
 
-    // Filter and process valid VFS entities only
     const validChildren: VFSEntity[] = []
     const childNames = new Set<string>()
 
-    for (const result of results) {
-      const entity = result.entity
-      // Only include entities with proper VFS metadata and non-empty names
-      if (entity.metadata?.vfsType &&
-          entity.metadata?.name &&
-          entity.metadata?.path &&
-          entity.id !== dirId) {  // Don't include the directory itself
+    // Fetch all child entities
+    for (const relation of relations) {
+      const entity = await this.brain.get(relation.to)
+      if (entity && entity.metadata?.vfsType && entity.metadata?.name) {
         validChildren.push(entity as VFSEntity)
         childNames.add(entity.metadata.name)
       }
     }
 
+    // Update cache
     this.parentCache.set(dirId, childNames)
     return validChildren
   }
