@@ -2057,7 +2057,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
             case 'mkdir':
               await this.mkdir(op.path, op.options)
               break
-            case 'update':
+            case 'update': {
               // Update only metadata without changing content
               const entityId = await this.pathResolver.resolve(op.path)
               await this.brain.update({
@@ -2065,6 +2065,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
                 metadata: op.options?.metadata
               })
               break
+            }
           }
           result.successful++
         } catch (error: any) {

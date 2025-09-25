@@ -10,11 +10,12 @@ import { NounType, VerbType } from '../types/graphTypes.js'
 import { cosineDistance } from '../utils/distance.js'
 import { createHash } from 'crypto'
 import { v4 as uuidv4 } from '../universal/uuid.js'
+import { EntityManager, ManagedEntity } from './EntityManager.js'
 
 /**
  * Version metadata
  */
-export interface Version {
+export interface Version extends ManagedEntity {
   id: string
   path: string
   version: number
@@ -43,14 +44,15 @@ export interface SemanticVersioningConfig {
  * Creates versions only when content meaning changes significantly
  * Uses vector embeddings to detect semantic changes
  */
-export class SemanticVersioning {
+export class SemanticVersioning extends EntityManager {
   private config: Required<SemanticVersioningConfig>
   private versionCache = new Map<string, Version[]>()
 
   constructor(
-    private brain: Brainy,
+    brain: Brainy,
     config?: SemanticVersioningConfig
   ) {
+    super(brain, 'vfs-version')
     this.config = {
       threshold: config?.threshold ?? 0.3,
       maxVersions: config?.maxVersions ?? 10,
@@ -128,33 +130,31 @@ export class SemanticVersioning {
       console.warn('Failed to generate embedding for version:', error)
     }
 
-    // Store version as Brainy entity
-    const entity = await this.brain.add({
-      type: NounType.State,
-      data: content,  // Store actual content
-      metadata: {
-        id: versionId,
-        path,
-        version: versionNumber,
-        timestamp,
-        hash,
-        semanticHash,
-        size: content.length,
-        author: metadata?.author,
-        message: metadata?.message,
-        parentVersion,
-        system: 'vfs-version'
-      } as Version,
-      vector: embedding
-    })
+    // Create version entity
+    const version: Version = {
+      id: versionId,
+      path,
+      version: versionNumber,
+      timestamp,
+      hash,
+      semanticHash,
+      size: content.length,
+      author: metadata?.author,
+      message: metadata?.message,
+      parentVersion
+    }
+
+    // Store version using EntityManager (with actual content as data)
+    await this.storeEntity(version, NounType.State, embedding, content)
 
     // Create relationship to parent version if exists
     if (parentVersion) {
-      await this.brain.relate({
-        from: entity,
-        to: parentVersion,
-        type: VerbType.Succeeds
-      })
+      try {
+        await this.createRelationship(versionId, parentVersion, VerbType.Succeeds)
+      } catch (error) {
+        console.warn(`Failed to create parent relationship for version ${versionId}:`, error)
+        // Continue without relationship - non-critical for version functionality
+      }
     }
 
     // Update cache
@@ -189,19 +189,15 @@ export class SemanticVersioning {
       return this.versionCache.get(path)!
     }
 
-    // Query from Brainy
-    const results = await this.brain.find({
-      where: {
-        path,
-        system: 'vfs-version'
-      },
-      type: NounType.State,
-      limit: this.config.maxVersions * 2  // Get extra in case some are pruned
-    })
+    // Query using EntityManager
+    const versions = await this.findEntities<Version>(
+      { path },
+      NounType.State,
+      this.config.maxVersions * 2  // Get extra in case some are pruned
+    )
 
-    const versions = results
-      .map(r => r.entity.metadata as Version)
-      .sort((a, b) => b.timestamp - a.timestamp)  // Newest first
+    // Sort by timestamp (newest first)
+    versions.sort((a, b) => b.timestamp - a.timestamp)
 
     // Update cache
     this.versionCache.set(path, versions)
@@ -213,21 +209,20 @@ export class SemanticVersioning {
    * Get a specific version's content
    */
   async getVersion(path: string, versionId: string): Promise<Buffer | null> {
-    const results = await this.brain.find({
-      where: {
-        id: versionId,
-        path,
-        system: 'vfs-version'
-      },
-      type: NounType.State,
-      limit: 1
-    })
-
-    if (results.length === 0) {
+    // Get the version entity
+    const version = await this.getEntity<Version>(versionId)
+    if (!version || version.path !== path) {
       return null
     }
 
-    return results[0].entity.data as Buffer
+    // Get the content from Brainy using the Brainy ID
+    const brainyId = await this.getBrainyId(versionId)
+    if (!brainyId) {
+      return null
+    }
+
+    const entity = await this.brain.get(brainyId)
+    return entity?.data as Buffer | null
   }
 
   /**
@@ -319,7 +314,7 @@ export class SemanticVersioning {
 
     // Delete excess versions
     for (const id of toDelete.slice(0, versions.length - this.config.maxVersions)) {
-      await this.brain.delete(id)
+      await this.deleteEntity(id)
     }
 
     // Update cache

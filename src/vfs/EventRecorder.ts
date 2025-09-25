@@ -9,11 +9,12 @@ import { Brainy } from '../brainy.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 import { createHash } from 'crypto'
+import { EntityManager, ManagedEntity } from './EntityManager.js'
 
 /**
  * File operation event
  */
-export interface FileEvent {
+export interface FileEvent extends ManagedEntity {
   id: string
   type: 'create' | 'write' | 'append' | 'delete' | 'move' | 'rename' | 'mkdir' | 'rmdir'
   path: string
@@ -25,13 +26,16 @@ export interface FileEvent {
   metadata?: Record<string, any>
   previousHash?: string  // For tracking changes
   oldPath?: string  // For move/rename operations
+  eventType?: string  // For EntityManager queries
 }
 
 /**
  * Event Recorder - Stores all file operations as searchable events
  */
-export class EventRecorder {
-  constructor(private brain: Brainy) {}
+export class EventRecorder extends EntityManager {
+  constructor(brain: Brainy) {
+    super(brain, 'vfs')
+  }
 
   /**
    * Record a file operation event
@@ -45,26 +49,43 @@ export class EventRecorder {
       ? createHash('sha256').update(event.content).digest('hex')
       : undefined
 
-    // Store event as Brainy entity
-    const entity = await this.brain.add({
-      type: NounType.Event,
-      data: event.content || Buffer.from(JSON.stringify(event)),
-      metadata: {
-        ...event,
-        id: eventId,
-        timestamp,
-        hash,
-        eventType: 'file-operation',
-        system: 'vfs'
-      },
-      // Generate embedding for content-based events
-      vector: event.content && event.content.length < 100000
-        ? await this.generateEventEmbedding(event)
-        : undefined
-    })
+    // Create file event
+    const fileEvent: FileEvent = {
+      id: eventId,
+      type: event.type,
+      path: event.path,
+      timestamp,
+      content: event.content,
+      size: event.size,
+      hash,
+      author: event.author,
+      metadata: event.metadata,
+      previousHash: event.previousHash,
+      oldPath: event.oldPath
+    }
 
-    return entity
+    // Generate embedding for content-based events
+    const embedding = event.content && event.content.length < 100000
+      ? await this.generateEventEmbedding(event)
+      : undefined
+
+    // Add eventType for event classification
+    const eventWithType = {
+      ...fileEvent,
+      eventType: 'file-operation'
+    }
+
+    // Store event using EntityManager
+    await this.storeEntity(
+      eventWithType,
+      NounType.Event,
+      embedding,
+      event.content || Buffer.from(JSON.stringify(event))
+    )
+
+    return eventId
   }
+
 
   /**
    * Get all events matching criteria
@@ -95,19 +116,8 @@ export class EventRecorder {
       query.type = { $in: options.types }
     }
 
-    // Query events from Brainy
-    const results = await this.brain.find({
-      where: query,
-      type: NounType.Event,
-      limit
-    })
-
-    const events: FileEvent[] = []
-    for (const result of results) {
-      if (result.entity?.metadata) {
-        events.push(result.entity.metadata as FileEvent)
-      }
-    }
+    // Query using EntityManager
+    const events = await this.findEntities<FileEvent>(query, NounType.Event, limit)
 
     return events.sort((a, b) => b.timestamp - a.timestamp)
   }
@@ -138,28 +148,8 @@ export class EventRecorder {
       query.type = { $in: options.types }
     }
 
-    // Query events from Brainy
-    const results = await this.brain.find({
-      where: query,
-      type: NounType.Event,
-      limit: options?.limit || 100,
-      // Sort by timestamp descending (newest first)
-      // Note: Sorting would need to be implemented in Brainy
-    })
-
-    // Convert results to FileEvent format
-    const events = results.map(r => ({
-      id: r.entity.metadata.id,
-      type: r.entity.metadata.type,
-      path: r.entity.metadata.path,
-      timestamp: r.entity.metadata.timestamp,
-      content: r.entity.metadata.content,
-      size: r.entity.metadata.size,
-      hash: r.entity.metadata.hash,
-      author: r.entity.metadata.author,
-      metadata: r.entity.metadata.metadata,
-      previousHash: r.entity.metadata.previousHash
-    } as FileEvent))
+    // Query using EntityManager
+    const events = await this.findEntities<FileEvent>(query, NounType.Event, options?.limit || 100)
 
     // Sort by timestamp (newest first)
     return events.sort((a, b) => b.timestamp - a.timestamp)
@@ -219,20 +209,17 @@ export class EventRecorder {
       query.timestamp.$lte = until
     }
 
-    const results = await this.brain.find({
-      where: query,
-      type: NounType.Event,
-      limit: 1000
-    })
+    // Query using EntityManager
+    const events = await this.findEntities<FileEvent>(query, NounType.Event, 1000)
 
-    return results.map(r => ({
-      id: r.entity.metadata.id,
-      type: r.entity.metadata.type,
-      path: r.entity.metadata.path,
-      timestamp: r.entity.metadata.timestamp,
-      size: r.entity.metadata.size,
-      hash: r.entity.metadata.hash,
-      author: r.entity.metadata.author
+    return events.map(event => ({
+      id: event.id,
+      type: event.type,
+      path: event.path,
+      timestamp: event.timestamp,
+      size: event.size,
+      hash: event.hash,
+      author: event.author
     } as FileEvent))
   }
 
@@ -357,7 +344,7 @@ export class EventRecorder {
     for (let i = 0; i < events.length; i++) {
       // Keep every Nth event for history sampling
       if (i % keepEvery !== 0) {
-        await this.brain.delete(events[i].id)
+        await this.deleteEntity(events[i].id)
         pruned++
       }
     }

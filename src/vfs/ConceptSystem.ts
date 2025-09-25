@@ -10,11 +10,12 @@ import { Brainy } from '../brainy.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { cosineDistance } from '../utils/distance.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
+import { EntityManager, ManagedEntity } from './EntityManager.js'
 
 /**
  * Universal concept that exists independently of files
  */
-export interface UniversalConcept {
+export interface UniversalConcept extends ManagedEntity {
   id: string
   name: string
   description?: string
@@ -28,6 +29,7 @@ export interface UniversalConcept {
   lastUpdated: number
   version: number
   metadata: Record<string, any>
+  conceptType?: string  // For EntityManager queries
 }
 
 /**
@@ -45,7 +47,7 @@ export interface ConceptLink {
 /**
  * A manifestation of a concept in a specific location
  */
-export interface ConceptManifestation {
+export interface ConceptManifestation extends ManagedEntity {
   id: string
   conceptId: string
   filePath: string
@@ -100,14 +102,15 @@ export interface ConceptGraph {
  * - "Dependency Injection" pattern across multiple codebases
  * - "Sustainability" theme in various research papers
  */
-export class ConceptSystem {
+export class ConceptSystem extends EntityManager {
   private config: Required<ConceptSystemConfig>
   private conceptCache = new Map<string, UniversalConcept>()
 
   constructor(
-    private brain: Brainy,
+    brain: Brainy,
     config?: ConceptSystemConfig
   ) {
+    super(brain, 'vfs-concept')
     this.config = {
       autoLink: config?.autoLink ?? false,
       similarityThreshold: config?.similarityThreshold ?? 0.7,
@@ -124,13 +127,20 @@ export class ConceptSystem {
     const timestamp = Date.now()
 
     const universalConcept: UniversalConcept = {
-      ...concept,
       id: conceptId,
+      name: concept.name,
+      description: concept.description,
+      domain: concept.domain,
+      category: concept.category,
+      keywords: concept.keywords,
+      strength: concept.strength,
+      metadata: concept.metadata || {},
       created: timestamp,
       lastUpdated: timestamp,
       version: 1,
       links: [],
-      manifestations: []
+      manifestations: [],
+      conceptType: 'universal'  // Add conceptType for querying
     }
 
     // Generate embedding for concept
@@ -141,17 +151,13 @@ export class ConceptSystem {
       console.warn('Failed to generate concept embedding:', error)
     }
 
-    // Store concept in Brainy
-    const brainyEntity = await this.brain.add({
-      type: NounType.Concept,
-      data: Buffer.from(JSON.stringify(universalConcept)),
-      metadata: {
-        ...universalConcept,
-        conceptType: 'universal',
-        system: 'vfs-concept'
-      },
-      vector: embedding
-    })
+    // Store concept using EntityManager
+    await this.storeEntity(
+      universalConcept,
+      NounType.Concept,
+      embedding,
+      Buffer.from(JSON.stringify(universalConcept))
+    )
 
     // Auto-link to similar concepts if enabled
     if (this.config.autoLink) {
@@ -161,7 +167,7 @@ export class ConceptSystem {
     // Update cache
     this.conceptCache.set(conceptId, universalConcept)
 
-    return brainyEntity
+    return conceptId  // Return domain ID, not Brainy ID
   }
 
   /**
@@ -193,17 +199,16 @@ export class ConceptSystem {
     // File manifestation search
     if (query.manifestedIn) {
       // Find concepts that have manifestations in this file
-      const manifestationResults = await this.brain.find({
-        where: {
+      const manifestationResults = await this.findEntities<ConceptManifestation>(
+        {
           filePath: query.manifestedIn,
-          eventType: 'concept-manifestation',
-          system: 'vfs-concept'
+          eventType: 'concept-manifestation'
         },
-        type: NounType.Event,
-        limit: 1000
-      })
+        NounType.Event,
+        1000
+      )
 
-      const conceptIds = manifestationResults.map(r => r.entity.metadata.conceptId)
+      const conceptIds = manifestationResults.map(m => m.conceptId)
       if (conceptIds.length > 0) {
         searchQuery.id = { $in: conceptIds }
       } else {
@@ -211,12 +216,12 @@ export class ConceptSystem {
       }
     }
 
-    // Search in Brainy
-    let results = await this.brain.find({
-      where: searchQuery,
-      type: NounType.Concept,
-      limit: 1000
-    })
+    // Search using EntityManager
+    const results = await this.findEntities<UniversalConcept>(
+      searchQuery,
+      NounType.Concept,
+      1000
+    )
 
     // If searching for similar concepts, use vector similarity
     if (query.similar) {
@@ -224,29 +229,42 @@ export class ConceptSystem {
         const queryEmbedding = await this.generateTextEmbedding(query.similar)
         if (queryEmbedding) {
           // Get all concepts and rank by similarity
-          const allConcepts = await this.brain.find({
-            where: { conceptType: 'universal', system: 'vfs-concept' },
-            type: NounType.Concept,
-            limit: 10000
-          })
+          const allConcepts = await this.findEntities<UniversalConcept>(
+            { conceptType: 'universal' },
+            NounType.Concept,
+            10000
+          )
 
-          const withSimilarity = allConcepts
-            .filter(c => c.entity.vector && c.entity.vector.length > 0)
+          // For similarity search, we need to get the actual vector data from Brainy
+          const conceptsWithVectors = []
+          for (const concept of allConcepts) {
+            if (concept.brainyId) {
+              const brainyEntity = await this.brain.get(concept.brainyId)
+              if (brainyEntity?.vector && brainyEntity.vector.length > 0) {
+                conceptsWithVectors.push({
+                  concept,
+                  vector: brainyEntity.vector
+                })
+              }
+            }
+          }
+
+          const withSimilarity = conceptsWithVectors
             .map(c => ({
-              concept: c,
-              similarity: 1 - cosineDistance(queryEmbedding, c.entity.vector!)
+              concept: c.concept,
+              similarity: 1 - cosineDistance(queryEmbedding, c.vector)
             }))
             .filter(s => s.similarity > this.config.similarityThreshold)
             .sort((a, b) => b.similarity - a.similarity)
 
-          results = withSimilarity.map(s => s.concept)
+          return withSimilarity.map(s => s.concept)
         }
       } catch (error) {
         console.warn('Failed to perform concept similarity search:', error)
       }
     }
 
-    return results.map(r => r.entity.metadata as UniversalConcept)
+    return results
   }
 
   /**
@@ -302,17 +320,17 @@ export class ConceptSystem {
       await this.updateConcept(toConcept)
     }
 
-    // Create Brainy relationship
-    await this.brain.relate({
-      from: fromConceptId,
-      to: toConceptId,
-      type: this.getVerbType(relationship),
-      metadata: {
+    // Create relationship using EntityManager
+    await this.createRelationship(
+      fromConceptId,
+      toConceptId,
+      this.getVerbType(relationship),
+      {
         strength: link.strength,
         context: link.context,
         bidirectional: link.bidirectional
       }
-    })
+    )
 
     return linkId
   }
@@ -351,23 +369,25 @@ export class ConceptSystem {
       extractedBy: options?.extractedBy ?? 'manual'
     }
 
-    // Store manifestation as Brainy event
-    await this.brain.add({
-      type: NounType.Event,
-      data: Buffer.from(context),
-      metadata: {
-        ...manifestation,
-        eventType: 'concept-manifestation',
-        system: 'vfs-concept'
-      }
-    })
+    // Store manifestation as managed entity (with eventType for manifestations)
+    const manifestationWithEventType = {
+      ...manifestation,
+      eventType: 'concept-manifestation'
+    }
 
-    // Create relationship to concept
-    await this.brain.relate({
-      from: manifestationId,
-      to: conceptId,
-      type: VerbType.Implements
-    })
+    await this.storeEntity(
+      manifestationWithEventType,
+      NounType.Event,
+      undefined,
+      Buffer.from(context)
+    )
+
+    // Create relationship to concept using EntityManager
+    await this.createRelationship(
+      manifestationId,
+      conceptId,
+      VerbType.Implements
+    )
 
     // Update concept with new manifestation
     concept.manifestations.push(manifestation)
@@ -476,13 +496,11 @@ export class ConceptSystem {
       query.strength = { $gte: options.minStrength }
     }
 
-    const results = await this.brain.find({
-      where: query,
-      type: NounType.Concept,
-      limit: options?.maxConcepts || 1000
-    })
-
-    const concepts = results.map(r => r.entity.metadata as UniversalConcept)
+    const concepts = await this.findEntities<UniversalConcept>(
+      query,
+      NounType.Concept,
+      options?.maxConcepts || 1000
+    )
 
     // Build graph structure
     const graphConcepts = concepts.map(c => ({
@@ -541,15 +559,13 @@ export class ConceptSystem {
       query.confidence = { $gte: options.minConfidence }
     }
 
-    const results = await this.brain.find({
-      where: query,
-      type: NounType.Event,
-      limit: options?.limit || 1000
-    })
+    const manifestations = await this.findEntities<ConceptManifestation>(
+      query,
+      NounType.Event,
+      options?.limit || 1000
+    )
 
-    return results
-      .map(r => r.entity.metadata as ConceptManifestation)
-      .sort((a, b) => b.timestamp - a.timestamp)
+    return manifestations.sort((a, b) => b.timestamp - a.timestamp)
   }
 
   /**
@@ -590,23 +606,11 @@ export class ConceptSystem {
       return this.conceptCache.get(conceptId)!
     }
 
-    // Query from Brainy
-    const results = await this.brain.find({
-      where: {
-        id: conceptId,
-        conceptType: 'universal',
-        system: 'vfs-concept'
-      },
-      type: NounType.Concept,
-      limit: 1
-    })
-
-    if (results.length === 0) {
-      return null
+    // Query using EntityManager
+    const concept = await this.getEntity<UniversalConcept>(conceptId)
+    if (concept) {
+      this.conceptCache.set(conceptId, concept)
     }
-
-    const concept = results[0].entity.metadata as UniversalConcept
-    this.conceptCache.set(conceptId, concept)
     return concept
   }
 
@@ -614,28 +618,11 @@ export class ConceptSystem {
    * Update stored concept
    */
   private async updateConcept(concept: UniversalConcept): Promise<void> {
-    // Find the Brainy entity
-    const results = await this.brain.find({
-      where: {
-        id: concept.id,
-        conceptType: 'universal',
-        system: 'vfs-concept'
-      },
-      type: NounType.Concept,
-      limit: 1
-    })
+    // Add conceptType metadata before updating
+    concept.conceptType = 'universal'
 
-    if (results.length > 0) {
-      await this.brain.update({
-        id: results[0].entity.id,
-        data: Buffer.from(JSON.stringify(concept)),
-        metadata: {
-          ...concept,
-          conceptType: 'universal',
-          system: 'vfs-concept'
-        }
-      })
-    }
+    // Update using EntityManager
+    await this.updateEntity(concept)
 
     // Update cache
     this.conceptCache.set(concept.id, concept)

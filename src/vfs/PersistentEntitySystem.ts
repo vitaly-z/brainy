@@ -10,11 +10,12 @@ import { Brainy } from '../brainy.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { cosineDistance } from '../utils/distance.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
+import { EntityManager, ManagedEntity } from './EntityManager.js'
 
 /**
  * Persistent entity that exists across files and evolves over time
  */
-export interface PersistentEntity {
+export interface PersistentEntity extends ManagedEntity {
   id: string
   name: string
   type: string  // 'character', 'api', 'service', 'concept', 'customer', etc.
@@ -25,12 +26,13 @@ export interface PersistentEntity {
   created: number
   lastUpdated: number
   version: number
+  entityType?: string  // For EntityManager queries
 }
 
 /**
  * An appearance of an entity in a specific file/location
  */
-export interface EntityAppearance {
+export interface EntityAppearance extends ManagedEntity {
   id: string
   entityId: string
   filePath: string
@@ -44,6 +46,7 @@ export interface EntityAppearance {
   version: number
   changes?: EntityChange[]
   confidence: number  // How confident we are this is the entity (0-1)
+  eventType?: string  // For EntityManager queries
 }
 
 /**
@@ -78,14 +81,15 @@ export interface PersistentEntityConfig {
  * - Business entities that appear in multiple reports
  * - Code classes/functions that span multiple files
  */
-export class PersistentEntitySystem {
+export class PersistentEntitySystem extends EntityManager {
   private config: Required<PersistentEntityConfig>
   private entityCache = new Map<string, PersistentEntity>()
 
   constructor(
-    private brain: Brainy,
+    brain: Brainy,
     config?: PersistentEntityConfig
   ) {
+    super(brain, 'vfs-entity')
     this.config = {
       autoExtract: config?.autoExtract ?? false,
       similarityThreshold: config?.similarityThreshold ?? 0.8,
@@ -102,12 +106,17 @@ export class PersistentEntitySystem {
     const timestamp = Date.now()
 
     const persistentEntity: PersistentEntity = {
-      ...entity,
       id: entityId,
+      name: entity.name,
+      type: entity.type,
+      description: entity.description,
+      aliases: entity.aliases,
+      attributes: entity.attributes,
       created: timestamp,
       lastUpdated: timestamp,
       version: 1,
-      appearances: []
+      appearances: [],
+      entityType: 'persistent'  // Add entityType for querying
     }
 
     // Generate embedding for entity description
@@ -120,22 +129,18 @@ export class PersistentEntitySystem {
       console.warn('Failed to generate entity embedding:', error)
     }
 
-    // Store entity in Brainy
-    const brainyEntity = await this.brain.add({
-      type: NounType.Concept,
-      data: Buffer.from(JSON.stringify(persistentEntity)),
-      metadata: {
-        ...persistentEntity,
-        entityType: 'persistent',
-        system: 'vfs-entity'
-      },
-      vector: embedding
-    })
+    // Store entity using EntityManager
+    await this.storeEntity(
+      persistentEntity,
+      NounType.Concept,
+      embedding,
+      Buffer.from(JSON.stringify(persistentEntity))
+    )
 
     // Update cache
     this.entityCache.set(entityId, persistentEntity)
 
-    return brainyEntity
+    return entityId  // Return domain ID, not Brainy ID
   }
 
   /**
@@ -147,10 +152,7 @@ export class PersistentEntitySystem {
     attributes?: Record<string, any>
     similar?: string  // Find similar entities to this description
   }): Promise<PersistentEntity[]> {
-    const searchQuery: any = {
-      entityType: 'persistent',
-      system: 'vfs-entity'
-    }
+    const searchQuery: any = {}
 
     if (query.name) {
       // Search by exact name or aliases
@@ -170,42 +172,45 @@ export class PersistentEntitySystem {
       }
     }
 
-    // Search in Brainy
-    let results = await this.brain.find({
-      where: searchQuery,
-      type: NounType.Concept,
-      limit: 100
-    })
+    // Add system metadata for EntityManager
+    searchQuery.entityType = 'persistent'
+
+    // Search using EntityManager
+    let results = await this.findEntities<PersistentEntity>(searchQuery, NounType.Concept, 100)
 
     // If searching for similar entities, use vector similarity
     if (query.similar) {
       try {
         const queryEmbedding = await this.generateTextEmbedding(query.similar)
         if (queryEmbedding) {
-          // Get all entities and rank by similarity
-          const allEntities = await this.brain.find({
-            where: { entityType: 'persistent', system: 'vfs-entity' },
-            type: NounType.Concept,
-            limit: 1000
-          })
+          // Get all entities and rank by similarity using EntityManager
+          const allEntities = await this.findEntities<PersistentEntity>({}, NounType.Concept, 1000)
 
           const withSimilarity = allEntities
-            .filter(e => e.entity.vector && e.entity.vector.length > 0)
-            .map(e => ({
-              entity: e,
-              similarity: 1 - cosineDistance(queryEmbedding, e.entity.vector!)
-            }))
-            .filter(s => s.similarity > this.config.similarityThreshold)
-            .sort((a, b) => b.similarity - a.similarity)
+            .filter(e => e.brainyId) // Only entities with brainyId have vectors
+            .map(async e => {
+              const brainyEntity = await this.brain.get(e.brainyId!)
+              if (brainyEntity?.vector) {
+                return {
+                  entity: e,
+                  similarity: 1 - cosineDistance(queryEmbedding, brainyEntity.vector)
+                }
+              }
+              return null
+            })
 
-          results = withSimilarity.map(s => s.entity)
+          const resolved = (await Promise.all(withSimilarity))
+            .filter(s => s !== null && s.similarity > this.config.similarityThreshold)
+            .sort((a, b) => b!.similarity - a!.similarity)
+
+          results = resolved.map(s => s!.entity)
         }
       } catch (error) {
         console.warn('Failed to perform similarity search:', error)
       }
     }
 
-    return results.map(r => r.entity.metadata as PersistentEntity)
+    return results
   }
 
   /**
@@ -221,7 +226,7 @@ export class PersistentEntitySystem {
       extractChanges?: boolean
     }
   ): Promise<string> {
-    const entity = await this.getEntity(entityId)
+    const entity = await this.getPersistentEntity(entityId)
     if (!entity) {
       throw new Error(`Entity ${entityId} not found`)
     }
@@ -247,23 +252,25 @@ export class PersistentEntitySystem {
       confidence: options?.confidence ?? 1.0
     }
 
-    // Store appearance as Brainy entity
-    await this.brain.add({
-      type: NounType.Event,
-      data: Buffer.from(context),
-      metadata: {
-        ...appearance,
-        eventType: 'entity-appearance',
-        system: 'vfs-entity'
-      }
-    })
+    // Store appearance as managed entity (with eventType for appearances)
+    const appearanceWithEventType = {
+      ...appearance,
+      eventType: 'entity-appearance'
+    }
 
-    // Create relationship to entity
-    await this.brain.relate({
-      from: appearanceId,
-      to: entityId,
-      type: VerbType.References
-    })
+    await this.storeEntity(
+      appearanceWithEventType,
+      NounType.Event,
+      undefined,
+      Buffer.from(context)
+    )
+
+    // Create relationship to entity using EntityManager
+    await this.createRelationship(
+      appearanceId,
+      entityId,
+      VerbType.References
+    )
 
     // Update entity with new appearance
     entity.appearances.push(appearance)
@@ -287,7 +294,7 @@ export class PersistentEntitySystem {
     }
 
     // Update stored entity
-    await this.updateEntity(entity)
+    await this.updatePersistentEntity(entity)
 
     return appearanceId
   }
@@ -304,7 +311,7 @@ export class PersistentEntitySystem {
       appearance?: EntityAppearance
     }>
   }> {
-    const entity = await this.getEntity(entityId)
+    const entity = await this.getPersistentEntity(entityId)
     if (!entity) {
       throw new Error(`Entity ${entityId} not found`)
     }
@@ -377,7 +384,7 @@ export class PersistentEntitySystem {
     source: string,
     reason?: string
   ): Promise<void> {
-    const entity = await this.getEntity(entityId)
+    const entity = await this.getPersistentEntity(entityId)
     if (!entity) {
       throw new Error(`Entity ${entityId} not found`)
     }
@@ -405,7 +412,7 @@ export class PersistentEntitySystem {
     entity.version++
 
     // Update stored entity
-    await this.updateEntity(entity)
+    await this.updatePersistentEntity(entity)
 
     // Record evolution event
     if (changes.length > 0) {
@@ -443,7 +450,7 @@ export class PersistentEntitySystem {
       // Character names (capitalized words)
       /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g,
       // API endpoints
-      /\/api\/[a-zA-Z0-9\/\-_]+/g,
+      /\/api\/[a-zA-Z0-9/\-_]+/g,
       // Class names
       /class\s+([A-Z][a-zA-Z0-9_]*)/g,
       // Function names
@@ -471,7 +478,7 @@ export class PersistentEntitySystem {
         }
 
         // Record appearance for existing or new entity
-        const entity = existing[0] || await this.getEntity(entities[entities.length - 1])
+        const entity = existing[0] || await this.getPersistentEntity(entities[entities.length - 1])
         if (entity) {
           await this.recordAppearance(
             entity.id,
@@ -524,38 +531,29 @@ export class PersistentEntitySystem {
   }
 
   /**
-   * Get entity by ID
+   * Get persistent entity by ID
    */
-  private async getEntity(entityId: string): Promise<PersistentEntity | null> {
+  async getPersistentEntity(entityId: string): Promise<PersistentEntity | null> {
     // Check cache first
     if (this.entityCache.has(entityId)) {
       return this.entityCache.get(entityId)!
     }
 
-    // Query from Brainy
-    const results = await this.brain.find({
-      where: {
-        id: entityId,
-        entityType: 'persistent',
-        system: 'vfs-entity'
-      },
-      type: NounType.Concept,
-      limit: 1
-    })
+    // Use parent getEntity method
+    const entity = await super.getEntity<PersistentEntity>(entityId)
 
-    if (results.length === 0) {
-      return null
+    if (entity) {
+      // Cache and return
+      this.entityCache.set(entityId, entity)
     }
 
-    const entity = results[0].entity.metadata as PersistentEntity
-    this.entityCache.set(entityId, entity)
     return entity
   }
 
   /**
-   * Update stored entity
+   * Update stored entity (rename to avoid parent method conflict)
    */
-  private async updateEntity(entity: PersistentEntity): Promise<void> {
+  private async updatePersistentEntity(entity: PersistentEntity): Promise<void> {
     // Find the Brainy entity
     const results = await this.brain.find({
       where: {
