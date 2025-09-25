@@ -14,6 +14,7 @@ import { CacheAugmentation } from './cacheAugmentation.js'
 import { MetricsAugmentation } from './metricsAugmentation.js'
 import { MonitoringAugmentation } from './monitoringAugmentation.js'
 import { UniversalDisplayAugmentation } from './universalDisplayAugmentation.js'
+import { KnowledgeAugmentation } from './KnowledgeAugmentation.js'
 
 /**
  * Create default augmentations for zero-config operation
@@ -28,6 +29,7 @@ export function createDefaultAugmentations(
     metrics?: boolean | Record<string, any>
     monitoring?: boolean | Record<string, any>
     display?: boolean | Record<string, any>
+    knowledge?: boolean | Record<string, any>
   } = {}
 ): BaseAugmentation[] {
   const augmentations: BaseAugmentation[] = []
@@ -60,6 +62,11 @@ export function createDefaultAugmentations(
   if (config.monitoring !== false && (config.monitoring || isDistributed)) {
     const monitoringConfig = typeof config.monitoring === 'object' ? config.monitoring : {}
     augmentations.push(new MonitoringAugmentation(monitoringConfig))
+  }
+
+  // Knowledge Layer augmentation for VFS intelligence
+  if (config.knowledge !== false) {
+    augmentations.push(new KnowledgeAugmentation() as any)
   }
 
   return augmentations

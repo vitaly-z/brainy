@@ -20,6 +20,7 @@ import { createDefaultAugmentations } from './augmentations/defaultAugmentations
 import { ImprovedNeuralAPI } from './neural/improvedNeuralAPI.js'
 import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
+import { VirtualFileSystem } from './vfs/VirtualFileSystem.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
 import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
 import { createPipeline } from './streaming/pipeline.js'
@@ -84,6 +85,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _neural?: ImprovedNeuralAPI
   private _nlp?: NaturalLanguageProcessor
   private _tripleIntelligence?: TripleIntelligenceSystem
+  private _vfs?: VirtualFileSystem
 
   // State
   private initialized = false
@@ -212,6 +214,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (!this.initialized) {
       throw new Error('Brainy not initialized. Call init() first.')
     }
+  }
+
+  /**
+   * Check if Brainy is initialized
+   */
+  get isInitialized(): boolean {
+    return this.initialized
   }
 
   // ============= CORE CRUD OPERATIONS =============
@@ -1114,6 +1123,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._nlp = new NaturalLanguageProcessor(this)
     }
     return this._nlp
+  }
+
+  /**
+   * Virtual File System API - Knowledge Operating System
+   */
+  vfs(): VirtualFileSystem {
+    if (!this._vfs) {
+      this._vfs = new VirtualFileSystem(this)
+    }
+    return this._vfs
   }
 
   /**
