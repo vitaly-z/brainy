@@ -80,7 +80,7 @@ export class VFSTreeUtils {
       const node: TreeNode = {
         name: entity.metadata.name,
         path: entity.metadata.path,
-        type: entity.metadata.vfsType,
+        type: entity.metadata.vfsType === 'directory' ? 'directory' : 'file',
         entityId: entity.id,
         metadata: entity.metadata
       }
