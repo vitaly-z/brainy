@@ -209,53 +209,64 @@ await brain.find("Popular JavaScript libraries similar to Vue")
 await brain.find("Documentation about authentication from last month")
 ```
 
-### 🧠🌐 **Knowledge Graph + Virtual Filesystem - Where Ideas Come Alive**
+### 🧠🌐 **Virtual Filesystem - Intelligent File Management**
 
-**Store ANY knowledge. Connect EVERYTHING. Files are optional.**
+**Build file explorers, IDEs, and knowledge systems that never crash from infinite recursion.**
 
-- **Living Knowledge**: Characters, concepts, and systems that exist independently of files
-- **Universal Connections**: Link files to entities, entities to concepts, anything to anything
-- **Semantic Intelligence**: Find knowledge by meaning, not by where it's stored
-- **Optional Files**: Use filesystem operations when helpful, pure knowledge when not
-- **Perfect Memory**: Every piece of knowledge remembers its entire history
-- **Knowledge Evolution**: Watch ideas grow and connect across time and projects
+- **Tree-Aware Operations**: Safe directory listing prevents recursive loops
+- **Semantic Search**: Find files by content, not just filename
+- **Production Storage**: Filesystem and cloud storage for real applications
+- **Zero-Config**: Works out of the box with intelligent defaults
 
 ```javascript
 import { Brainy } from '@soulcraft/brainy'
 
-const brain = new Brainy({ storage: { type: 'memory' } })
+// ✅ CORRECT: Use persistent storage for file systems
+const brain = new Brainy({
+  storage: {
+    type: 'filesystem',    // Persisted to disk
+    path: './brainy-data'  // Your file storage
+  }
+})
 await brain.init()
+
 const vfs = brain.vfs()
 await vfs.init()
 
-// Start with familiar files if you want
-await vfs.writeFile('/story.txt', 'A tale of adventure...')
+// ✅ Safe file operations
+await vfs.writeFile('/projects/app/index.js', 'console.log("Hello")')
+await vfs.mkdir('/docs')
+await vfs.writeFile('/docs/README.md', '# My Project')
 
-// But knowledge doesn't need files!
-const alice = await vfs.createEntity({
-  name: 'Alice',
-  type: 'character',
-  description: 'Brave explorer discovering quantum worlds'
+// ✅ NEVER crashes: Tree-aware directory listing
+const children = await vfs.getDirectChildren('/projects')
+// Returns only direct children, never the directory itself
+
+// ✅ Build file explorers safely
+const tree = await vfs.getTreeStructure('/projects', {
+  maxDepth: 3,          // Prevent deep recursion
+  sort: 'name'         // Organized results
 })
 
-const quantumPhysics = await vfs.createConcept({
-  name: 'Quantum Entanglement',
-  domain: 'physics',
-  keywords: ['superposition', 'measurement', 'correlation']
+// ✅ Semantic file search
+const reactFiles = await vfs.search('React components with hooks')
+const docs = await vfs.search('API documentation', {
+  path: '/docs'  // Search within specific directory
 })
 
-// Connect EVERYTHING - files, entities, concepts
-await vfs.linkEntities(alice, quantumPhysics, 'studies')
-await vfs.addRelationship('/story.txt', alice.id, 'features')
+// ✅ Connect related files
+await vfs.addRelationship('/src/auth.js', '/tests/auth.test.js', 'tested-by')
 
-// Find knowledge by meaning, not location
-const physics = await vfs.search('quantum mechanics')
-// Returns: files, entities, concepts, relationships - ALL knowledge
-
-// Knowledge transcends boundaries
-const aliceKnowledge = await vfs.getEntityGraph(alice)
-// Her relationships, appearances, evolution - her entire existence
+// Perfect for: File explorers, IDEs, documentation systems, code analysis
 ```
+
+**🚨 Prevents Common Mistakes:**
+- ❌ No infinite recursion in file trees (like brain-cloud team experienced)
+- ❌ No data loss from memory storage
+- ❌ No performance issues with large directories
+- ❌ No need for complex fallback patterns
+
+**[📖 VFS Quick Start →](docs/vfs/QUICK_START.md)** | **[🎯 Common Patterns →](docs/vfs/COMMON_PATTERNS.md)**
 
 **Your knowledge isn't trapped anymore.** Characters live beyond stories. APIs exist beyond code files. Concepts connect across domains. This is knowledge that happens to support files, not a filesystem that happens to store knowledge.
 

@@ -227,6 +227,50 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Add an entity to the database
+   *
+   * @param params - Parameters for adding the entity
+   * @returns Promise that resolves to the entity ID
+   *
+   * @example Basic entity creation
+   * ```typescript
+   * const id = await brain.add({
+   *   data: "John Smith is a software engineer",
+   *   type: NounType.Person,
+   *   metadata: { role: "engineer", team: "backend" }
+   * })
+   * console.log(`Created entity: ${id}`)
+   * ```
+   *
+   * @example Adding with custom ID
+   * ```typescript
+   * const customId = await brain.add({
+   *   id: "user-12345",
+   *   data: "Important document content",
+   *   type: NounType.Document,
+   *   metadata: { priority: "high", department: "legal" }
+   * })
+   * ```
+   *
+   * @example Using pre-computed vector (optimization)
+   * ```typescript
+   * const vector = await brain.embed("Optimized content")
+   * const id = await brain.add({
+   *   data: "Optimized content",
+   *   type: NounType.Document,
+   *   vector: vector,  // Skip re-embedding
+   *   metadata: { optimized: true }
+   * })
+   * ```
+   *
+   * @example Multi-tenant usage
+   * ```typescript
+   * const id = await brain.add({
+   *   data: "Customer feedback",
+   *   type: NounType.Message,
+   *   service: "customer-portal",  // Multi-tenancy
+   *   metadata: { rating: 5, verified: true }
+   * })
+   * ```
    */
   async add(params: AddParams<T>): Promise<string> {
     await this.ensureInitialized()
@@ -283,6 +327,74 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Get an entity by ID
+   *
+   * @param id - The unique identifier of the entity to retrieve
+   * @returns Promise that resolves to the entity if found, null if not found
+   *
+   * @example
+   * // Basic entity retrieval
+   * const entity = await brainy.get('user-123')
+   * if (entity) {
+   *   console.log('Found entity:', entity.data)
+   *   console.log('Created at:', new Date(entity.createdAt))
+   * } else {
+   *   console.log('Entity not found')
+   * }
+   *
+   * @example
+   * // Working with typed entities
+   * interface User {
+   *   name: string
+   *   email: string
+   * }
+   *
+   * const brainy = new Brainy<User>({ storage: 'filesystem' })
+   * const user = await brainy.get('user-456')
+   * if (user) {
+   *   // TypeScript knows user.metadata is of type User
+   *   console.log(`Hello ${user.metadata.name}`)
+   * }
+   *
+   * @example
+   * // Safe retrieval with error handling
+   * try {
+   *   const entity = await brainy.get('document-789')
+   *   if (!entity) {
+   *     throw new Error('Document not found')
+   *   }
+   *
+   *   // Process the entity
+   *   return {
+   *     id: entity.id,
+   *     content: entity.data,
+   *     type: entity.type,
+   *     metadata: entity.metadata
+   *   }
+   * } catch (error) {
+   *   console.error('Failed to retrieve entity:', error)
+   *   return null
+   * }
+   *
+   * @example
+   * // Batch retrieval pattern
+   * const ids = ['doc-1', 'doc-2', 'doc-3']
+   * const entities = await Promise.all(
+   *   ids.map(id => brainy.get(id))
+   * )
+   * const foundEntities = entities.filter(entity => entity !== null)
+   * console.log(`Found ${foundEntities.length} out of ${ids.length} entities`)
+   *
+   * @example
+   * // Using with async iteration
+   * const entityIds = ['user-1', 'user-2', 'user-3']
+   *
+   * for (const id of entityIds) {
+   *   const entity = await brainy.get(id)
+   *   if (entity) {
+   *     console.log(`Processing ${entity.type}: ${id}`)
+   *     // Process entity...
+   *   }
+   * }
    */
   async get(id: string): Promise<Entity<T> | null> {
     await this.ensureInitialized()
@@ -431,6 +543,107 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Create a relationship between entities
+   *
+   * @param params - Parameters for creating the relationship
+   * @returns Promise that resolves to the relationship ID
+   *
+   * @example
+   * // Basic relationship creation
+   * const userId = await brainy.add({
+   *   data: { name: 'John', role: 'developer' },
+   *   type: NounType.Person
+   * })
+   * const projectId = await brainy.add({
+   *   data: { name: 'AI Assistant', status: 'active' },
+   *   type: NounType.Thing
+   * })
+   *
+   * const relationId = await brainy.relate({
+   *   from: userId,
+   *   to: projectId,
+   *   type: VerbType.WorksOn
+   * })
+   *
+   * @example
+   * // Bidirectional relationships
+   * const friendshipId = await brainy.relate({
+   *   from: 'user-1',
+   *   to: 'user-2',
+   *   type: VerbType.Knows,
+   *   bidirectional: true // Creates both directions automatically
+   * })
+   *
+   * @example
+   * // Weighted relationships for importance/strength
+   * const collaborationId = await brainy.relate({
+   *   from: 'team-lead',
+   *   to: 'project-alpha',
+   *   type: VerbType.LeadsOn,
+   *   weight: 0.9, // High importance/strength
+   *   metadata: {
+   *     startDate: '2024-01-15',
+   *     responsibility: 'technical leadership',
+   *     hoursPerWeek: 40
+   *   }
+   * })
+   *
+   * @example
+   * // Typed relationships with custom metadata
+   * interface CollaborationMeta {
+   *   role: string
+   *   startDate: string
+   *   skillLevel: number
+   * }
+   *
+   * const brainy = new Brainy<CollaborationMeta>({ storage: 'filesystem' })
+   * const relationId = await brainy.relate({
+   *   from: 'developer-123',
+   *   to: 'project-456',
+   *   type: VerbType.WorksOn,
+   *   weight: 0.85,
+   *   metadata: {
+   *     role: 'frontend developer',
+   *     startDate: '2024-03-01',
+   *     skillLevel: 8
+   *   }
+   * })
+   *
+   * @example
+   * // Creating complex relationship networks
+   * const entities = []
+   * // Create entities
+   * for (let i = 0; i < 5; i++) {
+   *   const id = await brainy.add({
+   *     data: { name: `Entity ${i}`, value: i * 10 },
+   *     type: NounType.Thing
+   *   })
+   *   entities.push(id)
+   * }
+   *
+   * // Create hierarchical relationships
+   * for (let i = 0; i < entities.length - 1; i++) {
+   *   await brainy.relate({
+   *     from: entities[i],
+   *     to: entities[i + 1],
+   *     type: VerbType.DependsOn,
+   *     weight: (i + 1) / entities.length
+   *   })
+   * }
+   *
+   * @example
+   * // Error handling for invalid relationships
+   * try {
+   *   await brainy.relate({
+   *     from: 'nonexistent-entity',
+   *     to: 'another-entity',
+   *     type: VerbType.RelatedTo
+   *   })
+   * } catch (error) {
+   *   if (error.message.includes('not found')) {
+   *     console.log('One or both entities do not exist')
+   *     // Handle missing entities...
+   *   }
+   * }
    */
   async relate(params: RelateParams<T>): Promise<string> {
     await this.ensureInitialized()
@@ -557,6 +770,142 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Unified find method - supports natural language and structured queries
    * Implements Triple Intelligence with parallel search optimization
+   *
+   * @param query - Natural language string or structured FindParams object
+   * @returns Promise that resolves to array of search results with scores
+   *
+   * @example
+   * // Natural language queries (most common)
+   * const results = await brainy.find('users who work on AI projects')
+   * const docs = await brainy.find('documents about machine learning')
+   * const code = await brainy.find('JavaScript functions for data processing')
+   *
+   * @example
+   * // Structured queries with filtering
+   * const results = await brainy.find({
+   *   query: 'artificial intelligence',
+   *   type: NounType.Document,
+   *   limit: 5,
+   *   where: {
+   *     status: 'published',
+   *     author: 'expert'
+   *   }
+   * })
+   *
+   * // Process results
+   * for (const result of results) {
+   *   console.log(`Found: ${result.entity.data} (score: ${result.score})`)
+   * }
+   *
+   * @example
+   * // Metadata-only filtering (no vector search)
+   * const activeUsers = await brainy.find({
+   *   type: NounType.Person,
+   *   where: {
+   *     status: 'active',
+   *     department: 'engineering'
+   *   },
+   *   service: 'user-management'
+   * })
+   *
+   * @example
+   * // Vector similarity search with custom vectors
+   * const queryVector = await brainy.embed('machine learning algorithms')
+   * const similar = await brainy.find({
+   *   vector: queryVector,
+   *   limit: 10,
+   *   type: [NounType.Document, NounType.Thing]
+   * })
+   *
+   * @example
+   * // Proximity search (find entities similar to existing ones)
+   * const relatedContent = await brainy.find({
+   *   near: 'document-123', // Find entities similar to this one
+   *   limit: 8,
+   *   where: {
+   *     published: true
+   *   }
+   * })
+   *
+   * @example
+   * // Pagination for large result sets
+   * const firstPage = await brainy.find({
+   *   query: 'research papers',
+   *   limit: 20,
+   *   offset: 0
+   * })
+   *
+   * const secondPage = await brainy.find({
+   *   query: 'research papers',
+   *   limit: 20,
+   *   offset: 20
+   * })
+   *
+   * @example
+   * // Complex search with multiple criteria
+   * const results = await brainy.find({
+   *   query: 'machine learning models',
+   *   type: [NounType.Thing, NounType.Document],
+   *   where: {
+   *     accuracy: { $gte: 0.9 }, // Metadata filtering
+   *     framework: { $in: ['tensorflow', 'pytorch'] }
+   *   },
+   *   service: 'ml-pipeline',
+   *   limit: 15
+   * })
+   *
+   * @example
+   * // Empty query returns all entities (paginated)
+   * const allEntities = await brainy.find({
+   *   limit: 50,
+   *   offset: 0
+   * })
+   *
+   * @example
+   * // Performance-optimized search patterns
+   * // Fast metadata-only search (no vector computation)
+   * const fastResults = await brainy.find({
+   *   type: NounType.Person,
+   *   where: { active: true },
+   *   limit: 100
+   * })
+   *
+   * // Combined vector + metadata for precision
+   * const preciseResults = await brainy.find({
+   *   query: 'senior developers',
+   *   where: {
+   *     experience: { $gte: 5 },
+   *     skills: { $includes: 'javascript' }
+   *   },
+   *   limit: 10
+   * })
+   *
+   * @example
+   * // Error handling and result processing
+   * try {
+   *   const results = await brainy.find('complex query here')
+   *
+   *   if (results.length === 0) {
+   *     console.log('No results found')
+   *     return
+   *   }
+   *
+   *   // Filter by confidence threshold
+   *   const highConfidence = results.filter(r => r.score > 0.7)
+   *
+   *   // Sort by score (already sorted by default)
+   *   const topResults = results.slice(0, 5)
+   *
+   *   return topResults.map(r => ({
+   *     id: r.id,
+   *     content: r.entity.data,
+   *     confidence: r.score,
+   *     metadata: r.entity.metadata
+   *   }))
+   * } catch (error) {
+   *   console.error('Search failed:', error)
+   *   return []
+   * }
    */
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
@@ -786,7 +1135,113 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Find similar entities
+   * Find similar entities using vector similarity
+   *
+   * @param params - Parameters specifying the target for similarity search
+   * @returns Promise that resolves to array of similar entities with similarity scores
+   *
+   * @example
+   * // Find entities similar to a specific entity by ID
+   * const similarDocs = await brainy.similar({
+   *   to: 'document-123',
+   *   limit: 10
+   * })
+   *
+   * // Process similarity results
+   * for (const result of similarDocs) {
+   *   console.log(`Similar entity: ${result.entity.data} (similarity: ${result.score})`)
+   * }
+   *
+   * @example
+   * // Find similar entities with type filtering
+   * const similarUsers = await brainy.similar({
+   *   to: 'user-456',
+   *   type: NounType.Person,
+   *   limit: 5,
+   *   where: {
+   *     active: true,
+   *     department: 'engineering'
+   *   }
+   * })
+   *
+   * @example
+   * // Find similar using a custom vector
+   * const customVector = await brainy.embed('artificial intelligence research')
+   * const similar = await brainy.similar({
+   *   to: customVector,
+   *   limit: 8,
+   *   type: [NounType.Document, NounType.Thing]
+   * })
+   *
+   * @example
+   * // Find similar using an entity object
+   * const sourceEntity = await brainy.get('research-paper-789')
+   * if (sourceEntity) {
+   *   const relatedPapers = await brainy.similar({
+   *     to: sourceEntity,
+   *     limit: 12,
+   *     where: {
+   *       published: true,
+   *       category: 'machine-learning'
+   *     }
+   *   })
+   * }
+   *
+   * @example
+   * // Content recommendation system
+   * async function getRecommendations(userId: string) {
+   *   // Get user's recent interactions
+   *   const user = await brainy.get(userId)
+   *   if (!user) return []
+   *
+   *   // Find similar content
+   *   const recommendations = await brainy.similar({
+   *     to: userId,
+   *     type: NounType.Document,
+   *     limit: 20,
+   *     where: {
+   *       published: true,
+   *       language: 'en'
+   *     }
+   *   })
+   *
+   *   // Filter out already seen content
+   *   return recommendations.filter(rec =>
+   *     !user.metadata.viewedItems?.includes(rec.id)
+   *   )
+   * }
+   *
+   * @example
+   * // Duplicate detection system
+   * async function findPotentialDuplicates(entityId: string) {
+   *   const duplicates = await brainy.similar({
+   *     to: entityId,
+   *     limit: 10
+   *   })
+   *
+   *   // High similarity might indicate duplicates
+   *   const highSimilarity = duplicates.filter(d => d.score > 0.95)
+   *
+   *   if (highSimilarity.length > 0) {
+   *     console.log('Potential duplicates found:', highSimilarity.map(d => d.id))
+   *   }
+   *
+   *   return highSimilarity
+   * }
+   *
+   * @example
+   * // Error handling for missing entities
+   * try {
+   *   const similar = await brainy.similar({
+   *     to: 'nonexistent-entity',
+   *     limit: 5
+   *   })
+   * } catch (error) {
+   *   if (error.message.includes('not found')) {
+   *     console.log('Source entity does not exist')
+   *     // Handle missing source entity
+   *   }
+   * }
    */
   async similar(params: SimilarParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
@@ -1818,8 +2273,117 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Embed data into vector
-   * Handles any data type by converting to string representation
+   * Embed data into vector representation
+   * Handles any data type by intelligently converting to string representation
+   *
+   * @param data - Any data to convert to vector (string, object, array, etc.)
+   * @returns Promise that resolves to a numerical vector representation
+   *
+   * @example
+   * // Basic string embedding
+   * const vector = await brainy.embed('machine learning algorithms')
+   * console.log('Vector dimensions:', vector.length)
+   *
+   * @example
+   * // Object embedding with intelligent field extraction
+   * const documentVector = await brainy.embed({
+   *   title: 'AI Research Paper',
+   *   content: 'This paper discusses neural networks...',
+   *   author: 'Dr. Smith',
+   *   category: 'machine-learning'
+   * })
+   * // Uses 'content' field for embedding by default
+   *
+   * @example
+   * // Different object field priorities
+   * // Priority: data > content > text > name > title > description
+   * const vectors = await Promise.all([
+   *   brainy.embed({ data: 'primary content' }),        // Uses 'data'
+   *   brainy.embed({ content: 'main content' }),        // Uses 'content'
+   *   brainy.embed({ text: 'text content' }),           // Uses 'text'
+   *   brainy.embed({ name: 'entity name' }),            // Uses 'name'
+   *   brainy.embed({ title: 'document title' }),        // Uses 'title'
+   *   brainy.embed({ description: 'description text' }) // Uses 'description'
+   * ])
+   *
+   * @example
+   * // Array embedding for batch processing
+   * const batchVectors = await brainy.embed([
+   *   'first document',
+   *   'second document',
+   *   { content: 'third document as object' },
+   *   { title: 'fourth document' }
+   * ])
+   * // Returns vector representing all items combined
+   *
+   * @example
+   * // Complex object handling
+   * const complexData = {
+   *   user: { name: 'John', role: 'developer' },
+   *   project: { name: 'AI Assistant', status: 'active' },
+   *   metrics: { score: 0.95, performance: 'excellent' }
+   * }
+   * const vector = await brainy.embed(complexData)
+   * // Converts entire object to JSON for embedding
+   *
+   * @example
+   * // Pre-computing vectors for performance optimization
+   * const documents = [
+   *   { id: 'doc1', content: 'Document 1 content...' },
+   *   { id: 'doc2', content: 'Document 2 content...' },
+   *   { id: 'doc3', content: 'Document 3 content...' }
+   * ]
+   *
+   * // Pre-compute all vectors
+   * const vectors = await Promise.all(
+   *   documents.map(doc => brainy.embed(doc.content))
+   * )
+   *
+   * // Add entities with pre-computed vectors (faster)
+   * for (let i = 0; i < documents.length; i++) {
+   *   await brainy.add({
+   *     data: documents[i],
+   *     type: NounType.Document,
+   *     vector: vectors[i] // Skip embedding computation
+   *   })
+   * }
+   *
+   * @example
+   * // Custom embedding for search queries
+   * async function searchWithCustomEmbedding(query: string) {
+   *   // Enhance query for better matching
+   *   const enhancedQuery = `search: ${query} relevant information`
+   *   const queryVector = await brainy.embed(enhancedQuery)
+   *
+   *   // Use pre-computed vector for search
+   *   return brainy.find({
+   *     vector: queryVector,
+   *     limit: 10
+   *   })
+   * }
+   *
+   * @example
+   * // Handling edge cases gracefully
+   * const edgeCases = await Promise.all([
+   *   brainy.embed(null),           // Returns vector for empty string
+   *   brainy.embed(undefined),      // Returns vector for empty string
+   *   brainy.embed(''),             // Returns vector for empty string
+   *   brainy.embed(42),             // Converts number to string
+   *   brainy.embed(true),           // Converts boolean to string
+   *   brainy.embed([]),             // Empty array handling
+   *   brainy.embed({})              // Empty object handling
+   * ])
+   *
+   * @example
+   * // Using with similarity comparisons
+   * const doc1Vector = await brainy.embed('artificial intelligence research')
+   * const doc2Vector = await brainy.embed('machine learning algorithms')
+   *
+   * // Find entities similar to doc1Vector
+   * const similar = await brainy.find({
+   *   vector: doc1Vector,
+   *   limit: 5
+   * })
    */
   async embed(data: any): Promise<Vector> {
     // Handle different data types intelligently

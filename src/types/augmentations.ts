@@ -48,25 +48,173 @@ export type AugmentationContext = AC
 // REMOVED: Old augmentation type system for 2.0 clean architecture
 // All augmentations now use the unified BrainyAugmentation interface from brainyAugmentation.ts
 
-// Temporary exports for compilation - TO BE REMOVED
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Augmentation types are now unified under BrainyAugmentation interface
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { AugmentationType } from '@soulcraft/brainy/types/augmentations'
+ * if (augmentation.type === AugmentationType.SENSE) { ... }
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ * // Use the unified BrainyAugmentation interface directly
+ */
 export enum AugmentationType { SENSE = 'sense', CONDUIT = 'conduit', COGNITION = 'cognition', MEMORY = 'memory', PERCEPTION = 'perception', DIALOG = 'dialog', ACTIVATION = 'activation', WEBSOCKET = 'webSocket', SYNAPSE = 'synapse' }
+
+/**
+ * @deprecated Use BrainyAugmentation interface directly instead of namespace types
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { BrainyAugmentations } from '@soulcraft/brainy/types/augmentations'
+ * class MyAugmentation implements BrainyAugmentations.ISenseAugmentation { ... }
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ * class MyAugmentation implements BrainyAugmentation { ... }
+ */
 export namespace BrainyAugmentations {
+  /** @deprecated Use BrainyAugmentation instead */
   export type ISenseAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type IConduitAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type ICognitionAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type IMemoryAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type IPerceptionAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type IDialogAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type IActivationAugmentation = BrainyAugmentation
+  /** @deprecated Use BrainyAugmentation instead */
   export type ISynapseAugmentation = BrainyAugmentation
 }
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { ISenseAugmentation } from '@soulcraft/brainy/types/augmentations'
+ * class MySense implements ISenseAugmentation { ... }
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ * class MySense implements BrainyAugmentation { ... }
+ */
 export type ISenseAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IConduitAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IConduitAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { ICognitionAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type ICognitionAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IMemoryAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IMemoryAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IPerceptionAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IPerceptionAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IDialogAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IDialogAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IActivationAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type IActivationAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated Use BrainyAugmentation from '../augmentations/brainyAugmentation.js' instead
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { ISynapseAugmentation } from '@soulcraft/brainy/types/augmentations'
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ */
 export type ISynapseAugmentation = BrainyAugmentation
+
+/**
+ * @deprecated WebSocket support is now built into BrainyAugmentation interface
+ *
+ * @example
+ * // ❌ Old way (v2.x):
+ * import { IWebSocketSupport } from '@soulcraft/brainy/types/augmentations'
+ * class MyAugmentation implements IWebSocketSupport { ... }
+ *
+ * // ✅ New way (v3.x):
+ * import { BrainyAugmentation } from '@soulcraft/brainy'
+ * class MyAugmentation implements BrainyAugmentation {
+ *   // WebSocket functionality is now part of the unified interface
+ * }
+ */
 export interface IWebSocketSupport {}
