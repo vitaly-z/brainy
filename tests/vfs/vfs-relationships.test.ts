@@ -192,4 +192,153 @@ describe('VFS Graph Relationships', () => {
     const references = related.filter(r => r.direction === 'from')
     expect(references.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('should always create Contains relationship when writing files', async () => {
+    // This test verifies the fix for the critical bug where writeFile()
+    // was not creating Contains relationships for updated files
+
+    // Test 1: New file should have Contains relationship
+    await vfs.writeFile('/test-new.txt', 'Hello World')
+
+    const rootId = await vfs.resolvePath('/')
+    const fileEntityId = await vfs.resolvePath('/test-new.txt')
+
+    // Check that Contains relationship exists
+    const relations = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    expect(relations).toHaveLength(1)
+    expect(relations[0].type).toBe(VerbType.Contains)
+
+    // Verify readdir returns the file
+    const files = await vfs.readdir('/')
+    expect(files).toContain('test-new.txt')
+
+    // Test 2: Updated file should maintain Contains relationship
+    await vfs.writeFile('/test-new.txt', 'Updated content')
+
+    // Relationship should still exist after update
+    const relationsAfterUpdate = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    expect(relationsAfterUpdate).toHaveLength(1)
+
+    // readdir should still work
+    const filesAfterUpdate = await vfs.readdir('/')
+    expect(filesAfterUpdate).toContain('test-new.txt')
+
+    // Test 3: Multiple updates should not create duplicate relationships
+    await vfs.writeFile('/test-new.txt', 'Another update')
+    await vfs.writeFile('/test-new.txt', 'Yet another update')
+
+    const finalRelations = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    // Should still have exactly one Contains relationship
+    expect(finalRelations).toHaveLength(1)
+  })
+
+  it('should repair missing Contains relationships on file update', async () => {
+    // This test simulates a scenario where a file exists but its Contains
+    // relationship is missing (could happen due to corruption or bugs)
+
+    // Create a file normally first
+    await vfs.writeFile('/orphan-test.txt', 'Initial content')
+
+    const rootId = await vfs.resolvePath('/')
+    const fileEntityId = await vfs.resolvePath('/orphan-test.txt')
+
+    // Manually delete the Contains relationship to simulate the bug
+    const initialRelations = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    // Delete the relationship (simulating the corruption/bug)
+    for (const rel of initialRelations) {
+      await brain.unrelate(rel.id)
+    }
+
+    // Verify the relationship is gone
+    const brokenRelations = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+    expect(brokenRelations).toHaveLength(0)
+
+    // readdir should fail to find the file (the bug symptom)
+    const brokenList = await vfs.readdir('/')
+    expect(brokenList).not.toContain('orphan-test.txt')
+
+    // Now update the file - this should repair the missing relationship
+    await vfs.writeFile('/orphan-test.txt', 'Fixed content')
+
+    // Verify the relationship is restored
+    const fixedRelations = await brain.getRelations({
+      from: rootId,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    expect(fixedRelations).toHaveLength(1)
+    expect(fixedRelations[0].type).toBe(VerbType.Contains)
+
+    // readdir should now work again
+    const fixedList = await vfs.readdir('/')
+    expect(fixedList).toContain('orphan-test.txt')
+  })
+
+  it('should create Contains relationships for files in nested directories', async () => {
+    // Test that the fix works for nested directory structures
+
+    await vfs.mkdir('/level1')
+    await vfs.mkdir('/level1/level2')
+    await vfs.mkdir('/level1/level2/level3')
+
+    // Write a file deep in the structure
+    await vfs.writeFile('/level1/level2/level3/deep.txt', 'Deep content')
+
+    // Get entity IDs
+    const level3Id = await vfs.resolvePath('/level1/level2/level3')
+    const fileEntityId = await vfs.resolvePath('/level1/level2/level3/deep.txt')
+
+    // Verify Contains relationship exists
+    const relations = await brain.getRelations({
+      from: level3Id,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    expect(relations).toHaveLength(1)
+
+    // Verify readdir works at the deep level
+    const files = await vfs.readdir('/level1/level2/level3')
+    expect(files).toContain('deep.txt')
+
+    // Update the file and verify relationship persists
+    await vfs.writeFile('/level1/level2/level3/deep.txt', 'Updated deep content')
+
+    const relationsAfterUpdate = await brain.getRelations({
+      from: level3Id,
+      to: fileEntityId,
+      type: VerbType.Contains
+    })
+
+    expect(relationsAfterUpdate).toHaveLength(1)
+
+    // readdir should still work
+    const filesAfterUpdate = await vfs.readdir('/level1/level2/level3')
+    expect(filesAfterUpdate).toContain('deep.txt')
+  })
 })

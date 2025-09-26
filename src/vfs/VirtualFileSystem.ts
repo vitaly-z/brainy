@@ -316,6 +316,22 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         data: entityData,
         metadata
       })
+
+      // Ensure Contains relationship exists (fix for missing relationships)
+      const existingRelations = await this.brain.getRelations({
+        from: parentId,
+        to: existingId,
+        type: VerbType.Contains
+      })
+
+      // Create relationship if it doesn't exist
+      if (existingRelations.length === 0) {
+        await this.brain.relate({
+          from: parentId,
+          to: existingId,
+          type: VerbType.Contains
+        })
+      }
     } else {
       // Create new file entity
       // For embedding: use text content, for storage: use raw data
@@ -907,9 +923,13 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       }
       return entityId
     } catch (err) {
-      // Directory doesn't exist, create it recursively
-      await this.mkdir(path, { recursive: true })
-      return await this.pathResolver.resolve(path)
+      // Only create directory if it doesn't exist (ENOENT error)
+      if (err instanceof VFSError && err.code === VFSErrorCode.ENOENT) {
+        await this.mkdir(path, { recursive: true })
+        return await this.pathResolver.resolve(path)
+      }
+      // Re-throw other errors (like ENOTDIR)
+      throw err
     }
   }
 
@@ -2418,6 +2438,14 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     }
 
     // Normalize path
-    return path.replace(/\/+/g, '/').replace(/\/$/, '') || '/'
+    const normalizedPath = path.replace(/\/+/g, '/').replace(/\/$/, '') || '/'
+
+    // Special case for root
+    if (normalizedPath === '/') {
+      return this.rootEntityId!
+    }
+
+    // Resolve the path to an entity ID
+    return await this.pathResolver.resolve(normalizedPath)
   }
 }
