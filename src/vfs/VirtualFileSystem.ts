@@ -113,17 +113,38 @@ export class VirtualFileSystem implements IVirtualFileSystem {
    * Create or find the root directory entity
    */
   private async initializeRoot(): Promise<string> {
-    // Check if root already exists
+    // Check if root already exists - search using where clause
     const existing = await this.brain.find({
       where: {
-        path: '/',
-        vfsType: 'directory'
+        'metadata.path': '/',
+        'metadata.vfsType': 'directory'
       },
       limit: 1
     })
 
     if (existing.length > 0) {
-      return existing[0].entity.id
+      const rootEntity = existing[0]
+      // Ensure the root entity has proper metadata structure
+      const entityMetadata = (rootEntity as any).metadata || rootEntity
+      if (!entityMetadata.vfsType) {
+        // Update the root entity with proper metadata
+        await this.brain.update({
+          id: rootEntity.id,
+          metadata: {
+            path: '/',
+            name: '',
+            vfsType: 'directory',
+            size: 0,
+            permissions: 0o755,
+            owner: 'root',
+            group: 'root',
+            accessed: Date.now(),
+            modified: Date.now(),
+            ...entityMetadata  // Preserve any existing metadata
+          }
+        })
+      }
+      return rootEntity.id
     }
 
     // Create root directory
@@ -938,6 +959,41 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     if (!entity) {
       throw new VFSError(VFSErrorCode.ENOENT, `Entity not found: ${id}`)
+    }
+
+    // Ensure entity has proper VFS metadata structure
+    // Handle both nested and flat metadata structures for compatibility
+    if (!entity.metadata || !entity.metadata.vfsType) {
+      // Check if metadata is at top level (legacy structure)
+      const anyEntity = entity as any
+      if (anyEntity.vfsType || anyEntity.path) {
+        entity.metadata = {
+          path: anyEntity.path || '/',
+          name: anyEntity.name || '',
+          vfsType: anyEntity.vfsType || (anyEntity.path === '/' ? 'directory' : 'file'),
+          size: anyEntity.size || 0,
+          permissions: anyEntity.permissions || (anyEntity.vfsType === 'directory' ? 0o755 : 0o644),
+          owner: anyEntity.owner || 'user',
+          group: anyEntity.group || 'users',
+          accessed: anyEntity.accessed || Date.now(),
+          modified: anyEntity.modified || Date.now(),
+          ...entity.metadata  // Preserve any existing nested metadata
+        }
+      } else if (entity.id === this.rootEntityId) {
+        // Special case: ensure root directory always has proper metadata
+        entity.metadata = {
+          path: '/',
+          name: '',
+          vfsType: 'directory',
+          size: 0,
+          permissions: 0o755,
+          owner: 'root',
+          group: 'root',
+          accessed: Date.now(),
+          modified: Date.now(),
+          ...entity.metadata
+        }
+      }
     }
 
     return entity as VFSEntity

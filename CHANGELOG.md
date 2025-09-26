@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.15.0](https://github.com/soulcraftlabs/brainy/compare/v3.14.2...v3.15.0) (2025-09-26)
+
+### Bug Fixes
+
+* **vfs**: Ensure Contains relationships are maintained when updating files
+* **vfs**: Fix root directory metadata handling to prevent "Not a directory" errors
+* **vfs**: Add entity metadata compatibility layer for proper VFS operations
+* **vfs**: Fix resolvePath() to return entity IDs instead of path strings
+* **vfs**: Improve error handling in ensureDirectory() method
+
+### Features
+
+* **vfs**: Add comprehensive tests for Contains relationship integrity
+* **vfs**: Ensure all VFS entities use standard Brainy NounType and VerbType enums
+* **vfs**: Add metadata validation and repair for existing entities
+
 ## [3.0.1](https://github.com/soulcraftlabs/brainy/compare/v2.14.3...v3.0.1) (2025-09-15)
 
 **Brainy 3.0 Production Release** - World's first Triple Intelligence™ database unifying vector, graph, and document search
