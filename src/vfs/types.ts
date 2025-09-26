@@ -386,6 +386,24 @@ export interface IVirtualFileSystem {
   rmdir(path: string, options?: { recursive?: boolean }): Promise<void>
   readdir(path: string, options?: ReaddirOptions): Promise<string[] | VFSDirent[]>
 
+  // Tree operations (NEW - prevents recursion issues)
+  getDirectChildren(path: string): Promise<VFSEntity[]>
+  getTreeStructure(path: string, options?: {
+    maxDepth?: number
+    includeHidden?: boolean
+    sort?: 'name' | 'modified' | 'size'
+  }): Promise<any>
+  getDescendants(path: string, options?: {
+    includeAncestor?: boolean
+    type?: 'file' | 'directory'
+  }): Promise<VFSEntity[]>
+  inspect(path: string): Promise<{
+    node: VFSEntity
+    children: VFSEntity[]
+    parent: VFSEntity | null
+    stats: VFSStats
+  }>
+
   // Metadata operations
   stat(path: string): Promise<VFSStats>
   lstat(path: string): Promise<VFSStats>

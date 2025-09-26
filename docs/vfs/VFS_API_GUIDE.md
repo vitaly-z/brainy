@@ -99,15 +99,70 @@ await vfs.unlink('/documents/notes.txt')
 #### Directory Operations
 
 ```typescript
-// Create directory (recursive by default)
+// Create directory
 await vfs.mkdir(path: string, options?: MkdirOptions): Promise<void>
 
-// Remove directory
-await vfs.rmdir(path: string, options?: RmdirOptions): Promise<void>
+// Remove directory (must be empty unless recursive)
+await vfs.rmdir(path: string, options?: { recursive?: boolean }): Promise<void>
 
 // List directory contents
-await vfs.readdir(path: string, options?: ReaddirOptions): Promise<string[] | Dirent[]>
+await vfs.readdir(path: string, options?: ReaddirOptions): Promise<string[] | VFSDirent[]>
 ```
+
+#### Tree Operations (NEW - Safe for File Explorers) 🆕
+
+```typescript
+// Get direct children only - GUARANTEED no self-inclusion
+await vfs.getDirectChildren(path: string): Promise<VFSEntity[]>
+
+// Build complete tree structure - prevents recursion issues
+await vfs.getTreeStructure(path: string, options?: {
+  maxDepth?: number           // Limit tree depth
+  includeHidden?: boolean      // Include hidden files
+  sort?: 'name' | 'modified' | 'size'  // Sort order
+}): Promise<TreeNode>
+
+// Get all descendants (flat list)
+await vfs.getDescendants(path: string, options?: {
+  includeAncestor?: boolean    // Include the directory itself
+  type?: 'file' | 'directory'  // Filter by type
+}): Promise<VFSEntity[]>
+
+// Get comprehensive info about a path
+await vfs.inspect(path: string): Promise<{
+  node: VFSEntity       // The entity itself
+  children: VFSEntity[] // Direct children only
+  parent: VFSEntity | null  // Parent directory
+  stats: VFSStats      // File statistics
+}>
+```
+
+**Example - Building a File Explorer:**
+```typescript
+// ✅ CORRECT - Safe from recursion
+const children = await vfs.getDirectChildren('/my-dir')
+// children will NEVER include /my-dir itself
+
+// Get structured tree
+const tree = await vfs.getTreeStructure('/my-dir', {
+  maxDepth: 3,
+  includeHidden: false,
+  sort: 'name'
+})
+
+// Get all files in directory
+const allFiles = await vfs.getDescendants('/my-dir', {
+  type: 'file'  // Only files, no directories
+})
+
+// Inspect a path
+const info = await vfs.inspect('/my-dir/file.txt')
+console.log(info.parent.metadata.path)  // '/my-dir'
+console.log(info.stats.size)            // File size
+```
+
+⚠️ **See [Building File Explorers Guide](building-file-explorers.md)** for detailed examples and how to avoid common recursion pitfalls.
+
 
 **Example:**
 ```typescript

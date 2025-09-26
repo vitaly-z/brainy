@@ -49,6 +49,18 @@ await vfs.addRelationship('/docs/spec.md', '/projects/my-app/', 'implements')
 
 ## Core Features
 
+### 🆕 Tree Operations (Prevents Recursion Issues)
+
+**NEW: Safe tree operations for building file explorers:**
+- **`getDirectChildren(path)`** - Returns only immediate children, never the parent
+- **`getTreeStructure(path, options)`** - Builds complete tree with recursion protection
+- **`getDescendants(path, options)`** - Gets all descendants efficiently
+- **`inspect(path)`** - Comprehensive info with parent, children, and stats
+
+See [Building File Explorers Guide](building-file-explorers.md) for complete documentation on avoiding common recursion pitfalls.
+
+## Core Features
+
 ### 📁 Full Filesystem API
 
 All the operations you expect from a filesystem:

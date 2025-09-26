@@ -408,6 +408,154 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     // Knowledge Layer hooks will be added by augmentation if enabled
   }
 
+  // ============= Tree Operations (NEW) =============
+
+  /**
+   * Get only direct children of a directory - guaranteed no self-inclusion
+   * This is the SAFE way to get children for building tree UIs
+   */
+  async getDirectChildren(path: string): Promise<VFSEntity[]> {
+    await this.ensureInitialized()
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+
+    // Verify it's a directory
+    if (entity.metadata.vfsType !== 'directory') {
+      throw new VFSError(VFSErrorCode.ENOTDIR, `Not a directory: ${path}`, path, 'getDirectChildren')
+    }
+
+    // Use the safe getChildren from PathResolver
+    const children = await this.pathResolver.getChildren(entityId)
+
+    // Double-check no self-inclusion (paranoid safety)
+    return children.filter(child => child.metadata.path !== path)
+  }
+
+  /**
+   * Get a properly structured tree for the given path
+   * This prevents recursion issues common when building file explorers
+   */
+  async getTreeStructure(path: string, options?: {
+    maxDepth?: number
+    includeHidden?: boolean
+    sort?: 'name' | 'modified' | 'size'
+  }): Promise<any> {
+    await this.ensureInitialized()
+    const { VFSTreeUtils } = await import('./TreeUtils.js')
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+
+    if (entity.metadata.vfsType !== 'directory') {
+      throw new VFSError(VFSErrorCode.ENOTDIR, `Not a directory: ${path}`, path, 'getTreeStructure')
+    }
+
+    // Recursively gather all descendants
+    const allEntities: VFSEntity[] = []
+    const visited = new Set<string>()
+
+    const gatherDescendants = async (dirId: string) => {
+      if (visited.has(dirId)) return  // Prevent cycles
+      visited.add(dirId)
+
+      const children = await this.pathResolver.getChildren(dirId)
+      for (const child of children) {
+        allEntities.push(child)
+        if (child.metadata.vfsType === 'directory') {
+          await gatherDescendants(child.id)
+        }
+      }
+    }
+
+    await gatherDescendants(entityId)
+
+    // Build safe tree structure
+    return VFSTreeUtils.buildTree(allEntities, path, options || {})
+  }
+
+  /**
+   * Get all descendants of a directory (flat list)
+   */
+  async getDescendants(path: string, options?: {
+    includeAncestor?: boolean
+    type?: 'file' | 'directory'
+  }): Promise<VFSEntity[]> {
+    await this.ensureInitialized()
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+
+    if (entity.metadata.vfsType !== 'directory') {
+      throw new VFSError(VFSErrorCode.ENOTDIR, `Not a directory: ${path}`, path, 'getDescendants')
+    }
+
+    const descendants: VFSEntity[] = []
+    if (options?.includeAncestor) {
+      descendants.push(entity)
+    }
+
+    const visited = new Set<string>()
+    const queue = [entityId]
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!
+      if (visited.has(currentId)) continue
+      visited.add(currentId)
+
+      const children = await this.pathResolver.getChildren(currentId)
+      for (const child of children) {
+        // Filter by type if specified
+        if (!options?.type || child.metadata.vfsType === options.type) {
+          descendants.push(child)
+        }
+
+        // Add directories to queue for traversal
+        if (child.metadata.vfsType === 'directory') {
+          queue.push(child.id)
+        }
+      }
+    }
+
+    return descendants
+  }
+
+  /**
+   * Inspect a path and return structured information
+   * This is the recommended method for file explorers to use
+   */
+  async inspect(path: string): Promise<{
+    node: VFSEntity
+    children: VFSEntity[]
+    parent: VFSEntity | null
+    stats: VFSStats
+  }> {
+    await this.ensureInitialized()
+
+    const entityId = await this.pathResolver.resolve(path)
+    const entity = await this.getEntityById(entityId)
+    const stats = await this.stat(path)
+
+    let children: VFSEntity[] = []
+    if (entity.metadata.vfsType === 'directory') {
+      children = await this.getDirectChildren(path)
+    }
+
+    let parent: VFSEntity | null = null
+    if (path !== '/') {
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      const parentId = await this.pathResolver.resolve(parentPath)
+      parent = await this.getEntityById(parentId)
+    }
+
+    return {
+      node: entity,
+      children,
+      parent,
+      stats
+    }
+  }
+
   // ============= Directory Operations =============
 
   /**
