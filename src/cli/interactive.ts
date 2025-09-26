@@ -10,6 +10,7 @@ import inquirer from 'inquirer'
 import fuzzy from 'fuzzy'
 import ora from 'ora'
 import { Brainy } from '../brainy.js'
+import { getBrainyVersion } from '../utils/version.js'
 
 // Professional color scheme
 export const colors = {
@@ -576,7 +577,7 @@ export function showWelcome(): void {
 ║                                              ║
 ╚══════════════════════════════════════════════╝
 `))
-  console.log(colors.dim('Version 1.5.0 • Type "help" for commands'))
+  console.log(colors.dim(`Version ${getBrainyVersion()} • Type "help" for commands`))
   console.log()
 }
 

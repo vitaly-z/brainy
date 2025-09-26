@@ -5,6 +5,7 @@
 
 import { ModelPrecision } from './modelAutoConfig.js'
 import { StorageType } from './storageAutoConfig.js'
+import { getBrainyVersion } from '../utils/version.js'
 
 export interface SharedConfig {
   // Critical parameters that MUST match across instances
@@ -128,7 +129,7 @@ export class SharedConfigManager {
    */
   private static createSharedConfig(localConfig: any): SharedConfig {
     return {
-      version: '2.10.0', // Brainy version
+      version: getBrainyVersion(), // Brainy version
       precision: localConfig.embeddingOptions?.precision || 'fp32',
       dimensions: 384, // Fixed for all-MiniLM-L6-v2
       hnswM: localConfig.hnsw?.M || 16,

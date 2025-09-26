@@ -5,7 +5,7 @@
 import { isNode } from './environment.js'
 
 // Default version - this should be replaced at build time
-const DEFAULT_VERSION = '3.5.1'
+const DEFAULT_VERSION = '3.14.0'
 
 let cachedVersion: string | null = null
 let versionPromise: Promise<string> | null = null
