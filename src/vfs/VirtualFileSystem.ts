@@ -884,7 +884,13 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initialized) {
-      throw new Error('VFS not initialized. Call init() first.')
+      throw new Error(
+        'VFS not initialized. You must call await vfs.init() after getting the VFS instance.\n' +
+        'Example:\n' +
+        '  const vfs = brain.vfs()  // Note: vfs() is a method, not a property\n' +
+        '  await vfs.init()         // This creates the root directory\n' +
+        'See docs: https://github.com/Brainy-Technologies/brainy/blob/main/docs/vfs/QUICK_START.md'
+      )
     }
   }
 
