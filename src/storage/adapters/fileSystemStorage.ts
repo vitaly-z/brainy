@@ -58,7 +58,7 @@ export class FileSystemStorage extends BaseStorage {
 
   // Intelligent sharding configuration
   private readonly shardingDepth: number = 2 // 0=flat, 1=ab/, 2=ab/cd/
-  private readonly SHARDING_THRESHOLD = 1000 // Enable deep sharding at 1k files
+  private readonly SHARDING_THRESHOLD = 100 // Enable deep sharding at 100 files for optimal performance
   private cachedShardingDepth?: number // Cache sharding depth for consistency
   private rootDir: string
   private nounsDir!: string
@@ -250,7 +250,8 @@ export class FileSystemStorage extends BaseStorage {
         id: parsedNode.id,
         vector: parsedNode.vector,
         connections,
-        level: parsedNode.level || 0
+        level: parsedNode.level || 0,
+        metadata: parsedNode.metadata
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -386,6 +387,9 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
+    // Check if this is a new edge to update counts
+    const isNew = !(await this.fileExists(this.getVerbPath(edge.id)))
+
     // Convert connections Map to a serializable format
     const serializableEdge = {
       ...edge,
@@ -400,6 +404,16 @@ export class FileSystemStorage extends BaseStorage {
       filePath,
       JSON.stringify(serializableEdge, null, 2)
     )
+
+    // Update verb count for new edges (production-scale optimizations)
+    if (isNew) {
+      this.totalVerbCount++
+
+      // Persist counts periodically (every 10 operations for efficiency)
+      if (this.totalVerbCount % 10 === 0) {
+        this.persistCounts() // Async persist, don't await
+      }
+    }
   }
 
   /**
@@ -618,8 +632,24 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
+    console.log(`[DEBUG] Saving verb metadata for ${id} to: ${this.verbMetadataDir}`)
     const filePath = path.join(this.verbMetadataDir, `${id}.json`)
-    await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
+    console.log(`[DEBUG] Full file path: ${filePath}`)
+
+    try {
+      await this.ensureDirectoryExists(path.dirname(filePath))
+      console.log(`[DEBUG] Directory ensured: ${path.dirname(filePath)}`)
+
+      await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
+      console.log(`[DEBUG] File written successfully: ${filePath}`)
+
+      // Verify the file was actually written
+      const exists = await fs.promises.access(filePath).then(() => true).catch(() => false)
+      console.log(`[DEBUG] File exists after write: ${exists}`)
+    } catch (error) {
+      console.error(`[DEBUG] Error saving verb metadata:`, error)
+      throw error
+    }
   }
 
   /**
@@ -660,9 +690,8 @@ export class FileSystemStorage extends BaseStorage {
     const cursor = options.cursor
     
     try {
-      // Get all noun files
-      const files = await fs.promises.readdir(this.nounsDir)
-      const nounFiles = files.filter((f: string) => f.endsWith('.json'))
+      // Get all noun files (handles sharding properly)
+      const nounFiles = await this.getAllShardedFiles(this.nounsDir)
       
       // Sort for consistent pagination
       nounFiles.sort()
@@ -696,8 +725,9 @@ export class FileSystemStorage extends BaseStorage {
       // Second pass: load the current page
       for (const file of pageFiles) {
         try {
+          const id = file.replace('.json', '')
           const data = await fs.promises.readFile(
-            path.join(this.nounsDir, file),
+            this.getNodePath(id),
             'utf-8'
           )
           const noun = JSON.parse(data)
@@ -1085,24 +1115,26 @@ export class FileSystemStorage extends BaseStorage {
     const startIndex = options.cursor ? parseInt(options.cursor, 10) : 0
     
     try {
-      // List all verb files in the verbs directory
-      // Note: For very large directories (millions of files), this could be memory-intensive
-      // Future optimization: Use fs.opendir() for streaming directory reads
-      const files = await fs.promises.readdir(this.verbsDir)
-      const verbFiles = files.filter((f: string) => f.endsWith('.json'))
-      
-      // Sort files for consistent ordering
-      verbFiles.sort()
-      
-      // Calculate pagination
-      const totalCount = verbFiles.length
+      // Production-scale optimization: Use persisted count for total instead of scanning
+      const totalCount = this.totalVerbCount || 0
+
+      // For large datasets, warn about performance
+      if (totalCount > 1000000) {
+        console.warn(`Very large verb dataset detected (${totalCount} verbs). Performance may be degraded. Consider database storage for optimal performance.`)
+      }
+
+      // Calculate pagination bounds
       const endIndex = Math.min(startIndex + limit, totalCount)
       const hasMore = endIndex < totalCount
-      
-      // Safety check for large datasets
-      if (totalCount > 100000) {
-        console.warn(`Large verb dataset detected (${totalCount} verbs). Consider using a database for better performance.`)
+
+      // For production-scale datasets, use streaming approach
+      if (totalCount > 50000) {
+        return await this.getVerbsWithPaginationStreaming(options, startIndex, limit)
       }
+
+      // For smaller datasets, use the current approach (with optimizations)
+      const verbFiles = await this.getAllShardedFiles(this.verbsDir)
+      verbFiles.sort() // This is still acceptable for <50k files
       
       // Load the requested page of verbs
       const verbs: GraphVerb[] = []
@@ -1112,8 +1144,8 @@ export class FileSystemStorage extends BaseStorage {
         const id = file.replace('.json', '')
         
         try {
-          // Read the verb data (HNSWVerb stored as edge)
-          const filePath = path.join(this.verbsDir, file)
+          // Read the verb data (HNSWVerb stored as edge) - use sharded path
+          const filePath = this.getVerbPath(id)
           const data = await fs.promises.readFile(filePath, 'utf-8')
           const edge = JSON.parse(data)
           
@@ -1622,14 +1654,12 @@ export class FileSystemStorage extends BaseStorage {
    */
   private async initializeCountsFromDisk(): Promise<void> {
     try {
-      // Count nouns
-      const nounFiles = await fs.promises.readdir(this.nounsDir)
-      const validNounFiles = nounFiles.filter((f: string) => f.endsWith('.json'))
+      // Count nouns (handles sharding properly)
+      const validNounFiles = await this.getAllShardedFiles(this.nounsDir)
       this.totalNounCount = validNounFiles.length
 
-      // Count verbs
-      const verbFiles = await fs.promises.readdir(this.verbsDir)
-      const validVerbFiles = verbFiles.filter((f: string) => f.endsWith('.json'))
+      // Count verbs (handles sharding properly)
+      const validVerbFiles = await this.getAllShardedFiles(this.verbsDir)
       this.totalVerbCount = validVerbFiles.length
 
       // Sample some files to get type distribution (don't read all)
@@ -1637,8 +1667,9 @@ export class FileSystemStorage extends BaseStorage {
       for (let i = 0; i < sampleSize; i++) {
         try {
           const file = validNounFiles[i]
+          const id = file.replace('.json', '')
           const data = await fs.promises.readFile(
-            path.join(this.nounsDir, file),
+            this.getNodePath(id),
             'utf-8'
           )
           const noun = JSON.parse(data)
@@ -1753,6 +1784,365 @@ export class FileSystemStorage extends BaseStorage {
         const shard2Deep = id.substring(2, 4)
         return path.join(baseDir, shard1Deep, shard2Deep, `${id}.json`)
     }
+  }
+
+  /**
+   * Get all JSON files from a sharded directory structure
+   * Properly traverses sharded subdirectories based on current sharding depth
+   */
+  private async getAllShardedFiles(baseDir: string): Promise<string[]> {
+    const allFiles: string[] = []
+    const depth = this.cachedShardingDepth ?? this.getOptimalShardingDepth()
+
+    try {
+      switch (depth) {
+        case 0:
+          // Flat structure: read directly from baseDir
+          const flatFiles = await fs.promises.readdir(baseDir)
+          for (const file of flatFiles) {
+            if (file.endsWith('.json')) {
+              allFiles.push(file)
+            }
+          }
+          break
+
+        case 1:
+          // Single-level sharding: baseDir/ab/
+          try {
+            const shardDirs = await fs.promises.readdir(baseDir)
+            for (const shardDir of shardDirs) {
+              const shardPath = path.join(baseDir, shardDir)
+              try {
+                const stat = await fs.promises.stat(shardPath)
+                if (stat.isDirectory()) {
+                  const shardFiles = await fs.promises.readdir(shardPath)
+                  for (const file of shardFiles) {
+                    if (file.endsWith('.json')) {
+                      allFiles.push(file)
+                    }
+                  }
+                }
+              } catch (shardError) {
+                // Skip inaccessible shard directories
+                continue
+              }
+            }
+          } catch (baseError: any) {
+            // If baseDir doesn't exist, return empty array
+            if (baseError.code === 'ENOENT') {
+              return []
+            }
+            throw baseError
+          }
+          break
+
+        case 2:
+        default:
+          // Deep sharding: baseDir/ab/cd/
+          try {
+            const level1Dirs = await fs.promises.readdir(baseDir)
+            for (const level1Dir of level1Dirs) {
+              const level1Path = path.join(baseDir, level1Dir)
+              try {
+                const level1Stat = await fs.promises.stat(level1Path)
+                if (level1Stat.isDirectory()) {
+                  const level2Dirs = await fs.promises.readdir(level1Path)
+                  for (const level2Dir of level2Dirs) {
+                    const level2Path = path.join(level1Path, level2Dir)
+                    try {
+                      const level2Stat = await fs.promises.stat(level2Path)
+                      if (level2Stat.isDirectory()) {
+                        const shardFiles = await fs.promises.readdir(level2Path)
+                        for (const file of shardFiles) {
+                          if (file.endsWith('.json')) {
+                            allFiles.push(file)
+                          }
+                        }
+                      }
+                    } catch (level2Error) {
+                      // Skip inaccessible level2 directories
+                      continue
+                    }
+                  }
+                }
+              } catch (level1Error) {
+                // Skip inaccessible level1 directories
+                continue
+              }
+            }
+          } catch (baseError: any) {
+            // If baseDir doesn't exist, return empty array
+            if (baseError.code === 'ENOENT') {
+              return []
+            }
+            throw baseError
+          }
+          break
+      }
+
+      // Sort for consistent ordering
+      allFiles.sort()
+      return allFiles
+
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        // Directory doesn't exist yet
+        return []
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Production-scale streaming pagination for very large datasets
+   * Avoids loading all filenames into memory
+   */
+  private async getVerbsWithPaginationStreaming(
+    options: {
+      limit?: number
+      cursor?: string
+      filter?: {
+        verbType?: string | string[]
+        sourceId?: string | string[]
+        targetId?: string | string[]
+        service?: string | string[]
+        metadata?: Record<string, any>
+      }
+    },
+    startIndex: number,
+    limit: number
+  ): Promise<{
+    items: GraphVerb[]
+    totalCount?: number
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    const verbs: GraphVerb[] = []
+    const totalCount = this.totalVerbCount || 0
+    let processedCount = 0
+    let skippedCount = 0
+    let resultCount = 0
+
+    const depth = this.cachedShardingDepth ?? this.getOptimalShardingDepth()
+
+    try {
+      // Stream through sharded directories efficiently
+      const hasMore = await this.streamShardedFiles(
+        this.verbsDir,
+        depth,
+        async (filename: string, filePath: string) => {
+          // Skip files until we reach start index
+          if (skippedCount < startIndex) {
+            skippedCount++
+            return true // continue
+          }
+
+          // Stop if we have enough results
+          if (resultCount >= limit) {
+            return false // stop streaming
+          }
+
+          try {
+            const id = filename.replace('.json', '')
+
+            // Read verb data and metadata
+            const data = await fs.promises.readFile(filePath, 'utf-8')
+            const edge = JSON.parse(data)
+            const metadata = await this.getVerbMetadata(id)
+
+            if (!metadata) {
+              processedCount++
+              return true // continue, skip this verb
+            }
+
+            // Reconstruct GraphVerb
+            const verb: GraphVerb = {
+              id: edge.id,
+              vector: edge.vector,
+              connections: edge.connections || new Map(),
+              sourceId: metadata.sourceId || metadata.source,
+              targetId: metadata.targetId || metadata.target,
+              source: metadata.source || metadata.sourceId,
+              target: metadata.target || metadata.targetId,
+              verb: metadata.verb || metadata.type,
+              type: metadata.type || metadata.verb,
+              weight: metadata.weight,
+              metadata: metadata.metadata || metadata,
+              data: metadata.data,
+              createdAt: metadata.createdAt,
+              updatedAt: metadata.updatedAt,
+              createdBy: metadata.createdBy,
+              embedding: metadata.embedding || edge.vector
+            }
+
+            // Apply filters
+            if (options.filter) {
+              const filter = options.filter
+
+              if (filter.verbType) {
+                const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
+                const verbType = verb.type || verb.verb
+                if (verbType && !types.includes(verbType)) return true // continue
+              }
+
+              if (filter.sourceId) {
+                const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
+                const sourceId = verb.sourceId || verb.source
+                if (!sourceId || !sources.includes(sourceId)) return true // continue
+              }
+
+              if (filter.targetId) {
+                const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
+                const targetId = verb.targetId || verb.target
+                if (!targetId || !targets.includes(targetId)) return true // continue
+              }
+            }
+
+            verbs.push(verb)
+            resultCount++
+            processedCount++
+            return true // continue
+
+          } catch (error) {
+            console.warn(`Failed to read verb from ${filePath}:`, error)
+            processedCount++
+            return true // continue
+          }
+        }
+      )
+
+      const finalHasMore = (startIndex + resultCount) < totalCount
+
+      return {
+        items: verbs,
+        totalCount,
+        hasMore: finalHasMore,
+        nextCursor: finalHasMore ? String(startIndex + resultCount) : undefined
+      }
+
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return {
+          items: [],
+          totalCount: 0,
+          hasMore: false
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Stream through sharded files without loading all names into memory
+   * Production-scale implementation for millions of files
+   */
+  private async streamShardedFiles(
+    baseDir: string,
+    depth: number,
+    processor: (filename: string, fullPath: string) => Promise<boolean>
+  ): Promise<boolean> {
+    let hasMore = true
+
+    switch (depth) {
+      case 0:
+        // Flat structure
+        try {
+          const files = await fs.promises.readdir(baseDir)
+          const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
+
+          for (const file of sortedFiles) {
+            const shouldContinue = await processor(file, path.join(baseDir, file))
+            if (!shouldContinue) {
+              hasMore = false
+              break
+            }
+          }
+        } catch (error: any) {
+          if (error.code === 'ENOENT') hasMore = false
+        }
+        break
+
+      case 1:
+        // Single-level sharding: ab/
+        try {
+          const shardDirs = await fs.promises.readdir(baseDir)
+          const sortedShardDirs = shardDirs.sort()
+
+          for (const shardDir of sortedShardDirs) {
+            const shardPath = path.join(baseDir, shardDir)
+            try {
+              const stat = await fs.promises.stat(shardPath)
+              if (stat.isDirectory()) {
+                const files = await fs.promises.readdir(shardPath)
+                const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
+
+                for (const file of sortedFiles) {
+                  const shouldContinue = await processor(file, path.join(shardPath, file))
+                  if (!shouldContinue) {
+                    hasMore = false
+                    break
+                  }
+                }
+                if (!hasMore) break
+              }
+            } catch (shardError) {
+              continue // Skip inaccessible shard directories
+            }
+          }
+        } catch (error: any) {
+          if (error.code === 'ENOENT') hasMore = false
+        }
+        break
+
+      case 2:
+      default:
+        // Deep sharding: ab/cd/
+        try {
+          const level1Dirs = await fs.promises.readdir(baseDir)
+          const sortedLevel1Dirs = level1Dirs.sort()
+
+          for (const level1Dir of sortedLevel1Dirs) {
+            const level1Path = path.join(baseDir, level1Dir)
+            try {
+              const level1Stat = await fs.promises.stat(level1Path)
+              if (level1Stat.isDirectory()) {
+                const level2Dirs = await fs.promises.readdir(level1Path)
+                const sortedLevel2Dirs = level2Dirs.sort()
+
+                for (const level2Dir of sortedLevel2Dirs) {
+                  const level2Path = path.join(level1Path, level2Dir)
+                  try {
+                    const level2Stat = await fs.promises.stat(level2Path)
+                    if (level2Stat.isDirectory()) {
+                      const files = await fs.promises.readdir(level2Path)
+                      const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
+
+                      for (const file of sortedFiles) {
+                        const shouldContinue = await processor(file, path.join(level2Path, file))
+                        if (!shouldContinue) {
+                          hasMore = false
+                          break
+                        }
+                      }
+                      if (!hasMore) break
+                    }
+                  } catch (level2Error) {
+                    continue // Skip inaccessible level2 directories
+                  }
+                }
+                if (!hasMore) break
+              }
+            } catch (level1Error) {
+              continue // Skip inaccessible level1 directories
+            }
+          }
+        } catch (error: any) {
+          if (error.code === 'ENOENT') hasMore = false
+        }
+        break
+    }
+
+    return hasMore
   }
 
   /**
