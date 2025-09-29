@@ -111,10 +111,16 @@ export interface MCPTool {
   parameters: {
     type: 'object'
     properties: Record<string, {
-      type: string
+      type?: string
       description: string
       enum?: string[]
       required?: boolean
+      minimum?: number
+      maximum?: number
+      default?: any
+      items?: any
+      oneOf?: any[]
+      [key: string]: any  // Allow additional JSON Schema properties
     }>
     required: string[]
   }

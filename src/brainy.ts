@@ -88,6 +88,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _extractor?: NeuralEntityExtractor
   private _tripleIntelligence?: TripleIntelligenceSystem
   private _vfs?: VirtualFileSystem
+  private _conversation?: any // ConversationManager (lazy-loaded)
 
   // State
   private initialized = false
@@ -1660,6 +1661,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._vfs = new VirtualFileSystem(this)
     }
     return this._vfs
+  }
+
+  /**
+   * Conversation Manager API - Infinite Agent Memory
+   *
+   * Provides conversation and context management for AI agents:
+   * - Save and retrieve conversation messages
+   * - Semantic search across conversation history
+   * - Smart context retrieval with relevance ranking
+   * - Artifact management (code, files, documents)
+   * - Conversation themes and clustering
+   *
+   * @returns ConversationManager instance
+   * @example
+   * const conv = brain.conversation
+   * await conv.saveMessage("How do I implement auth?", "user", { conversationId: "conv_123" })
+   * const context = await conv.getRelevantContext("authentication implementation")
+   */
+  conversation() {
+    if (!this._conversation) {
+      // Lazy-load ConversationManager to avoid circular dependencies
+      const { ConversationManager } = require('./conversation/conversationManager.js')
+      this._conversation = new ConversationManager(this)
+    }
+    return this._conversation
   }
 
   /**

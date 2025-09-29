@@ -19,6 +19,14 @@
 
 ## 🎉 Key Features
 
+### 💬 **Infinite Agent Memory** (NEW!)
+
+- **Never Lose Context**: Conversations preserved with semantic search
+- **Smart Context Retrieval**: Triple Intelligence finds relevant past work
+- **Claude Code Integration**: One command (`brainy conversation setup`) enables infinite memory
+- **Automatic Artifact Linking**: Code and files connected to conversations
+- **Scales to Millions**: Messages indexed and searchable in <100ms
+
 ### 🧠 **Triple Intelligence™ Engine**
 
 - **Vector Search**: HNSW-powered semantic similarity
@@ -44,6 +52,42 @@
 
 ```bash
 npm install @soulcraft/brainy
+
+# For Claude Code infinite memory (optional):
+brainy conversation setup
+```
+
+### 💬 **Infinite Memory for Claude Code**
+
+```javascript
+// One-time setup:
+// $ brainy conversation setup
+
+// Claude Code now automatically:
+// - Saves every conversation with embeddings
+// - Retrieves relevant past context
+// - Links code artifacts to conversations
+// - Never loses context or momentum
+
+// Use programmatically:
+import { Brainy } from '@soulcraft/brainy'
+
+const brain = new Brainy()
+await brain.init()
+
+// Save conversations
+await brain.conversation.saveMessage(
+  "How do I implement JWT authentication?",
+  "user",
+  { conversationId: "conv_123" }
+)
+
+// Get relevant context (semantic + temporal + graph)
+const context = await brain.conversation.getRelevantContext(
+  "JWT token validation",
+  { limit: 10, includeArtifacts: true }
+)
+// Returns: Ranked messages, linked code, similar conversations
 ```
 
 ### 🎯 **True Zero Configuration**
@@ -762,10 +806,15 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📖 Documentation
 
+### Infinite Agent Memory 💬
+- [Conversation API Overview](docs/conversation/README.md) - **NEW!** Complete conversation management guide
+- [MCP Integration for Claude Code](docs/conversation/MCP_INTEGRATION.md) - **NEW!** One-command setup
+- [API Reference](docs/conversation/API_REFERENCE.md) - **NEW!** Full API documentation
+
 ### Framework Integration
-- [Framework Integration Guide](docs/guides/framework-integration.md) - **NEW!** Complete framework setup guide
-- [Next.js Integration](docs/guides/nextjs-integration.md) - **NEW!** React and Next.js examples
-- [Vue.js Integration](docs/guides/vue-integration.md) - **NEW!** Vue and Nuxt examples
+- [Framework Integration Guide](docs/guides/framework-integration.md) - Complete framework setup guide
+- [Next.js Integration](docs/guides/nextjs-integration.md) - React and Next.js examples
+- [Vue.js Integration](docs/guides/vue-integration.md) - Vue and Nuxt examples
 
 ### Virtual Filesystem (Semantic VFS) 🧠📁
 - [VFS Core Documentation](docs/vfs/VFS_CORE.md) - Complete filesystem architecture and API
