@@ -55,7 +55,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "build": "npm run build:patterns:if-needed && tsc",
+    "build": "npm run build:patterns:if-needed && tsc && tsc -p tsconfig.cli.json",
     "build:patterns": "tsx scripts/buildEmbeddedPatterns.ts",
     "build:patterns:if-needed": "node scripts/check-patterns.cjs || npm run build:patterns",
     "build:patterns:force": "npm run build:patterns",

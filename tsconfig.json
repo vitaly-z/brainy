@@ -28,6 +28,8 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "src/scripts/**/*"
+    "src/scripts/**/*",
+    "src/cli/**/*",
+    "src/mcp/**/*"
   ]
 }
