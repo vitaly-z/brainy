@@ -78,7 +78,9 @@ async function buildEmbeddedPatterns() {
   console.log(`✅ Generated embeddings for ${embeddingMap.size} patterns`)
   
   // Convert embeddings to compact binary format
-  const embeddingDim = embeddingMap.size > 0 ? embeddingMap.values().next().value.length : 384
+  const embeddingDim = embeddingMap.size > 0 ? 
+    Array.from(embeddingMap.values())[0]?.length ?? 384 : 
+    384
   const totalFloats = libraryData.patterns.length * embeddingDim
   const buffer = new ArrayBuffer(totalFloats * 4)
   const view = new DataView(buffer)
