@@ -38,12 +38,12 @@ export default [
           argsIgnorePattern: '^_'
         }
       ],
-      // Semi rule removed - not available in v9
+      // Semicolon rules - enforce no semicolons
+      'semi': ['error', 'never'],
 
       // General rules
       'no-unused-vars': 'off', // Using TypeScript rule instead
-      'no-extra-semi': 'off',
-      'semi': 'off', // Using TypeScript rule instead
+      'no-extra-semi': 'error',
       'no-undef': 'off', // TypeScript handles this
       'no-redeclare': 'off', // TypeScript handles this
 

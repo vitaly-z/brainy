@@ -1279,7 +1279,7 @@ export class NaturalLanguageProcessor {
           }
 
           if (options?.includeMetadata) {
-            ;(entity as any).metadata = {
+            (entity as any).metadata = {
               pattern: pattern.source,
               contextBefore: text.substring(Math.max(0, match.index - 20), match.index),
               contextAfter: text.substring(match.index + match[0].length, Math.min(text.length, match.index + match[0].length + 20))

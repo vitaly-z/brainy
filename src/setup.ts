@@ -34,7 +34,7 @@ if (globalObj) {
   }
   
   // Create special global constructors for library compatibility
-  ;(globalObj as any).__TextEncoder__ = TextEncoder
+  (globalObj as any).__TextEncoder__ = TextEncoder
   ;(globalObj as any).__TextDecoder__ = TextDecoder
 }
 
