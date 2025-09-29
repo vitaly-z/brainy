@@ -14,7 +14,13 @@ import { neuralCommands } from './commands/neural.js'
 import { coreCommands } from './commands/core.js'
 import { utilityCommands } from './commands/utility.js'
 import conversationCommand from './commands/conversation.js'
-import { version } from '../package.json'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const packageJson = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'))
+const version = packageJson.version
 
 // CLI Configuration
 const program = new Command()

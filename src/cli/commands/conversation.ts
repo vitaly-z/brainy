@@ -31,7 +31,7 @@ export const conversationCommand = {
       .positional('action', {
         describe: 'Conversation operation to perform',
         type: 'string',
-        choices: ['setup', 'search', 'context', 'thread', 'stats', 'export', 'import']
+        choices: ['setup', 'remove', 'search', 'context', 'thread', 'stats', 'export', 'import']
       })
       .option('conversation-id', {
         describe: 'Conversation ID',
@@ -81,6 +81,9 @@ export const conversationCommand = {
       switch (action) {
         case 'setup':
           await handleSetup(argv)
+          break
+        case 'remove':
+          await handleRemove(argv)
           break
         case 'search':
           await handleSearch(argv)
@@ -230,7 +233,15 @@ async function main() {
 main()
 `
 
-    await fs.writeFile(serverPath, serverScript, { encoding: 'utf8', mode: 0o755 })
+    await fs.writeFile(serverPath, serverScript, 'utf8')
+    // Make executable on Unix systems
+    try {
+      await import('fs').then(fsModule => {
+        fsModule.promises.chmod(serverPath, 0o755).catch(() => {})
+      })
+    } catch {
+      // Windows doesn't need chmod
+    }
     spinner.succeed('Created MCP server script')
 
     // Create Claude Code config
@@ -262,7 +273,9 @@ main()
     const brain = new Brainy({
       storage: {
         type: 'filesystem',
-        path: dataDir
+        options: {
+          path: dataDir
+        }
       },
       silent: true
     })
@@ -285,6 +298,94 @@ main()
 
   } catch (error: any) {
     spinner.fail('Setup failed')
+    throw error
+  }
+}
+
+/**
+ * Handle remove command - Remove MCP server and optionally data
+ */
+async function handleRemove(argv: CommandArguments) {
+  console.log(chalk.bold.cyan('\n🗑️  Brainy Infinite Memory Removal\n'))
+
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '~'
+  const brainyDir = path.join(homeDir, '.brainy-memory')
+  const configPath = path.join(homeDir, '.config', 'claude-code', 'mcp-servers.json')
+
+  // Check if setup exists
+  const brainyExists = await fs.exists(brainyDir)
+  const configExists = await fs.exists(configPath)
+
+  if (!brainyExists && !configExists) {
+    console.log(chalk.yellow('No Brainy memory setup found. Nothing to remove.'))
+    return
+  }
+
+  // Show what will be removed
+  console.log(chalk.white('The following will be removed:'))
+  if (brainyExists) {
+    console.log(chalk.dim(`  • ${brainyDir} (memory data and MCP server)`))
+  }
+  if (configExists) {
+    console.log(chalk.dim(`  • MCP config entry in ${configPath}`))
+  }
+  console.log()
+
+  // Confirm removal
+  const { confirm } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Are you sure you want to remove Brainy infinite memory?',
+      default: false
+    }
+  ])
+
+  if (!confirm) {
+    console.log(chalk.yellow('Removal cancelled'))
+    return
+  }
+
+  const spinner = ora('Removing Brainy memory setup...').start()
+
+  try {
+    // Remove Brainy directory
+    if (brainyExists) {
+      // Use Node.js fs for rm operation as universal fs doesn't have it
+      const nodefs = await import('fs')
+      await nodefs.promises.rm(brainyDir, { recursive: true, force: true })
+      spinner.text = 'Removed memory directory...'
+    }
+
+    // Remove MCP config entry
+    if (configExists) {
+      try {
+        const configContent = await fs.readFile(configPath, 'utf8')
+        const mcpConfig = JSON.parse(configContent)
+
+        if (mcpConfig['brainy-memory']) {
+          delete mcpConfig['brainy-memory']
+          await fs.writeFile(configPath, JSON.stringify(mcpConfig, null, 2), 'utf8')
+          spinner.text = 'Removed MCP configuration...'
+        }
+      } catch (error) {
+        // If config file is corrupted or empty, skip
+        spinner.warn('Could not update MCP config file')
+      }
+    }
+
+    spinner.succeed('Successfully removed Brainy infinite memory')
+
+    console.log()
+    console.log(chalk.bold('✅ Cleanup complete'))
+    console.log()
+    console.log(chalk.white('All conversation data and MCP configuration have been removed.'))
+    console.log(chalk.dim('Run "brainy conversation setup" to set up again.'))
+    console.log()
+
+  } catch (error: any) {
+    spinner.fail('Removal failed')
+    console.error(chalk.red('Error:'), error.message)
     throw error
   }
 }

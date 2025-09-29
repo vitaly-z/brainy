@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.19.1](https://github.com/soulcraftlabs/brainy/compare/v3.19.0...v3.19.1) (2025-09-29)
+
 ## [3.19.0](https://github.com/soulcraftlabs/brainy/compare/v3.18.0...v3.19.0) (2025-09-29)
 
 ## [3.17.0](https://github.com/soulcraftlabs/brainy/compare/v3.16.0...v3.17.0) (2025-09-27)
