@@ -7,7 +7,7 @@
     "strict": false
   },
   "include": [
-    "src/cli/commands/conversation.ts",
+    "src/cli/**/*",
     "src/mcp/conversationTools.ts",
     "src/conversation/**/*"
   ],

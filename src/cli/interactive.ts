@@ -7,7 +7,7 @@
 
 import chalk from 'chalk'
 import inquirer from 'inquirer'
-import fuzzy from 'fuzzy'
+// import fuzzy from 'fuzzy'  // TODO: Install fuzzy package or remove dependency
 import ora from 'ora'
 import { Brainy } from '../brainy.js'
 import { getBrainyVersion } from '../utils/version.js'
@@ -126,13 +126,13 @@ export async function promptItemId(
   let choices: any[] = []
   if (brain) {
     try {
-      const recent = await brain.search('*', { limit: 10, 
-        sortBy: 'timestamp',
-        descending: true 
+      const recent = await brain.find({
+        query: '*',
+        limit: 10
       })
       
       choices = recent.map(item => ({
-        name: `${item.id} - ${item.content?.substring(0, 50)}...`,
+        name: `${item.id} - ${(item as any).content?.substring(0, 50) || 'No content'}...`,
         value: item.id,
         short: item.id
       }))
@@ -497,8 +497,19 @@ export async function promptRelationship(brain?: Brainy): Promise<{
  * Smart command suggestions when user types wrong command
  */
 export function suggestCommand(input: string, availableCommands: string[]): string[] {
-  const results = fuzzy.filter(input, availableCommands)
-  return results.slice(0, 3).map(r => r.string)
+  // Simple fuzzy matching without external dependency
+  // Filter commands that start with or contain the input
+  const matches = availableCommands
+    .filter(cmd => cmd.toLowerCase().includes(input.toLowerCase()))
+    .sort((a, b) => {
+      // Prefer commands that start with the input
+      const aStarts = a.toLowerCase().startsWith(input.toLowerCase())
+      const bStarts = b.toLowerCase().startsWith(input.toLowerCase())
+      if (aStarts && !bStarts) return -1
+      if (!aStarts && bStarts) return 1
+      return 0
+    })
+  return matches.slice(0, 3)
 }
 
 /**
@@ -610,6 +621,16 @@ export async function promptCommand(): Promise<string> {
 }
 
 /**
+ * Start interactive REPL mode
+ */
+export async function startInteractiveMode() {
+  console.log(chalk.cyan('\n🧠 Brainy Interactive Mode\n'))
+  console.log(chalk.yellow('Interactive REPL mode coming in v3.20.0\n'))
+  console.log(chalk.dim('Use specific commands for now: brainy add, brainy search, etc.'))
+  process.exit(0)
+}
+
+/**
  * Export all interactive components
  */
 export default {
@@ -628,5 +649,6 @@ export default {
   showError,
   ProgressTracker,
   showWelcome,
-  promptCommand
+  promptCommand,
+  startInteractiveMode
 }

@@ -9,8 +9,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Brainy } from '../../brainyData.js'
-import { NeuralAPI } from '../../neural/neuralAPI.js'
+import { Brainy } from '../../brainy.js'
 
 interface CommandArguments {
   action?: string;
@@ -96,10 +95,10 @@ export const neuralCommand = {
   handler: async (argv: CommandArguments) => {
     console.log(chalk.cyan('\n🧠 NEURAL SIMILARITY API'))
     console.log(chalk.gray('━'.repeat(50)))
-    
+
     // Initialize Brainy and Neural API
     const brain = new Brainy()
-    const neural = new NeuralAPI(brain)
+    const neural = brain.neural()
     
     try {
       const action = argv.action || await promptForAction()
@@ -118,7 +117,9 @@ export const neuralCommand = {
           await handleNeighborsCommand(neural, argv)
           break
         case 'path':
-          await handlePathCommand(neural, argv)
+          console.log(chalk.yellow('\n⚠️  Semantic path finding coming in v3.21.0'))
+          console.log(chalk.dim('This feature requires implementing graph traversal algorithms'))
+          console.log(chalk.dim('Use "neighbors" and "hierarchy" commands to explore connections'))
           break
         case 'outliers':
           await handleOutliersCommand(neural, argv)
@@ -147,7 +148,7 @@ async function promptForAction(): Promise<string> {
       { name: '🎯 Find semantic clusters', value: 'clusters' },
       { name: '🌳 Show item hierarchy', value: 'hierarchy' },
       { name: '🕸️  Find semantic neighbors', value: 'neighbors' },
-      { name: '🛣️  Find semantic path between items', value: 'path' },
+      { name: '🛣️  Find semantic path between items (v3.21.0)', value: 'path', disabled: true },
       { name: '🚨 Detect outliers', value: 'outliers' },
       { name: '📊 Generate visualization data', value: 'visualize' }
     ]
@@ -156,7 +157,7 @@ async function promptForAction(): Promise<string> {
   return answer.action
 }
 
-async function handleSimilarCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleSimilarCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🧠 Calculating semantic similarity...').start()
   
   try {
@@ -230,7 +231,7 @@ async function handleSimilarCommand(neural: NeuralAPI, argv: CommandArguments): 
   }
 }
 
-async function handleClustersCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleClustersCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🎯 Finding semantic clusters...').start()
   
   try {
@@ -277,7 +278,7 @@ async function handleClustersCommand(neural: NeuralAPI, argv: CommandArguments):
   }
 }
 
-async function handleHierarchyCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleHierarchyCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🌳 Building semantic hierarchy...').start()
   
   try {
@@ -342,7 +343,7 @@ function displayHierarchy(hierarchy: any): void {
   }
 }
 
-async function handleNeighborsCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleNeighborsCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🕸️ Finding semantic neighbors...').start()
   
   try {
@@ -398,7 +399,7 @@ async function handleNeighborsCommand(neural: NeuralAPI, argv: CommandArguments)
   }
 }
 
-async function handlePathCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handlePathCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🛣️ Finding semantic path...').start()
   
   try {
@@ -455,7 +456,7 @@ async function handlePathCommand(neural: NeuralAPI, argv: CommandArguments): Pro
   }
 }
 
-async function handleOutliersCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleOutliersCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('🚨 Detecting semantic outliers...').start()
   
   try {
@@ -484,7 +485,7 @@ async function handleOutliersCommand(neural: NeuralAPI, argv: CommandArguments):
   }
 }
 
-async function handleVisualizeCommand(neural: NeuralAPI, argv: CommandArguments): Promise<void> {
+async function handleVisualizeCommand(neural: any, argv: CommandArguments): Promise<void> {
   const spinner = ora('📊 Generating visualization data...').start()
   
   try {
@@ -572,6 +573,16 @@ function showHelp(): void {
   console.log('  --limit, -l       Maximum results')
   console.log('  --explain, -e     Include explanations')
   console.log('')
+}
+
+export const neuralCommands = {
+  similar: handleSimilarCommand,
+  cluster: handleClustersCommand,
+  hierarchy: handleHierarchyCommand,
+  related: handleNeighborsCommand,
+  // path: handlePathCommand, // Coming in v3.21.0 - requires graph traversal implementation
+  outliers: handleOutliersCommand,
+  visualize: handleVisualizeCommand
 }
 
 export default neuralCommand

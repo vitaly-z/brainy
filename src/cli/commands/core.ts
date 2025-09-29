@@ -24,8 +24,20 @@ interface AddOptions extends CoreOptions {
 
 interface SearchOptions extends CoreOptions {
   limit?: string
+  offset?: string
   threshold?: string
-  metadata?: string
+  type?: string
+  where?: string
+  near?: string
+  connectedTo?: string
+  connectedFrom?: string
+  via?: string
+  explain?: boolean
+  includeRelations?: boolean
+  fusion?: string
+  vectorWeight?: string
+  graphWeight?: string
+  fieldWeight?: string
 }
 
 interface GetOptions extends CoreOptions {
@@ -48,10 +60,9 @@ interface ExportOptions extends CoreOptions {
 
 let brainyInstance: Brainy | null = null
 
-const getBrainy = async (): Promise<Brainy> => {
+const getBrainy = (): Brainy => {
   if (!brainyInstance) {
     brainyInstance = new Brainy()
-    await brainyInstance.init()
   }
   return brainyInstance
 }
@@ -70,7 +81,7 @@ export const coreCommands = {
     const spinner = ora('Adding to neural database...').start()
     
     try {
-      const brain = await getBrainy()
+      const brain = getBrainy()
       
       let metadata: any = {}
       if (options.metadata) {
@@ -142,48 +153,183 @@ export const coreCommands = {
   },
 
   /**
-   * Search the neural database
+   * Search the neural database with Triple Intelligence™
    */
   async search(query: string, options: SearchOptions) {
-    const spinner = ora('Searching neural database...').start()
-    
+    const spinner = ora('Searching with Triple Intelligence™...').start()
+
     try {
-      const brain = await getBrainy()
-      
-      const searchOptions: any = {
+      const brain = getBrainy()
+
+      // Build comprehensive search params
+      const searchParams: any = {
+        query,
         limit: options.limit ? parseInt(options.limit) : 10
       }
-      
-      if (options.threshold) {
-        searchOptions.threshold = parseFloat(options.threshold)
+
+      // Pagination
+      if (options.offset) {
+        searchParams.offset = parseInt(options.offset)
       }
-      
-      if (options.metadata) {
+
+      // Vector Intelligence - similarity threshold
+      if (options.threshold) {
+        searchParams.near = { threshold: parseFloat(options.threshold) }
+      }
+
+      // Metadata Intelligence - type filtering
+      if (options.type) {
+        const types = options.type.split(',').map(t => t.trim())
+        searchParams.type = types.length === 1 ? types[0] : types
+      }
+
+      // Metadata Intelligence - field filtering
+      if (options.where) {
         try {
-          searchOptions.filter = JSON.parse(options.metadata)
+          searchParams.where = JSON.parse(options.where)
         } catch {
-          spinner.fail('Invalid metadata filter JSON')
+          spinner.fail('Invalid --where JSON')
+          console.log(chalk.dim('Example: --where \'{"status":"active","priority":{"$gte":5}}\''))
           process.exit(1)
         }
       }
-      
-      const results = await brain.search(query, searchOptions.limit)
-      
+
+      // Vector Intelligence - proximity search
+      if (options.near) {
+        searchParams.near = {
+          id: options.near,
+          threshold: options.threshold ? parseFloat(options.threshold) : 0.7
+        }
+      }
+
+      // Graph Intelligence - connection constraints
+      if (options.connectedTo || options.connectedFrom || options.via) {
+        searchParams.connected = {}
+
+        if (options.connectedTo) {
+          searchParams.connected.to = options.connectedTo
+        }
+
+        if (options.connectedFrom) {
+          searchParams.connected.from = options.connectedFrom
+        }
+
+        if (options.via) {
+          const vias = options.via.split(',').map(v => v.trim())
+          searchParams.connected.via = vias.length === 1 ? vias[0] : vias
+        }
+      }
+
+      // Explanation
+      if (options.explain) {
+        searchParams.explain = true
+      }
+
+      // Include relationships
+      if (options.includeRelations) {
+        searchParams.includeRelations = true
+      }
+
+      // Triple Intelligence Fusion - custom weighting
+      if (options.fusion || options.vectorWeight || options.graphWeight || options.fieldWeight) {
+        searchParams.fusion = {
+          strategy: options.fusion || 'adaptive',
+          weights: {}
+        }
+
+        if (options.vectorWeight) {
+          searchParams.fusion.weights.vector = parseFloat(options.vectorWeight)
+        }
+        if (options.graphWeight) {
+          searchParams.fusion.weights.graph = parseFloat(options.graphWeight)
+        }
+        if (options.fieldWeight) {
+          searchParams.fusion.weights.field = parseFloat(options.fieldWeight)
+        }
+      }
+
+      const results = await brain.find(searchParams)
+
       spinner.succeed(`Found ${results.length} results`)
-      
+
       if (!options.json) {
         if (results.length === 0) {
-          console.log(chalk.yellow('No results found'))
+          console.log(chalk.yellow('\nNo results found'))
+
+          // Show helpful hints
+          console.log(chalk.dim('\nTips:'))
+          console.log(chalk.dim('  • Try different search terms'))
+          console.log(chalk.dim('  • Remove filters (--type, --where, --connected-to)'))
+          console.log(chalk.dim('  • Lower the --threshold value'))
         } else {
+          console.log(chalk.cyan(`\n📊 Triple Intelligence Results:\n`))
+
           results.forEach((result, i) => {
-            console.log(chalk.cyan(`\n${i + 1}. ${(result as any).content || result.id}`))
+            const entity = result.entity || result
+            console.log(chalk.bold(`${i + 1}. ${entity.id}`))
+
+            // Show score with breakdown
             if (result.score !== undefined) {
-              console.log(chalk.dim(`   Similarity: ${(result.score * 100).toFixed(1)}%`))
+              console.log(chalk.green(`   Score: ${(result.score * 100).toFixed(1)}%`))
+
+              if (options.explain && (result as any).scores) {
+                const scores = (result as any).scores
+                if (scores.vector !== undefined) {
+                  console.log(chalk.dim(`     Vector: ${(scores.vector * 100).toFixed(1)}%`))
+                }
+                if (scores.graph !== undefined) {
+                  console.log(chalk.dim(`     Graph: ${(scores.graph * 100).toFixed(1)}%`))
+                }
+                if (scores.field !== undefined) {
+                  console.log(chalk.dim(`     Field: ${(scores.field * 100).toFixed(1)}%`))
+                }
+              }
             }
-            if (result.entity && result.entity.metadata) {
-              console.log(chalk.dim(`   Metadata: ${JSON.stringify(result.entity.metadata)}`))
+
+            // Show type
+            if ((entity as any).type) {
+              console.log(chalk.dim(`   Type: ${(entity as any).type}`))
             }
+
+            // Show content preview
+            if ((entity as any).content) {
+              const preview = (entity as any).content.substring(0, 80)
+              console.log(chalk.dim(`   Content: ${preview}${(entity as any).content.length > 80 ? '...' : ''}`))
+            }
+
+            // Show metadata
+            if ((entity as any).metadata && Object.keys((entity as any).metadata).length > 0) {
+              console.log(chalk.dim(`   Metadata: ${JSON.stringify((entity as any).metadata)}`))
+            }
+
+            // Show relationships
+            if (options.includeRelations && (result as any).relations) {
+              const relations = (result as any).relations
+              if (relations.length > 0) {
+                console.log(chalk.dim(`   Relations: ${relations.length} connections`))
+              }
+            }
+
+            console.log()
           })
+
+          // Show search summary
+          console.log(chalk.cyan('Search Configuration:'))
+          if (searchParams.type) {
+            console.log(chalk.dim(`  Type filter: ${Array.isArray(searchParams.type) ? searchParams.type.join(', ') : searchParams.type}`))
+          }
+          if (searchParams.where) {
+            console.log(chalk.dim(`  Field filter: ${JSON.stringify(searchParams.where)}`))
+          }
+          if (searchParams.connected) {
+            console.log(chalk.dim(`  Graph filter: ${JSON.stringify(searchParams.connected)}`))
+          }
+          if (searchParams.fusion) {
+            console.log(chalk.dim(`  Fusion: ${searchParams.fusion.strategy}`))
+            if (searchParams.fusion.weights && Object.keys(searchParams.fusion.weights).length > 0) {
+              console.log(chalk.dim(`  Weights: ${JSON.stringify(searchParams.fusion.weights)}`))
+            }
+          }
         }
       } else {
         formatOutput(results, options)
@@ -191,6 +337,9 @@ export const coreCommands = {
     } catch (error: any) {
       spinner.fail('Search failed')
       console.error(chalk.red(error.message))
+      if (options.verbose) {
+        console.error(chalk.dim(error.stack))
+      }
       process.exit(1)
     }
   },
@@ -202,26 +351,24 @@ export const coreCommands = {
     const spinner = ora('Fetching item...').start()
     
     try {
-      const brain = await getBrainy()
+      const brain = getBrainy()
       
       // Try to get the item
-      const results = await brain.search(id, 1)
-      
-      if (results.length === 0) {
+      const item = await brain.get(id)
+
+      if (!item) {
         spinner.fail('Item not found')
         console.log(chalk.yellow(`No item found with ID: ${id}`))
         process.exit(1)
       }
-      
-      const item = results[0]
       spinner.succeed('Item found')
       
       if (!options.json) {
         console.log(chalk.cyan('\nItem Details:'))
         console.log(`  ID: ${item.id}`)
         console.log(`  Content: ${(item as any).content || 'N/A'}`)
-        if (item.entity && item.entity.metadata) {
-          console.log(`  Metadata: ${JSON.stringify(item.entity.metadata, null, 2)}`)
+        if (item.metadata) {
+          console.log(`  Metadata: ${JSON.stringify(item.metadata, null, 2)}`)
         }
         
         if (options.withConnections) {
@@ -252,7 +399,7 @@ export const coreCommands = {
     const spinner = ora('Creating relationship...').start()
     
     try {
-      const brain = await getBrainy()
+      const brain = getBrainy()
       
       let metadata: any = {}
       if (options.metadata) {
@@ -301,7 +448,7 @@ export const coreCommands = {
     const spinner = ora('Importing data...').start()
     
     try {
-      const brain = await getBrainy()
+      const brain = getBrainy()
       const format = options.format || 'json'
       const batchSize = options.batchSize ? parseInt(options.batchSize) : 100
       
@@ -401,7 +548,7 @@ export const coreCommands = {
     const spinner = ora('Exporting database...').start()
     
     try {
-      const brain = await getBrainy()
+      const brain = getBrainy()
       const format = options.format || 'json'
       
       // Export all data
