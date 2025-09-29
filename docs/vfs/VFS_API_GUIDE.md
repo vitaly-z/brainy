@@ -794,8 +794,10 @@ console.log('VFS Stats:', stats)
 
 ---
 
-The Virtual Filesystem API provides a powerful, intelligent alternative to traditional filesystems. With semantic search, rich metadata, and graph relationships, your files become living entities in a connected knowledge system.
+The Virtual Filesystem API provides a powerful, intelligent alternative to traditional filesystems. With semantic search, rich metadata, graph relationships, and AI-powered concept extraction, your files become living entities in a connected knowledge system.
 
-For advanced features like event recording, semantic versioning, and persistent entities, see the [Knowledge Layer API Documentation](./KNOWLEDGE_LAYER_API.md).
+For semantic file access and neural extraction features, see:
+- [Semantic VFS Guide](./SEMANTIC_VFS.md) - Multi-dimensional file access
+- [Neural Extraction API](./NEURAL_EXTRACTION.md) - AI-powered concept and entity extraction
 
 Ready to make your filesystem intelligent? 🚀

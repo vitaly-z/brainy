@@ -232,48 +232,6 @@ describe('VirtualFileSystem - Comprehensive Test Suite', () => {
     })
   })
 
-  describe('Knowledge Layer', () => {
-    it('should enable and use Knowledge Layer features', async () => {
-      // Enable Knowledge Layer
-      await vfs.enableKnowledgeLayer()
-
-      // Write a file to trigger Knowledge Layer processing
-      await vfs.writeFile('/knowledge.txt', 'This is a test of the knowledge system')
-
-      // Wait for background processing
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      // Test Knowledge Layer methods (added dynamically)
-      if ('getHistory' in vfs) {
-        const history = await (vfs as any).getHistory('/knowledge.txt')
-        expect(history).toBeDefined()
-      }
-
-      if ('getVersions' in vfs) {
-        const versions = await (vfs as any).getVersions('/knowledge.txt')
-        expect(versions).toBeDefined()
-      }
-
-      if ('createEntity' in vfs) {
-        const entity = await (vfs as any).createEntity({
-          name: 'TestEntity',
-          type: 'character',
-          description: 'A test character'
-        })
-        expect(entity).toBeDefined()
-      }
-
-      if ('createConcept' in vfs) {
-        const concept = await (vfs as any).createConcept({
-          name: 'TestConcept',
-          type: 'idea',
-          domain: 'testing'
-        })
-        expect(concept).toBeDefined()
-      }
-    })
-  })
-
   describe('Import/Export', () => {
     it('should import files from local filesystem', async () => {
       // Create a temp file
@@ -380,20 +338,4 @@ describe('GitBridge Integration', () => {
     await brain?.close()
   })
 
-  it('should export relationships and history (FIXED - now queries real data)', async () => {
-    // Enable Knowledge Layer for history
-    await vfs.enableKnowledgeLayer()
-
-    // Create files with relationships
-    await vfs.writeFile('/src/index.js', 'export default {}')
-    await vfs.writeFile('/src/utils.js', 'export function util() {}')
-    await vfs.addRelationship('/src/index.js', '/src/utils.js', VerbType.Uses)
-
-    // GitBridge export would now include real relationships and events
-    const gitBridge = (vfs as any).gitBridge
-    if (gitBridge) {
-      // The export methods now query actual VFS data instead of returning empty arrays
-      expect(gitBridge).toBeDefined()
-    }
-  })
 })

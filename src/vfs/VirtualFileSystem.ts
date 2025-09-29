@@ -12,7 +12,17 @@ import { Brainy } from '../brainy.js'
 import { Entity, AddParams, RelateParams, FindParams, Relation } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { PathResolver } from './PathResolver.js'
-// Knowledge Layer imports removed - now in KnowledgeAugmentation
+import {
+  SemanticPathResolver,
+  ProjectionRegistry,
+  ConceptProjection,
+  AuthorProjection,
+  TemporalProjection,
+  RelationshipProjection,
+  SimilarityProjection,
+  TagProjection
+} from './semantic/index.js'
+// Knowledge Layer can remain as optional augmentation for now
 import {
   IVirtualFileSystem,
   VFSConfig,
@@ -48,13 +58,14 @@ import {
  */
 export class VirtualFileSystem implements IVirtualFileSystem {
   private brain: Brainy
-  private pathResolver!: PathResolver
+  private pathResolver!: SemanticPathResolver
+  private projectionRegistry!: ProjectionRegistry
   private config: Required<Omit<VFSConfig, 'rootEntityId'>> & { rootEntityId?: string }
   private rootEntityId?: string
   private initialized = false
   private currentUser: string = 'system'  // Track current user for collaboration
 
-  // Knowledge Layer removed from core - now optional augmentation
+  // Knowledge Layer features available via augmentation (brain.use('knowledge'))
 
   // Caches for performance
   private contentCache: Map<string, { data: Buffer, timestamp: number }>
@@ -93,12 +104,17 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     // Create or find root entity
     this.rootEntityId = await this.initializeRoot()
 
-    // Initialize path resolver
-    this.pathResolver = new PathResolver(this.brain, this.rootEntityId, {
-      maxCacheSize: this.config.cache?.maxPaths,
-      cacheTTL: this.config.cache?.ttl,
-      hotPathThreshold: 10
-    })
+    // Initialize projection registry with auto-discovery of built-in projections
+    this.projectionRegistry = new ProjectionRegistry()
+    this.registerBuiltInProjections()
+
+    // Initialize semantic path resolver (zero-config, uses brain.config)
+    this.pathResolver = new SemanticPathResolver(
+      this.brain,
+      this, // Pass VFS instance for resolvePath
+      this.rootEntityId,
+      this.projectionRegistry
+    )
 
     // Knowledge Layer is now a separate augmentation
     // Enable with: brain.use('knowledge')
@@ -112,6 +128,32 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Create or find the root directory entity
    */
+  /**
+   * Auto-register built-in projection strategies
+   * Zero-config: All semantic dimensions work out of the box
+   */
+  private registerBuiltInProjections(): void {
+    const projections = [
+      ConceptProjection,
+      AuthorProjection,
+      TemporalProjection,
+      RelationshipProjection,
+      SimilarityProjection,
+      TagProjection
+    ]
+
+    for (const ProjectionClass of projections) {
+      try {
+        this.projectionRegistry.register(new ProjectionClass())
+      } catch (err) {
+        // Silently skip if already registered (e.g., in tests)
+        if (!(err instanceof Error && err.message.includes('already registered'))) {
+          throw err
+        }
+      }
+    }
+  }
+
   private async initializeRoot(): Promise<string> {
     // Check if root already exists - search using where clause
     const existing = await this.brain.find({
@@ -1230,6 +1272,17 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       metadata.lineCount = text.split('\n').length
       metadata.wordCount = text.split(/\s+/).filter(w => w).length
       metadata.charset = 'utf-8'
+
+      // Extract concepts using brain.extractConcepts() (neural extraction)
+      if (this.config.intelligence?.autoConcepts) {
+        try {
+          const concepts = await this.brain.extractConcepts(text, { limit: 20 })
+          metadata.conceptNames = concepts // Flattened for O(log n) queries
+        } catch (error) {
+          // Concept extraction is optional - don't fail if it errors
+          console.debug('Concept extraction failed:', error)
+        }
+      }
     }
 
     // Extract hash for integrity
@@ -1409,9 +1462,6 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         maxFileSize: 1_000_000_000,  // 1GB
         maxPathLength: 4096,
         maxDirectoryEntries: 100_000
-      },
-      knowledgeLayer: {
-        enabled: false  // Default to disabled
       }
     }
   }
@@ -2057,17 +2107,6 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     this.invalidateCaches(path)
   }
 
-  // ============= Knowledge Layer =============
-  // Knowledge Layer methods are added by KnowledgeLayer.enable()
-  // This keeps VFS pure and fast while allowing optional intelligence
-
-  /**
-   * Enable Knowledge Layer on this VFS instance
-   */
-  async enableKnowledgeLayer(): Promise<void> {
-    const { enableKnowledgeLayer } = await import('./KnowledgeLayer.js')
-    await enableKnowledgeLayer(this, this.brain)
-  }
 
   /**
    * Set the current user for tracking who makes changes

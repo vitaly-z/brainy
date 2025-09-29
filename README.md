@@ -767,13 +767,12 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - [Next.js Integration](docs/guides/nextjs-integration.md) - **NEW!** React and Next.js examples
 - [Vue.js Integration](docs/guides/vue-integration.md) - **NEW!** Vue and Nuxt examples
 
-### Virtual Filesystem & Knowledge Layer 🧠📁
-- [VFS Core Documentation](docs/vfs/VFS_CORE.md) - **NEW!** Complete filesystem architecture and API
-- [VFS + Knowledge Layer](docs/vfs/VFS_KNOWLEDGE_LAYER.md) - **NEW!** Intelligent knowledge management features
-- [Examples & Scenarios](docs/vfs/VFS_EXAMPLES_SCENARIOS.md) - **NEW!** Real-world use cases and code
+### Virtual Filesystem (Semantic VFS) 🧠📁
+- [VFS Core Documentation](docs/vfs/VFS_CORE.md) - Complete filesystem architecture and API
+- [Semantic VFS Guide](docs/vfs/SEMANTIC_VFS.md) - Multi-dimensional file access (6 semantic dimensions)
+- [Neural Extraction API](docs/vfs/NEURAL_EXTRACTION.md) - AI-powered concept and entity extraction
+- [Examples & Scenarios](docs/vfs/VFS_EXAMPLES_SCENARIOS.md) - Real-world use cases and code
 - [VFS API Guide](docs/vfs/VFS_API_GUIDE.md) - Complete API reference
-- [Knowledge Layer API](docs/vfs/KNOWLEDGE_LAYER_API.md) - Advanced knowledge features
-- [Knowledge Layer Overview](docs/KNOWLEDGE_LAYER_OVERVIEW.md) - Non-technical guide
 
 ### Core Documentation
 - [Getting Started Guide](docs/guides/getting-started.md)

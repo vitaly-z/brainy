@@ -66,6 +66,7 @@ export interface VFSMetadata {
     name: string
     confidence: number
   }>
+  conceptNames?: string[]        // Flattened concept names for O(log n) indexed queries
   todos?: VFSTodo[]
   dependencies?: string[]        // For code files - what they import
   exports?: string[]             // For code files - what they export
@@ -341,16 +342,6 @@ export interface VFSConfig {
     autoExtract?: boolean       // Auto-extract metadata
     autoTag?: boolean           // Auto-generate tags
     autoConcepts?: boolean      // Auto-detect concepts
-  }
-
-  // Knowledge Layer - Optional revolutionary enhancement!
-  knowledgeLayer?: {
-    enabled?: boolean           // Enable Knowledge Layer features
-    eventRecording?: boolean    // Track all file operations
-    semanticVersioning?: boolean // Smart versioning based on meaning
-    persistentEntities?: boolean // Track evolving entities
-    concepts?: boolean          // Universal concept system
-    gitBridge?: boolean        // Git import/export support
   }
 
   // Permissions

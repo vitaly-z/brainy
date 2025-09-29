@@ -19,6 +19,7 @@ import { AugmentationRegistry, AugmentationContext } from './augmentations/brain
 import { createDefaultAugmentations } from './augmentations/defaultAugmentations.js'
 import { ImprovedNeuralAPI } from './neural/improvedNeuralAPI.js'
 import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
+import { NeuralEntityExtractor, ExtractedEntity } from './neural/entityExtractor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { VirtualFileSystem } from './vfs/VirtualFileSystem.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
@@ -84,6 +85,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   // Sub-APIs (lazy-loaded)
   private _neural?: ImprovedNeuralAPI
   private _nlp?: NaturalLanguageProcessor
+  private _extractor?: NeuralEntityExtractor
   private _tripleIntelligence?: TripleIntelligenceSystem
   private _vfs?: VirtualFileSystem
 
@@ -1578,6 +1580,76 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._nlp = new NaturalLanguageProcessor(this)
     }
     return this._nlp
+  }
+
+  /**
+   * Entity Extraction API - Neural extraction with NounType taxonomy
+   *
+   * Extracts entities from text using:
+   * - Pattern-based candidate detection
+   * - Embedding-based type classification
+   * - Context-aware confidence scoring
+   *
+   * @param text - Text to extract entities from
+   * @param options - Extraction options
+   * @returns Array of extracted entities with types and confidence
+   *
+   * @example
+   * const entities = await brain.extract('John Smith founded Acme Corp in New York')
+   * // [
+   * //   { text: 'John Smith', type: NounType.Person, confidence: 0.95 },
+   * //   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.92 },
+   * //   { text: 'New York', type: NounType.Location, confidence: 0.88 }
+   * // ]
+   */
+  async extract(
+    text: string,
+    options?: {
+      types?: NounType[]
+      confidence?: number
+      includeVectors?: boolean
+      neuralMatching?: boolean
+    }
+  ): Promise<ExtractedEntity[]> {
+    if (!this._extractor) {
+      this._extractor = new NeuralEntityExtractor(this)
+    }
+    return await this._extractor.extract(text, options)
+  }
+
+  /**
+   * Extract concepts from text
+   *
+   * Simplified interface for concept/topic extraction
+   * Returns only concept names as strings for easy metadata population
+   *
+   * @param text - Text to extract concepts from
+   * @param options - Extraction options
+   * @returns Array of concept names
+   *
+   * @example
+   * const concepts = await brain.extractConcepts('Using OAuth for authentication')
+   * // ['oauth', 'authentication']
+   */
+  async extractConcepts(
+    text: string,
+    options?: {
+      confidence?: number
+      limit?: number
+    }
+  ): Promise<string[]> {
+    const entities = await this.extract(text, {
+      types: [NounType.Concept, NounType.Topic],
+      confidence: options?.confidence || 0.7,
+      neuralMatching: true
+    })
+
+    // Deduplicate and normalize
+    const conceptSet = new Set(entities.map(e => e.text.toLowerCase()))
+    const concepts = Array.from(conceptSet)
+
+    // Apply limit if specified
+    return options?.limit ? concepts.slice(0, options.limit) : concepts
   }
 
   /**

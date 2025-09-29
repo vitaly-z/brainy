@@ -275,19 +275,9 @@ await vfs.importDirectory('/local/project', { targetPath: '/vfs/project' })
 
 ### GitBridge Integration
 
-GitBridge provides Git import/export capabilities. It can be used in two ways:
+GitBridge provides Git import/export capabilities:
 
-#### Option 1: Via Knowledge Layer (Recommended)
-```javascript
-// Enable Knowledge Layer to get Git methods
-await vfs.enableKnowledgeLayer()
-
-// Now Git methods are available on VFS
-await vfs.exportToGit('/project', '/local/git/repo')
-await vfs.importFromGit('/local/git/repo', '/project')
-```
-
-#### Option 2: Direct GitBridge Usage
+#### GitBridge Usage
 ```javascript
 // Import and instantiate GitBridge
 import { GitBridge } from '@soulcraft/brainy'
@@ -327,9 +317,9 @@ await gitBridge.importFromGit('/local/git/repo', '/project', {
 - Compression ratio tracked in metadata
 
 ### Background Processing
-- Non-blocking Knowledge Layer processing
 - Asynchronous embedding generation
 - Deferred relationship indexing
+- Non-blocking metadata extraction
 
 ## Error Handling
 
@@ -373,45 +363,32 @@ VFS scales to millions of files:
 
 ## Method Availability
 
-### Core VFS Methods (Always Available)
-
-These methods are available immediately after VFS initialization:
+All VFS methods are available immediately after initialization:
 
 ```javascript
 const vfs = brain.vfs()
 await vfs.init()
 
-// ✅ All these work without Knowledge Layer:
-await vfs.writeFile()      // File operations
-await vfs.readFile()
-await vfs.mkdir()           // Directory operations
-await vfs.readdir()
-await vfs.stat()            // Metadata
-await vfs.search()          // Semantic search
-await vfs.addRelationship() // Relationships
-await vfs.addTodo()         // Todo management
-await vfs.exportToJSON()    // Export
-await vfs.bulkWrite()       // Bulk operations
-```
+// Core file operations
+await vfs.writeFile()      // Write files
+await vfs.readFile()       // Read files
+await vfs.mkdir()          // Create directories
+await vfs.readdir()        // List directory contents
+await vfs.stat()           // Get file metadata
 
-### Knowledge Layer Methods (Require Enablement)
+// Semantic features
+await vfs.search()         // Semantic search
+await vfs.findSimilar()    // Find similar files
+await vfs.addRelationship()// Add relationships
 
-These methods are only available after enabling the Knowledge Layer:
+// Todo management
+await vfs.addTodo()        // Add todos
+await vfs.getTodos()       // Get todos
+await vfs.setMetadata()    // Set metadata
 
-```javascript
-await vfs.enableKnowledgeLayer()
-
-// 🔮 Now these methods are available:
-await vfs.createEntity()    // Entity management
-await vfs.linkEntities()
-await vfs.createConcept()   // Concept system
-await vfs.findByConcept()
-await vfs.getVersions()     // Versioning
-await vfs.getHistory()      // History tracking
-await vfs.exportToGit()     // Git integration (wrapper)
-await vfs.importFromGit()
-await vfs.exportToMarkdown()// Export formats
-await vfs.getTimeline()     // Timeline analysis
+// Export
+await vfs.exportToJSON()   // Export to JSON
+await vfs.bulkWrite()      // Bulk operations
 ```
 
 ## Complete Example

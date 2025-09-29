@@ -1,8 +1,10 @@
 # VFS Examples and Scenarios
 
+> **⚠️ DOCUMENTATION IN PROGRESS**: This document is being updated to reflect recent VFS architecture changes. Many examples below reference deprecated Knowledge Layer methods. Updated examples coming soon. For current VFS capabilities, see [VFS_CORE.md](./VFS_CORE.md) and [SEMANTIC_VFS.md](./SEMANTIC_VFS.md).
+
 ## Real-World Scenarios
 
-This document demonstrates how VFS with Knowledge Layer enables powerful real-world applications.
+This document demonstrates how VFS enables powerful real-world applications with semantic search, relationships, and AI-powered concept extraction.
 
 ### Legend
 - ✅ **Real VFS methods** - Fully implemented and working
@@ -24,7 +26,6 @@ async function novelWritingProject() {
 
   const vfs = brain.vfs()
   await vfs.init()
-  await vfs.enableKnowledgeLayer()
 
   // Create project structure ✅
   await vfs.mkdir('/novel')
@@ -32,22 +33,26 @@ async function novelWritingProject() {
   await vfs.mkdir('/novel/characters')
   await vfs.mkdir('/novel/worldbuilding')
 
-  // Define main characters as persistent entities ✅
-  const protagonist = await vfs.createEntity({
-    name: 'Elena Blackwood',
-    type: 'character',
-    description: 'A skilled detective with a mysterious past',
-    attributes: {
-      age: 32,
-      occupation: 'Private Investigator',
-      skills: ['deduction', 'combat', 'languages'],
-      personality: ['determined', 'secretive', 'compassionate']
+  // Define main characters as files with rich metadata ✅
+  await vfs.writeFile('/novel/characters/elena-blackwood.md', `
+# Elena Blackwood
+
+A skilled detective with a mysterious past.
+
+## Character Profile
+- Age: 32
+- Occupation: Private Investigator
+- Skills: Deduction, combat, languages
+- Personality: Determined, secretive, compassionate
+`, {
+    metadata: {
+      characterType: 'protagonist',
+      tags: ['detective', 'mysterious', 'protagonist']
     }
   })
 
-  const antagonist = await vfs.createEntity({
-    name: 'Marcus Void',
-    type: 'character',
+  await vfs.writeFile('/novel/characters/marcus-void.md', `
+# Marcus Void
     description: 'A wealthy industrialist with dark secrets',
     attributes: {
       age: 45,
@@ -147,7 +152,6 @@ async function gameDevProject() {
 
   const vfs = brain.vfs()
   await vfs.init()
-  await vfs.enableKnowledgeLayer()
 
   // Game project structure
   await vfs.mkdir('/game')
@@ -293,9 +297,8 @@ async function softwareProject() {
 
   const vfs = brain.vfs()
   await vfs.init()
-  await vfs.enableKnowledgeLayer()
 
-  // Import existing git repository ✅ (Knowledge Layer provides wrapper)
+  // Import existing git repository ✅
   await vfs.importFromGit('/local/repos/webapp', '/project')
 
   // Define architectural concepts
@@ -460,7 +463,6 @@ async function unifiedKnowledgeBase() {
 
   const vfs = brain.vfs()
   await vfs.init()
-  await vfs.enableKnowledgeLayer()
 
   // Create separate project spaces
   await vfs.mkdir('/novel')

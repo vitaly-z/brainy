@@ -2,13 +2,14 @@
 
 > Transform your filesystem into an intelligent knowledge graph where every file is a living entity with semantic understanding, relationships, and AI-powered organization.
 
-## 🧠 Knowledge Layer Available!
+## 📚 Complete VFS Documentation
 
-**For advanced features like semantic versioning, persistent entities, and universal concepts, see:**
-- **[Knowledge Layer Overview](../KNOWLEDGE_LAYER_OVERVIEW.md)** - Non-technical introduction
-- **[Knowledge Layer API](KNOWLEDGE_LAYER_API.md)** - Advanced features and capabilities
-- **[Real-World Examples](KNOWLEDGE_LAYER_EXAMPLES.md)** - Complete use cases for stories, APIs, research, and more
-- **[VFS API Guide](VFS_API_GUIDE.md)** - Complete filesystem API reference
+**Essential guides to get started:**
+- **[VFS Core](VFS_CORE.md)** - Complete filesystem architecture and API
+- **[Semantic VFS](SEMANTIC_VFS.md)** - Multi-dimensional file access (6 semantic dimensions)
+- **[Neural Extraction](NEURAL_EXTRACTION.md)** - AI-powered concept and entity extraction
+- **[Examples & Scenarios](VFS_EXAMPLES_SCENARIOS.md)** - Real-world use cases and code
+- **[VFS API Guide](VFS_API_GUIDE.md)** - Complete API reference
 
 ## What is Brainy VFS?
 

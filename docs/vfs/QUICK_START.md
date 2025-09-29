@@ -286,7 +286,7 @@ By using this quick start, you avoided these common mistakes:
 Your file explorer is now working! Here's what to explore next:
 
 1. **[File Operations](./VFS_API_GUIDE.md#file-operations)** - Read, write, and manipulate files
-2. **[Semantic Features](./VFS_KNOWLEDGE_LAYER.md)** - Connect files to concepts and entities
+2. **[Semantic Features](./SEMANTIC_VFS.md)** - Multi-dimensional file access and neural extraction
 3. **[Performance Optimization](./building-file-explorers.md#performance)** - Handle large directories efficiently
 4. **[Advanced Search](./VFS_API_GUIDE.md#search-operations)** - Complex queries and filters
 

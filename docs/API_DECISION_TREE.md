@@ -273,12 +273,13 @@ const files = await vfs.getDirectChildren('/docs')
 - **Directory structure?** → VFS
 - **File explorer interface?** → VFS
 
-### Knowledge-Enhanced Files
+### Intelligent File Management
 
-**Use VFS with Knowledge Layer when:**
+**Use VFS (Semantic VFS) when:**
 - Need semantic file search
-- Want AI-powered file insights
+- Want AI-powered concept extraction
 - Building smart file systems
+- Require multi-dimensional file access
 
 ```typescript
 // ✅ Perfect for intelligent file systems
@@ -468,8 +469,8 @@ import { BrainyAugmentation } from '@soulcraft/brainy'
 - Complex graph → Triple Intelligence
 
 **Need files?**
-- Basic → VFS
-- Smart → VFS + Knowledge Layer
+- Basic → VFS (standard operations)
+- Smart → Semantic VFS (6 dimensional access + neural extraction)
 
 **Need AI analysis?**
 - Patterns → Neural clustering

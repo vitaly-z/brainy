@@ -20,12 +20,5 @@ export { DirectoryImporter } from './importers/DirectoryImporter.js'
 export { VFSReadStream } from './streams/VFSReadStream.js'
 export { VFSWriteStream } from './streams/VFSWriteStream.js'
 
-// Knowledge Layer Components (optional via augmentation)
-export { EventRecorder } from './EventRecorder.js'
-export { SemanticVersioning } from './SemanticVersioning.js'
-export { PersistentEntitySystem } from './PersistentEntitySystem.js'
-export { ConceptSystem } from './ConceptSystem.js'
-export { GitBridge } from './GitBridge.js'
-
 // Convenience alias
 export { VirtualFileSystem as VFS } from './VirtualFileSystem.js'
