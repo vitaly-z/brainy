@@ -92,3 +92,4 @@ docs/internal/
 
 # Temporary files (redundant but explicit)
 *.tmp
+/.junie/guidelines.md

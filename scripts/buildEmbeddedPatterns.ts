@@ -6,7 +6,7 @@
  * NO runtime loading, NO external files needed!
  */
 
-import { Brainy } from '../dist/brainy.js'
+import { TransformerEmbedding } from '../src/utils/embedding.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
@@ -22,14 +22,14 @@ async function buildEmbeddedPatterns() {
   
   console.log(`📚 Processing ${libraryData.patterns.length} patterns...`)
   
-  // Initialize Brainy for embedding (one-time only!)
-  const brain = new Brainy({
-    // Use in-memory storage for build process
-    storage: { type: 'memory' }
+  // Initialize TransformerEmbedding for embedding (one-time only!)
+  const embedder = new TransformerEmbedding({
+    verbose: true,
+    localFilesOnly: false // Allow downloading models during build
   })
   
-  await brain.init()
-  console.log('✅ Brainy initialized for embedding')
+  await embedder.init()
+  console.log('✅ TransformerEmbedding initialized for embedding')
   
   // Process patterns in batches to avoid memory issues
   const batchSize = 10
@@ -45,8 +45,8 @@ async function buildEmbeddedPatterns() {
       
       for (const example of pattern.examples || []) {
         try {
-          // Use brain's embed method directly - no add/delete needed!
-          const embedding = await (brain as any).embed(example)
+          // Use embedder's embed method directly - no add/delete needed!
+          const embedding = await embedder.embed(example)
           if (embedding && Array.isArray(embedding)) {
             embeddings.push(embedding)
           }
@@ -218,8 +218,6 @@ The patterns are now embedded directly in Brainy!
 No external files needed, instant availability.
 `)
   
-  // Close Brainy instance
-  await brain.close()
 }
 
 // Run if called directly
