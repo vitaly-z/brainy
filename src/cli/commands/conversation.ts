@@ -283,6 +283,9 @@ main()
 
     spinner.succeed('Initialized Brainy database')
 
+    // Shutdown Brainy to release resources
+    await brain.close()
+
     // Success!
     console.log(chalk.bold.green('\n✅ Setup complete!\n'))
     console.log(chalk.cyan('📁 Memory storage:'), brainyDir)
@@ -419,6 +422,7 @@ async function handleSearch(argv: CommandArguments) {
 
   if (results.length === 0) {
     console.log(chalk.yellow('No messages found'))
+    await brain.close()
     return
   }
 
@@ -429,6 +433,8 @@ async function handleSearch(argv: CommandArguments) {
     console.log(chalk.dim(`  Score: ${result.score.toFixed(3)} | Conv: ${result.conversationId}`))
     console.log()
   }
+
+  await brain.close()
 }
 
 /**
@@ -458,6 +464,7 @@ async function handleContext(argv: CommandArguments) {
 
   if (context.messages.length === 0) {
     console.log(chalk.yellow('No relevant context found'))
+    await brain.close()
     return
   }
 
@@ -483,6 +490,8 @@ async function handleContext(argv: CommandArguments) {
       console.log(chalk.dim(`  - ${conv.title || conv.id} (${conv.relevance.toFixed(2)})`))
     }
   }
+
+  await brain.close()
 }
 
 /**
@@ -523,6 +532,8 @@ async function handleThread(argv: CommandArguments) {
     console.log(chalk.cyan(`${msg.role}:`), msg.content)
     console.log(chalk.dim(`  ${new Date(msg.createdAt).toLocaleString()}`))
   }
+
+  await brain.close()
 }
 
 /**
@@ -566,6 +577,8 @@ async function handleStats(argv: CommandArguments) {
       console.log(chalk.dim(`  ${phase}: ${count}`))
     }
   }
+
+  await brain.close()
 }
 
 /**
@@ -591,6 +604,8 @@ async function handleExport(argv: CommandArguments) {
   await fs.writeFile(output, JSON.stringify(exported, null, 2), 'utf8')
 
   spinner.succeed(`Exported to ${output}`)
+
+  await brain.close()
 }
 
 /**
@@ -615,6 +630,8 @@ async function handleImport(argv: CommandArguments) {
   const conversationId = await conv.importConversation(data)
 
   spinner.succeed(`Imported as conversation ${conversationId}`)
+
+  await brain.close()
 }
 
 export default conversationCommand
