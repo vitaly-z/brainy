@@ -49,7 +49,7 @@ import {
   BrainyConfig
 } from './types/brainy.types.js'
 import { NounType, VerbType } from './types/graphTypes.js'
-import { BrainyInterface } from './types/brainyDataInterface.js'
+import { BrainyInterface } from './types/brainyInterface.js'
 
 /**
  * The main Brainy class - Clean, Beautiful, Powerful

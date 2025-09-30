@@ -14,7 +14,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { createServer, IncomingMessage } from 'node:http'
 import { BrainyMCPService } from './brainyMCPService.js'
-import { BrainyInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyInterface.js'
 import { MCPServiceOptions } from '../types/mcpTypes.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 

@@ -7,7 +7,7 @@
  */
 
 import { v4 as uuidv4 } from '../universal/uuid.js'
-import { BrainyInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyInterface.js'
 import { NounType } from '../types/graphTypes.js'
 import {
   MCPRequest,

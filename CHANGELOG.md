@@ -12,6 +12,15 @@ All notable changes to this project will be documented in this file. See [standa
   - Adds mutex-based concurrency control for mkdir operations
   - Adds explicit compression tracking for file reads
 
+### BREAKING CHANGES (Deprecated API Removal)
+
+* **removed BrainyData**: The deprecated `BrainyData` class has been completely removed
+  - `BrainyData` was never part of the official Brainy 3.0 API
+  - All users should migrate to the `Brainy` class
+  - Migration is simple: Replace `new BrainyData()` with `new Brainy()` and add `await brain.init()`
+  - See `.strategy/NEURAL_API_RESPONSE.md` for complete migration guide
+  - Renamed `brainyDataInterface.ts` to `brainyInterface.ts` for clarity
+
 ### [3.19.1](https://github.com/soulcraftlabs/brainy/compare/v3.19.0...v3.19.1) (2025-09-29)
 
 ## [3.19.0](https://github.com/soulcraftlabs/brainy/compare/v3.18.0...v3.19.0) (2025-09-29)

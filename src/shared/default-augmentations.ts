@@ -5,7 +5,7 @@
  * These are the core "sensory organs" of the atomic age brain-in-jar system
  */
 
-import { BrainyInterface } from '../types/brainyDataInterface.js'
+import { BrainyInterface } from '../types/brainyInterface.js'
 
 /**
  * Default augmentations that ship with Brainy
