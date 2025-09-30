@@ -77,6 +77,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   // Background task timer
   private backgroundTimer: NodeJS.Timeout | null = null
 
+  // Mutex for preventing race conditions in directory creation
+  private mkdirLocks: Map<string, Promise<void>> = new Map()
+
   constructor(brain?: Brainy) {
     this.brain = brain || new Brainy()
     this.contentCache = new Map()
@@ -236,15 +239,19 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Get content based on storage type
     let content: Buffer
+    let isCompressed = false
 
     if (!entity.metadata.storage || entity.metadata.storage.type === 'inline') {
       // Content stored in metadata for new files, or try entity data for compatibility
       if (entity.metadata.rawData) {
+        // rawData is ALWAYS stored uncompressed as base64
         content = Buffer.from(entity.metadata.rawData, 'base64')
+        isCompressed = false  // rawData is never compressed
       } else if (!entity.data) {
         content = Buffer.alloc(0)
       } else if (Buffer.isBuffer(entity.data)) {
         content = entity.data
+        isCompressed = entity.metadata.storage?.compressed || false
       } else if (typeof entity.data === 'string') {
         content = Buffer.from(entity.data)
       } else {
@@ -253,15 +260,17 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     } else if (entity.metadata.storage.type === 'reference') {
       // Content stored in external storage
       content = await this.readExternalContent(entity.metadata.storage.key!)
+      isCompressed = entity.metadata.storage.compressed || false
     } else if (entity.metadata.storage.type === 'chunked') {
       // Content stored in chunks
       content = await this.readChunkedContent(entity.metadata.storage.chunks!)
+      isCompressed = entity.metadata.storage.compressed || false
     } else {
       throw new VFSError(VFSErrorCode.EIO, `Unknown storage type: ${entity.metadata.storage.type}`, path, 'readFile')
     }
 
-    // Decompress if needed
-    if (entity.metadata.storage?.compressed && options?.decompress !== false) {
+    // Decompress if needed (but NOT for rawData which is never compressed)
+    if (isCompressed && options?.decompress !== false) {
       content = await this.decompress(content)
     }
 
@@ -406,7 +415,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         metadata
       })
 
-      // Create parent-child relationship
+      // Create parent-child relationship (no need to check for duplicates on new entities)
       await this.brain.relate({
         from: parentId,
         to: entity,
@@ -643,80 +652,108 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     await this.ensureInitialized()
 
-    // Check if already exists
-    try {
-      const existing = await this.pathResolver.resolve(path)
-      const entity = await this.getEntityById(existing)
-      if (entity.metadata.vfsType === 'directory') {
-        if (!options?.recursive) {
-          throw new VFSError(VFSErrorCode.EEXIST, `Directory exists: ${path}`, path, 'mkdir')
-        }
-        return  // Already exists and recursive is true
-      } else {
-        // Path exists but it's not a directory
-        throw new VFSError(VFSErrorCode.EEXIST, `File exists: ${path}`, path, 'mkdir')
-      }
-    } catch (err) {
-      // Only proceed if it's a ENOENT error (path doesn't exist)
-      if (err instanceof VFSError && err.code !== VFSErrorCode.ENOENT) {
-        throw err  // Re-throw non-ENOENT errors
-      }
-      // Doesn't exist, proceed to create
-    }
-
-    // Parse path
-    const parentPath = this.getParentPath(path)
-    const name = this.getBasename(path)
-
-    // Ensure parent exists (recursive mkdir if needed)
-    let parentId: string
-    if (parentPath === '/' || parentPath === null) {
-      parentId = this.rootEntityId!
-    } else if (options?.recursive) {
-      parentId = await this.ensureDirectory(parentPath)
-    } else {
+    // Use mutex to prevent race conditions when creating the same directory concurrently
+    // If another call is already creating this directory, wait for it to complete
+    const existingLock = this.mkdirLocks.get(path)
+    if (existingLock) {
+      await existingLock
+      // After waiting, check if directory now exists
       try {
-        parentId = await this.pathResolver.resolve(parentPath)
+        const existing = await this.pathResolver.resolve(path)
+        const entity = await this.getEntityById(existing)
+        if (entity.metadata.vfsType === 'directory') {
+          return  // Directory was created by the other call
+        }
       } catch (err) {
-        throw new VFSError(VFSErrorCode.ENOENT, `Parent directory not found: ${parentPath}`, path, 'mkdir')
+        // Still doesn't exist, proceed to create
       }
     }
 
-    // Create directory entity
-    const metadata: VFSMetadata = {
-      path,
-      name,
-      parent: parentId,
-      vfsType: 'directory',
-      size: 0,
-      permissions: options?.mode || this.config.permissions?.defaultDirectory || 0o755,
-      owner: 'user',
-      group: 'users',
-      accessed: Date.now(),
-      modified: Date.now(),
-      ...options?.metadata
-    }
+    // Create a lock promise for this path
+    let resolveLock: () => void
+    const lockPromise = new Promise<void>(resolve => { resolveLock = resolve })
+    this.mkdirLocks.set(path, lockPromise)
 
-    const entity = await this.brain.add({
-      data: path,  // Directory path as string content
-      type: NounType.Collection,
-      metadata
-    })
+    try {
+      // Check if already exists
+      try {
+        const existing = await this.pathResolver.resolve(path)
+        const entity = await this.getEntityById(existing)
+        if (entity.metadata.vfsType === 'directory') {
+          if (!options?.recursive) {
+            throw new VFSError(VFSErrorCode.EEXIST, `Directory exists: ${path}`, path, 'mkdir')
+          }
+          return  // Already exists and recursive is true
+        } else {
+          // Path exists but it's not a directory
+          throw new VFSError(VFSErrorCode.EEXIST, `File exists: ${path}`, path, 'mkdir')
+        }
+      } catch (err) {
+        // Only proceed if it's a ENOENT error (path doesn't exist)
+        if (err instanceof VFSError && err.code !== VFSErrorCode.ENOENT) {
+          throw err  // Re-throw non-ENOENT errors
+        }
+        // Doesn't exist, proceed to create
+      }
 
-    // Create parent-child relationship
-    if (parentId !== entity) {  // Don't relate to self (root)
-      await this.brain.relate({
-        from: parentId,
-        to: entity,
-        type: VerbType.Contains
+      // Parse path
+      const parentPath = this.getParentPath(path)
+      const name = this.getBasename(path)
+
+      // Ensure parent exists (recursive mkdir if needed)
+      let parentId: string
+      if (parentPath === '/' || parentPath === null) {
+        parentId = this.rootEntityId!
+      } else if (options?.recursive) {
+        parentId = await this.ensureDirectory(parentPath)
+      } else {
+        try {
+          parentId = await this.pathResolver.resolve(parentPath)
+        } catch (err) {
+          throw new VFSError(VFSErrorCode.ENOENT, `Parent directory not found: ${parentPath}`, path, 'mkdir')
+        }
+      }
+
+      // Create directory entity
+      const metadata: VFSMetadata = {
+        path,
+        name,
+        parent: parentId,
+        vfsType: 'directory',
+        size: 0,
+        permissions: options?.mode || this.config.permissions?.defaultDirectory || 0o755,
+        owner: 'user',
+        group: 'users',
+        accessed: Date.now(),
+        modified: Date.now(),
+        ...options?.metadata
+      }
+
+      const entity = await this.brain.add({
+        data: path,  // Directory path as string content
+        type: NounType.Collection,
+        metadata
       })
+
+      // Create parent-child relationship (no need to check for duplicates on new entities)
+      if (parentId !== entity) {  // Don't relate to self (root)
+        await this.brain.relate({
+          from: parentId,
+          to: entity,
+          type: VerbType.Contains
+        })
+      }
+
+      // Update path resolver cache
+      await this.pathResolver.createPath(path, entity)
+
+      // Trigger watchers
+      this.triggerWatchers(path, 'rename')
+    } finally {
+      // Release the lock
+      resolveLock!()
+      this.mkdirLocks.delete(path)
     }
-
-    // Update path resolver cache
-    await this.pathResolver.createPath(path, entity)
-
-    // Trigger watchers
-    this.triggerWatchers(path, 'rename')
   }
 
   /**
@@ -2358,19 +2395,22 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     let earliestModified: number | null = null
     let latestModified: number | null = null
 
-    const traverse = async (currentPath: string) => {
+    const traverse = async (currentPath: string, isRoot = false) => {
       try {
         const entityId = await this.pathResolver.resolve(currentPath)
         const entity = await this.getEntityById(entityId)
 
         if (entity.metadata.vfsType === 'directory') {
-          stats.directoryCount++
+          // Don't count the root/starting directory itself
+          if (!isRoot) {
+            stats.directoryCount++
+          }
 
           // Traverse children
           const children = await this.readdir(currentPath)
           for (const child of children) {
             const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
-            await traverse(childPath)
+            await traverse(childPath, false)
           }
         } else if (entity.metadata.vfsType === 'file') {
           stats.fileCount++
@@ -2403,7 +2443,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       }
     }
 
-    await traverse(path)
+    await traverse(path, true)
 
     // Calculate averages
     if (stats.fileCount > 0) {
