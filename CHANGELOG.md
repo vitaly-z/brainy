@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.20.2](https://github.com/soulcraftlabs/brainy/compare/v3.20.1...v3.20.2) (2025-09-30)
+
+### Bug Fixes
+
+* **vfs**: resolve VFS race conditions and decompression errors ([1a2661f](https://github.com/soulcraftlabs/brainy/commit/1a2661f))
+  - Fixes duplicate directory nodes caused by concurrent writes
+  - Fixes file read decompression errors caused by rawData compression state mismatch
+  - Adds mutex-based concurrency control for mkdir operations
+  - Adds explicit compression tracking for file reads
+
 ### [3.19.1](https://github.com/soulcraftlabs/brainy/compare/v3.19.0...v3.19.1) (2025-09-29)
 
 ## [3.19.0](https://github.com/soulcraftlabs/brainy/compare/v3.18.0...v3.19.0) (2025-09-29)
