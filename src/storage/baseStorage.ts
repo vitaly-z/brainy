@@ -273,10 +273,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async getVerbsBySource(sourceId: string): Promise<GraphVerb[]> {
     await this.ensureInitialized()
-    
-    // Use the paginated getVerbs method with source filter
+
+    // CRITICAL: Fetch ALL verbs for this source, not just first page
+    // This is needed for delete operations to clean up all relationships
     const result = await this.getVerbs({
-      filter: { sourceId }
+      filter: { sourceId },
+      pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
     return result.items
   }
@@ -286,10 +288,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async getVerbsByTarget(targetId: string): Promise<GraphVerb[]> {
     await this.ensureInitialized()
-    
-    // Use the paginated getVerbs method with target filter
+
+    // CRITICAL: Fetch ALL verbs for this target, not just first page
+    // This is needed for delete operations to clean up all relationships
     const result = await this.getVerbs({
-      filter: { targetId }
+      filter: { targetId },
+      pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
     return result.items
   }
@@ -299,10 +303,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async getVerbsByType(type: string): Promise<GraphVerb[]> {
     await this.ensureInitialized()
-    
-    // Use the paginated getVerbs method with type filter
+
+    // Fetch ALL verbs of this type (no pagination limit)
     const result = await this.getVerbs({
-      filter: { verbType: type }
+      filter: { verbType: type },
+      pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
     return result.items
   }

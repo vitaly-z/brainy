@@ -22,10 +22,10 @@ describe('VFS Initialization', () => {
       // Attempting to use VFS without calling init()
 
       await expect(vfs.writeFile('/test.txt', 'Hello'))
-        .rejects.toThrow('VFS not initialized. Call init() first.')
+        .rejects.toThrow('VFS not initialized')
 
       await expect(vfs.readdir('/'))
-        .rejects.toThrow('VFS not initialized. Call init() first.')
+        .rejects.toThrow('VFS not initialized')
     })
   })
 

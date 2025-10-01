@@ -538,6 +538,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         await this.graphIndex.removeVerb(verb.id)
         // Then delete from storage
         await this.storage.deleteVerb(verb.id)
+        // Delete verb metadata if exists
+        try {
+          if (typeof (this.storage as any).deleteVerbMetadata === 'function') {
+            await (this.storage as any).deleteVerbMetadata(verb.id)
+          }
+        } catch {
+          // Ignore if not supported
+        }
       }
     })
   }
