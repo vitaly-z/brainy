@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.22.0](https://github.com/soulcraftlabs/brainy/compare/v3.21.0...v3.22.0) (2025-10-01)
+
+- feat: add intelligent import for CSV, Excel, and PDF files (814cbb4)
+
+
 ### [3.21.0](https://github.com/soulcraftlabs/brainy/compare/v3.20.5...v3.21.0) (2025-10-01)
 
 - feat: add progress tracking, entity caching, and relationship confidence (2f9d512)
