@@ -13,13 +13,29 @@ NC='\033[0m' # No Color
 
 # Parse arguments
 RELEASE_TYPE="${1:-patch}"  # patch, minor, or major
-DRY_RUN="${2}"
+SKIP_TESTS=false
+DRY_RUN=false
+
+for arg in "$@"; do
+  case $arg in
+    --skip-tests)
+      SKIP_TESTS=true
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      ;;
+  esac
+done
 
 echo -e "${BLUE}🚀 Brainy Release Script${NC}"
 echo -e "${BLUE}Release type: ${RELEASE_TYPE}${NC}\n"
 
-if [ "$DRY_RUN" == "--dry-run" ]; then
+if [ "$DRY_RUN" = true ]; then
   echo -e "${YELLOW}⚠️  DRY RUN MODE - No changes will be made${NC}\n"
+fi
+
+if [ "$SKIP_TESTS" = true ]; then
+  echo -e "${YELLOW}⚠️  SKIPPING TESTS - Use with caution!${NC}\n"
 fi
 
 # Step 1: Verify clean git state
@@ -32,17 +48,21 @@ echo -e "${GREEN}✅ Working directory clean${NC}\n"
 
 # Step 2: Build
 echo -e "${BLUE}2️⃣  Building project...${NC}"
-if [ "$DRY_RUN" != "--dry-run" ]; then
+if [ "$DRY_RUN" = false ]; then
   npm run build
 fi
 echo -e "${GREEN}✅ Build successful${NC}\n"
 
 # Step 3: Test
-echo -e "${BLUE}3️⃣  Running tests...${NC}"
-if [ "$DRY_RUN" != "--dry-run" ]; then
-  npm test
+if [ "$SKIP_TESTS" = false ]; then
+  echo -e "${BLUE}3️⃣  Running tests...${NC}"
+  if [ "$DRY_RUN" = false ]; then
+    npm test
+  fi
+  echo -e "${GREEN}✅ Tests passed${NC}\n"
+else
+  echo -e "${YELLOW}3️⃣  Skipping tests...${NC}\n"
 fi
-echo -e "${GREEN}✅ Tests passed${NC}\n"
 
 # Step 4: Get current and new version
 CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -73,7 +93,7 @@ esac
 
 echo -e "${BLUE}New version: ${NEW_VERSION}${NC}\n"
 
-if [ "$DRY_RUN" == "--dry-run" ]; then
+if [ "$DRY_RUN" = true ]; then
   echo -e "${YELLOW}DRY RUN: Would release version ${NEW_VERSION}${NC}"
   exit 0
 fi
