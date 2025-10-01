@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.20.5](https://github.com/soulcraftlabs/brainy/compare/v3.20.4...v3.20.5) (2025-10-01)
+
+- feat: add --skip-tests flag to release script (0614171)
+- fix: resolve critical bugs in delete operations and fix flaky tests (8476047)
+- feat: implement simpler, more reliable release workflow (386fd2c)
+
+
 ### [3.20.2](https://github.com/soulcraftlabs/brainy/compare/v3.20.1...v3.20.2) (2025-09-30)
 
 ### Bug Fixes
