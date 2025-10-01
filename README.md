@@ -457,6 +457,41 @@ npm run download-models        # Download Q8 model
 npm run download-models:q8     # Download Q8 model
 ```
 
+## 🚀 Import Anything - Files, Data, URLs
+
+Brainy's universal import intelligently handles **any data format**:
+
+```javascript
+// Import CSV with auto-detection
+await brain.import('customers.csv')
+// ✨ Auto-detects: encoding, delimiter, types, creates entities!
+
+// Import Excel workbooks with multi-sheet support
+await brain.import('sales-data.xlsx', {
+  excelSheets: ['Q1', 'Q2']  // or 'all' for all sheets
+})
+// ✨ Processes all sheets, preserves structure, infers types!
+
+// Import PDF documents with table extraction
+await brain.import('research-paper.pdf', {
+  pdfExtractTables: true
+})
+// ✨ Extracts text, detects tables, preserves metadata!
+
+// Import JSON/YAML data
+await brain.import([
+  { name: 'Alice', role: 'Engineer' },
+  { name: 'Bob', role: 'Designer' }
+])
+// ✨ Automatically creates Person entities with relationships!
+
+// Import from URLs (auto-fetched)
+await brain.import('https://api.example.com/data.json')
+// ✨ Auto-detects URL, fetches, parses, processes!
+```
+
+**📖 [Complete Import Guide →](docs/guides/import-anything.md)** | **[Live Example →](examples/import-excel-pdf-csv.ts)**
+
 ## 📚 Core API
 
 ### `search()` - Vector Similarity
@@ -513,6 +548,11 @@ await brain.deleteVerb(verbId)
 // Bulk operations
 await brain.import(arrayOfData)
 const exported = await brain.export({format: 'json'})
+
+// Import from CSV, Excel, PDF files (auto-detected)
+await brain.import('customers.csv')      // CSV with encoding detection
+await brain.import('sales-report.xlsx')  // Excel with multi-sheet support
+await brain.import('research.pdf')       // PDF with table extraction
 ```
 
 ## 🌐 Distributed System (NEW!)

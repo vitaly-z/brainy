@@ -1,0 +1,5 @@
+product;price;quantity;inStock
+Laptop;999.99;10;yes
+Mouse;29.99;100;yes
+Keyboard;79.99;50;no
+Monitor;299.99;25;yes

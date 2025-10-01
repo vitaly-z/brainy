@@ -14,6 +14,7 @@ import { CacheAugmentation } from './cacheAugmentation.js'
 import { MetricsAugmentation } from './metricsAugmentation.js'
 import { MonitoringAugmentation } from './monitoringAugmentation.js'
 import { UniversalDisplayAugmentation } from './universalDisplayAugmentation.js'
+import { IntelligentImportAugmentation } from './intelligentImport/index.js'
 
 /**
  * Create default augmentations for zero-config operation
@@ -28,9 +29,16 @@ export function createDefaultAugmentations(
     metrics?: boolean | Record<string, any>
     monitoring?: boolean | Record<string, any>
     display?: boolean | Record<string, any>
+    intelligentImport?: boolean | Record<string, any>
   } = {}
 ): BaseAugmentation[] {
   const augmentations: BaseAugmentation[] = []
+
+  // Intelligent Import augmentation (CSV, Excel, PDF)
+  if (config.intelligentImport !== false) {
+    const importConfig = typeof config.intelligentImport === 'object' ? config.intelligentImport : {}
+    augmentations.push(new IntelligentImportAugmentation(importConfig))
+  }
 
   // Cache augmentation (was SearchCache)
   if (config.cache !== false) {
@@ -111,5 +119,12 @@ export const AugmentationHelpers = {
    */
   getDisplay(brain: Brainy): UniversalDisplayAugmentation | null {
     return getAugmentation<UniversalDisplayAugmentation>(brain, 'display')
+  },
+
+  /**
+   * Get intelligent import augmentation
+   */
+  getIntelligentImport(brain: Brainy): IntelligentImportAugmentation | null {
+    return getAugmentation<IntelligentImportAugmentation>(brain, 'intelligent-import')
   }
 }

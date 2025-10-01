@@ -147,6 +147,7 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^3.2.4",
+    "jspdf": "^3.0.3",
     "minio": "^8.0.5",
     "standard-version": "^9.5.0",
     "testcontainers": "^11.5.1",
@@ -159,13 +160,17 @@
     "@huggingface/transformers": "^3.7.2",
     "boxen": "^8.0.1",
     "chalk": "^5.3.0",
+    "chardet": "^2.0.0",
     "cli-table3": "^0.6.5",
     "commander": "^11.1.0",
+    "csv-parse": "^6.1.0",
     "inquirer": "^12.9.3",
     "ora": "^8.2.0",
+    "pdfjs-dist": "^4.0.379",
     "prompts": "^2.4.2",
     "uuid": "^9.0.1",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "xlsx": "^0.18.5"
   },
   "prettier": {
     "arrowParens": "always",

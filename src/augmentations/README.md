@@ -10,6 +10,47 @@ Brainy's functionality in various ways.
 
 ## Available Augmentations
 
+### Core Augmentations
+
+#### IntelligentImportAugmentation
+
+Automatically detects and processes CSV, Excel, and PDF files with intelligent extraction. This augmentation is enabled by default and provides:
+
+- **CSV Support**: Auto-detection of encoding, delimiters, and field types
+- **Excel Support**: Multi-sheet extraction with metadata preservation
+- **PDF Support**: Text extraction, table detection, and metadata extraction
+- **Type Inference**: Automatically infers data types (string, number, boolean, date)
+- **Neural Integration**: Seamlessly integrates with entity extraction and relationship detection
+
+```javascript
+import { Brainy } from '@soulcraft/brainy'
+
+const brain = new Brainy({
+  intelligentImport: {
+    enableCSV: true,
+    enableExcel: true,
+    enablePDF: true,
+    maxFileSize: 100 * 1024 * 1024  // 100MB
+  }
+})
+await brain.init()
+
+// Import CSV with auto-detection
+await brain.import('customers.csv')
+
+// Import Excel with specific sheets
+await brain.import('sales-data.xlsx', {
+  excelSheets: ['Q1', 'Q2']
+})
+
+// Import PDF with table extraction
+await brain.import('report.pdf', {
+  pdfExtractTables: true
+})
+```
+
+**See:** [Import Anything Guide](../../docs/guides/import-anything.md) | [Example](../../examples/import-excel-pdf-csv.ts)
+
 ### Conduit Augmentations
 
 Conduit augmentations provide data synchronization between Brainy instances.

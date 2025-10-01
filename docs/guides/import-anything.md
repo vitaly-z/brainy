@@ -4,7 +4,7 @@ Brainy's import is **ONE magical method** that understands EVERYTHING:
 - 📊 Data (objects, arrays, strings)
 - 📁 Files (auto-detects by path)
 - 🌐 URLs (auto-fetches)
-- 📄 Formats (JSON, CSV, YAML, text - all auto-detected)
+- 📄 Formats (JSON, CSV, Excel, PDF, YAML, text - all auto-detected)
 
 ## The Ultimate Simplicity
 
@@ -36,7 +36,7 @@ await brain.import(people)
 ```javascript
 // From file? Just pass the path!
 await brain.import('customers.csv')
-// ✨ Auto-detects it's a file, parses CSV, creates entities!
+// ✨ Auto-detects encoding, delimiter, types - creates entities!
 
 // Or pass CSV content directly
 const csv = `name,age,city
@@ -45,6 +45,32 @@ Jane,25,SF`
 
 await brain.import(csv, { format: 'csv' })
 // ✨ Smart CSV parsing handles quotes, escapes, everything!
+```
+
+### 📊 Import Excel - Multi-Sheet Support
+```javascript
+// Import entire Excel workbook
+await brain.import('sales-report.xlsx')
+// ✨ Processes all sheets, preserves structure, infers types!
+
+// Or specific sheets only
+await brain.import('data.xlsx', {
+  excelSheets: ['Customers', 'Orders']
+})
+// ✨ Multi-sheet data becomes interconnected entities!
+```
+
+### 📑 Import PDF - Text & Tables
+```javascript
+// Import PDF documents
+await brain.import('research-paper.pdf')
+// ✨ Extracts text, detects tables, preserves metadata!
+
+// With table extraction
+await brain.import('report.pdf', {
+  pdfExtractTables: true
+})
+// ✨ Converts PDF tables to structured data automatically!
 ```
 
 ### 📝 Import YAML - File or String
@@ -92,11 +118,12 @@ await brain.import(article, { format: 'text' })
 
 When you import data, Brainy:
 
-1. **Auto-detects format** - JSON, CSV, YAML, text, or by file extension
-2. **Identifies entity types** - Uses AI to classify as Person, Document, Product, etc. (31 types!)
-3. **Finds relationships** - Detects connections like "belongsTo", "createdBy", "references" (40 types!)
-4. **Creates embeddings** - Makes everything semantically searchable
-5. **Indexes metadata** - Enables lightning-fast filtering
+1. **Auto-detects format** - CSV, Excel, PDF, JSON, YAML, text, or by file extension
+2. **Intelligent parsing** - CSV (encoding/delimiter detection), Excel (multi-sheet), PDF (text/tables)
+3. **Identifies entity types** - Uses AI to classify as Person, Document, Product, etc. (31 types!)
+4. **Finds relationships** - Detects connections like "belongsTo", "createdBy", "references" (40 types!)
+5. **Creates embeddings** - Makes everything semantically searchable
+6. **Indexes metadata** - Enables lightning-fast filtering
 
 ## Intelligent Type Detection
 
@@ -160,9 +187,21 @@ Everything works with zero config, but you can customize:
 
 ```javascript
 await brain.import(data, {
-  format: 'auto',        // 'json' | 'csv' | 'yaml' | 'text' | 'auto'
-  batchSize: 50,         // Process in batches
-  relationships: true    // Extract relationships (default: true)
+  format: 'auto',              // 'csv' | 'excel' | 'pdf' | 'json' | 'yaml' | 'text' | 'auto'
+  batchSize: 50,               // Process in batches
+  relationships: true,         // Extract relationships (default: true)
+
+  // CSV-specific options
+  csvDelimiter: ',',           // Auto-detected if not specified
+  csvHeaders: true,            // First row is headers
+  encoding: 'utf-8',           // Auto-detected if not specified
+
+  // Excel-specific options
+  excelSheets: ['Sheet1'],     // or 'all' for all sheets
+
+  // PDF-specific options
+  pdfExtractTables: true,      // Extract tables from PDFs
+  pdfPreserveLayout: true      // Preserve text layout
 })
 ```
 

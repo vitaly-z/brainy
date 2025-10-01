@@ -683,26 +683,75 @@ await data.clear({
 ---
 
 ### `async import(params): Promise<ImportResult>`
-Imports data from various formats.
+Imports data from various formats with automatic detection.
 
 **Parameters:**
-- `data` (required) - Data to import
-- `format` (required) - 'json' | 'csv' | 'parquet'
-- `mapping` - Field mapping
-- `batchSize` - Import batch size
-- `validate` - Validate items
+- `data` (required) - Data to import (Buffer, string, array, or file path)
+- `format` - 'auto' | 'json' | 'csv' | 'excel' | 'pdf' | 'yaml' | 'text' (default: 'auto')
+- `mapping` - Field mapping configuration
+- `batchSize` - Import batch size (default: 50)
+- `validate` - Validate items before import
+- `relationships` - Extract relationships automatically (default: true)
 
-**Example:**
+**CSV-specific options:**
+- `csvDelimiter` - Column delimiter (auto-detected if not specified)
+- `csvHeaders` - First row contains headers (default: true)
+- `encoding` - Character encoding (auto-detected if not specified)
+
+**Excel-specific options:**
+- `excelSheets` - Sheet names array or 'all' for all sheets
+
+**PDF-specific options:**
+- `pdfExtractTables` - Extract tables from PDFs (default: true)
+- `pdfPreserveLayout` - Preserve text layout (default: true)
+
+**Examples:**
 ```typescript
-const result = await data.import({
-  data: csvData,
-  format: 'csv',
-  mapping: {
-    'name': 'title',
-    'desc': 'description'
-  },
-  batchSize: 500
+// Import CSV file with auto-detection
+const csvResult = await brain.import('customers.csv')
+// Auto-detects: format, encoding, delimiter, field types
+
+// Import Excel workbook
+const excelResult = await brain.import('sales-data.xlsx', {
+  excelSheets: ['Q1', 'Q2']  // Import specific sheets
 })
+
+// Import PDF with table extraction
+const pdfResult = await brain.import('report.pdf', {
+  pdfExtractTables: true
+})
+
+// Import data array
+const dataResult = await brain.import([
+  { name: 'Alice', role: 'Engineer' },
+  { name: 'Bob', role: 'Designer' }
+], {
+  batchSize: 100,
+  relationships: true  // Auto-extract relationships
+})
+
+// Import with custom CSV delimiter
+const tsvResult = await brain.import('data.tsv', {
+  format: 'csv',
+  csvDelimiter: '\t'
+})
+```
+
+**Returns:**
+```typescript
+{
+  success: boolean
+  imported: number      // Number of items successfully imported
+  failed: number        // Number of items that failed
+  entityIds: string[]   // IDs of created entities
+  metadata: {
+    format: string      // Detected format
+    encoding?: string   // Detected encoding (CSV)
+    delimiter?: string  // Detected delimiter (CSV)
+    sheets?: string[]   // Processed sheets (Excel)
+    pageCount?: number  // Number of pages (PDF)
+  }
+}
 ```
 
 ---
