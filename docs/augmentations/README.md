@@ -116,7 +116,7 @@ Visual representations of data.
 ### Zero-Config Approach
 
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Just register augmentations - they work automatically!
 brain.augmentations.register(new EntityRegistryAugmentation())
@@ -128,7 +128,7 @@ await brain.init()
 ### With Configuration
 
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 
 brain.augmentations.register(
   new APIServerAugmentation({

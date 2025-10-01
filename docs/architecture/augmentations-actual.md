@@ -241,7 +241,7 @@ const cacheConfig = await getCacheAutoConfig()
 
 ### Enable Distributed Modes
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   mode: 'reader', // or 'writer' or 'hybrid'
   distributed: {
     role: 'reader',
@@ -253,7 +253,7 @@ const brain = new BrainyData({
 
 ### Use Neural Import
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new NeuralImportAugmentation({
       confidenceThreshold: 0.7,

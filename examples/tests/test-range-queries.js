@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function testRangeQueries() {
   console.log('🧠 Testing Brain Patterns Range Query Support...\n')
@@ -8,7 +8,7 @@ async function testRangeQueries() {
   let brain
   try {
     // Initialize with memory storage
-    brain = new BrainyData({
+    brain = new Brainy({
       storage: { forceMemoryStorage: true },
       dimensions: 384,
       metric: 'cosine'

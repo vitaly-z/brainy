@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 Testing Refactored API Architecture')
 console.log('search(q) = find({like: q})')
 console.log('find(q) = NLP processing → complex TripleQuery')
 console.log('=' + '='.repeat(50))
 
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: { type: 'memory' },
   verbose: false 
 })

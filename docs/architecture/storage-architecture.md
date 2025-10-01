@@ -27,7 +27,7 @@ Brainy provides multiple storage adapters with identical APIs:
 
 ### FileSystem Storage (Node.js)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'filesystem',
     path: './data'
@@ -40,7 +40,7 @@ const brain = new BrainyData({
 
 ### S3 Compatible Storage
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 's3',
     bucket: 'my-brainy-data',
@@ -58,7 +58,7 @@ const brain = new BrainyData({
 
 ### Origin Private File System (Browser)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'opfs'
   }
@@ -70,7 +70,7 @@ const brain = new BrainyData({
 
 ### Memory Storage
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'memory'
   }
@@ -172,7 +172,7 @@ Ensures durability and enables recovery:
 ### Caching Strategy
 ```typescript
 // Configure caching per storage type
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'filesystem',
     cache: {
@@ -236,8 +236,8 @@ await brain.import(backup, {
 ### Storage Migration
 ```typescript
 // Migrate between storage types
-const oldBrain = new BrainyData({ storage: { type: 'filesystem' } })
-const newBrain = new BrainyData({ storage: { type: 's3' } })
+const oldBrain = new Brainy({ storage: { type: 'filesystem' } })
+const newBrain = new Brainy({ storage: { type: 's3' } })
 
 await oldBrain.init()
 await newBrain.init()

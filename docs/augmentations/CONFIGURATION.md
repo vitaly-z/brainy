@@ -24,10 +24,10 @@ The Brainy Augmentation Configuration System provides a VSCode-style extension a
 ### Using an Augmentation with Configuration
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // Zero-config (uses defaults)
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // With custom configuration
   immediateWrites: true,

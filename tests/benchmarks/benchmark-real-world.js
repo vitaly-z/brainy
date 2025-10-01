@@ -5,9 +5,8 @@
  * This is the TRUE comparison - with real transformers models
  */
 
-import { Brainy } from '../dist/brainy.js'
-import { BrainyData } from '../dist/brainyData.js'
-import { NounType, VerbType } from '../dist/types/graphTypes.js'
+import { Brainy } from '../../dist/index.js'
+import { NounType, VerbType } from '../../dist/types/graphTypes.js'
 
 // Real text samples for embedding
 const REAL_DOCUMENTS = [

@@ -4,7 +4,7 @@ Brainy is a multi-dimensional AI database that combines vector similarity, graph
 
 ## Core Components
 
-### BrainyData (Main Entry Point)
+### Brainy (Main Entry Point)
 The central orchestrator that manages all subsystems:
 - **HNSW Index**: O(log n) vector similarity search
 - **Storage System**: Universal storage adapters (FileSystem, S3, OPFS, Memory)
@@ -90,11 +90,11 @@ Brainy's extensible plugin architecture allows for powerful enhancements:
 ### Creating Custom Augmentations
 ```typescript
 class CustomAugmentation extends BrainyAugmentation {
-  async onInit(brain: BrainyData): Promise<void> {
+  async onInit(brain: Brainy): Promise<void> {
     // Initialize augmentation
   }
   
-  async onAdd(item: any, brain: BrainyData): Promise<any> {
+  async onAdd(item: any, brain: Brainy): Promise<any> {
     // Process item before adding
     return item
   }

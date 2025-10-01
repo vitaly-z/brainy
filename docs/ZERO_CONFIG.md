@@ -8,20 +8,20 @@ Starting with v2.10, Brainy introduces a **Zero-Configuration System** that auto
 
 ### True Zero Config
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // That's it! Everything auto-configures
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 ```
 
 ### Using Strongly-Typed Presets
 
 ```typescript
-import { BrainyData, PresetName } from '@soulcraft/brainy'
+import { Brainy, PresetName } from '@soulcraft/brainy'
 
 // Type-safe preset selection
-const brain = new BrainyData(PresetName.PRODUCTION)
+const brain = new Brainy(PresetName.PRODUCTION)
 await brain.init()
 ```
 
@@ -29,7 +29,7 @@ await brain.init()
 
 #### Development
 ```typescript
-const brain = new BrainyData(PresetName.DEVELOPMENT)
+const brain = new Brainy(PresetName.DEVELOPMENT)
 // ✅ Memory storage for fast iteration
 // ✅ FP32 models for best quality
 // ✅ Verbose logging
@@ -38,7 +38,7 @@ const brain = new BrainyData(PresetName.DEVELOPMENT)
 
 #### Production
 ```typescript
-const brain = new BrainyData(PresetName.PRODUCTION)
+const brain = new Brainy(PresetName.PRODUCTION)
 // ✅ Disk storage for persistence
 // ✅ Auto-selected model precision
 // ✅ Silent logging
@@ -47,7 +47,7 @@ const brain = new BrainyData(PresetName.PRODUCTION)
 
 #### Minimal
 ```typescript
-const brain = new BrainyData(PresetName.MINIMAL)
+const brain = new Brainy(PresetName.MINIMAL)
 // ✅ Memory storage
 // ✅ Q8 models for small size
 // ✅ Core features only
@@ -60,16 +60,16 @@ Brainy includes specialized presets for distributed and microservice architectur
 
 ### Basic Distributed Roles
 ```typescript
-import { BrainyData, PresetName } from '@soulcraft/brainy'
+import { Brainy, PresetName } from '@soulcraft/brainy'
 
 // Write-only instance (data ingestion)
-const writer = new BrainyData(PresetName.WRITER)
+const writer = new Brainy(PresetName.WRITER)
 // ✅ Optimized for writes
 // ✅ No search index loading
 // ✅ Minimal memory usage
 
 // Read-only instance (search API)
-const reader = new BrainyData(PresetName.READER)
+const reader = new Brainy(PresetName.READER)
 // ✅ Optimized for search
 // ✅ Lazy index loading
 // ✅ Large cache
@@ -78,28 +78,28 @@ const reader = new BrainyData(PresetName.READER)
 ### Service-Specific Presets
 ```typescript
 // High-throughput data ingestion
-const ingestion = new BrainyData(PresetName.INGESTION_SERVICE)
+const ingestion = new Brainy(PresetName.INGESTION_SERVICE)
 
 // Low-latency search API
-const searchApi = new BrainyData(PresetName.SEARCH_API)
+const searchApi = new Brainy(PresetName.SEARCH_API)
 
 // Analytics processing
-const analytics = new BrainyData(PresetName.ANALYTICS_SERVICE)
+const analytics = new Brainy(PresetName.ANALYTICS_SERVICE)
 
 // Edge location cache
-const edge = new BrainyData(PresetName.EDGE_CACHE)
+const edge = new Brainy(PresetName.EDGE_CACHE)
 
 // Batch processing
-const batch = new BrainyData(PresetName.BATCH_PROCESSOR)
+const batch = new Brainy(PresetName.BATCH_PROCESSOR)
 
 // Real-time streaming
-const streaming = new BrainyData(PresetName.STREAMING_SERVICE)
+const streaming = new Brainy(PresetName.STREAMING_SERVICE)
 
 // ML training
-const training = new BrainyData(PresetName.ML_TRAINING)
+const training = new Brainy(PresetName.ML_TRAINING)
 
 // Lightweight sidecar
-const sidecar = new BrainyData(PresetName.SIDECAR)
+const sidecar = new Brainy(PresetName.SIDECAR)
 ```
 
 ## Model Precision Control
@@ -110,17 +110,17 @@ You can **explicitly specify** model precision when needed:
 import { ModelPrecision } from '@soulcraft/brainy'
 
 // Force FP32 (full precision)
-const brain = new BrainyData({ model: ModelPrecision.FP32 })
+const brain = new Brainy({ model: ModelPrecision.FP32 })
 
 // Force Q8 (quantized, smaller)
-const brain = new BrainyData({ model: ModelPrecision.Q8 })
+const brain = new Brainy({ model: ModelPrecision.Q8 })
 
 // Use presets
-const brain = new BrainyData({ model: ModelPrecision.FAST })  // Maps to fp32
-const brain = new BrainyData({ model: ModelPrecision.SMALL }) // Maps to q8
+const brain = new Brainy({ model: ModelPrecision.FAST })  // Maps to fp32
+const brain = new Brainy({ model: ModelPrecision.SMALL }) // Maps to q8
 
 // Auto-detection (default)
-const brain = new BrainyData({ model: ModelPrecision.AUTO })
+const brain = new Brainy({ model: ModelPrecision.AUTO })
 ```
 
 ### Auto-Detection Logic
@@ -159,13 +159,13 @@ Brainy automatically detects the best storage option:
 import { StorageOption } from '@soulcraft/brainy'
 
 // Force specific storage with enum
-const brain = new BrainyData({ storage: StorageOption.MEMORY })
-const brain = new BrainyData({ storage: StorageOption.DISK })
-const brain = new BrainyData({ storage: StorageOption.CLOUD })
-const brain = new BrainyData({ storage: StorageOption.AUTO })
+const brain = new Brainy({ storage: StorageOption.MEMORY })
+const brain = new Brainy({ storage: StorageOption.DISK })
+const brain = new Brainy({ storage: StorageOption.CLOUD })
+const brain = new Brainy({ storage: StorageOption.AUTO })
 
 // Custom storage configuration
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     s3Storage: {
       bucket: 'my-bucket',
@@ -183,12 +183,12 @@ Control which features are enabled:
 import { FeatureSet } from '@soulcraft/brainy'
 
 // Preset feature sets with enum
-const brain = new BrainyData({ features: FeatureSet.MINIMAL })  // Core only
-const brain = new BrainyData({ features: FeatureSet.DEFAULT })  // Balanced
-const brain = new BrainyData({ features: FeatureSet.FULL })     // Everything
+const brain = new Brainy({ features: FeatureSet.MINIMAL })  // Core only
+const brain = new Brainy({ features: FeatureSet.DEFAULT })  // Balanced
+const brain = new Brainy({ features: FeatureSet.FULL })     // Everything
 
 // Custom features
-const brain = new BrainyData({
+const brain = new Brainy({
   features: ['core', 'search', 'cache', 'triple-intelligence']
 })
 ```
@@ -274,14 +274,14 @@ When multiple Brainy instances connect to the same storage (like S3), you **must
 import { ModelPrecision } from '@soulcraft/brainy'
 
 // Container A - Writer
-const writer = new BrainyData({
+const writer = new Brainy({
   mode: PresetName.WRITER,
   model: ModelPrecision.FP32,  // ⚠️ MUST match across instances!
   storage: { s3Storage: { bucket: 'shared-data' }}
 })
 
 // Container B - Reader
-const reader = new BrainyData({
+const reader = new Brainy({
   mode: PresetName.READER,
   model: ModelPrecision.FP32,  // ✅ Matches Container A
   storage: { s3Storage: { bucket: 'shared-data' }}
@@ -292,21 +292,21 @@ const reader = new BrainyData({
 
 ```typescript
 // Ingestion Service (Writer)
-const ingestion = new BrainyData({
+const ingestion = new Brainy({
   mode: PresetName.INGESTION_SERVICE,
   model: ModelPrecision.Q8,  // All instances must use Q8
   storage: { s3Storage: { bucket: 'production-data' }}
 })
 
 // Search API (Reader)
-const search = new BrainyData({
+const search = new Brainy({
   mode: PresetName.SEARCH_API,
   model: ModelPrecision.Q8,  // Matches ingestion service
   storage: { s3Storage: { bucket: 'production-data' }}
 })
 
 // Analytics (Hybrid)
-const analytics = new BrainyData({
+const analytics = new Brainy({
   mode: PresetName.ANALYTICS_SERVICE,
   model: ModelPrecision.Q8,  // Matches other services
   storage: { s3Storage: { bucket: 'production-data' }}
@@ -317,7 +317,7 @@ const analytics = new BrainyData({
 
 ### Before (Complex)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   hnsw: {
     M: 16,
     efConstruction: 200,
@@ -350,7 +350,7 @@ const brain = new BrainyData({
 
 ### After (Simple)
 ```typescript
-const brain = new BrainyData('production')
+const brain = new Brainy('production')
 // Everything above is auto-configured!
 ```
 

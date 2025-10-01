@@ -4,7 +4,7 @@
 
 ### **Main Class Shortcuts (Simple & Common)**
 ```typescript
-// High-level shortcuts on BrainyData - most common operations
+// High-level shortcuts on Brainy - most common operations
 brain.similar(a, b, options?)           // ✅ Keep - very common
 brain.clusters(items?, options?)        // ✅ Keep - very common  
 brain.related(id, options?)             // ✅ Keep - common (like neighbors but simpler name)
@@ -162,7 +162,7 @@ const streamingClusters = brain.neural.clusterStream({ batchSize: 50 })
 ### **High Priority:**
 - [x] Create comprehensive type definitions
 - [x] Implement improved NeuralAPI class with proper public/private separation
-- [ ] Update BrainyData integration to use improved API
+- [ ] Update Brainy integration to use improved API
 - [ ] Fix brain-cloud explorer to use public APIs
 - [ ] Update test files to use consistent method names
 - [ ] Update documentation with new API structure

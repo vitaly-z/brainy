@@ -5,7 +5,7 @@
  * Verifies ALL public API methods are properly integrated in CLI
  */
 
-import { BrainyData } from './dist/brainyData.js'
+import { Brainy } from '../../dist/index.js'
 import fs from 'fs'
 
 console.log('🧠 Brainy 2.0 - Comprehensive CLI API Verification')

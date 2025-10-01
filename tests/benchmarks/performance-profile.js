@@ -5,8 +5,8 @@
  * This will help us identify where we lost the claimed 500,000 ops/sec
  */
 
-import { BrainyData } from '../dist/index.js'
-import { MemoryStorage } from '../dist/storage/adapters/memoryStorage.js'
+import { Brainy } from '../../dist/index.js'
+import { MemoryStorage } from '../../dist/storage/adapters/memoryStorage.js'
 
 // Performance tracking
 class PerformanceProfiler {
@@ -78,20 +78,20 @@ async function profilePerformance() {
   console.log('Initializing Brainy configurations...')
   
   // 1. Minimal config (no augmentations)
-  const minimalBrain = new BrainyData({
+  const minimalBrain = new Brainy({
     storage: new MemoryStorage(),
     augmentations: false  // Disable all augmentations
   })
   await minimalBrain.init()
   
   // 2. Default config (with augmentations)
-  const defaultBrain = new BrainyData({
+  const defaultBrain = new Brainy({
     storage: new MemoryStorage()
   })
   await defaultBrain.init()
   
   // 3. Full augmentations config
-  const fullBrain = new BrainyData({
+  const fullBrain = new Brainy({
     storage: new MemoryStorage(),
     augmentations: {
       batchProcessing: { enabled: true, maxBatchSize: 1000 },

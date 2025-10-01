@@ -4,14 +4,14 @@
  * Quick Verification Test - Verify real implementations work
  */
 
-import { BrainyData } from '../dist/index.js'
+import { Brainy } from '../dist/index.js'
 import { MemoryStorage } from '../dist/storage/adapters/memoryStorage.js'
 
 async function quickVerify() {
   console.log('🔍 Quick Verification Test\n')
   
   // Initialize
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: new MemoryStorage()
   })
   

@@ -35,7 +35,7 @@ These augmentations don't read or write metadata at all:
 1. **CacheAugmentation** - Only caches search results
 2. **RequestDeduplicatorAugmentation** - Only deduplicates requests
 3. **ConnectionPoolAugmentation** - Only manages storage connections
-4. **StorageAugmentation** - Base storage layer, metadata handled by brainyData
+4. **StorageAugmentation** - Base storage layer, metadata handled by Brainy
 
 ### Category 2: Read-Only Access ('readonly')
 These augmentations read metadata but never modify it:

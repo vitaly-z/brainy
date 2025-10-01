@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function testMemoryUsage() {
   console.log('Testing memory usage...\n')
@@ -12,7 +12,7 @@ async function testMemoryUsage() {
     heapUsed: Math.round(memBefore.heapUsed / 1024 / 1024) + ' MB'
   })
   
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: { forceMemoryStorage: true }
   })
   await brain.init()

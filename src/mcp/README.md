@@ -41,10 +41,10 @@ The `BrainyMCPService` has been refactored to separate the core functionality fr
 ### In Any Environment (Browser, Node.js, Server)
 
 ```typescript
-import { BrainyData, BrainyMCPAdapter, MCPAugmentationToolset } from '@soulcraft/brainy'
+import { Brainy, BrainyMCPAdapter, MCPAugmentationToolset } from '@soulcraft/brainy'
 
-// Create a BrainyData instance
-const brainyData = new BrainyData()
+// Create a Brainy instance
+const brainyData = new Brainy()
 await brainyData.init()
 
 // Create an MCP adapter
@@ -81,10 +81,10 @@ const toolResponse = await toolset.handleRequest({
 ### In Browser Environment (Core Functionality Only)
 
 ```typescript
-import { BrainyData, BrainyMCPService } from '@soulcraft/brainy'
+import { Brainy, BrainyMCPService } from '@soulcraft/brainy'
 
-// Create a BrainyData instance
-const brainyData = new BrainyData()
+// Create a Brainy instance
+const brainyData = new Brainy()
 await brainyData.init()
 
 // Create an MCP service (server functionality will be disabled in browser)

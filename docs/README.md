@@ -62,10 +62,10 @@ await brain.find("recent articles about AI with high ratings")
 ## Quick Example
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
 // Initialize
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Add entities (nouns)

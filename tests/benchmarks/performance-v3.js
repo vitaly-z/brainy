@@ -2,21 +2,20 @@
 
 /**
  * Brainy 3.0 Performance Benchmark
- * Compare v2 (BrainyData) vs v3 (Brainy) performance
+ * Compare v2 (Brainy) vs v3 (Brainy) performance
  */
 
-import { BrainyData } from '../dist/brainyData.js'
-import { Brainy } from '../dist/brainy.js'
-import { NounType, VerbType } from '../dist/types/graphTypes.js'
+import { Brainy } from '../../dist/index.js'
+import { NounType, VerbType } from '../../dist/types/graphTypes.js'
 
 const ITERATIONS = 1000
 const BATCH_SIZE = 100
 
 async function benchmarkV2() {
-  console.log('\n📊 BrainyData v2 Performance')
+  console.log('\n📊 Brainy v2 Performance')
   console.log('═'.repeat(50))
   
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: { type: 'memory' },
     augmentations: false,
     embeddingFunction: async () => new Array(384).fill(0).map(() => Math.random())

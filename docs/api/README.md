@@ -6,9 +6,9 @@
 ## Quick Start
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
-const brain = new BrainyData()  // Zero config!
+const brain = new Brainy()  // Zero config!
 await brain.init()
 
 // Add data (text auto-embeds!)
@@ -248,7 +248,7 @@ Train the relationship scoring model:
 
 #### Initialization
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: 'auto',        // auto | memory | filesystem | s3
   dimensions: 384,        // Vector dimensions
   cache: true,           // Enable caching
@@ -264,8 +264,8 @@ await brain.shutdown()   // Graceful shutdown
 ```
 
 #### Static Methods
-- `BrainyData.preloadModel()` - Preload ML model
-- `BrainyData.warmup()` - Warmup system
+- `Brainy.preloadModel()` - Preload ML model
+- `Brainy.warmup()` - Warmup system
 
 ---
 

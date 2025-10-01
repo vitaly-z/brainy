@@ -59,13 +59,13 @@ Once registered, the new storage type works with zero-config:
 
 ```typescript
 // Auto-detection will now check Redis
-const brain = new BrainyData()  // Will use Redis if available!
+const brain = new Brainy()  // Will use Redis if available!
 
 // Or explicitly specify
-const brain = new BrainyData({ storage: 'redis' })
+const brain = new Brainy({ storage: 'redis' })
 
 // Or with custom config
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'redis',
     redisStorage: {
@@ -223,7 +223,7 @@ registerPresetAugmentation('redis-cluster', {
 })
 
 // Users can then use:
-const brain = new BrainyData('redis-cluster')
+const brain = new Brainy('redis-cluster')
 ```
 
 ## Type Safety with Extensions
@@ -367,17 +367,17 @@ export class BrainyRedisAugmentation {
 }
 
 // Usage after installing the augmentation:
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 import '@soulcraft/brainy-redis'  // Registers the augmentation
 
 // Now Redis is automatically detected!
-const brain = new BrainyData()  // Uses Redis if REDIS_URL is set
+const brain = new Brainy()  // Uses Redis if REDIS_URL is set
 
 // Or use a Redis preset
-const brain = new BrainyData('redis-fast-cache')
+const brain = new Brainy('redis-fast-cache')
 
 // Or explicitly configure
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: 'redis',
   model: ModelPrecision.FP32
 })

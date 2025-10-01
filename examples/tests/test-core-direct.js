@@ -5,7 +5,7 @@
  * Bypasses Vitest to avoid memory overhead
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 Testing Brainy Core Functionality (Direct Node.js)')
 console.log('=' + '='.repeat(60))
@@ -32,15 +32,15 @@ async function testBrainyCore() {
   try {
     // Test 1: Library Loading
     console.log('\n📦 Testing Library Loading')
-    assert(typeof BrainyData === 'function', 'BrainyData class should be exported')
+    assert(typeof Brainy === 'function', 'Brainy class should be exported')
     
     // Test 2: Instance Creation
     console.log('\n🏗️  Testing Instance Creation')
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })
-    assert(brain !== null, 'Should create BrainyData instance')
+    assert(brain !== null, 'Should create Brainy instance')
     assert(brain.dimensions === 384, 'Should have 384 dimensions')
     
     // Test 3: Initialization

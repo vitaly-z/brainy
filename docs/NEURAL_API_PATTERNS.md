@@ -8,8 +8,8 @@
 
 ```typescript
 // DON'T DO THIS - Outdated documentation patterns
-import { BrainyData } from '@soulcraft/brainy'  // ❌ Wrong import
-const brain = new BrainyData()                  // ❌ Old class name
+import { Brainy } from '@soulcraft/brainy'  // ❌ Wrong import
+const brain = new Brainy()                  // ❌ Old class name
 
 // These may not work as expected:
 const neural = brain.neural                     // ❌ May be undefined

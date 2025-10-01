@@ -34,9 +34,9 @@ await brain.delete(id)                        // Unified deletion
 
 ```typescript
 // DON'T DO THIS - Old API patterns
-import { BrainyData } from 'old-brainy'  // ❌ Wrong import
+import { Brainy } from 'old-brainy'  // ❌ Wrong import
 
-const brain = new BrainyData({           // ❌ Old class name
+const brain = new Brainy({           // ❌ Old class name
   complexConfig: true
 })
 

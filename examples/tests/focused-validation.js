@@ -4,7 +4,7 @@
  * 🚀 Focused Validation - Test Core Functionality with Timeout
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🚀 Brainy 2.0 - Focused Production Test')
 console.log('=' + '='.repeat(35))
@@ -20,7 +20,7 @@ const TIMEOUT = 45000 // 45 seconds
 const timeoutId = setTimeout(() => {
   console.log(`\n⏰ TIMEOUT after ${timeElapsed()}s - Core systems initialized successfully!`)
   console.log('🎯 Key Evidence:')
-  console.log('✅ BrainyData instantiated')
+  console.log('✅ Brainy instantiated')
   console.log('✅ All augmentations loading') 
   console.log('✅ Storage systems operational')
   console.log('✅ Models found in cache')
@@ -30,7 +30,7 @@ const timeoutId = setTimeout(() => {
 
 try {
   console.log(`\n⏱️  [${timeElapsed()}s] Initializing brain...`)
-  const brain = new BrainyData({ storage: { type: 'memory' }, verbose: false })
+  const brain = new Brainy({ storage: { type: 'memory' }, verbose: false })
   
   console.log(`⏱️  [${timeElapsed()}s] Starting init()...`)
   

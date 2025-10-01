@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: { type: 'memory' }, 
   verbose: false 
 })

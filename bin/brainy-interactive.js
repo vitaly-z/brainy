@@ -7,7 +7,7 @@
  */
 
 import { program } from 'commander'
-import { BrainyData } from '../dist/brainyData.js'
+import { Brainy } from '../dist/index.js'
 import chalk from 'chalk'
 import inquirer from 'inquirer'
 import ora from 'ora'
@@ -61,7 +61,7 @@ async function getBrainy() {
   if (!brainyInstance) {
     const spinner = ora('Initializing Brainy...').start()
     try {
-      brainyInstance = new BrainyData()
+      brainyInstance = new Brainy()
       await brainyInstance.init()
       spinner.succeed('Brainy initialized')
     } catch (error) {

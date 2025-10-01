@@ -23,9 +23,9 @@ The Universal Display Augmentation is a powerful AI-powered system that automati
 ### Basic Usage
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
-const brainy = new BrainyData()
+const brainy = new Brainy()
 await brainy.init()
 
 // Add some data
@@ -186,12 +186,12 @@ const stats = displayAug.getStats()
 console.log(`Cache hit ratio: ${stats.cacheHitRatio}%`)
 ```
 
-### BrainyData Configuration
+### Brainy Configuration
 
 Configure at initialization:
 
 ```typescript
-const brainy = new BrainyData({
+const brainy = new Brainy({
   augmentations: {
     display: {
       enabled: true,

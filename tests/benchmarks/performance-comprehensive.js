@@ -5,9 +5,8 @@
  * Compares Brainy v3 vs v2 vs Competition benchmarks
  */
 
-import { Brainy } from '../dist/brainy.js'
-import { BrainyData } from '../dist/brainyData.js'
-import { NounType, VerbType } from '../dist/types/graphTypes.js'
+import { Brainy } from '../../dist/index.js'
+import { NounType, VerbType } from '../../dist/types/graphTypes.js'
 
 // Mock embedder for consistent benchmarking (no model overhead)
 const mockEmbedder = async () => new Array(384).fill(0).map(() => Math.random())
@@ -17,10 +16,10 @@ async function formatOps(ops) {
 }
 
 async function runV2Benchmark() {
-  console.log('\n📊 BrainyData v2 Performance')
+  console.log('\n📊 Brainy v2 Performance')
   console.log('═'.repeat(50))
   
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: { type: 'memory' },
     embeddingFunction: mockEmbedder,
     augmentations: false // Disable for raw performance

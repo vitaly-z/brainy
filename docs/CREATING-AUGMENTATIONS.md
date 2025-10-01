@@ -57,7 +57,7 @@ export class MyStorageAugmentation extends StorageAugmentation {
 
 ```typescript
 // Register before brain.init()
-const brain = new BrainyData()
+const brain = new Brainy()
 brain.augmentations.register(new MyStorageAugmentation({
   connectionString: 'redis://localhost:6379'
 }))
@@ -174,9 +174,9 @@ Common operations in Brainy:
 
 ```typescript
 interface AugmentationContext {
-  brain: BrainyData         // The brain instance
+  brain: Brainy         // The brain instance
   storage: StorageAdapter   // Storage backend
-  config: BrainyDataConfig  // Configuration
+  config: BrainyConfig  // Configuration
   log: (message: string, level?: 'info' | 'warn' | 'error') => void
 }
 ```
@@ -265,14 +265,14 @@ Future capability for premium augmentations:
 ## Testing Your Augmentation
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 import { MyAugmentation } from './my-augmentation'
 
 describe('MyAugmentation', () => {
-  let brain: BrainyData
+  let brain: Brainy
   
   beforeEach(async () => {
-    brain = new BrainyData()
+    brain = new Brainy()
     brain.augmentations.register(new MyAugmentation())
     await brain.init()
   })

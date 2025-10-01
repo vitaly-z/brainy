@@ -11,10 +11,10 @@ Brainy is designed with **"Zero Config by Default, Infinite Tunability"** philos
 ### Instant Start
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
 // That's it. No config needed.
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Brainy automatically:
@@ -100,7 +100,7 @@ Brainy seamlessly migrates between storage types:
 
 ```typescript
 // Start with memory storage (development)
-const brain = new BrainyData()  // Auto-selects memory
+const brain = new Brainy()  // Auto-selects memory
 
 // Later, migrate to production storage
 await brain.migrate({
@@ -292,7 +292,7 @@ Models are automatically downloaded when needed:
 
 ```typescript
 // First use - model auto-downloads
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()  // Downloads model if not cached
 
 // Intelligent model caching
@@ -705,7 +705,7 @@ While zero-config is default, you can override when needed:
 
 ```typescript
 // Explicit configuration when needed
-const brain = new BrainyData({
+const brain = new Brainy({
   // Override auto-detection
   storage: {
     type: 'filesystem',

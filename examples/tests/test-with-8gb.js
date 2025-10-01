@@ -5,7 +5,7 @@
  * Requires 6-8GB RAM (ONNX runtime requirement)
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 import v8 from 'v8'
 
 // Check if we have enough memory allocated
@@ -23,7 +23,7 @@ console.log('='.repeat(50))
 
 async function testRealSearch() {
   try {
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false 
     })

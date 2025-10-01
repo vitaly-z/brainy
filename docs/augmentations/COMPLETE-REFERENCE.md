@@ -5,9 +5,9 @@
 ## Quick Start
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   // Augmentations auto-configure based on environment
   storage: 'auto',     // Storage augmentation
   cache: true,         // Cache augmentation
@@ -40,7 +40,7 @@ Augmentations are modular extensions that add functionality to Brainy without cl
 **Auto-enabled**: When `storage: 'memory'` or in test environments  
 **Purpose**: In-memory storage for testing and temporary data
 ```typescript
-const brain = new BrainyData({ storage: 'memory' })
+const brain = new Brainy({ storage: 'memory' })
 ```
 
 ### FileSystemStorageAugmentation  
@@ -48,7 +48,7 @@ const brain = new BrainyData({ storage: 'memory' })
 **Auto-enabled**: When `storage: 'filesystem'` or Node.js detected  
 **Purpose**: Persistent file-based storage for Node.js applications
 ```typescript
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: { type: 'filesystem', path: './data' }
 })
 ```
@@ -58,7 +58,7 @@ const brain = new BrainyData({
 **Auto-enabled**: When `storage: 'opfs'` or browser with OPFS support  
 **Purpose**: Browser-based persistent storage using Origin Private File System
 ```typescript
-const brain = new BrainyData({ storage: 'opfs' })
+const brain = new Brainy({ storage: 'opfs' })
 ```
 
 ### S3StorageAugmentation
@@ -66,7 +66,7 @@ const brain = new BrainyData({ storage: 'opfs' })
 **Manual**: Requires AWS credentials  
 **Purpose**: AWS S3-compatible cloud storage
 ```typescript
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: {
     type: 's3',
     bucket: 'my-bucket',
@@ -81,7 +81,7 @@ const brain = new BrainyData({
 **Manual**: Requires Cloudflare credentials  
 **Purpose**: Cloudflare R2 storage (S3-compatible)
 ```typescript
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: {
     type: 'r2',
     accountId: 'xxx',
@@ -96,7 +96,7 @@ const brain = new BrainyData({
 **Manual**: Requires Google Cloud credentials  
 **Purpose**: Google Cloud Storage
 ```typescript
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: {
     type: 'gcs',
     bucket: 'my-bucket',
@@ -174,7 +174,7 @@ brain.addNouns([...])        // Automatically batched
 **Auto-enabled**: When `wal: true`  
 **Purpose**: Write-ahead logging for crash recovery
 ```typescript
-const brain = new BrainyData({ wal: true })
+const brain = new Brainy({ wal: true })
 // Automatic recovery on restart after crash
 ```
 
@@ -275,7 +275,7 @@ class NotionSynapse extends SynapseAugmentation {
 
 ### Auto-Configuration
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   // These auto-register augmentations:
   storage: 'auto',        // Storage augmentation
   cache: true,           // Cache augmentation  
@@ -286,7 +286,7 @@ const brain = new BrainyData({
 
 ### Manual Registration
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Register before init()
 const customAug = new MyCustomAugmentation()
@@ -347,7 +347,7 @@ class MyAugmentation extends BaseAugmentation {
 
 ### Where Augmentations Hook In
 
-**BrainyData Constructor**:
+**Brainy Constructor**:
 - Storage augmentations register based on config
 - Cache/Index augmentations auto-register if enabled
 

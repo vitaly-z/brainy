@@ -75,7 +75,7 @@ ENV BRAINY_MODEL_DTYPE=q8
 chmod 755 ./brainy-data
 
 # Use custom writable path
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     adapter: 'filesystem',
     path: '/tmp/brainy-data'
@@ -83,7 +83,7 @@ const brain = new BrainyData({
 })
 
 # Or use memory storage
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { forceMemoryStorage: true }
 })
 ```
@@ -98,7 +98,7 @@ const brain = new BrainyData({
 mkdir -p ./brainy-data
 
 # Check storage configuration
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     adapter: 'filesystem',
     path: '/full/path/to/storage' // Use absolute path
@@ -126,7 +126,7 @@ const brain = new BrainyData({
 2. **Network issues**
    ```typescript
    // Set initialization timeout
-   const brain = new BrainyData()
+   const brain = new Brainy()
    
    // Use Promise.race for timeout
    const initPromise = Promise.race([
@@ -210,7 +210,7 @@ const brain = new BrainyData({
 
 1. **Enable search cache**
    ```typescript
-   const brain = new BrainyData({
+   const brain = new Brainy({
      cache: {
        search: {
          maxSize: 1000,
@@ -283,7 +283,7 @@ const brain = new BrainyData({
 2. **Use memory storage in tests**
    ```typescript
    // In test setup
-   const brain = new BrainyData({
+   const brain = new Brainy({
      storage: { forceMemoryStorage: true }
    })
    ```
@@ -352,7 +352,7 @@ ENV BRAINY_MODELS_PATH=./models
 Enable verbose logging to see what's happening:
 
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   logging: { verbose: true }
 })
 ```
@@ -364,7 +364,7 @@ Verify your Brainy setup:
 ```typescript
 // Basic health check
 try {
-  const brain = new BrainyData()
+  const brain = new Brainy()
   await brain.init()
   
   const id = await brain.add("health check", { nounType: 'content' })

@@ -5,7 +5,7 @@
  * Direct Node.js script to avoid test framework overhead
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 TESTING BRAINY 2.0 WITH REAL AI MODELS')
 console.log('==========================================')
@@ -13,7 +13,7 @@ console.log('==========================================')
 async function testAllFeatures() {
   try {
     console.log('\n1. Initializing with real AI...')
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

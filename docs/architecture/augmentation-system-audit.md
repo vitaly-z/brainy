@@ -37,7 +37,7 @@ brain.augmentations.register(augmentation)
 
 ### 4. Auto-Configuration ✅
 ```typescript
-new BrainyData({ 
+new Brainy({ 
   cache: true,    // Auto-registers CacheAugmentation
   index: true,    // Auto-registers IndexAugmentation
   storage: 's3'   // Auto-registers S3StorageAugmentation

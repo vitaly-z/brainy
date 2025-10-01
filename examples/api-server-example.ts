@@ -7,12 +7,12 @@
  * Zero-config philosophy: Just create and register the augmentation!
  */
 
-import { BrainyData } from '../src/index.js'
+import { Brainy } from '../src/index.js'
 import { APIServerAugmentation } from '../src/augmentations/apiServerAugmentation.js'
 
 async function main() {
   // 1. Create Brainy with zero config
-  const brain = new BrainyData()
+  const brain = new Brainy()
   await brain.init()
   
   // 2. Add some sample data

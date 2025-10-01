@@ -18,9 +18,9 @@ npm install -g brainy
 ### 1. Initialize Brainy
 
 ```javascript
-import { BrainyData, NounType } from '@soulcraft/brainy'
+import { Brainy, NounType } from '@soulcraft/brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 ```
 
@@ -77,10 +77,10 @@ const libraries = await brain.search("JavaScript", {
 ### Example 1: Document Search System
 
 ```javascript
-import { BrainyData, NounType } from '@soulcraft/brainy'
+import { Brainy, NounType } from '@soulcraft/brainy'
 import fs from 'fs'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'filesystem',
     path: './document-index'
@@ -113,9 +113,9 @@ results.forEach(r => console.log(`- ${r.metadata.filename} (${(r.score * 100).to
 ### Example 2: AI Chat with Memory
 
 ```javascript
-import { BrainyData, NounType } from '@soulcraft/brainy'
+import { Brainy, NounType } from '@soulcraft/brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 class ChatWithMemory {
@@ -166,11 +166,11 @@ const response = await chat.chat("What did we discuss about JavaScript?")
 ### Example 3: Semantic Code Search
 
 ```javascript
-import { BrainyData, NounType } from '@soulcraft/brainy'
+import { Brainy, NounType } from '@soulcraft/brainy'
 import { glob } from 'glob'
 import fs from 'fs'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Index all JavaScript files
@@ -284,12 +284,12 @@ const results = await brain.search("*", {
 
 ### Memory (Testing)
 ```javascript
-const brain = new BrainyData()  // Default
+const brain = new Brainy()  // Default
 ```
 
 ### FileSystem (Development)
 ```javascript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'filesystem',
     path: './brain-data'
@@ -299,14 +299,14 @@ const brain = new BrainyData({
 
 ### Browser (OPFS)
 ```javascript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { type: 'opfs' }
 })
 ```
 
 ### S3 (Production)
 ```javascript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 's3',
     bucket: 'my-brain-bucket',

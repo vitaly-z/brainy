@@ -4,14 +4,14 @@
  * Quick CLI API Compatibility Test
  */
 
-import { BrainyData } from './dist/brainyData.js'
+import { Brainy } from '../../dist/index.js'
 
 console.log('🧠 Testing CLI API compatibility...')
 
-const brain = new BrainyData({ storage: { type: 'memory' }, verbose: false })
+const brain = new Brainy({ storage: { type: 'memory' }, verbose: false })
 
 try {
-  console.log('✅ BrainyData instantiated')
+  console.log('✅ Brainy instantiated')
   
   // Test method signatures
   console.log('✅ addNoun method:', typeof brain.addNoun === 'function')

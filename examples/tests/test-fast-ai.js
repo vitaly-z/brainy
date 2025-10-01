@@ -4,13 +4,13 @@
  * Fast focused test of critical AI features
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function quickTest() {
   try {
     console.log('🚀 QUICK BRAINY AI TEST')
     
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

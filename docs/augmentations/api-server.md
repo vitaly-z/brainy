@@ -33,10 +33,10 @@ npm install express cors ws
 ## Zero-Config Usage
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 import { APIServerAugmentation } from 'brainy/augmentations'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Register the API server augmentation
 brain.augmentations.register(new APIServerAugmentation())
@@ -281,7 +281,7 @@ The APIServerAugmentation hooks into Brainy's augmentation pipeline:
 
 ```typescript
 // Server
-const brain = new BrainyData()
+const brain = new Brainy()
 brain.augmentations.register(new APIServerAugmentation())
 await brain.init()
 
@@ -357,7 +357,7 @@ class FilteredAPIServer extends APIServerAugmentation {
 ### Integration with Other Augmentations
 
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Stack augmentations for complete system
 brain.augmentations.register(new EntityRegistryAugmentation()) // Dedup

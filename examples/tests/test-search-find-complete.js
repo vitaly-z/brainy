@@ -5,7 +5,7 @@
  * Verifies industry-leading performance and relevance
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 BRAINY 2.0 SEARCH & FIND VERIFICATION')
 console.log('=' + '='.repeat(50))
@@ -13,7 +13,7 @@ console.log('=' + '='.repeat(50))
 async function testSearchAndFind() {
   try {
     // Initialize with production-like configuration
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

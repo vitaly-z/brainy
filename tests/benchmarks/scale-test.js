@@ -10,7 +10,7 @@
  * 4. No fake/stub code in production path
  */
 
-import { BrainyData } from '../dist/index.js'
+import { Brainy } from '../dist/index.js'
 import { MemoryStorage } from '../dist/storage/adapters/memoryStorage.js'
 
 // Test configuration
@@ -34,7 +34,7 @@ async function runScaleTest() {
   const startTime = Date.now()
   
   // Initialize Brainy with real augmentations
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: new MemoryStorage(),
     augmentations: {
       // These should all be REAL implementations now

@@ -137,7 +137,7 @@ await neuralImport.generateInsights(data)
 Brainy automatically loads models with ZERO configuration required:
 
 ```typescript
-const brain = new BrainyData() // That's it!
+const brain = new Brainy() // That's it!
 await brain.init()
 // Models load automatically from best available source
 ```
@@ -159,7 +159,7 @@ await brain.init()
 
 ### Reader Mode ✅
 ```typescript
-const brain = new BrainyData({ mode: 'reader' })
+const brain = new Brainy({ mode: 'reader' })
 // Optimized for read-heavy workloads
 // 80% cache ratio, aggressive prefetch
 // 1 hour TTL, minimal writes
@@ -167,7 +167,7 @@ const brain = new BrainyData({ mode: 'reader' })
 
 ### Writer Mode ✅
 ```typescript
-const brain = new BrainyData({ mode: 'writer' })
+const brain = new Brainy({ mode: 'writer' })
 // Optimized for write-heavy workloads
 // Large write buffers, batch writes
 // Minimal caching, fast ingestion
@@ -175,7 +175,7 @@ const brain = new BrainyData({ mode: 'writer' })
 
 ### Hybrid Mode ✅
 ```typescript
-const brain = new BrainyData({ mode: 'hybrid' })
+const brain = new Brainy({ mode: 'hybrid' })
 // Balanced for mixed workloads
 // Adaptive caching and batching
 ```
@@ -346,7 +346,7 @@ import { crypto } from 'brainy/utils'
 
 ### 1. Zero Configuration
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 // Everything else is automatic!
 ```
@@ -384,10 +384,10 @@ await brain.init()
 ## 🚀 Quick Start
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
 // Zero config required!
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Add data (auto-detects type)

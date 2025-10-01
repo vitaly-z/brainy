@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function testBasicFunctionality() {
   console.log('Testing Brainy 2.0 Core Functionality...\n')
@@ -9,7 +9,7 @@ async function testBasicFunctionality() {
   try {
     // Test 1: Initialization
     console.log('1. Testing initialization...')
-    brain = new BrainyData({
+    brain = new Brainy({
       storage: { forceMemoryStorage: true },
       dimensions: 384,
       metric: 'cosine'

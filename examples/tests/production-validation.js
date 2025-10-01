@@ -7,7 +7,7 @@
  * Focus on HIGH-IMPACT validation that proves the system is ready for release.
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 import { performance } from 'perf_hooks'
 
 console.log('🚀 Brainy 2.0 - Production Validation Suite')
@@ -19,7 +19,7 @@ const testConfig = {
   verbose: false
 }
 
-const brain = new BrainyData(testConfig)
+const brain = new Brainy(testConfig)
 
 // Validation results tracking
 const results = {

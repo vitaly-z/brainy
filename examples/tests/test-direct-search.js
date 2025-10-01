@@ -7,7 +7,7 @@
  * to identify where the timeout occurs
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function testDirectSearch() {
   console.log('🔍 DIRECT SEARCH TEST')
@@ -16,7 +16,7 @@ async function testDirectSearch() {
   try {
     // 1. Initialize
     console.log('1. Initializing Brainy...')
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

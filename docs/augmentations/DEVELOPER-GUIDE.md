@@ -42,10 +42,10 @@ export class MyFirstAugmentation extends BaseAugmentation {
 ## Using Your Augmentation
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 import { MyFirstAugmentation } from './my-first-augmentation'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Register before init()
 brain.augmentations.register(new MyFirstAugmentation())
@@ -301,12 +301,12 @@ class EncryptionAugmentation extends BaseAugmentation {
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 import { MyAugmentation } from './my-augmentation'
 
 describe('MyAugmentation', () => {
   it('should hook into addNoun', async () => {
-    const brain = new BrainyData({ storage: 'memory' })
+    const brain = new Brainy({ storage: 'memory' })
     const aug = new MyAugmentation()
     
     // Spy on the execute method

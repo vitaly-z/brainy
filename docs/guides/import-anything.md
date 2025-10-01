@@ -9,9 +9,9 @@ Brainy's import is **ONE magical method** that understands EVERYTHING:
 ## The Ultimate Simplicity
 
 ```javascript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // ONE method for EVERYTHING:

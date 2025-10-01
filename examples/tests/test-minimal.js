@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 // Minimal test to verify core works without memory issues
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧪 Minimal Brainy Test')
 
 async function minimalTest() {
   try {
     // Just test initialization and basic add
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false,
       // Disable features that might use memory

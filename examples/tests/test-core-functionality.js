@@ -7,7 +7,7 @@
  * Uses minimal memory approach to avoid ONNX issues.
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 Brainy 2.0 Core Functionality Verification')
 console.log('=' + '='.repeat(55))
@@ -45,7 +45,7 @@ async function runTests() {
   console.log(`   RSS:  ${(startMem.rss / 1024 / 1024).toFixed(2)} MB`)
   
   // Create Brainy instance with custom embedding function to avoid ONNX
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: { forceMemoryStorage: true },
     verbose: false,
     // Use a simple embedding function to avoid ONNX memory issues

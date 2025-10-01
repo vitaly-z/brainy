@@ -4,8 +4,8 @@
  * Quick Performance Test - Find the bottlenecks
  */
 
-import { BrainyData } from '../dist/index.js'
-import { MemoryStorage } from '../dist/storage/adapters/memoryStorage.js'
+import { Brainy } from '../../dist/index.js'
+import { MemoryStorage } from '../../dist/storage/adapters/memoryStorage.js'
 
 async function quickPerf() {
   console.log('🚀 Quick Performance Test\n')
@@ -34,7 +34,7 @@ async function quickPerf() {
   // Mock embedding function that returns instantly
   const mockEmbed = async () => new Array(384).fill(0)
   
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: new MemoryStorage(),
     embeddingFunction: mockEmbed,
     augmentations: false  // Disable augmentations
@@ -57,7 +57,7 @@ async function quickPerf() {
   
   // Test 3: With augmentations
   console.log('3️⃣ Brainy with Augmentations')
-  const brain2 = new BrainyData({
+  const brain2 = new Brainy({
     storage: new MemoryStorage(),
     embeddingFunction: mockEmbed
     // Default augmentations enabled
@@ -78,7 +78,7 @@ async function quickPerf() {
   
   // Test 4: Real embeddings (the killer)
   console.log('4️⃣ With Real Embeddings (10 samples)')
-  const brain3 = new BrainyData({
+  const brain3 = new Brainy({
     storage: new MemoryStorage(),
     augmentations: false
     // Uses real embedding function

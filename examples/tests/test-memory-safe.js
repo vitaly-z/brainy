@@ -7,7 +7,7 @@
  * Uses reasonable memory limits (4GB instead of 16GB)
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 Testing Memory-Safe Brainy System')
 console.log('=' + '='.repeat(50))
@@ -20,7 +20,7 @@ async function testMemorySafety() {
     console.log(`   RSS:  ${(startMem.rss / 1024 / 1024).toFixed(2)} MB`)
     
     console.log('\n🚀 Initializing Brainy with Universal Memory Manager...')
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

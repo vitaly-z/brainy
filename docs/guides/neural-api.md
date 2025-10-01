@@ -9,9 +9,9 @@ The Neural API provides advanced AI-powered features for understanding relations
 ## Quick Start
 
 ```javascript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Access Neural API
@@ -340,7 +340,7 @@ const sim = await neural.similar('fake-id-1', 'fake-id-2')
 
 ```javascript
 // Configure neural behavior at initialization
-const brain = new BrainyData({
+const brain = new Brainy({
   neural: {
     cacheSize: 1000,        // Cache up to 1000 results
     defaultAlgorithm: 'kmeans',

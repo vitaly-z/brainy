@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Quick test to verify Brainy works without running full test suite
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧪 Quick Brainy Test')
 console.log('====================')
@@ -10,7 +10,7 @@ async function quickTest() {
   try {
     // Test 1: Initialize
     console.log('\n1. Initializing Brainy...')
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false 
     })

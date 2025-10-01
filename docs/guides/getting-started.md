@@ -13,10 +13,10 @@ npm install @soulcraft/brainy
 ### Simple Initialization
 
 ```typescript
-import { BrainyData } from '@soulcraft/brainy'
+import { Brainy } from '@soulcraft/brainy'
 
 // Create a new Brainy instance with defaults
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Initialize (downloads models if needed)
 await brain.init()
@@ -27,7 +27,7 @@ await brain.init()
 ### Custom Configuration
 
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   // Storage configuration
   storage: {
     type: 'filesystem',  // or 's3', 'opfs', 'memory'
@@ -193,7 +193,7 @@ const results = await brain.find({
 
 ```typescript
 // Configure for streaming
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new EntityRegistryAugmentation(),  // Deduplication
     new BatchProcessingAugmentation({ batchSize: 100 })  // Batching
@@ -220,7 +220,7 @@ async function processStream(item) {
 
 ### Development (Memory)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { type: 'memory' }
 })
 // Fast, temporary, perfect for testing
@@ -228,7 +228,7 @@ const brain = new BrainyData({
 
 ### Production (FileSystem)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 'filesystem',
     path: '/var/lib/brainy'
@@ -239,7 +239,7 @@ const brain = new BrainyData({
 
 ### Cloud (S3)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: {
     type: 's3',
     bucket: 'my-brainy-data',
@@ -251,7 +251,7 @@ const brain = new BrainyData({
 
 ### Browser (OPFS)
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { type: 'opfs' }
 })
 // Browser-native, persistent, offline-capable
@@ -279,7 +279,7 @@ for (const rel of relationships) {
 
 ### 2. Enable Caching
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   cache: {
     enabled: true,
     maxSize: 1000,
@@ -298,7 +298,7 @@ const results = await brain.search("query", {
 
 ### 4. Index Frequently Queried Fields
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   indexedFields: ['category', 'userId', 'timestamp']
 })
 ```

@@ -5,14 +5,14 @@
  * This validates core database operations without ONNX memory issues
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧠 Testing Brainy Core (No Embeddings)')
 console.log('=' + '='.repeat(50))
 
 async function testCoreFeatures() {
   try {
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false,
       // Disable embedding features for this test

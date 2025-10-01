@@ -4,12 +4,12 @@
  * 🚀 Quick Production Validation - Focus on Core Functionality
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🚀 Brainy 2.0 - Quick Production Validation')
 console.log('=' + '='.repeat(40))
 
-const brain = new BrainyData({ storage: { type: 'memory' }, verbose: false })
+const brain = new Brainy({ storage: { type: 'memory' }, verbose: false })
 
 try {
   // Test 1: Initialize

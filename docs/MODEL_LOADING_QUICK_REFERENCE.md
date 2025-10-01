@@ -4,14 +4,14 @@
 
 ### ✅ Development (Zero Config)
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init() // Downloads automatically (FP32 default)
 ```
 
 ### ⚡ Development (Optimized - v2.8.0+)
 ```typescript
 // 75% smaller models, 99% accuracy
-const brain = new BrainyData({
+const brain = new Brainy({
   embeddingOptions: { dtype: 'q8' }
 })
 await brain.init()
@@ -55,8 +55,8 @@ export BRAINY_ALLOW_REMOTE_MODELS=false
 ```html
 <!-- Automatic - no setup needed -->
 <script type="module">
-  import { BrainyData } from 'brainy'
-  const brain = new BrainyData()
+  import { Brainy } from 'brainy'
+  const brain = new Brainy()
   await brain.init() // Works in browser
 </script>
 ```

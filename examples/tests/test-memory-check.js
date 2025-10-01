@@ -9,12 +9,12 @@ console.log('ORT_INTRA_OP_NUM_THREADS:', process.env.ORT_INTRA_OP_NUM_THREADS)
 console.log('ORT_INTER_OP_NUM_THREADS:', process.env.ORT_INTER_OP_NUM_THREADS)
 
 // Now test with minimal embedding
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 async function testMinimalSearch() {
   try {
     console.log('\nInitializing Brainy...')
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false
     })

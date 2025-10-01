@@ -21,9 +21,9 @@ The current NLP implementation supports:
 ## Basic Usage
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // Simply ask in natural language

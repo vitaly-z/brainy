@@ -21,7 +21,7 @@ Enterprise features on our roadmap.
 **Everyone gets bank-level security features:**
 
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   security: {
     encryption: 'aes-256-gcm',        // Military-grade encryption
     keyRotation: true,                // Automatic key rotation
@@ -47,7 +47,7 @@ const brain = new BrainyData({
 
 ```typescript
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
       enabled: true,                    // Write-ahead logging
       redundancy: 3,                    // Triple redundancy
@@ -102,7 +102,7 @@ const performance = {
 ```typescript
 import { MonitoringAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new MonitoringAugmentation({
       metrics: 'all',                  // Complete metrics
@@ -171,7 +171,7 @@ await brain.syncWith({
 
 ```typescript
 // Same architecture Netflix uses, free for you
-const brain = new BrainyData({
+const brain = new Brainy({
   clustering: {
     enabled: true,                   // Distributed mode
     sharding: 'automatic',           // Auto-sharding
@@ -197,7 +197,7 @@ const brain = new BrainyData({
 **Everyone gets compliance tools:**
 
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   compliance: {
     gdpr: {
       rightToDelete: true,           // Automatic PII deletion
@@ -235,7 +235,7 @@ const brain = new BrainyData({
 
 ```typescript
 // Advanced AI capabilities for everyone
-const brain = new BrainyData({
+const brain = new Brainy({
   ai: {
     embeddings: 'state-of-the-art',  // Best models available
     dimensions: 1536,                 // High-precision vectors
@@ -267,7 +267,7 @@ const anomalies = await brain.detectAnomalies()
 
 ```typescript
 // CI/CD and DevOps features
-const brain = new BrainyData({
+const brain = new Brainy({
   operations: {
     blueGreen: true,                 // Zero-downtime deployments
     canary: true,                    // Gradual rollouts
@@ -316,7 +316,7 @@ Your hobby project today might be tomorrow's unicorn startup. With Brainy, you w
 ### Startups
 ```typescript
 // A 2-person startup gets the same features as Amazon
-const startup = new BrainyData()
+const startup = new Brainy()
 // ✓ Full durability
 // ✓ Complete security
 // ✓ Unlimited scale
@@ -326,7 +326,7 @@ const startup = new BrainyData()
 ### Education
 ```typescript
 // Students learn with production-grade tools
-const classroom = new BrainyData()
+const classroom = new Brainy()
 // ✓ No feature restrictions
 // ✓ Real enterprise experience
 // ✓ Free forever
@@ -335,7 +335,7 @@ const classroom = new BrainyData()
 ### Non-Profits
 ```typescript
 // NGOs get enterprise features without enterprise costs
-const nonprofit = new BrainyData()
+const nonprofit = new Brainy()
 // ✓ Compliance tools
 // ✓ Security features
 // ✓ Scale for impact
@@ -345,7 +345,7 @@ const nonprofit = new BrainyData()
 ### Enterprises
 ```typescript
 // Enterprises get everything plus peace of mind
-const enterprise = new BrainyData()
+const enterprise = new Brainy()
 // ✓ Proven at scale
 // ✓ Community tested
 // ✓ No vendor lock-in
@@ -397,10 +397,10 @@ npm install brainy
 ```
 
 ```typescript
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
 // Create your enterprise-grade database
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 // You're now running the same tech as Fortune 500 companies

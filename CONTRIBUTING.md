@@ -135,11 +135,11 @@ npm run test:watch
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { BrainyData } from '../src'
+import { Brainy } from '../src'
 
 describe('Feature Name', () => {
   it('should do something specific', async () => {
-    const brain = new BrainyData()
+    const brain = new Brainy()
     await brain.init()
     
     // Test implementation
@@ -184,16 +184,16 @@ import { BrainyAugmentation } from '../types'
 export class MyAugmentation extends BrainyAugmentation {
   name = 'MyAugmentation'
   
-  async onInit(brain: BrainyData): Promise<void> {
+  async onInit(brain: Brainy): Promise<void> {
     // Initialize augmentation
   }
   
-  async onAdd(item: any, brain: BrainyData): Promise<any> {
+  async onAdd(item: any, brain: Brainy): Promise<any> {
     // Process before adding
     return item
   }
   
-  async onSearch(query: any, results: any[], brain: BrainyData): Promise<any[]> {
+  async onSearch(query: any, results: any[], brain: Brainy): Promise<any[]> {
     // Process search results
     return results
   }
@@ -236,10 +236,10 @@ Add examples for new features:
 
 ```typescript
 // examples/feature-name.ts
-import { BrainyData } from 'brainy'
+import { Brainy } from 'brainy'
 
 async function exampleUsage() {
-  const brain = new BrainyData()
+  const brain = new Brainy()
   await brain.init()
   
   // Show feature usage

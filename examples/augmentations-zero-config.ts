@@ -5,14 +5,14 @@
  * Augmentations extend Brainy without any complex setup.
  */
 
-import { BrainyData } from '../src/index.js'
+import { Brainy } from '../src/index.js'
 import { EntityRegistryAugmentation } from '../src/augmentations/entityRegistryAugmentation.js'
 import { BatchProcessingAugmentation } from '../src/augmentations/batchProcessingAugmentation.js'
 import { APIServerAugmentation } from '../src/augmentations/apiServerAugmentation.js'
 
 async function main() {
   // Create Brainy - zero config!
-  const brain = new BrainyData()
+  const brain = new Brainy()
   
   // Register augmentations - they just work!
   brain.augmentations.register(new EntityRegistryAugmentation()) // Deduplication

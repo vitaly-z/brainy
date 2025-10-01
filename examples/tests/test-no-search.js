@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 // Test without search to avoid memory issues
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🧪 Brainy Test (No Search)')
 console.log('===========================')
 
 async function testNoSearch() {
   try {
-    const brain = new BrainyData({ 
+    const brain = new Brainy({ 
       storage: { forceMemoryStorage: true },
       verbose: false 
     })

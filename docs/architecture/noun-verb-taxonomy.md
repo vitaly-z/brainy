@@ -41,8 +41,8 @@ const data = await brain1.export()
 await brain2.import(data)
 
 // Or sync between different storage backends
-const cloudBrain = new BrainyData({ storage: 's3' })
-const localBrain = new BrainyData({ storage: 'filesystem' })
+const cloudBrain = new Brainy({ storage: 's3' })
+const localBrain = new Brainy({ storage: 'filesystem' })
 await cloudBrain.sync(localBrain) // Types match perfectly
 ```
 

@@ -2,7 +2,7 @@
  * Test script to verify storage augmentation system works
  */
 
-import { BrainyData } from './dist/brainyData.js'
+import { Brainy } from '../../dist/index.js'
 import { 
   MemoryStorageAugmentation,
   FileSystemStorageAugmentation 
@@ -13,7 +13,7 @@ console.log('=' .repeat(50))
 
 async function test1_ZeroConfig() {
   console.log('\n1. Zero-Config Test')
-  const brain = new BrainyData()
+  const brain = new Brainy()
   await brain.init()
   
   await brain.add('test', { content: 'Zero-config test' })
@@ -25,7 +25,7 @@ async function test1_ZeroConfig() {
 
 async function test2_ConfigBased() {
   console.log('\n2. Config-Based Storage Test')
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: {
       forceMemoryStorage: true
     }
@@ -41,7 +41,7 @@ async function test2_ConfigBased() {
 
 async function test3_AugmentationOverride() {
   console.log('\n3. Augmentation Override Test')
-  const brain = new BrainyData()
+  const brain = new Brainy()
   
   // Register storage augmentation BEFORE init
   brain.augmentations.register(new MemoryStorageAugmentation('test-memory'))
@@ -59,7 +59,7 @@ async function test4_BackwardCompatibility() {
   console.log('\n4. Backward Compatibility Test')
   
   // Old style with rootDirectory config
-  const brain = new BrainyData({
+  const brain = new Brainy({
     storage: {
       rootDirectory: './test-data',
       forceFileSystemStorage: true

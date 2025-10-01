@@ -7,7 +7,7 @@ Brainy uses AI embedding models to understand and process your data. This guide 
 **For most developers, no configuration is needed:**
 
 ```typescript
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init() // Models load automatically
 ```
 
@@ -38,21 +38,21 @@ Brainy tries multiple sources in this order:
 ### Browser
 ```typescript
 // Automatically configured for browsers
-const brain = new BrainyData() // Works in React, Vue, vanilla JS
+const brain = new Brainy() // Works in React, Vue, vanilla JS
 await brain.init() // Downloads models via CDN
 ```
 
 ### Node.js Development
 ```typescript
 // Zero config - downloads to ./models/
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init() // Downloads once, cached forever
 ```
 
 ### Production Server
 ```typescript
 // Preload models during build/deployment
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init() // Uses cached local models
 ```
 
@@ -87,7 +87,7 @@ ls ./models/Xenova/all-MiniLM-L6-v2/
 
 ### Custom Model Path
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   embedding: {
     cacheDir: './custom-models'
   }
@@ -213,7 +213,7 @@ chmod 755 ./models
 export BRAINY_MODELS_PATH=/tmp/brainy-models
 
 # Or use memory-only storage
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { forceMemoryStorage: true }
 })
 ```
@@ -223,7 +223,7 @@ const brain = new BrainyData({
 ### Development
 ```typescript
 // ✅ Zero config - just works
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 ```
 
@@ -259,7 +259,7 @@ RUN test -f ./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx
 ### Lambda/Serverless
 ```typescript
 // ✅ Models in deployment package
-const brain = new BrainyData({
+const brain = new Brainy({
   embedding: {
     localFilesOnly: true, // No downloads in lambda
     cacheDir: './models'  // Bundled with deployment
@@ -300,7 +300,7 @@ const response = await openai.embeddings.create({
 })
 
 // After: Local Brainy embeddings
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init() // One-time setup
 const id = await brain.add("Your text", { nounType: 'content' }) // Embedded automatically
 ```
@@ -312,7 +312,7 @@ from sentence_transformers import SentenceTransformer
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # After: JavaScript Brainy (same model!)
-const brain = new BrainyData() // Uses same all-MiniLM-L6-v2
+const brain = new Brainy() // Uses same all-MiniLM-L6-v2
 await brain.init()
 ```
 
@@ -320,7 +320,7 @@ await brain.init()
 
 ### Custom Embedding Options
 ```typescript
-const brain = new BrainyData({
+const brain = new Brainy({
   embedding: {
     model: 'Xenova/all-MiniLM-L6-v2', // Default
     dtype: 'q8',                       // Quantized for speed
@@ -341,7 +341,7 @@ const customEmbedder = createEmbeddingFunction({
   dtype: 'fp32' // Higher precision
 })
 
-const brain = new BrainyData({
+const brain = new Brainy({
   embeddingFunction: customEmbedder
 })
 ```

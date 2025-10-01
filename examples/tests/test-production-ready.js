@@ -7,7 +7,7 @@
  * Tests: search(), find(), clustering, Triple Intelligence, Brain Patterns
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 const TEST_TIMEOUT = 30000 // 30 seconds per operation
 
@@ -39,7 +39,7 @@ async function testProductionFunctionality() {
   try {
     // 1. Initialize Brainy
     console.log('1️⃣ Initializing Brainy with real AI models...')
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: { forceMemoryStorage: true },
       verbose: false
     })

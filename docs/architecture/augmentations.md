@@ -15,7 +15,7 @@ High-performance deduplication for streaming data ingestion.
 ```typescript
 import { EntityRegistryAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new EntityRegistryAugmentation({
       maxCacheSize: 100000,      // Track up to 100k unique entities
@@ -41,7 +41,7 @@ Enterprise-grade durability and crash recovery.
 
 ```typescript
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
       checkpointInterval: 1000,  // Checkpoint every 1000 operations
       compression: true,          // Enable log compression
@@ -53,7 +53,7 @@ const brain = new BrainyData({
 // All operations are now durably logged
 
 // Recover from crash
-const recovered = new BrainyData({ 
+const recovered = new Brainy({ 
 })
 ```
 
@@ -71,7 +71,7 @@ AI-powered relationship strength calculation.
 ```typescript
 import { IntelligentVerbScoringAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new IntelligentVerbScoringAugmentation({
       factors: {
@@ -111,7 +111,7 @@ Automatically extracts and registers entities from text.
 ```typescript
 import { AutoRegisterEntitiesAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new AutoRegisterEntitiesAugmentation({
       types: ['person', 'organization', 'location', 'product'],
@@ -147,7 +147,7 @@ Optimizes bulk operations for maximum throughput.
 ```typescript
 import { BatchProcessingAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new BatchProcessingAugmentation({
       batchSize: 100,
@@ -178,7 +178,7 @@ Intelligent multi-level caching system.
 ```typescript
 import { CachingAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new CachingAugmentation({
       levels: {
@@ -211,7 +211,7 @@ Reduces storage size while maintaining query performance.
 ```typescript
 import { CompressionAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new CompressionAugmentation({
       algorithm: 'brotli',
@@ -240,7 +240,7 @@ Real-time performance monitoring and metrics.
 ```typescript
 import { MonitoringAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new MonitoringAugmentation({
       metrics: ['operations', 'latency', 'cache', 'memory'],
@@ -279,7 +279,7 @@ brain.on('metrics', (metrics) => {
 ```typescript
 import { NeuralImportAugmentation } from 'brainy'
 
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     new NeuralImportAugmentation({
       autoStructure: true,
@@ -375,7 +375,7 @@ import { Augmentation } from 'brainy'
 class CustomAugmentation extends Augmentation {
   name = 'CustomAugmentation'
   
-  async onInit(brain: BrainyData): Promise<void> {
+  async onInit(brain: Brainy): Promise<void> {
     // Initialize augmentation
     console.log('Custom augmentation initialized')
   }
@@ -408,7 +408,7 @@ class CustomAugmentation extends Augmentation {
 }
 
 // Use custom augmentation
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [new CustomAugmentation()]
 })
 ```
@@ -420,7 +420,7 @@ const brain = new BrainyData({
 ```typescript
 interface AugmentationHooks {
   // Initialization
-  onInit(brain: BrainyData): Promise<void>
+  onInit(brain: Brainy): Promise<void>
   onShutdown(): Promise<void>
   
   // Noun operations
@@ -459,7 +459,7 @@ interface AugmentationHooks {
 
 ```typescript
 // Combine multiple augmentations
-const brain = new BrainyData({
+const brain = new Brainy({
   augmentations: [
     // Order matters - executed in sequence
     new EntityRegistryAugmentation(),    // Deduplication first

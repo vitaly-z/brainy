@@ -5,7 +5,7 @@
  * This validates that the flag prevents remote model downloads and works with local models only
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 
@@ -24,8 +24,8 @@ async function testLocalModelsOnly() {
   console.log(`Set BRAINY_MODELS_PATH=${process.env.BRAINY_MODELS_PATH}`)
   
   try {
-    console.log('✅ Creating BrainyData with local models only...')
-    const brain = new BrainyData()
+    console.log('✅ Creating Brainy with local models only...')
+    const brain = new Brainy()
     
     console.log('✅ Initializing (should use local models)...')
     await brain.init()

@@ -9,12 +9,12 @@
 #### **1. Constructor & Initialization**
 ```typescript
 // Clean, consistent initialization
-const brain = new BrainyData(config?)
+const brain = new Brainy(config?)
 await brain.init()  // Always required
 
 // Storage auto-detection works seamlessly
-const brain = new BrainyData({ storage: { forceMemoryStorage: true } })
-const brain = new BrainyData({ storage: { path: './my-data' } })
+const brain = new Brainy({ storage: { forceMemoryStorage: true } })
+const brain = new Brainy({ storage: { path: './my-data' } })
 ```
 
 #### **2. Data Operations (CRUD)**
@@ -135,7 +135,7 @@ brain.storage.vacuum()
 #### **1. Beginner Flow (Simple & Intuitive)**
 ```typescript
 // Dead simple - just works
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.init()
 
 await brain.add('My first document', { nounType: NounType.Document })
@@ -147,7 +147,7 @@ const groups = await brain.clusters()
 #### **2. Intermediate Flow (More Control)**
 ```typescript
 // Add configuration and options
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { path: './my-brainy-db' },
   neural: { cacheSize: 5000 }
 })
@@ -267,9 +267,9 @@ try {
 ### **✅ 4. Type Safety**
 ```typescript
 // Excellent TypeScript support
-import { BrainyData, NounType, VerbType } from '@soulcraft/brainy'
+import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
-const brain = new BrainyData()
+const brain = new Brainy()
 await brain.add('content', { nounType: NounType.Document, title: 'My Doc' })
 //                          ^^^^^^^^^^^^^^^^  // IDE autocomplete!
 ```
@@ -277,10 +277,10 @@ await brain.add('content', { nounType: NounType.Document, title: 'My Doc' })
 ### **✅ 5. Flexible Configuration**
 ```typescript
 // Zero-config (just works)
-const brain = new BrainyData()
+const brain = new Brainy()
 
 // Full control when needed
-const brain = new BrainyData({
+const brain = new Brainy({
   storage: { 
     adapter: 'file',
     path: './my-data',

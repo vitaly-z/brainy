@@ -5,13 +5,13 @@
  * Tests that core functionality works without heavy model loading
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 
 console.log('🚀 Brainy 2.0 - Instant Core API Validation')
 console.log('=' + '='.repeat(40))
 
 // Skip heavy initialization, focus on API validation
-const brain = new BrainyData({ 
+const brain = new Brainy({ 
   storage: { type: 'memory' }, 
   verbose: false,
   skipModelDownload: true // Skip heavy model operations
@@ -32,8 +32,8 @@ function test(name, condition) {
 try {
   console.log('\n🔧 Core API Structure Tests...')
   
-  // Test 1: BrainyData class instantiated
-  test('BrainyData class instantiation', brain instanceof Object)
+  // Test 1: Brainy class instantiated
+  test('Brainy class instantiation', brain instanceof Object)
   
   // Test 2: Core methods exist
   test('addNoun method exists', typeof brain.addNoun === 'function')

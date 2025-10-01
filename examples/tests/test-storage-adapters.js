@@ -4,7 +4,7 @@
  * Test all storage adapters for Brainy 2.0
  */
 
-import { BrainyData } from './dist/index.js'
+import { Brainy } from './dist/index.js'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 
@@ -16,7 +16,7 @@ async function testStorageAdapter(name, config) {
   
   try {
     // Initialize with specific storage
-    const brain = new BrainyData({
+    const brain = new Brainy({
       storage: config,
       verbose: false
     })
