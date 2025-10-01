@@ -1115,32 +1115,40 @@ export class FileSystemStorage extends BaseStorage {
     const startIndex = options.cursor ? parseInt(options.cursor, 10) : 0
     
     try {
-      // Production-scale optimization: Use persisted count for total instead of scanning
-      const totalCount = this.totalVerbCount || 0
+      // Get actual verb files first (critical for accuracy)
+      const verbFiles = await this.getAllShardedFiles(this.verbsDir)
+      verbFiles.sort() // Consistent ordering for pagination
+
+      // Use actual file count - don't trust cached totalVerbCount
+      // This prevents accessing undefined array elements
+      const actualFileCount = verbFiles.length
 
       // For large datasets, warn about performance
-      if (totalCount > 1000000) {
-        console.warn(`Very large verb dataset detected (${totalCount} verbs). Performance may be degraded. Consider database storage for optimal performance.`)
+      if (actualFileCount > 1000000) {
+        console.warn(`Very large verb dataset detected (${actualFileCount} verbs). Performance may be degraded. Consider database storage for optimal performance.`)
       }
 
-      // Calculate pagination bounds
-      const endIndex = Math.min(startIndex + limit, totalCount)
-      const hasMore = endIndex < totalCount
-
       // For production-scale datasets, use streaming approach
-      if (totalCount > 50000) {
+      if (actualFileCount > 50000) {
         return await this.getVerbsWithPaginationStreaming(options, startIndex, limit)
       }
 
-      // For smaller datasets, use the current approach (with optimizations)
-      const verbFiles = await this.getAllShardedFiles(this.verbsDir)
-      verbFiles.sort() // This is still acceptable for <50k files
-      
+      // Calculate pagination bounds using ACTUAL file count
+      const endIndex = Math.min(startIndex + limit, actualFileCount)
+
       // Load the requested page of verbs
       const verbs: GraphVerb[] = []
-      
+      let successfullyLoaded = 0
+
       for (let i = startIndex; i < endIndex; i++) {
         const file = verbFiles[i]
+
+        // CRITICAL: Null-safety check for undefined array elements
+        if (!file) {
+          console.warn(`Unexpected undefined file at index ${i}, skipping`)
+          continue
+        }
+
         const id = file.replace('.json', '')
         
         try {
@@ -1206,44 +1214,49 @@ export class FileSystemStorage extends BaseStorage {
           // Apply filters if provided
           if (options.filter) {
             const filter = options.filter
-            
+
             // Check verbType filter
             if (filter.verbType) {
               const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
               const verbType = verb.type || verb.verb
               if (verbType && !types.includes(verbType)) continue
             }
-            
+
             // Check sourceId filter
             if (filter.sourceId) {
               const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
               const sourceId = verb.sourceId || verb.source
               if (!sourceId || !sources.includes(sourceId)) continue
             }
-            
+
             // Check targetId filter
             if (filter.targetId) {
               const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
               const targetId = verb.targetId || verb.target
               if (!targetId || !targets.includes(targetId)) continue
             }
-            
+
             // Check service filter
             if (filter.service && metadata?.service) {
               const services = Array.isArray(filter.service) ? filter.service : [filter.service]
               if (!services.includes(metadata.service)) continue
             }
           }
-          
+
           verbs.push(verb)
+          successfullyLoaded++
         } catch (error) {
           console.warn(`Failed to read verb ${id}:`, error)
         }
       }
-      
+
+      // CRITICAL FIX: hasMore based on actual file count, not cached totalVerbCount
+      // Also verify we successfully loaded items (prevents infinite loops on corrupted storage)
+      const hasMore = (endIndex < actualFileCount) && (successfullyLoaded > 0 || startIndex === 0)
+
       return {
         items: verbs,
-        totalCount,
+        totalCount: actualFileCount, // Return actual count, not cached value
         hasMore,
         nextCursor: hasMore ? String(endIndex) : undefined
       }
@@ -1918,7 +1931,6 @@ export class FileSystemStorage extends BaseStorage {
     nextCursor?: string
   }> {
     const verbs: GraphVerb[] = []
-    const totalCount = this.totalVerbCount || 0
     let processedCount = 0
     let skippedCount = 0
     let resultCount = 0
@@ -1927,7 +1939,8 @@ export class FileSystemStorage extends BaseStorage {
 
     try {
       // Stream through sharded directories efficiently
-      const hasMore = await this.streamShardedFiles(
+      // hasMore=false means we reached the end of files, hasMore=true means streaming stopped early
+      const streamingHasMore = await this.streamShardedFiles(
         this.verbsDir,
         depth,
         async (filename: string, filePath: string) => {
@@ -1939,7 +1952,7 @@ export class FileSystemStorage extends BaseStorage {
 
           // Stop if we have enough results
           if (resultCount >= limit) {
-            return false // stop streaming
+            return false // stop streaming - more files exist
           }
 
           try {
@@ -2011,11 +2024,14 @@ export class FileSystemStorage extends BaseStorage {
         }
       )
 
-      const finalHasMore = (startIndex + resultCount) < totalCount
+      // CRITICAL FIX: Use streaming result for hasMore, not cached totalVerbCount
+      // streamingHasMore=false means we exhausted all files
+      // Also verify we loaded items to prevent infinite loops
+      const finalHasMore = streamingHasMore && (resultCount > 0 || startIndex === 0)
 
       return {
         items: verbs,
-        totalCount,
+        totalCount: this.totalVerbCount || undefined, // Return cached count as hint only
         hasMore: finalHasMore,
         nextCursor: finalHasMore ? String(startIndex + resultCount) : undefined
       }
