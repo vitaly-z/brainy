@@ -81,11 +81,15 @@
     "format:check": "prettier --check \"src/**/*.{ts,js}\"",
     "migrate:logger": "tsx scripts/migrate-to-structured-logger.ts",
     "migrate:logger:dry": "tsx scripts/migrate-to-structured-logger.ts --dry-run",
-    "release": "standard-version",
-    "release:patch": "standard-version --release-as patch",
-    "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major",
-    "release:dry": "standard-version --dry-run"
+    "release": "./scripts/release.sh patch",
+    "release:patch": "./scripts/release.sh patch",
+    "release:minor": "./scripts/release.sh minor",
+    "release:major": "./scripts/release.sh major",
+    "release:dry": "./scripts/release.sh patch --dry-run",
+    "release:standard-version": "standard-version",
+    "release:standard-version:patch": "standard-version --release-as patch",
+    "release:standard-version:minor": "standard-version --release-as minor",
+    "release:standard-version:major": "standard-version --release-as major"
   },
   "keywords": [
     "ai-database",
