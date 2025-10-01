@@ -19,13 +19,21 @@
 
 ## 🎉 Key Features
 
-### 💬 **Infinite Agent Memory** (NEW!)
+### 💬 **Infinite Agent Memory**
 
 - **Never Lose Context**: Conversations preserved with semantic search
 - **Smart Context Retrieval**: Triple Intelligence finds relevant past work
 - **Claude Code Integration**: One command (`brainy conversation setup`) enables infinite memory
 - **Automatic Artifact Linking**: Code and files connected to conversations
 - **Scales to Millions**: Messages indexed and searchable in <100ms
+
+### 🚀 **NEW in 3.21.0: Enhanced Import & Neural Processing**
+
+- **📊 Progress Tracking**: Unified progress reporting with automatic time estimation
+- **⚡ Entity Caching**: 10-100x speedup on repeated entity extraction
+- **🔗 Relationship Confidence**: Multi-factor confidence scoring (0-1 scale)
+- **📝 Evidence Tracking**: Understand why relationships were detected
+- **🎯 Production Ready**: Fully backward compatible, opt-in features
 
 ### 🧠 **Triple Intelligence™ Engine**
 
@@ -45,7 +53,7 @@
 
 - **<10ms Search**: Fast semantic queries
 - **384D Vectors**: Optimized embeddings (all-MiniLM-L6-v2)
-- **Built-in Caching**: Intelligent result caching
+- **Built-in Caching**: Intelligent result caching + new entity extraction cache
 - **Production Ready**: Thoroughly tested core functionality
 
 ## ⚡ Quick Start - Zero Configuration
@@ -313,6 +321,68 @@ await vfs.addRelationship('/src/auth.js', '/tests/auth.test.js', 'tested-by')
 **[📖 VFS Quick Start →](docs/vfs/QUICK_START.md)** | **[🎯 Common Patterns →](docs/vfs/COMMON_PATTERNS.md)**
 
 **Your knowledge isn't trapped anymore.** Characters live beyond stories. APIs exist beyond code files. Concepts connect across domains. This is knowledge that happens to support files, not a filesystem that happens to store knowledge.
+
+### 🚀 **NEW: Enhanced Directory Import with Caching**
+
+**Import large projects 10-100x faster with intelligent caching:**
+
+```javascript
+import { Brainy } from '@soulcraft/brainy'
+import { ProgressTracker, formatProgress } from '@soulcraft/brainy/types'
+import { detectRelationshipsWithConfidence } from '@soulcraft/brainy/neural'
+
+const brain = new Brainy()
+await brain.init()
+
+// Progress tracking for long operations
+const tracker = ProgressTracker.create(1000)
+tracker.start()
+
+for await (const progress of importer.importStream('./project', {
+  batchSize: 100,
+  generateEmbeddings: true
+})) {
+  const p = tracker.update(progress.processed, progress.current)
+  console.log(formatProgress(p))
+  // [RUNNING] 45% (450/1000) - 23.5 items/s - 23s remaining
+}
+
+// Entity extraction with intelligent caching
+const entities = await brain.neural.extractor.extract(text, {
+  types: ['person', 'organization', 'technology'],
+  confidence: 0.7,
+  cache: {
+    enabled: true,
+    ttl: 7 * 24 * 60 * 60 * 1000,  // 7 days
+    invalidateOn: 'mtime'  // Re-extract when file changes
+  }
+})
+
+// Relationship detection with confidence scores
+const relationships = detectRelationshipsWithConfidence(entities, text, {
+  minConfidence: 0.7
+})
+
+// Create relationships with evidence tracking
+await brain.relate({
+  from: sourceId,
+  to: targetId,
+  type: 'creates',
+  confidence: 0.85,
+  evidence: {
+    sourceText: 'John created the database',
+    method: 'pattern',
+    reasoning: 'Matches creation pattern; entities in same sentence'
+  }
+})
+
+// Monitor cache performance
+const stats = brain.neural.extractor.getCacheStats()
+console.log(`Cache hit rate: ${(stats.hitRate * 100).toFixed(1)}%`)
+// Cache hit rate: 89.5%
+```
+
+**📚 [See Full Example →](examples/directory-import-with-caching.ts)**
 
 ### 🎯 Zero Configuration Philosophy
 

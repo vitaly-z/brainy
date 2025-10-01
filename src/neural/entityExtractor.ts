@@ -1,11 +1,20 @@
 /**
  * Neural Entity Extractor using Brainy's NounTypes
  * Uses embeddings and similarity matching for accurate type detection
+ *
+ * PRODUCTION-READY with caching support
  */
 
 import { NounType } from '../types/graphTypes.js'
 import { Vector } from '../coreTypes.js'
 import type { Brainy } from '../brainy.js'
+import {
+  EntityExtractionCache,
+  EntityCacheOptions,
+  generateFileCacheKey,
+  generateContentCacheKey,
+  computeContentHash
+} from './entityExtractionCache.js'
 
 export interface ExtractedEntity {
   text: string
@@ -18,13 +27,17 @@ export interface ExtractedEntity {
 
 export class NeuralEntityExtractor {
   private brain: Brainy | Brainy<any>
-  
+
   // Type embeddings for similarity matching
   private typeEmbeddings: Map<NounType, Vector> = new Map()
   private initialized = false
-  
-  constructor(brain: Brainy | Brainy<any>) {
+
+  // Entity extraction cache
+  private cache: EntityExtractionCache
+
+  constructor(brain: Brainy | Brainy<any>, cacheOptions?: EntityCacheOptions) {
     this.brain = brain
+    this.cache = new EntityExtractionCache(cacheOptions)
   }
   
   /**
@@ -80,6 +93,7 @@ export class NeuralEntityExtractor {
   
   /**
    * Extract entities from text using neural matching
+   * Now with caching support for performance
    */
   async extract(
     text: string,
@@ -88,10 +102,34 @@ export class NeuralEntityExtractor {
       confidence?: number
       includeVectors?: boolean
       neuralMatching?: boolean
+      path?: string  // File path for cache key
+      cache?: {      // Cache options
+        enabled?: boolean
+        ttl?: number
+        invalidateOn?: 'mtime' | 'hash'
+        mtime?: number  // File modification time
+      }
     }
   ): Promise<ExtractedEntity[]> {
     await this.initializeTypeEmbeddings()
-    
+
+    // Check cache if enabled
+    if (options?.cache?.enabled !== false && (options?.path || options?.cache?.invalidateOn === 'hash')) {
+      const cacheKey = options.path
+        ? generateFileCacheKey(options.path)
+        : generateContentCacheKey(text)
+
+      const cacheOptions = {
+        mtime: options.cache?.mtime,
+        contentHash: !options.path ? computeContentHash(text) : undefined
+      }
+
+      const cached = this.cache.get(cacheKey, cacheOptions)
+      if (cached) {
+        return cached
+      }
+    }
+
     const entities: ExtractedEntity[] = []
     const minConfidence = options?.confidence || 0.6
     const targetTypes = options?.types || Object.values(NounType)
@@ -147,9 +185,24 @@ export class NeuralEntityExtractor {
         entities.push(entity)
       }
     }
-    
+
     // Remove duplicates and overlaps
-    return this.deduplicateEntities(entities)
+    const deduplicatedEntities = this.deduplicateEntities(entities)
+
+    // Store in cache if enabled
+    if (options?.cache?.enabled !== false && (options?.path || options?.cache?.invalidateOn === 'hash')) {
+      const cacheKey = options.path
+        ? generateFileCacheKey(options.path)
+        : generateContentCacheKey(text)
+
+      this.cache.set(cacheKey, deduplicatedEntities, {
+        ttl: options.cache?.ttl,
+        mtime: options.cache?.mtime,
+        contentHash: !options.path ? computeContentHash(text) : undefined
+      })
+    }
+
+    return deduplicatedEntities
   }
   
   /**
@@ -389,7 +442,46 @@ export class NeuralEntityExtractor {
         result.push(entity)
       }
     }
-    
+
+
     return result
+  }
+
+  /**
+   * Invalidate cache entry for a specific path or hash
+   */
+  invalidateCache(pathOrHash: string): boolean {
+    const cacheKey = pathOrHash.includes(':')
+      ? pathOrHash
+      : generateFileCacheKey(pathOrHash)
+    return this.cache.invalidate(cacheKey)
+  }
+
+  /**
+   * Invalidate all cache entries matching a prefix
+   */
+  invalidateCachePrefix(prefix: string): number {
+    return this.cache.invalidatePrefix(prefix)
+  }
+
+  /**
+   * Clear all cached entities
+   */
+  clearCache(): void {
+    this.cache.clear()
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return this.cache.getStats()
+  }
+
+  /**
+   * Cleanup expired cache entries
+   */
+  cleanupCache(): number {
+    return this.cache.cleanup()
   }
 }

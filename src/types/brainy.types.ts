@@ -26,6 +26,7 @@ export interface Entity<T = any> {
 
 /**
  * Relation representation (replaces GraphVerb)
+ * Enhanced with confidence scoring and evidence tracking
  */
 export interface Relation<T = any> {
   id: string
@@ -37,6 +38,23 @@ export interface Relation<T = any> {
   service?: string
   createdAt: number
   updatedAt?: number
+
+  // NEW: Confidence and evidence (optional for backward compatibility)
+  confidence?: number  // 0-1 score indicating relationship certainty
+  evidence?: RelationEvidence
+}
+
+/**
+ * Evidence for why a relationship was detected
+ */
+export interface RelationEvidence {
+  sourceText?: string  // Text that indicated this relationship
+  position?: {         // Position in source text
+    start: number
+    end: number
+  }
+  method: 'neural' | 'pattern' | 'structural' | 'explicit'  // How it was detected
+  reasoning?: string   // Human-readable explanation
 }
 
 /**
@@ -88,6 +106,7 @@ export interface UpdateParams<T = any> {
 
 /**
  * Parameters for creating relationships
+ * Enhanced with confidence scoring and evidence tracking
  */
 export interface RelateParams<T = any> {
   from: string                // Source entity ID
@@ -97,6 +116,10 @@ export interface RelateParams<T = any> {
   metadata?: T               // Edge metadata
   bidirectional?: boolean    // Create reverse edge too
   service?: string           // Multi-tenancy
+
+  // NEW: Confidence and evidence (optional)
+  confidence?: number        // Relationship certainty (0-1)
+  evidence?: RelationEvidence  // Why this relationship exists
 }
 
 /**
