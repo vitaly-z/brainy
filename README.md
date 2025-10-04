@@ -631,7 +631,7 @@ const similar = await brain.search(existingContent, {
 ### AI Memory Layer with Context
 
 ```javascript
-// Store conversation with relationships
+// Store messages with relationships
 const userId = await brain.add("User 123", {
     nounType: NounType.User,
     tier: "premium"
@@ -648,7 +648,7 @@ const topicId = await brain.add("Product Support", {
     category: "support"
 })
 
-// Link conversation elements
+// Link message elements
 await brain.relate(userId, messageId, "sent")
 await brain.relate(messageId, topicId, "about")
 
@@ -871,11 +871,6 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 [→ See the Mathematical Proof & Full Taxonomy](docs/architecture/noun-verb-taxonomy.md)
 
 ## 📖 Documentation
-
-### Infinite Agent Memory 💬
-- [Conversation API Overview](docs/conversation/README.md) - **NEW!** Complete conversation management guide
-- [MCP Integration for Claude Code](docs/conversation/MCP_INTEGRATION.md) - **NEW!** One-command setup
-- [API Reference](docs/conversation/API_REFERENCE.md) - **NEW!** Full API documentation
 
 ### Framework Integration
 - [Framework Integration Guide](docs/guides/framework-integration.md) - Complete framework setup guide
