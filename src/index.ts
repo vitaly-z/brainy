@@ -474,27 +474,3 @@ export type {
   MCPServiceOptions,
   MCPTool
 }
-
-// Export Conversation API (Infinite Agent Memory)
-export { ConversationManager, createConversationManager } from './conversation/index.js'
-export { MCPConversationToolset, createConversationToolset } from './mcp/conversationTools.js'
-
-export type {
-  MessageRole,
-  ProblemSolvingPhase,
-  ConversationMessage,
-  ConversationMessageMetadata,
-  ConversationThread,
-  ConversationThreadMetadata,
-  ConversationContext,
-  RankedMessage,
-  SaveMessageOptions,
-  ContextRetrievalOptions,
-  ConversationSearchOptions,
-  ConversationSearchResult,
-  ConversationTheme,
-  ArtifactOptions,
-  ConversationStats,
-  CompactionOptions,
-  CompactionResult
-} from './conversation/types.js'

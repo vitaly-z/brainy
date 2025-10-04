@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.23.0](https://github.com/soulcraftlabs/brainy/compare/v3.22.0...v3.23.0) (2025-10-04)
+
+- refactor: streamline core API surface
+
 ### [3.22.0](https://github.com/soulcraftlabs/brainy/compare/v3.21.0...v3.22.0) (2025-10-01)
 
 - feat: add intelligent import for CSV, Excel, and PDF files (814cbb4)

@@ -19,14 +19,6 @@
 
 ## 🎉 Key Features
 
-### 💬 **Infinite Agent Memory**
-
-- **Never Lose Context**: Conversations preserved with semantic search
-- **Smart Context Retrieval**: Triple Intelligence finds relevant past work
-- **Claude Code Integration**: One command (`brainy conversation setup`) enables infinite memory
-- **Automatic Artifact Linking**: Code and files connected to conversations
-- **Scales to Millions**: Messages indexed and searchable in <100ms
-
 ### 🚀 **NEW in 3.21.0: Enhanced Import & Neural Processing**
 
 - **📊 Progress Tracking**: Unified progress reporting with automatic time estimation
@@ -60,42 +52,6 @@
 
 ```bash
 npm install @soulcraft/brainy
-
-# For Claude Code infinite memory (optional):
-brainy conversation setup
-```
-
-### 💬 **Infinite Memory for Claude Code**
-
-```javascript
-// One-time setup:
-// $ brainy conversation setup
-
-// Claude Code now automatically:
-// - Saves every conversation with embeddings
-// - Retrieves relevant past context
-// - Links code artifacts to conversations
-// - Never loses context or momentum
-
-// Use programmatically:
-import { Brainy } from '@soulcraft/brainy'
-
-const brain = new Brainy()
-await brain.init()
-
-// Save conversations
-await brain.conversation.saveMessage(
-  "How do I implement JWT authentication?",
-  "user",
-  { conversationId: "conv_123" }
-)
-
-// Get relevant context (semantic + temporal + graph)
-const context = await brain.conversation.getRelevantContext(
-  "JWT token validation",
-  { limit: 10, includeArtifacts: true }
-)
-// Returns: Ranked messages, linked code, similar conversations
 ```
 
 ### 🎯 **True Zero Configuration**

@@ -13,7 +13,6 @@ import { coreCommands } from './commands/core.js'
 import { utilityCommands } from './commands/utility.js'
 import { vfsCommands } from './commands/vfs.js'
 import { dataCommands } from './commands/data.js'
-import conversationCommand from './commands/conversation.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -165,55 +164,6 @@ program
   .option('--dimensions <number>', '2D or 3D', '2')
   .option('-o, --output <file>', 'Output file')
   .action(neuralCommands.visualize)
-
-// ===== Conversation Commands (Infinite Memory) =====
-
-program
-  .command('conversation')
-  .alias('conv')
-  .description('💬 Infinite agent memory and context management')
-  .addCommand(
-    new Command('setup')
-      .description('Set up MCP server for Claude Code integration')
-      .action(async () => {
-        await conversationCommand.handler({ action: 'setup', _: [] })
-      })
-  )
-  .addCommand(
-    new Command('search')
-      .description('Search messages across conversations')
-      .requiredOption('-q, --query <query>', 'Search query')
-      .option('-c, --conversation-id <id>', 'Filter by conversation')
-      .option('-r, --role <role>', 'Filter by role')
-      .option('-l, --limit <number>', 'Maximum results', '10')
-      .action(async (options) => {
-        await conversationCommand.handler({ action: 'search', ...options as any, _: [] })
-      })
-  )
-  .addCommand(
-    new Command('context')
-      .description('Get relevant context for a query')
-      .requiredOption('-q, --query <query>', 'Context query')
-      .option('-l, --limit <number>', 'Maximum messages', '10')
-      .action(async (options) => {
-        await conversationCommand.handler({ action: 'context', ...options as any, _: [] })
-      })
-  )
-  .addCommand(
-    new Command('thread')
-      .description('Get full conversation thread')
-      .requiredOption('-c, --conversation-id <id>', 'Conversation ID')
-      .action(async (options) => {
-        await conversationCommand.handler({ action: 'thread', ...options as any, _: [] })
-      })
-  )
-  .addCommand(
-    new Command('stats')
-      .description('Show conversation statistics')
-      .action(async () => {
-        await conversationCommand.handler({ action: 'stats', _: [] })
-      })
-  )
 
 // ===== VFS Commands (Subcommand Group) =====
 
