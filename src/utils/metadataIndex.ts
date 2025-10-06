@@ -1618,26 +1618,26 @@ export class MetadataIndexManager {
           prodLog.warn(`⚠️  FALLBACK: Storage adapter missing getMetadataBatch - using individual calls with concurrency limit`)
           metadataBatch = new Map()
           const CONCURRENCY_LIMIT = 3 // Very conservative limit
-          
+
           for (let i = 0; i < nounIds.length; i += CONCURRENCY_LIMIT) {
             const batch = nounIds.slice(i, i + CONCURRENCY_LIMIT)
             const batchPromises = batch.map(async (id) => {
               try {
-                const metadata = await this.storage.getMetadata(id)
+                const metadata = await this.storage.getNounMetadata(id)
                 return { id, metadata }
               } catch (error) {
                 prodLog.debug(`Failed to read metadata for ${id}:`, error)
                 return { id, metadata: null }
               }
             })
-            
+
             const batchResults = await Promise.all(batchPromises)
             for (const { id, metadata } of batchResults) {
               if (metadata) {
                 metadataBatch.set(id, metadata)
               }
             }
-            
+
             // Yield between batches to prevent socket exhaustion
             await this.yieldToEventLoop()
           }

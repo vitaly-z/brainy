@@ -568,33 +568,33 @@ export class FileSystemStorage extends BaseStorage {
 
     const results = new Map<string, any>()
     const batchSize = 10 // Process 10 files at a time
-    
+
     // Process in batches to avoid overwhelming the filesystem
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize)
-      
+
       const batchPromises = batch.map(async (id) => {
         try {
-          const metadata = await this.getMetadata(id)
+          const metadata = await this.getNounMetadata(id)
           return { id, metadata }
         } catch (error) {
           console.debug(`Failed to read metadata for ${id}:`, error)
           return { id, metadata: null }
         }
       })
-      
+
       const batchResults = await Promise.all(batchPromises)
-      
+
       for (const { id, metadata } of batchResults) {
         if (metadata !== null) {
           results.set(id, metadata)
         }
       }
-      
+
       // Small yield between batches
       await new Promise(resolve => setImmediate(resolve))
     }
-    
+
     return results
   }
 

@@ -477,6 +477,13 @@ export interface StorageAdapter {
   getMetadataBatch?(ids: string[]): Promise<Map<string, any>>
 
   /**
+   * Get noun metadata from storage
+   * @param id The ID of the noun
+   * @returns Promise that resolves to the metadata or null if not found
+   */
+  getNounMetadata(id: string): Promise<any | null>
+
+  /**
    * Save verb metadata to storage
    * @param id The ID of the verb
    * @param metadata The metadata to save

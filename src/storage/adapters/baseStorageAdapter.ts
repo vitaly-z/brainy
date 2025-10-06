@@ -38,6 +38,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
   abstract getMetadata(id: string): Promise<any | null>
 
+  abstract getNounMetadata(id: string): Promise<any | null>
+
   abstract saveVerbMetadata(id: string, metadata: any): Promise<void>
 
   abstract getVerbMetadata(id: string): Promise<any | null>
