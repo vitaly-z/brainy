@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.25.1](https://github.com/soulcraftlabs/brainy/compare/v3.25.0...v3.25.1) (2025-10-07)
+
+
+### 🐛 Bug Fixes
+
+* implement stub methods in Neural API clustering ([1d2da82](https://github.com/soulcraftlabs/brainy/commit/1d2da823ede478e6b1bd5144be58ca4921e951e7))
+
+
+### ✅ Tests
+
+* use memory storage for domain-time clustering tests ([34fb6e0](https://github.com/soulcraftlabs/brainy/commit/34fb6e05b5a04f2c8fc635ca36c9b96ee19e3130))
+
 ### [3.25.0](https://github.com/soulcraftlabs/brainy/compare/v3.24.0...v3.25.0) (2025-10-07)
 
 - test: skip GitBridge Integration test (empty suite) (8939f59)
