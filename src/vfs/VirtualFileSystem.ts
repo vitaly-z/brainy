@@ -2566,7 +2566,25 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return this.getEntityById(entityId)
   }
 
+  /**
+   * Resolve a path to its normalized form
+   * Returns the normalized absolute path (e.g., '/foo/bar/file.txt')
+   */
   async resolvePath(path: string, from?: string): Promise<string> {
+    // Handle relative paths
+    if (!path.startsWith('/') && from) {
+      path = `${from}/${path}`
+    }
+
+    // Normalize path: remove multiple slashes, trailing slashes
+    return path.replace(/\/+/g, '/').replace(/\/$/, '') || '/'
+  }
+
+  /**
+   * Resolve a path to its entity ID
+   * Returns the UUID of the entity representing this path
+   */
+  async resolvePathToId(path: string, from?: string): Promise<string> {
     // Handle relative paths
     if (!path.startsWith('/') && from) {
       path = `${from}/${path}`

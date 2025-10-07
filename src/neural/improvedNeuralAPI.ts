@@ -673,8 +673,27 @@ export class ImprovedNeuralAPI {
    */
   async neighbors(id: string, options: NeighborOptions = {}): Promise<NeighborsResult> {
     const startTime = performance.now()
-    
+
     try {
+      // Validate ID - throw for truly invalid, return empty for non-existent
+      if (!id || id.length < 2) {
+        throw new NeuralAPIError(
+          'Invalid ID: ID must be a non-empty string with at least 2 characters',
+          'INVALID_ID',
+          { id, options }
+        )
+      }
+
+      // For IDs that don't match hex pattern (non-existent but valid format), return empty gracefully
+      if (!this._isValidEntityId(id)) {
+        return {
+          neighbors: [],
+          queryId: id,
+          totalFound: 0,
+          averageSimilarity: 0
+        }
+      }
+
       const cacheKey = `neighbors:${id}:${JSON.stringify(options)}`
       if (this.neighborsCache.has(cacheKey)) {
         return this.neighborsCache.get(cacheKey)!
@@ -1469,9 +1488,16 @@ export class ImprovedNeuralAPI {
   }
 
   private _isVector(value: any): boolean {
-    return Array.isArray(value) && 
-           value.length > 0 && 
+    return Array.isArray(value) &&
+           value.length > 0 &&
            typeof value[0] === 'number'
+  }
+
+  private _isValidEntityId(id: string): boolean {
+    // Validate ID format - must start with 2 hex characters for sharding
+    // This prevents errors in storage layer that uses first 2 chars as shard key
+    if (typeof id !== 'string' || id.length < 2) return false
+    return /^[0-9a-f]{2}/i.test(id.substring(0, 2))
   }
 
   private async _convertToVector(input: any): Promise<Vector> {

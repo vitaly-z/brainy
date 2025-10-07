@@ -76,7 +76,7 @@ export class SimilarityProjection extends BaseProjectionStrategy {
   private async resolvePathToId(vfs: VirtualFileSystem, path: string): Promise<string | null> {
     try {
       // Use REAL VFS public method
-      return await vfs.resolvePath(path)
+      return await vfs.resolvePathToId(path)
     } catch {
       return null
     }

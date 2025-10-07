@@ -451,6 +451,7 @@ export interface IVirtualFileSystem {
   getEntity(path: string): Promise<VFSEntity>
   getEntityById(id: string): Promise<VFSEntity>
   resolvePath(path: string, from?: string): Promise<string>
+  resolvePathToId(path: string, from?: string): Promise<string>
 }
 
 // Export utility type guards
