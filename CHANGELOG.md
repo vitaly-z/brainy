@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.24.0](https://github.com/soulcraftlabs/brainy/compare/v3.23.1...v3.24.0) (2025-10-07)
+
+- feat: simplify sharding to fixed depth-1 for reliability and performance (87515b9)
+
+
 ### [3.23.0](https://github.com/soulcraftlabs/brainy/compare/v3.22.0...v3.23.0) (2025-10-04)
 
 - refactor: streamline core API surface
