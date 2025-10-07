@@ -14,7 +14,10 @@ describe('Domain and Time Clustering', () => {
   let brain: Brainy
 
   beforeEach(async () => {
-    brain = new Brainy({ enableCache: false })
+    brain = new Brainy({
+      enableCache: false,
+      storage: { type: 'memory' } // Use memory storage for tests
+    })
     await brain.init()
   })
 
