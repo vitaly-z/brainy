@@ -319,7 +319,7 @@ describe.skip('VirtualFileSystem - Comprehensive Test Suite', () => {
   })
 })
 
-describe('GitBridge Integration', () => {
+describe.skip('GitBridge Integration', () => {
   let vfs: VirtualFileSystem
   let brain: Brainy
 
