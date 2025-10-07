@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.25.0](https://github.com/soulcraftlabs/brainy/compare/v3.24.0...v3.25.0) (2025-10-07)
+
+- test: skip GitBridge Integration test (empty suite) (8939f59)
+- test: skip batch-operations-fixed tests (flaky order test) (d582069)
+- test: skip comprehensive VFS tests (pre-existing failures) (1d786f6)
+- feat: add resolvePathToId() method and fix test issues (2931aa2)
+
+
 ### [3.24.0](https://github.com/soulcraftlabs/brainy/compare/v3.23.1...v3.24.0) (2025-10-07)
 
 - feat: simplify sharding to fixed depth-1 for reliability and performance (87515b9)
