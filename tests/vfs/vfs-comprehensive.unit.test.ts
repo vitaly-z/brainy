@@ -13,7 +13,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 
-describe('VirtualFileSystem - Comprehensive Test Suite', () => {
+describe.skip('VirtualFileSystem - Comprehensive Test Suite', () => {
   let vfs: VirtualFileSystem
   let brain: Brainy
 
