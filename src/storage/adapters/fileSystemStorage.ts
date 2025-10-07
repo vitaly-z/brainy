@@ -56,10 +56,15 @@ export class FileSystemStorage extends BaseStorage {
   // FileSystem-specific count persistence
   private countsFilePath?: string // Will be set after init
 
-  // Intelligent sharding configuration
-  private readonly shardingDepth: number = 2 // 0=flat, 1=ab/, 2=ab/cd/
-  private readonly SHARDING_THRESHOLD = 100 // Enable deep sharding at 100 files for optimal performance
-  private cachedShardingDepth?: number // Cache sharding depth for consistency
+  // Fixed sharding configuration for optimal balance of simplicity and performance
+  // Single-level sharding (depth=1) provides excellent performance for 1-2.5M entities
+  // Structure: nouns/ab/uuid.json where 'ab' = first 2 hex chars of UUID
+  // - 256 shard directories (00-ff)
+  // - Handles 2.5M+ entities with < 10K files per shard
+  // - Eliminates dynamic depth changes that cause path mismatch bugs
+  private readonly SHARDING_DEPTH = 1 as const
+  private readonly MAX_SHARDS = 256 // Hex range: 00-ff
+  private cachedShardingDepth: number = this.SHARDING_DEPTH // Always use fixed depth
   private rootDir: string
   private nounsDir!: string
   private verbsDir!: string
@@ -153,11 +158,29 @@ export class FileSystemStorage extends BaseStorage {
       this.countsFilePath = path.join(this.systemDir, 'counts.json')
       await this.initializeCounts()
 
-      // Cache sharding depth for consistency during this session
-      this.cachedShardingDepth = this.getOptimalShardingDepth()
-      // Log sharding strategy for transparency
-      const strategy = this.cachedShardingDepth === 0 ? 'flat' : this.cachedShardingDepth === 1 ? 'single-level' : 'deep'
-      console.log(`📁 Using ${strategy} sharding for optimal performance (${this.totalNounCount} items)`)
+      // Detect existing sharding structure and migrate if needed
+      const detectedDepth = await this.detectExistingShardingDepth()
+
+      if (detectedDepth !== null && detectedDepth !== this.SHARDING_DEPTH) {
+        // Migration needed: existing structure doesn't match our fixed depth
+        console.log(`📦 Brainy Storage Migration`)
+        console.log(`   Current structure: depth ${detectedDepth}`)
+        console.log(`   Target structure: depth ${this.SHARDING_DEPTH}`)
+        console.log(`   Entities to migrate: ${this.totalNounCount}`)
+
+        await this.migrateShardingStructure(detectedDepth, this.SHARDING_DEPTH)
+
+        console.log(`✅ Migration complete - now using depth ${this.SHARDING_DEPTH} sharding`)
+      } else if (detectedDepth === null) {
+        // New installation
+        console.log(`📁 New installation: using depth ${this.SHARDING_DEPTH} sharding (optimal for 1-2.5M entities)`)
+      } else {
+        // Already using correct depth
+        console.log(`📁 Using depth ${this.SHARDING_DEPTH} sharding (${this.totalNounCount} entities)`)
+      }
+
+      // Always use fixed depth after migration/detection
+      this.cachedShardingDepth = this.SHARDING_DEPTH
 
       this.isInitialized = true
     } catch (error) {
@@ -1667,12 +1690,17 @@ export class FileSystemStorage extends BaseStorage {
    */
   private async initializeCountsFromDisk(): Promise<void> {
     try {
-      // Count nouns (handles sharding properly)
-      const validNounFiles = await this.getAllShardedFiles(this.nounsDir)
+      // CRITICAL: Detect existing depth before counting
+      // Can't use getAllShardedFiles() which assumes depth=1
+      const existingDepth = await this.detectExistingShardingDepth()
+      const depthToUse = existingDepth !== null ? existingDepth : this.SHARDING_DEPTH
+
+      // Count nouns using detected depth
+      const validNounFiles = await this.getAllFilesAtDepth(this.nounsDir, depthToUse)
       this.totalNounCount = validNounFiles.length
 
-      // Count verbs (handles sharding properly)
-      const validVerbFiles = await this.getAllShardedFiles(this.verbsDir)
+      // Count verbs using detected depth
+      const validVerbFiles = await this.getAllFilesAtDepth(this.verbsDir, depthToUse)
       this.totalVerbCount = validVerbFiles.length
 
       // Sample some files to get type distribution (don't read all)
@@ -1681,10 +1709,24 @@ export class FileSystemStorage extends BaseStorage {
         try {
           const file = validNounFiles[i]
           const id = file.replace('.json', '')
-          const data = await fs.promises.readFile(
-            this.getNodePath(id),
-            'utf-8'
-          )
+
+          // Construct path using detected depth (not cached depth which may be wrong)
+          let filePath: string
+          switch (depthToUse) {
+            case 0:
+              filePath = path.join(this.nounsDir, `${id}.json`)
+              break
+            case 1:
+              filePath = path.join(this.nounsDir, id.substring(0, 2), `${id}.json`)
+              break
+            case 2:
+              filePath = path.join(this.nounsDir, id.substring(0, 2), id.substring(2, 4), `${id}.json`)
+              break
+            default:
+              throw new Error(`Unsupported depth: ${depthToUse}`)
+          }
+
+          const data = await fs.promises.readFile(filePath, 'utf-8')
           const noun = JSON.parse(data)
           const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
           this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
@@ -1738,24 +1780,445 @@ export class FileSystemStorage extends BaseStorage {
   // =============================================
 
   /**
-   * Determine optimal sharding depth based on dataset size
-   * This is called once during initialization for consistent behavior
+   * Migrate files from one sharding depth to another
+   * Handles: 0→1 (flat to single-level), 2→1 (deep to single-level)
+   * Uses atomic file operations and comprehensive error handling
+   *
+   * @param fromDepth - Source sharding depth
+   * @param toDepth - Target sharding depth (must be 1)
+   */
+  private async migrateShardingStructure(fromDepth: number, toDepth: number): Promise<void> {
+    // Validation
+    if (fromDepth === toDepth) {
+      throw new Error(`Migration not needed: already at depth ${toDepth}`)
+    }
+
+    if (toDepth !== 1) {
+      throw new Error(`Migration only supports target depth 1 (got ${toDepth})`)
+    }
+
+    if (fromDepth !== 0 && fromDepth !== 2) {
+      throw new Error(`Migration only supports source depth 0 or 2 (got ${fromDepth})`)
+    }
+
+    // Create migration lock to prevent concurrent migrations
+    const lockFile = path.join(this.systemDir, '.migration-lock')
+    const lockExists = await this.fileExists(lockFile)
+
+    if (lockExists) {
+      // Check if lock is stale (> 1 hour old)
+      try {
+        const stats = await fs.promises.stat(lockFile)
+        const lockAge = Date.now() - stats.mtimeMs
+        const ONE_HOUR = 60 * 60 * 1000
+
+        if (lockAge < ONE_HOUR) {
+          throw new Error(
+            'Migration already in progress. If this is incorrect, delete .migration-lock file.'
+          )
+        }
+
+        // Lock is stale, remove it
+        console.log('⚠️  Removing stale migration lock (> 1 hour old)')
+        await fs.promises.unlink(lockFile)
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
+      }
+    }
+
+    try {
+      // Create lock file
+      await fs.promises.writeFile(lockFile, JSON.stringify({
+        startedAt: new Date().toISOString(),
+        fromDepth,
+        toDepth,
+        pid: process.pid
+      }))
+
+      // Discover all files to migrate
+      console.log('📊 Discovering files to migrate...')
+      const filesToMigrate = await this.discoverFilesForMigration(fromDepth)
+
+      if (filesToMigrate.length === 0) {
+        console.log('ℹ️  No files to migrate')
+        return
+      }
+
+      console.log(`📦 Migrating ${filesToMigrate.length} files...`)
+
+      // Create all target shard directories upfront
+      await this.createAllShardDirectories(this.nounsDir)
+      await this.createAllShardDirectories(this.verbsDir)
+
+      // Migrate files with progress tracking
+      let migratedCount = 0
+      let skippedCount = 0
+      const errors: Array<{ file: string; error: string }> = []
+
+      for (const fileInfo of filesToMigrate) {
+        try {
+          await this.migrateFile(fileInfo, fromDepth, toDepth)
+          migratedCount++
+
+          // Progress update every 1000 files
+          if (migratedCount % 1000 === 0) {
+            const percent = ((migratedCount / filesToMigrate.length) * 100).toFixed(1)
+            console.log(`   📊 Progress: ${migratedCount}/${filesToMigrate.length} (${percent}%)`)
+          }
+
+          // Yield to event loop every 100 files to prevent blocking
+          if (migratedCount % 100 === 0) {
+            await new Promise(resolve => setImmediate(resolve))
+          }
+        } catch (error: any) {
+          skippedCount++
+          errors.push({
+            file: fileInfo.oldPath,
+            error: error.message
+          })
+
+          // Log first few errors
+          if (errors.length <= 5) {
+            console.warn(`⚠️  Skipped ${fileInfo.oldPath}: ${error.message}`)
+          }
+        }
+      }
+
+      // Final summary
+      console.log(`\n✅ Migration Results:`)
+      console.log(`   Migrated: ${migratedCount} files`)
+      console.log(`   Skipped: ${skippedCount} files`)
+
+      if (errors.length > 0) {
+        console.warn(`\n⚠️  ${errors.length} files could not be migrated`)
+        if (errors.length > 5) {
+          console.warn(`   (First 5 errors shown above, ${errors.length - 5} more occurred)`)
+        }
+      }
+
+      // Cleanup: Remove empty old directories
+      if (fromDepth === 0) {
+        // No subdirectories to clean for flat structure
+      } else if (fromDepth === 2) {
+        await this.cleanupEmptyDirectories(this.nounsDir, fromDepth)
+        await this.cleanupEmptyDirectories(this.verbsDir, fromDepth)
+      }
+
+      // Verification: Count files in new structure
+      const verifyCount = await this.countFilesInStructure(toDepth)
+      console.log(`\n🔍 Verification: ${verifyCount} files in new structure`)
+
+      if (verifyCount < migratedCount) {
+        console.warn(`⚠️  Warning: Verification count (${verifyCount}) < migrated count (${migratedCount})`)
+      }
+    } finally {
+      // Always remove lock file
+      try {
+        await fs.promises.unlink(lockFile)
+      } catch (error) {
+        // Ignore error if lock file doesn't exist
+      }
+    }
+  }
+
+  /**
+   * Discover all files that need to be migrated
+   * Constructs correct oldPath based on source depth
+   */
+  private async discoverFilesForMigration(fromDepth: number): Promise<Array<{ oldPath: string; id: string; type: 'noun' | 'verb' }>> {
+    const files: Array<{ oldPath: string; id: string; type: 'noun' | 'verb' }> = []
+
+    // Discover noun files
+    const nounFiles = await this.getAllFilesAtDepth(this.nounsDir, fromDepth)
+    for (const filename of nounFiles) {
+      const id = filename.replace('.json', '')
+
+      // Construct correct oldPath based on fromDepth
+      let oldPath: string
+      switch (fromDepth) {
+        case 0:
+          // Flat: nouns/uuid.json
+          oldPath = path.join(this.nounsDir, `${id}.json`)
+          break
+        case 1:
+          // Single-level: nouns/ab/uuid.json
+          oldPath = path.join(this.nounsDir, id.substring(0, 2), `${id}.json`)
+          break
+        case 2:
+          // Deep: nouns/ab/cd/uuid.json
+          oldPath = path.join(this.nounsDir, id.substring(0, 2), id.substring(2, 4), `${id}.json`)
+          break
+        default:
+          throw new Error(`Unsupported fromDepth: ${fromDepth}`)
+      }
+
+      files.push({ oldPath, id, type: 'noun' })
+    }
+
+    // Discover verb files
+    const verbFiles = await this.getAllFilesAtDepth(this.verbsDir, fromDepth)
+    for (const filename of verbFiles) {
+      const id = filename.replace('.json', '')
+
+      // Construct correct oldPath based on fromDepth
+      let oldPath: string
+      switch (fromDepth) {
+        case 0:
+          // Flat: verbs/uuid.json
+          oldPath = path.join(this.verbsDir, `${id}.json`)
+          break
+        case 1:
+          // Single-level: verbs/ab/uuid.json
+          oldPath = path.join(this.verbsDir, id.substring(0, 2), `${id}.json`)
+          break
+        case 2:
+          // Deep: verbs/ab/cd/uuid.json
+          oldPath = path.join(this.verbsDir, id.substring(0, 2), id.substring(2, 4), `${id}.json`)
+          break
+        default:
+          throw new Error(`Unsupported fromDepth: ${fromDepth}`)
+      }
+
+      files.push({ oldPath, id, type: 'verb' })
+    }
+
+    return files
+  }
+
+  /**
+   * Get all files at a specific depth
+   */
+  private async getAllFilesAtDepth(baseDir: string, depth: number): Promise<string[]> {
+    const allFiles: string[] = []
+
+    try {
+      const dirExists = await this.directoryExists(baseDir)
+      if (!dirExists) {
+        return []
+      }
+
+      switch (depth) {
+        case 0:
+          // Flat: files directly in baseDir
+          const entries = await fs.promises.readdir(baseDir)
+          for (const entry of entries) {
+            if (entry.endsWith('.json')) {
+              allFiles.push(entry)
+            }
+          }
+          break
+
+        case 1:
+          // Single-level: baseDir/ab/uuid.json
+          const shardDirs = await fs.promises.readdir(baseDir)
+          for (const shard of shardDirs) {
+            const shardPath = path.join(baseDir, shard)
+            try {
+              const stat = await fs.promises.stat(shardPath)
+              if (stat.isDirectory()) {
+                const shardFiles = await fs.promises.readdir(shardPath)
+                for (const file of shardFiles) {
+                  if (file.endsWith('.json')) {
+                    allFiles.push(file)
+                  }
+                }
+              }
+            } catch (error) {
+              // Skip inaccessible directories
+            }
+          }
+          break
+
+        case 2:
+          // Deep: baseDir/ab/cd/uuid.json
+          const level1Dirs = await fs.promises.readdir(baseDir)
+          for (const level1 of level1Dirs) {
+            const level1Path = path.join(baseDir, level1)
+            try {
+              const level1Stat = await fs.promises.stat(level1Path)
+              if (level1Stat.isDirectory()) {
+                const level2Dirs = await fs.promises.readdir(level1Path)
+                for (const level2 of level2Dirs) {
+                  const level2Path = path.join(level1Path, level2)
+                  try {
+                    const level2Stat = await fs.promises.stat(level2Path)
+                    if (level2Stat.isDirectory()) {
+                      const files = await fs.promises.readdir(level2Path)
+                      for (const file of files) {
+                        if (file.endsWith('.json')) {
+                          allFiles.push(file)
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    // Skip inaccessible directories
+                  }
+                }
+              }
+            } catch (error) {
+              // Skip inaccessible directories
+            }
+          }
+          break
+      }
+    } catch (error) {
+      // Directory doesn't exist or not accessible
+    }
+
+    return allFiles
+  }
+
+  /**
+   * Create all 256 shard directories (00-ff)
+   */
+  private async createAllShardDirectories(baseDir: string): Promise<void> {
+    for (let i = 0; i < this.MAX_SHARDS; i++) {
+      const shard = i.toString(16).padStart(2, '0')
+      const shardDir = path.join(baseDir, shard)
+      await this.ensureDirectoryExists(shardDir)
+    }
+  }
+
+  /**
+   * Migrate a single file atomically
+   */
+  private async migrateFile(
+    fileInfo: { oldPath: string; id: string; type: 'noun' | 'verb' },
+    fromDepth: number,
+    toDepth: number
+  ): Promise<void> {
+    const baseDir = fileInfo.type === 'noun' ? this.nounsDir : this.verbsDir
+
+    // Calculate old path (already known)
+    const oldPath = fileInfo.oldPath
+
+    // Calculate new path using target depth
+    const shard = fileInfo.id.substring(0, 2).toLowerCase()
+    const newPath = path.join(baseDir, shard, `${fileInfo.id}.json`)
+
+    // Check if file already exists at new location
+    if (await this.fileExists(newPath)) {
+      // File already migrated or duplicate - skip
+      return
+    }
+
+    // Atomic rename/move
+    await fs.promises.rename(oldPath, newPath)
+  }
+
+  /**
+   * Clean up empty directories after migration
+   */
+  private async cleanupEmptyDirectories(baseDir: string, depth: number): Promise<void> {
+    try {
+      if (depth === 2) {
+        // Clean up level2 and level1 directories
+        const level1Dirs = await fs.promises.readdir(baseDir)
+        for (const level1 of level1Dirs) {
+          const level1Path = path.join(baseDir, level1)
+          try {
+            const level1Stat = await fs.promises.stat(level1Path)
+            if (level1Stat.isDirectory()) {
+              const level2Dirs = await fs.promises.readdir(level1Path)
+              for (const level2 of level2Dirs) {
+                const level2Path = path.join(level1Path, level2)
+                try {
+                  // Try to remove level2 directory (will fail if not empty)
+                  await fs.promises.rmdir(level2Path)
+                } catch (error) {
+                  // Directory not empty or other error - ignore
+                }
+              }
+
+              // Try to remove level1 directory
+              await fs.promises.rmdir(level1Path)
+            }
+          } catch (error) {
+            // Directory not empty or other error - ignore
+          }
+        }
+      }
+    } catch (error) {
+      // Cleanup is best-effort, don't throw
+    }
+  }
+
+  /**
+   * Count files in the current structure
+   */
+  private async countFilesInStructure(depth: number): Promise<number> {
+    let count = 0
+
+    count += (await this.getAllFilesAtDepth(this.nounsDir, depth)).length
+    count += (await this.getAllFilesAtDepth(this.verbsDir, depth)).length
+
+    return count
+  }
+
+  /**
+   * Detect the actual sharding depth used by existing files
+   * Examines directory structure to determine current sharding strategy
+   * Returns null if no files exist yet (new installation)
+   */
+  private async detectExistingShardingDepth(): Promise<number | null> {
+    try {
+      // Check if nouns directory exists and has content
+      const dirExists = await this.directoryExists(this.nounsDir)
+      if (!dirExists) {
+        return null // New installation
+      }
+
+      const entries = await fs.promises.readdir(this.nounsDir, { withFileTypes: true })
+
+      // Check if there are any .json files directly in nounsDir (flat structure)
+      const hasDirectJsonFiles = entries.some((e: any) => e.isFile() && e.name.endsWith('.json'))
+      if (hasDirectJsonFiles) {
+        return 0 // Flat structure: nouns/uuid.json
+      }
+
+      // Check for subdirectories with hex names (sharding directories)
+      const subdirs = entries.filter((e: any) => e.isDirectory() && /^[0-9a-f]{2}$/i.test(e.name))
+      if (subdirs.length === 0) {
+        return null // No files yet
+      }
+
+      // Check first subdir to see if it has files or more subdirs
+      const firstSubdir = subdirs[0].name
+      const subdirPath = path.join(this.nounsDir, firstSubdir)
+      const subdirEntries = await fs.promises.readdir(subdirPath, { withFileTypes: true })
+
+      const hasJsonFiles = subdirEntries.some((e: any) => e.isFile() && e.name.endsWith('.json'))
+      if (hasJsonFiles) {
+        return 1 // Single-level sharding: nouns/ab/uuid.json
+      }
+
+      const hasSubSubdirs = subdirEntries.some((e: any) => e.isDirectory() && /^[0-9a-f]{2}$/i.test(e.name))
+      if (hasSubSubdirs) {
+        return 2 // Deep sharding: nouns/ab/cd/uuid.json
+      }
+
+      return 1 // Default to single-level if structure is unclear
+    } catch (error) {
+      // If we can't read the directory, assume new installation
+      return null
+    }
+  }
+
+  /**
+   * Get sharding depth
+   * Always returns 1 (single-level sharding) for optimal balance of
+   * simplicity, performance, and reliability across all dataset sizes
+   *
+   * Single-level sharding (depth=1):
+   * - 256 shard directories (00-ff)
+   * - Handles 2.5M+ entities with excellent performance
+   * - No dynamic depth changes = no path mismatch bugs
+   * - Industry standard approach (Git uses similar)
    */
   private getOptimalShardingDepth(): number {
-    // For new installations, use intelligent defaults
-    if (this.totalNounCount === 0 && this.totalVerbCount === 0) {
-      return 1 // Default to single-level sharding for new installs
-    }
-
-    const maxCount = Math.max(this.totalNounCount, this.totalVerbCount)
-
-    if (maxCount >= this.SHARDING_THRESHOLD) {
-      return 2 // Deep sharding for large datasets
-    } else if (maxCount >= 100) {
-      return 1 // Single-level sharding for medium datasets
-    } else {
-      return 1 // Always use at least single-level sharding for consistency
-    }
+    return this.SHARDING_DEPTH
   }
 
   /**
@@ -1775,122 +2238,58 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Universal sharded path generator
-   * Consistent across all entity types
+   * Always uses depth=1 (single-level sharding) for consistency
+   *
+   * Format: baseDir/ab/uuid.json
+   * Where 'ab' = first 2 hex characters of UUID (lowercase)
+   *
+   * Validates UUID format and throws descriptive errors
    */
   private getShardedPath(baseDir: string, id: string): string {
-    const depth = this.cachedShardingDepth ?? this.getOptimalShardingDepth()
+    // Extract first 2 characters for shard directory
+    const shard = id.substring(0, 2).toLowerCase()
 
-    switch (depth) {
-      case 0:
-        // Flat structure: /nouns/uuid.json
-        return path.join(baseDir, `${id}.json`)
-
-      case 1:
-        // Single-level sharding: /nouns/ab/uuid.json
-        const shard1 = id.substring(0, 2)
-        return path.join(baseDir, shard1, `${id}.json`)
-
-      case 2:
-      default:
-        // Deep sharding: /nouns/ab/cd/uuid.json
-        const shard1Deep = id.substring(0, 2)
-        const shard2Deep = id.substring(2, 4)
-        return path.join(baseDir, shard1Deep, shard2Deep, `${id}.json`)
+    // Validate shard is valid hex (00-ff)
+    if (!/^[0-9a-f]{2}$/.test(shard)) {
+      throw new Error(
+        `Invalid entity ID format: ${id}. ` +
+        `Expected UUID starting with 2 hex characters, got '${shard}'. ` +
+        `IDs must be UUIDs or hex strings.`
+      )
     }
+
+    // Single-level sharding: baseDir/ab/uuid.json
+    return path.join(baseDir, shard, `${id}.json`)
   }
 
   /**
-   * Get all JSON files from a sharded directory structure
-   * Properly traverses sharded subdirectories based on current sharding depth
+   * Get all JSON files from the single-level sharded directory structure
+   * Traverses all shard subdirectories (00-ff)
    */
   private async getAllShardedFiles(baseDir: string): Promise<string[]> {
     const allFiles: string[] = []
-    const depth = this.cachedShardingDepth ?? this.getOptimalShardingDepth()
 
     try {
-      switch (depth) {
-        case 0:
-          // Flat structure: read directly from baseDir
-          const flatFiles = await fs.promises.readdir(baseDir)
-          for (const file of flatFiles) {
-            if (file.endsWith('.json')) {
-              allFiles.push(file)
-            }
-          }
-          break
+      const shardDirs = await fs.promises.readdir(baseDir)
 
-        case 1:
-          // Single-level sharding: baseDir/ab/
-          try {
-            const shardDirs = await fs.promises.readdir(baseDir)
-            for (const shardDir of shardDirs) {
-              const shardPath = path.join(baseDir, shardDir)
-              try {
-                const stat = await fs.promises.stat(shardPath)
-                if (stat.isDirectory()) {
-                  const shardFiles = await fs.promises.readdir(shardPath)
-                  for (const file of shardFiles) {
-                    if (file.endsWith('.json')) {
-                      allFiles.push(file)
-                    }
-                  }
-                }
-              } catch (shardError) {
-                // Skip inaccessible shard directories
-                continue
+      for (const shardDir of shardDirs) {
+        const shardPath = path.join(baseDir, shardDir)
+
+        try {
+          const stat = await fs.promises.stat(shardPath)
+
+          if (stat.isDirectory()) {
+            const shardFiles = await fs.promises.readdir(shardPath)
+            for (const file of shardFiles) {
+              if (file.endsWith('.json')) {
+                allFiles.push(file)
               }
             }
-          } catch (baseError: any) {
-            // If baseDir doesn't exist, return empty array
-            if (baseError.code === 'ENOENT') {
-              return []
-            }
-            throw baseError
           }
-          break
-
-        case 2:
-        default:
-          // Deep sharding: baseDir/ab/cd/
-          try {
-            const level1Dirs = await fs.promises.readdir(baseDir)
-            for (const level1Dir of level1Dirs) {
-              const level1Path = path.join(baseDir, level1Dir)
-              try {
-                const level1Stat = await fs.promises.stat(level1Path)
-                if (level1Stat.isDirectory()) {
-                  const level2Dirs = await fs.promises.readdir(level1Path)
-                  for (const level2Dir of level2Dirs) {
-                    const level2Path = path.join(level1Path, level2Dir)
-                    try {
-                      const level2Stat = await fs.promises.stat(level2Path)
-                      if (level2Stat.isDirectory()) {
-                        const shardFiles = await fs.promises.readdir(level2Path)
-                        for (const file of shardFiles) {
-                          if (file.endsWith('.json')) {
-                            allFiles.push(file)
-                          }
-                        }
-                      }
-                    } catch (level2Error) {
-                      // Skip inaccessible level2 directories
-                      continue
-                    }
-                  }
-                }
-              } catch (level1Error) {
-                // Skip inaccessible level1 directories
-                continue
-              }
-            }
-          } catch (baseError: any) {
-            // If baseDir doesn't exist, return empty array
-            if (baseError.code === 'ENOENT') {
-              return []
-            }
-            throw baseError
-          }
-          break
+        } catch (shardError) {
+          // Skip inaccessible shard directories
+          continue
+        }
       }
 
       // Sort for consistent ordering
@@ -2052,6 +2451,11 @@ export class FileSystemStorage extends BaseStorage {
    * Stream through sharded files without loading all names into memory
    * Production-scale implementation for millions of files
    */
+  /**
+   * Stream through files in single-level sharded structure
+   * Calls processor for each file until processor returns false
+   * Returns true if more files exist (processor stopped early), false if all processed
+   */
   private async streamShardedFiles(
     baseDir: string,
     depth: number,
@@ -2059,103 +2463,41 @@ export class FileSystemStorage extends BaseStorage {
   ): Promise<boolean> {
     let hasMore = true
 
-    switch (depth) {
-      case 0:
-        // Flat structure
+    // Single-level sharding (depth=1): baseDir/ab/uuid.json
+    try {
+      const shardDirs = await fs.promises.readdir(baseDir)
+      const sortedShardDirs = shardDirs.sort()
+
+      for (const shardDir of sortedShardDirs) {
+        const shardPath = path.join(baseDir, shardDir)
+
         try {
-          const files = await fs.promises.readdir(baseDir)
-          const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
+          const stat = await fs.promises.stat(shardPath)
 
-          for (const file of sortedFiles) {
-            const shouldContinue = await processor(file, path.join(baseDir, file))
-            if (!shouldContinue) {
-              hasMore = false
-              break
-            }
-          }
-        } catch (error: any) {
-          if (error.code === 'ENOENT') hasMore = false
-        }
-        break
+          if (stat.isDirectory()) {
+            const files = await fs.promises.readdir(shardPath)
+            const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
 
-      case 1:
-        // Single-level sharding: ab/
-        try {
-          const shardDirs = await fs.promises.readdir(baseDir)
-          const sortedShardDirs = shardDirs.sort()
+            for (const file of sortedFiles) {
+              const shouldContinue = await processor(file, path.join(shardPath, file))
 
-          for (const shardDir of sortedShardDirs) {
-            const shardPath = path.join(baseDir, shardDir)
-            try {
-              const stat = await fs.promises.stat(shardPath)
-              if (stat.isDirectory()) {
-                const files = await fs.promises.readdir(shardPath)
-                const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
-
-                for (const file of sortedFiles) {
-                  const shouldContinue = await processor(file, path.join(shardPath, file))
-                  if (!shouldContinue) {
-                    hasMore = false
-                    break
-                  }
-                }
-                if (!hasMore) break
+              if (!shouldContinue) {
+                hasMore = false
+                break
               }
-            } catch (shardError) {
-              continue // Skip inaccessible shard directories
             }
+
+            if (!hasMore) break
           }
-        } catch (error: any) {
-          if (error.code === 'ENOENT') hasMore = false
+        } catch (shardError) {
+          // Skip inaccessible shard directories
+          continue
         }
-        break
-
-      case 2:
-      default:
-        // Deep sharding: ab/cd/
-        try {
-          const level1Dirs = await fs.promises.readdir(baseDir)
-          const sortedLevel1Dirs = level1Dirs.sort()
-
-          for (const level1Dir of sortedLevel1Dirs) {
-            const level1Path = path.join(baseDir, level1Dir)
-            try {
-              const level1Stat = await fs.promises.stat(level1Path)
-              if (level1Stat.isDirectory()) {
-                const level2Dirs = await fs.promises.readdir(level1Path)
-                const sortedLevel2Dirs = level2Dirs.sort()
-
-                for (const level2Dir of sortedLevel2Dirs) {
-                  const level2Path = path.join(level1Path, level2Dir)
-                  try {
-                    const level2Stat = await fs.promises.stat(level2Path)
-                    if (level2Stat.isDirectory()) {
-                      const files = await fs.promises.readdir(level2Path)
-                      const sortedFiles = files.filter((f: string) => f.endsWith('.json')).sort()
-
-                      for (const file of sortedFiles) {
-                        const shouldContinue = await processor(file, path.join(level2Path, file))
-                        if (!shouldContinue) {
-                          hasMore = false
-                          break
-                        }
-                      }
-                      if (!hasMore) break
-                    }
-                  } catch (level2Error) {
-                    continue // Skip inaccessible level2 directories
-                  }
-                }
-                if (!hasMore) break
-              }
-            } catch (level1Error) {
-              continue // Skip inaccessible level1 directories
-            }
-          }
-        } catch (error: any) {
-          if (error.code === 'ENOENT') hasMore = false
-        }
-        break
+      }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        hasMore = false
+      }
     }
 
     return hasMore
