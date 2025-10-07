@@ -104,6 +104,11 @@ docs/
 │   ├── noun-verb-taxonomy.md  # Data model
 │   ├── triple-intelligence.md # Query system
 │   └── storage.md             # Storage layer
+├── vfs/                       # Virtual Filesystem
+│   ├── README.md              # VFS overview
+│   ├── SEMANTIC_VFS.md        # Semantic projections
+│   ├── VFS_API_GUIDE.md       # Complete API reference
+│   └── QUICK_START.md         # 5-minute setup
 └── api/                       # API documentation
     ├── README.md              # API overview
     ├── brainy-data.md        # Main class

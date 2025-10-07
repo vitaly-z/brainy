@@ -2414,8 +2414,70 @@ export class ImprovedNeuralAPI {
   }
 
   private async _getItemsByField(field: string): Promise<any[]> {
-    // Implementation would query items by metadata field
-    return []
+    try {
+      // Query all items from brain (limit to reasonable number for clustering)
+      const result = await this.brain.find({
+        query: '',
+        limit: 10000 // Max items for clustering
+      })
+
+      if (!result || !Array.isArray(result)) {
+        return []
+      }
+
+      // Filter items that have the specified field (check both root level and metadata)
+      const itemsWithField = result.filter((item: any) => {
+        if (!item || !item.entity) return false
+
+        const entity = item.entity
+
+        // Check root level fields first (e.g., 'noun' for type)
+        if (field === 'type' || field === 'nounType') {
+          return entity.noun != null
+        }
+
+        // Check if field exists at root level
+        if (entity[field] != null) {
+          return true
+        }
+
+        // Check if field exists in metadata/data
+        if (entity.metadata?.[field] != null) {
+          return true
+        }
+
+        if (entity.data?.[field] != null) {
+          return true
+        }
+
+        return false
+      })
+
+      // Map to format expected by clustering methods
+      return itemsWithField.map((item: any) => {
+        const entity = item.entity
+        return {
+          id: entity.id,
+          vector: entity.embedding || entity.vector || [],
+          metadata: {
+            ...(entity.metadata || {}),
+            ...(entity.data || {}),
+            // Include root-level fields in metadata for easy access
+            noun: entity.noun,
+            type: entity.noun,
+            createdAt: entity.createdAt,
+            updatedAt: entity.updatedAt,
+            label: entity.label
+          },
+          nounType: entity.noun,
+          label: entity.label || entity.data || '',
+          data: entity.data
+        }
+      })
+    } catch (error) {
+      console.error('Error in _getItemsByField:', error)
+      return []
+    }
   }
 
   // ===== TRIPLE INTELLIGENCE INTEGRATION =====
@@ -2875,11 +2937,39 @@ export class ImprovedNeuralAPI {
   private _groupByDomain(items: any[], field: string): Map<string, any[]> {
     const groups = new Map()
     for (const item of items) {
-      const domain = item.metadata?.[field] || 'unknown'
-      if (!groups.has(domain)) {
-        groups.set(domain, [])
+      // Check multiple locations for the field value
+      let domain: any = 'unknown'
+
+      // Special handling for type/nounType field
+      if (field === 'type' || field === 'nounType') {
+        domain = item.nounType || item.metadata?.noun || item.metadata?.type || 'unknown'
+      } else {
+        // Check root level first
+        domain = item[field]
+
+        // Then check metadata
+        if (domain == null) {
+          domain = item.metadata?.[field]
+        }
+
+        // Then check data
+        if (domain == null) {
+          domain = item.data?.[field]
+        }
+
+        // Fallback to unknown
+        if (domain == null) {
+          domain = 'unknown'
+        }
       }
-      groups.get(domain).push(item)
+
+      // Convert domain to string for Map key
+      const domainKey = String(domain)
+
+      if (!groups.has(domainKey)) {
+        groups.set(domainKey, [])
+      }
+      groups.get(domainKey).push(item)
     }
     return groups
   }
@@ -2902,18 +2992,203 @@ export class ImprovedNeuralAPI {
   }
 
   private async _findCrossDomainMembers(cluster: SemanticCluster, threshold: number): Promise<string[]> {
-    // Find members that might belong to multiple domains
-    return []
+    try {
+      // Find cluster members that have high similarity to items in other domains
+      const crossDomainMembers: string[] = []
+
+      for (const memberId of cluster.members) {
+        try {
+          // Get neighbors for this member
+          const neighbors = await this.neighbors(memberId, {
+            limit: 10,
+            minSimilarity: threshold
+          })
+
+          if (Array.isArray(neighbors) && neighbors.length > 0) {
+            // Check if any neighbors are NOT in this cluster
+            const hasExternalNeighbors = neighbors.some(neighbor =>
+              !cluster.members.includes(typeof neighbor === 'object' ? neighbor.id : neighbor)
+            )
+
+            if (hasExternalNeighbors) {
+              crossDomainMembers.push(memberId)
+            }
+          }
+        } catch (error) {
+          // Skip members that can't be processed
+          continue
+        }
+      }
+
+      return crossDomainMembers
+    } catch (error) {
+      console.error('Error in _findCrossDomainMembers:', error)
+      return []
+    }
   }
 
   private async _findCrossDomainClusters(clusters: DomainCluster[], threshold: number): Promise<DomainCluster[]> {
-    // Find clusters that span multiple domains
-    return []
+    try {
+      const crossDomainClusters: DomainCluster[] = []
+
+      // Group clusters by domain
+      const domainMap = new Map<string, DomainCluster[]>()
+      for (const cluster of clusters) {
+        const domain = cluster.domain || 'unknown'
+        if (!domainMap.has(domain)) {
+          domainMap.set(domain, [])
+        }
+        domainMap.get(domain)!.push(cluster)
+      }
+
+      // Find clusters with high inter-domain similarity
+      const domains = Array.from(domainMap.keys())
+      for (let i = 0; i < domains.length; i++) {
+        for (let j = i + 1; j < domains.length; j++) {
+          const domain1 = domains[i]
+          const domain2 = domains[j]
+          const clusters1 = domainMap.get(domain1)!
+          const clusters2 = domainMap.get(domain2)!
+
+          // Compare clusters between domains
+          for (const c1 of clusters1) {
+            for (const c2 of clusters2) {
+              try {
+                // Calculate similarity between cluster centroids
+                if (!c1.centroid || !c2.centroid || c1.centroid.length === 0 || c2.centroid.length === 0) {
+                  continue
+                }
+
+                const similarity = 1 - cosineDistance(
+                  Array.from(c1.centroid) as number[],
+                  Array.from(c2.centroid) as number[]
+                )
+
+                if (similarity >= threshold) {
+                  // Create a cross-domain cluster
+                  const mergedMembers = [...new Set([...c1.members, ...c2.members])]
+                  const mergedCentroid = this._averageVectors([
+                    Array.from(c1.centroid) as number[],
+                    Array.from(c2.centroid) as number[]
+                  ])
+
+                  crossDomainClusters.push({
+                    ...c1,
+                    id: `cross-${domain1}-${domain2}-${crossDomainClusters.length}`,
+                    label: `Cross-domain: ${c1.label} + ${c2.label}`,
+                    members: mergedMembers,
+                    centroid: mergedCentroid,
+                    domain: `${domain1}+${domain2}`,
+                    domainConfidence: similarity,
+                    crossDomainMembers: mergedMembers
+                  })
+                }
+              } catch (error) {
+                // Skip cluster pairs that can't be compared
+                continue
+              }
+            }
+          }
+        }
+      }
+
+      return crossDomainClusters
+    } catch (error) {
+      console.error('Error in _findCrossDomainClusters:', error)
+      return []
+    }
+  }
+
+  private _averageVectors(vectors: number[][]): number[] {
+    if (vectors.length === 0) return []
+    if (vectors.length === 1) return [...vectors[0]]
+
+    const dim = vectors[0].length
+    const result = new Array(dim).fill(0)
+
+    for (const vector of vectors) {
+      for (let i = 0; i < dim; i++) {
+        result[i] += vector[i]
+      }
+    }
+
+    for (let i = 0; i < dim; i++) {
+      result[i] /= vectors.length
+    }
+
+    return result
   }
 
   private async _getItemsByTimeWindow(timeField: string, window: TimeWindow): Promise<any[]> {
-    // Implementation would query items within time window
-    return []
+    try {
+      // Query all items from brain
+      const result = await this.brain.find({
+        query: '',
+        limit: 10000 // Max items for clustering
+      })
+
+      if (!result || !Array.isArray(result)) {
+        return []
+      }
+
+      // Filter items within the time window
+      const itemsInWindow = result.filter((item: any) => {
+        if (!item || !item.entity) return false
+
+        const entity = item.entity
+
+        // Get timestamp value from various possible locations
+        let timestamp: any = null
+
+        // Check root level first
+        if (timeField === 'createdAt' || timeField === 'updatedAt') {
+          timestamp = entity[timeField]
+        }
+
+        // Check metadata/data
+        if (timestamp == null) {
+          timestamp = entity.metadata?.[timeField] || entity.data?.[timeField]
+        }
+
+        if (timestamp == null) {
+          return false
+        }
+
+        // Convert to Date if needed
+        const itemDate = timestamp instanceof Date ? timestamp : new Date(timestamp)
+
+        if (isNaN(itemDate.getTime())) {
+          return false // Invalid date
+        }
+
+        // Check if item falls within window
+        return itemDate >= window.start && itemDate <= window.end
+      })
+
+      // Map to format expected by clustering methods
+      return itemsInWindow.map((item: any) => {
+        const entity = item.entity
+        return {
+          id: entity.id,
+          vector: entity.embedding || entity.vector || [],
+          metadata: {
+            ...(entity.metadata || {}),
+            ...(entity.data || {}),
+            noun: entity.noun,
+            type: entity.noun,
+            createdAt: entity.createdAt,
+            updatedAt: entity.updatedAt,
+            label: entity.label
+          },
+          nounType: entity.noun,
+          label: entity.label || entity.data || '',
+          data: entity.data
+        }
+      })
+    } catch (error) {
+      console.error('Error in _getItemsByTimeWindow:', error)
+      return []
+    }
   }
 
   private async _calculateTemporalMetrics(cluster: SemanticCluster, items: any[], timeField: string): Promise<any> {
