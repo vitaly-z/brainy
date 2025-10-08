@@ -609,24 +609,6 @@ const brain = new Brainy({
 })
 ```
 
-#### Google Cloud Storage (S3-Compatible)
-GCS using HMAC keys for S3-compatible access.
-
-```typescript
-const brain = new Brainy({
-  storage: {
-    type: 'gcs',
-    gcsStorage: {
-      bucketName: 'my-bucket',
-      region: 'us-central1',
-      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY,
-      endpoint: 'https://storage.googleapis.com'
-    }
-  }
-})
-```
-
 #### Google Cloud Storage (Native SDK) 🆕
 **Recommended for GCS deployments.** Uses native `@google-cloud/storage` SDK with automatic authentication.
 
@@ -636,11 +618,13 @@ const brain = new Brainy({
 - ✅ No HMAC key management required
 - ✅ Automatic service account integration
 
-**With Application Default Credentials (Cloud Run/GCE):**
+**Option 1: Explicit Type (Recommended)**
+
+With Application Default Credentials (Cloud Run/GCE):
 ```typescript
 const brain = new Brainy({
   storage: {
-    type: 'gcs-native',
+    type: 'gcs-native',  // ⚠️ Must be 'gcs-native' for native SDK
     gcsNativeStorage: {
       bucketName: 'my-bucket'
       // No credentials needed - ADC automatic!
@@ -649,7 +633,7 @@ const brain = new Brainy({
 })
 ```
 
-**With Service Account Key File:**
+With Service Account Key File:
 ```typescript
 const brain = new Brainy({
   storage: {
@@ -662,7 +646,7 @@ const brain = new Brainy({
 })
 ```
 
-**With Service Account Credentials Object:**
+With Service Account Credentials Object:
 ```typescript
 const brain = new Brainy({
   storage: {
@@ -676,6 +660,64 @@ const brain = new Brainy({
     }
   }
 })
+```
+
+**Option 2: Auto-Detection**
+
+You can omit the `type` field and let Brainy auto-detect based on the config object:
+```typescript
+const brain = new Brainy({
+  storage: {
+    gcsNativeStorage: {
+      bucketName: 'my-bucket'
+      // type defaults to 'auto', will use native SDK
+    }
+  }
+})
+```
+
+#### Google Cloud Storage (S3-Compatible) - Legacy
+GCS using HMAC keys for S3-compatible access. **Consider migrating to 'gcs-native' for better performance.**
+
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs',  // ⚠️ Must be 'gcs' for S3-compatible mode
+    gcsStorage: {  // ⚠️ Must use 'gcsStorage' (not 'gcsNativeStorage')
+      bucketName: 'my-bucket',
+      region: 'us-central1',
+      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY,
+      endpoint: 'https://storage.googleapis.com'
+    }
+  }
+})
+```
+
+**⚠️ Common Mistakes:**
+```typescript
+// ❌ WRONG - type/config mismatch (will fall back to memory storage)
+{
+  type: 'gcs',
+  gcsNativeStorage: { bucketName: 'my-bucket' }
+}
+
+// ❌ WRONG - type/config mismatch (will fall back to memory storage)
+{
+  type: 'gcs-native',
+  gcsStorage: { bucketName: 'my-bucket', accessKeyId: '...', secretAccessKey: '...' }
+}
+
+// ✅ CORRECT - type matches config object
+{
+  type: 'gcs-native',
+  gcsNativeStorage: { bucketName: 'my-bucket' }
+}
+
+// ✅ CORRECT - auto-detection
+{
+  gcsNativeStorage: { bucketName: 'my-bucket' }
+}
 ```
 
 ### Storage Features
@@ -692,12 +734,12 @@ All storage adapters support:
 
 If you're currently using `type: 'gcs'` with HMAC keys, migrating to `type: 'gcs-native'` is straightforward:
 
-**Before (HMAC):**
+**Before (S3-Compatible with HMAC):**
 ```typescript
 const brain = new Brainy({
   storage: {
-    type: 'gcs',
-    gcsStorage: {
+    type: 'gcs',              // ⚠️ Old: S3-compatible mode
+    gcsStorage: {              // ⚠️ Old: HMAC credentials
       bucketName: 'my-bucket',
       accessKeyId: process.env.GCS_ACCESS_KEY_ID,
       secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY
@@ -706,12 +748,12 @@ const brain = new Brainy({
 })
 ```
 
-**After (Native with ADC):**
+**After (Native SDK with ADC):**
 ```typescript
 const brain = new Brainy({
   storage: {
-    type: 'gcs-native',
-    gcsNativeStorage: {
+    type: 'gcs-native',        // ✅ New: Native SDK mode
+    gcsNativeStorage: {        // ✅ New: ADC authentication
       bucketName: 'my-bucket'
       // ADC handles authentication automatically
     }
@@ -719,11 +761,35 @@ const brain = new Brainy({
 })
 ```
 
+**⚠️ Important Migration Notes:**
+
+1. **Change BOTH the type AND the config object:**
+   - `type: 'gcs'` → `type: 'gcs-native'`
+   - `gcsStorage` → `gcsNativeStorage`
+
+2. **Remove HMAC keys** - Not needed with ADC:
+   - Remove `accessKeyId`
+   - Remove `secretAccessKey`
+   - Remove `region` (optional with native SDK)
+
+3. **Set up ADC in your environment:**
+   ```bash
+   # Cloud Run/GCE: Nothing needed, ADC is automatic
+
+   # Local development:
+   gcloud auth application-default login
+
+   # Or set GOOGLE_APPLICATION_CREDENTIALS:
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+   ```
+
 **Data Migration:**
-No data migration required! Both adapters use the same path structure:
+✅ **No data migration required!** Both adapters use the same path structure:
 - `entities/nouns/vectors/{shard}/{id}.json`
 - `entities/nouns/metadata/{shard}/{id}.json`
 - `entities/verbs/vectors/{shard}/{id}.json`
+
+Simply change your code and restart your application. Existing data will work immediately.
 
 ---
 
