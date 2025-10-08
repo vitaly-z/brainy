@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.28.0](https://github.com/soulcraftlabs/brainy/compare/v3.27.1...v3.28.0) (2025-10-08)
+
+- feat: add unified import system with auto-detection and dual storage (a06e877)
+
+
 ### [3.27.1](https://github.com/soulcraftlabs/brainy/compare/v3.27.0...v3.27.1) (2025-10-08)
 
 - docs: clarify GCS storage type and config object pairing (dcbd0fd)
