@@ -10,6 +10,7 @@ import {
   S3CompatibleStorage,
   R2Storage
 } from './adapters/s3CompatibleStorage.js'
+import { GcsStorage } from './adapters/gcsStorage.js'
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
 import { isBrowser } from '../utils/environment.js'
 import { OperationConfig } from '../utils/operationUtils.js'
@@ -26,9 +27,10 @@ export interface StorageOptions {
    * - 'filesystem': Use file system storage (Node.js only)
    * - 's3': Use Amazon S3 storage
    * - 'r2': Use Cloudflare R2 storage
-   * - 'gcs': Use Google Cloud Storage
+   * - 'gcs': Use Google Cloud Storage (S3-compatible with HMAC keys)
+   * - 'gcs-native': Use Google Cloud Storage (native SDK with ADC)
    */
-  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs'
+  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native'
 
   /**
    * Force the use of memory storage even if other storage types are available
@@ -106,7 +108,7 @@ export interface StorageOptions {
   }
 
   /**
-   * Configuration for Google Cloud Storage
+   * Configuration for Google Cloud Storage (S3-compatible with HMAC keys)
    */
   gcsStorage?: {
     /**
@@ -133,6 +135,36 @@ export interface StorageOptions {
      * GCS endpoint (e.g., 'https://storage.googleapis.com')
      */
     endpoint?: string
+  }
+
+  /**
+   * Configuration for Google Cloud Storage (native SDK with ADC)
+   */
+  gcsNativeStorage?: {
+    /**
+     * GCS bucket name
+     */
+    bucketName: string
+
+    /**
+     * Service account key file path (optional, uses ADC if not provided)
+     */
+    keyFilename?: string
+
+    /**
+     * Service account credentials object (optional, uses ADC if not provided)
+     */
+    credentials?: object
+
+    /**
+     * HMAC access key ID (backward compatibility, not recommended)
+     */
+    accessKeyId?: string
+
+    /**
+     * HMAC secret access key (backward compatibility, not recommended)
+     */
+    secretAccessKey?: string
   }
 
   /**
@@ -357,7 +389,7 @@ export async function createStorage(
 
       case 'gcs':
         if (options.gcsStorage) {
-          console.log('Using Google Cloud Storage')
+          console.log('Using Google Cloud Storage (S3-compatible)')
           return new S3CompatibleStorage({
             bucketName: options.gcsStorage.bucketName,
             region: options.gcsStorage.region,
@@ -371,6 +403,24 @@ export async function createStorage(
         } else {
           console.warn(
             'GCS storage configuration is missing, falling back to memory storage'
+          )
+          return new MemoryStorage()
+        }
+
+      case 'gcs-native':
+        if (options.gcsNativeStorage) {
+          console.log('Using Google Cloud Storage (native SDK)')
+          return new GcsStorage({
+            bucketName: options.gcsNativeStorage.bucketName,
+            keyFilename: options.gcsNativeStorage.keyFilename,
+            credentials: options.gcsNativeStorage.credentials,
+            accessKeyId: options.gcsNativeStorage.accessKeyId,
+            secretAccessKey: options.gcsNativeStorage.secretAccessKey,
+            cacheConfig: options.cacheConfig
+          })
+        } else {
+          console.warn(
+            'GCS native storage configuration is missing, falling back to memory storage'
           )
           return new MemoryStorage()
         }
@@ -426,9 +476,22 @@ export async function createStorage(
     })
   }
 
-  // If GCS storage is specified, use it
+  // If GCS native storage is specified, use it (prioritize native over S3-compatible)
+  if (options.gcsNativeStorage) {
+    console.log('Using Google Cloud Storage (native SDK)')
+    return new GcsStorage({
+      bucketName: options.gcsNativeStorage.bucketName,
+      keyFilename: options.gcsNativeStorage.keyFilename,
+      credentials: options.gcsNativeStorage.credentials,
+      accessKeyId: options.gcsNativeStorage.accessKeyId,
+      secretAccessKey: options.gcsNativeStorage.secretAccessKey,
+      cacheConfig: options.cacheConfig
+    })
+  }
+
+  // If GCS storage is specified, use it (S3-compatible)
   if (options.gcsStorage) {
-    console.log('Using Google Cloud Storage')
+    console.log('Using Google Cloud Storage (S3-compatible)')
     return new S3CompatibleStorage({
       bucketName: options.gcsStorage.bucketName,
       region: options.gcsStorage.region,
@@ -498,7 +561,8 @@ export {
   MemoryStorage,
   OPFSStorage,
   S3CompatibleStorage,
-  R2Storage
+  R2Storage,
+  GcsStorage
 }
 
 // Export FileSystemStorage conditionally

@@ -548,6 +548,185 @@ const valid = await security.verify(data, signature, secret)
 
 ---
 
+## Storage Configuration
+
+Brainy supports multiple storage backends for different deployment scenarios.
+
+### Storage Types
+
+#### Memory Storage (Default)
+Fast in-memory storage, ideal for testing and development.
+
+```typescript
+const brain = new Brainy({
+  storage: { type: 'memory' }
+})
+```
+
+#### File System Storage
+Persistent local storage using the filesystem.
+
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'filesystem',
+    rootDirectory: './brainy-data'
+  }
+})
+```
+
+#### Amazon S3 Storage
+Scalable cloud storage with S3.
+
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 's3',
+    s3Storage: {
+      bucketName: 'my-bucket',
+      region: 'us-east-1',
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+  }
+})
+```
+
+#### Cloudflare R2 Storage
+Scalable cloud storage with Cloudflare R2 (S3-compatible).
+
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'r2',
+    r2Storage: {
+      bucketName: 'my-bucket',
+      accountId: process.env.CF_ACCOUNT_ID,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+    }
+  }
+})
+```
+
+#### Google Cloud Storage (S3-Compatible)
+GCS using HMAC keys for S3-compatible access.
+
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs',
+    gcsStorage: {
+      bucketName: 'my-bucket',
+      region: 'us-central1',
+      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY,
+      endpoint: 'https://storage.googleapis.com'
+    }
+  }
+})
+```
+
+#### Google Cloud Storage (Native SDK) 🆕
+**Recommended for GCS deployments.** Uses native `@google-cloud/storage` SDK with automatic authentication.
+
+**Key Benefits:**
+- ✅ Application Default Credentials (ADC) - Zero config in Cloud Run/GCE
+- ✅ Better performance with native GCS optimizations
+- ✅ No HMAC key management required
+- ✅ Automatic service account integration
+
+**With Application Default Credentials (Cloud Run/GCE):**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs-native',
+    gcsNativeStorage: {
+      bucketName: 'my-bucket'
+      // No credentials needed - ADC automatic!
+    }
+  }
+})
+```
+
+**With Service Account Key File:**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs-native',
+    gcsNativeStorage: {
+      bucketName: 'my-bucket',
+      keyFilename: '/path/to/service-account.json'
+    }
+  }
+})
+```
+
+**With Service Account Credentials Object:**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs-native',
+    gcsNativeStorage: {
+      bucketName: 'my-bucket',
+      credentials: {
+        client_email: 'service@project.iam.gserviceaccount.com',
+        private_key: process.env.GCS_PRIVATE_KEY
+      }
+    }
+  }
+})
+```
+
+### Storage Features
+
+All storage adapters support:
+- ✅ **UUID-based sharding** - 256 buckets (00-ff) for scalability
+- ✅ **Pagination** - Efficient cursor-based pagination across shards
+- ✅ **Statistics** - O(1) count operations
+- ✅ **Caching** - Multi-level cache for performance
+- ✅ **Backpressure** - Automatic flow control
+- ✅ **Throttling detection** - Adaptive retry on rate limits
+
+### Migration from HMAC to Native GCS
+
+If you're currently using `type: 'gcs'` with HMAC keys, migrating to `type: 'gcs-native'` is straightforward:
+
+**Before (HMAC):**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs',
+    gcsStorage: {
+      bucketName: 'my-bucket',
+      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY
+    }
+  }
+})
+```
+
+**After (Native with ADC):**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs-native',
+    gcsNativeStorage: {
+      bucketName: 'my-bucket'
+      // ADC handles authentication automatically
+    }
+  }
+})
+```
+
+**Data Migration:**
+No data migration required! Both adapters use the same path structure:
+- `entities/nouns/vectors/{shard}/{id}.json`
+- `entities/nouns/metadata/{shard}/{id}.json`
+- `entities/verbs/vectors/{shard}/{id}.json`
+
+---
+
 ## Configuration API
 
 Access via: `const config = await brain.config()`
