@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.26.0](https://github.com/soulcraftlabs/brainy/compare/v3.25.2...v3.26.0) (2025-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Requires data migration for existing S3/GCS/R2/OpFS deployments.
+See .strategy/UNIFIED-UUID-SHARDING.md for migration guidance.
+
+### 🐛 Bug Fixes
+
+* implement unified UUID-based sharding for metadata across all storage adapters ([2f33571](https://github.com/soulcraftlabs/brainy/commit/2f3357132d06c70cd74532d22cbfbf6abb92903a))
+
 ### [3.25.2](https://github.com/soulcraftlabs/brainy/compare/v3.25.1...v3.25.2) (2025-10-08)
 
 
