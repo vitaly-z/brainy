@@ -19,6 +19,7 @@ import {
   INDEX_DIR,
   STATISTICS_KEY
 } from '../baseStorage.js'
+import { getShardIdFromUuid } from '../sharding.js'
 import '../../types/fileSystemTypes.js'
 
 // Type alias for HNSWNode
@@ -205,8 +206,16 @@ export class OPFSStorage extends BaseStorage {
         )
       }
 
-      // Create or get the file for this noun
-      const fileHandle = await this.nounsDir!.getFileHandle(`${noun.id}.json`, {
+      // Use UUID-based sharding for nouns
+      const shardId = getShardIdFromUuid(noun.id)
+
+      // Get or create the shard directory
+      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId, {
+        create: true
+      })
+
+      // Create or get the file in the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${noun.id}.json`, {
         create: true
       })
 
@@ -229,8 +238,14 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Get the file handle for this noun
-      const fileHandle = await this.nounsDir!.getFileHandle(`${id}.json`)
+      // Use UUID-based sharding for nouns
+      const shardId = getShardIdFromUuid(id)
+
+      // Get the shard directory
+      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId)
+
+      // Get the file handle from the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${id}.json`)
 
       // Read the noun data from the file
       const file = await fileHandle.getFile()
@@ -278,35 +293,42 @@ export class OPFSStorage extends BaseStorage {
     const nodes: HNSWNode[] = []
 
     try {
-      // Iterate through all files in the nouns directory
-      for await (const [name, handle] of this.nounsDir!.entries()) {
-        if (handle.kind === 'file') {
-          try {
-            // Read the node data from the file
-            const file = await safeGetFile(handle)
-            const text = await file.text()
-            const data = JSON.parse(text)
+      // Iterate through all shard directories
+      for await (const [shardName, shardHandle] of this.nounsDir!.entries()) {
+        if (shardHandle.kind === 'directory') {
+          const shardDir = shardHandle as FileSystemDirectoryHandle
 
-            // Get the metadata to check the noun type
-            const metadata = await this.getMetadata(data.id)
+          // Iterate through all files in this shard
+          for await (const [fileName, fileHandle] of shardDir.entries()) {
+            if (fileHandle.kind === 'file') {
+              try {
+                // Read the node data from the file
+                const file = await safeGetFile(fileHandle)
+                const text = await file.text()
+                const data = JSON.parse(text)
 
-            // Include the node if its noun type matches the requested type
-            if (metadata && metadata.noun === nounType) {
-              // Convert serialized connections back to Map<number, Set<string>>
-              const connections = new Map<number, Set<string>>()
-              for (const [level, nodeIds] of Object.entries(data.connections)) {
-                connections.set(Number(level), new Set(nodeIds as string[]))
+                // Get the metadata to check the noun type
+                const metadata = await this.getMetadata(data.id)
+
+                // Include the node if its noun type matches the requested type
+                if (metadata && metadata.noun === nounType) {
+                  // Convert serialized connections back to Map<number, Set<string>>
+                  const connections = new Map<number, Set<string>>()
+                  for (const [level, nodeIds] of Object.entries(data.connections)) {
+                    connections.set(Number(level), new Set(nodeIds as string[]))
+                  }
+
+                  nodes.push({
+                    id: data.id,
+                    vector: data.vector,
+                    connections,
+                    level: data.level || 0
+                  })
+                }
+              } catch (error) {
+                console.error(`Error reading node file ${shardName}/${fileName}:`, error)
               }
-
-              nodes.push({
-                id: data.id,
-                vector: data.vector,
-                connections,
-                level: data.level || 0
-              })
             }
-          } catch (error) {
-            console.error(`Error reading node file ${name}:`, error)
           }
         }
       }
@@ -331,7 +353,14 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      await this.nounsDir!.removeEntry(`${id}.json`)
+      // Use UUID-based sharding for nouns
+      const shardId = getShardIdFromUuid(id)
+
+      // Get the shard directory
+      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId)
+
+      // Delete the file from the shard directory
+      await shardDir.removeEntry(`${id}.json`)
     } catch (error: any) {
       // Ignore NotFoundError, which means the file doesn't exist
       if (error.name !== 'NotFoundError') {
@@ -363,8 +392,16 @@ export class OPFSStorage extends BaseStorage {
         )
       }
 
-      // Create or get the file for this verb
-      const fileHandle = await this.verbsDir!.getFileHandle(`${edge.id}.json`, {
+      // Use UUID-based sharding for verbs
+      const shardId = getShardIdFromUuid(edge.id)
+
+      // Get or create the shard directory
+      const shardDir = await this.verbsDir!.getDirectoryHandle(shardId, {
+        create: true
+      })
+
+      // Create or get the file in the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${edge.id}.json`, {
         create: true
       })
 
@@ -392,8 +429,14 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Get the file handle for this edge
-      const fileHandle = await this.verbsDir!.getFileHandle(`${id}.json`)
+      // Use UUID-based sharding for verbs
+      const shardId = getShardIdFromUuid(id)
+
+      // Get the shard directory
+      const shardDir = await this.verbsDir!.getDirectoryHandle(shardId)
+
+      // Get the file handle from the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${id}.json`)
 
       // Read the edge data from the file
       const file = await fileHandle.getFile()
@@ -438,40 +481,47 @@ export class OPFSStorage extends BaseStorage {
 
     const allEdges: Edge[] = []
     try {
-      // Iterate through all files in the verbs directory
-      for await (const [name, handle] of this.verbsDir!.entries()) {
-        if (handle.kind === 'file') {
-          try {
-            // Read the edge data from the file
-            const file = await safeGetFile(handle)
-            const text = await file.text()
-            const data = JSON.parse(text)
+      // Iterate through all shard directories
+      for await (const [shardName, shardHandle] of this.verbsDir!.entries()) {
+        if (shardHandle.kind === 'directory') {
+          const shardDir = shardHandle as FileSystemDirectoryHandle
 
-            // Convert serialized connections back to Map<number, Set<string>>
-            const connections = new Map<number, Set<string>>()
-            for (const [level, nodeIds] of Object.entries(data.connections)) {
-              connections.set(Number(level), new Set(nodeIds as string[]))
+          // Iterate through all files in this shard
+          for await (const [fileName, fileHandle] of shardDir.entries()) {
+            if (fileHandle.kind === 'file') {
+              try {
+                // Read the edge data from the file
+                const file = await safeGetFile(fileHandle)
+                const text = await file.text()
+                const data = JSON.parse(text)
+
+                // Convert serialized connections back to Map<number, Set<string>>
+                const connections = new Map<number, Set<string>>()
+                for (const [level, nodeIds] of Object.entries(data.connections)) {
+                  connections.set(Number(level), new Set(nodeIds as string[]))
+                }
+
+                // Create default timestamp if not present
+                const defaultTimestamp = {
+                  seconds: Math.floor(Date.now() / 1000),
+                  nanoseconds: (Date.now() % 1000) * 1000000
+                }
+
+                // Create default createdBy if not present
+                const defaultCreatedBy = {
+                  augmentation: 'unknown',
+                  version: '1.0'
+                }
+
+                allEdges.push({
+                  id: data.id,
+                  vector: data.vector,
+                  connections
+                })
+              } catch (error) {
+                console.error(`Error reading edge file ${shardName}/${fileName}:`, error)
+              }
             }
-
-            // Create default timestamp if not present
-            const defaultTimestamp = {
-              seconds: Math.floor(Date.now() / 1000),
-              nanoseconds: (Date.now() % 1000) * 1000000
-            }
-
-            // Create default createdBy if not present
-            const defaultCreatedBy = {
-              augmentation: 'unknown',
-              version: '1.0'
-            }
-
-            allEdges.push({
-              id: data.id,
-              vector: data.vector,
-              connections
-            })
-          } catch (error) {
-            console.error(`Error reading edge file ${name}:`, error)
           }
         }
       }
@@ -572,7 +622,14 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      await this.verbsDir!.removeEntry(`${id}.json`)
+      // Use UUID-based sharding for verbs
+      const shardId = getShardIdFromUuid(id)
+
+      // Get the shard directory
+      const shardDir = await this.verbsDir!.getDirectoryHandle(shardId)
+
+      // Delete the file from the shard directory
+      await shardDir.removeEntry(`${id}.json`)
     } catch (error: any) {
       // Ignore NotFoundError, which means the file doesn't exist
       if (error.name !== 'NotFoundError') {
@@ -669,10 +726,17 @@ export class OPFSStorage extends BaseStorage {
   protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
-    const fileName = `${id}.json`
-    const fileHandle = await (
+    // Use UUID-based sharding for metadata (consistent with verb vectors)
+    const shardId = getShardIdFromUuid(id)
+
+    // Get or create the shard directory
+    const shardDir = await (
       this.verbMetadataDir as FileSystemDirectoryHandle
-    ).getFileHandle(fileName, { create: true })
+    ).getDirectoryHandle(shardId, { create: true })
+
+    // Create or get the file in the shard directory
+    const fileName = `${id}.json`
+    const fileHandle = await shardDir.getFileHandle(fileName, { create: true })
     const writable = await (fileHandle as FileSystemFileHandle).createWritable()
     await writable.write(JSON.stringify(metadata, null, 2))
     await writable.close()
@@ -684,11 +748,18 @@ export class OPFSStorage extends BaseStorage {
   public async getVerbMetadata(id: string): Promise<any | null> {
     await this.ensureInitialized()
 
+    // Use UUID-based sharding for metadata (consistent with verb vectors)
+    const shardId = getShardIdFromUuid(id)
+
     const fileName = `${id}.json`
     try {
-      const fileHandle = await (
+      // Get the shard directory
+      const shardDir = await (
         this.verbMetadataDir as FileSystemDirectoryHandle
-      ).getFileHandle(fileName)
+      ).getDirectoryHandle(shardId)
+
+      // Get the file from the shard directory
+      const fileHandle = await shardDir.getFileHandle(fileName)
       const file = await safeGetFile(fileHandle)
       const text = await file.text()
       return JSON.parse(text)
@@ -706,10 +777,17 @@ export class OPFSStorage extends BaseStorage {
   protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
-    const fileName = `${id}.json`
-    const fileHandle = await (
+    // Use UUID-based sharding for metadata (consistent with noun vectors)
+    const shardId = getShardIdFromUuid(id)
+
+    // Get or create the shard directory
+    const shardDir = await (
       this.nounMetadataDir as FileSystemDirectoryHandle
-    ).getFileHandle(fileName, { create: true })
+    ).getDirectoryHandle(shardId, { create: true })
+
+    // Create or get the file in the shard directory
+    const fileName = `${id}.json`
+    const fileHandle = await shardDir.getFileHandle(fileName, { create: true })
     const writable = await fileHandle.createWritable()
     await writable.write(JSON.stringify(metadata, null, 2))
     await writable.close()
@@ -721,11 +799,18 @@ export class OPFSStorage extends BaseStorage {
   public async getNounMetadata(id: string): Promise<any | null> {
     await this.ensureInitialized()
 
+    // Use UUID-based sharding for metadata (consistent with noun vectors)
+    const shardId = getShardIdFromUuid(id)
+
     const fileName = `${id}.json`
     try {
-      const fileHandle = await (
+      // Get the shard directory
+      const shardDir = await (
         this.nounMetadataDir as FileSystemDirectoryHandle
-      ).getFileHandle(fileName)
+      ).getDirectoryHandle(shardId)
+
+      // Get the file from the shard directory
+      const fileHandle = await shardDir.getFileHandle(fileName)
       const file = await safeGetFile(fileHandle)
       const text = await file.text()
       return JSON.parse(text)
@@ -1336,16 +1421,23 @@ export class OPFSStorage extends BaseStorage {
     nextCursor?: string
   }> {
     await this.ensureInitialized()
-    
+
     const limit = options.limit || 100
     const cursor = options.cursor
-    
-    // Get all noun files
+
+    // Get all noun files from all shards
     const nounFiles: string[] = []
     if (this.nounsDir) {
-      for await (const [name, handle] of this.nounsDir.entries()) {
-        if (handle.kind === 'file' && name.endsWith('.json')) {
-          nounFiles.push(name)
+      // Iterate through all shard directories
+      for await (const [shardName, shardHandle] of this.nounsDir.entries()) {
+        if (shardHandle.kind === 'directory') {
+          // Iterate through files in this shard
+          const shardDir = shardHandle as FileSystemDirectoryHandle
+          for await (const [fileName, fileHandle] of shardDir.entries()) {
+            if (fileHandle.kind === 'file' && fileName.endsWith('.json')) {
+              nounFiles.push(`${shardName}/${fileName}`)
+            }
+          }
         }
       }
     }
@@ -1368,7 +1460,8 @@ export class OPFSStorage extends BaseStorage {
     // Load nouns from files
     const items: HNSWNoun[] = []
     for (const fileName of pageFiles) {
-      const id = fileName.replace('.json', '')
+      // fileName is in format "shard/uuid.json", extract just the UUID
+      const id = fileName.split('/')[1].replace('.json', '')
       const noun = await this.getNoun_internal(id)
       if (noun) {
         // Apply filters if provided
@@ -1451,23 +1544,30 @@ export class OPFSStorage extends BaseStorage {
     nextCursor?: string
   }> {
     await this.ensureInitialized()
-    
+
     const limit = options.limit || 100
     const cursor = options.cursor
-    
-    // Get all verb files
+
+    // Get all verb files from all shards
     const verbFiles: string[] = []
     if (this.verbsDir) {
-      for await (const [name, handle] of this.verbsDir.entries()) {
-        if (handle.kind === 'file' && name.endsWith('.json')) {
-          verbFiles.push(name)
+      // Iterate through all shard directories
+      for await (const [shardName, shardHandle] of this.verbsDir.entries()) {
+        if (shardHandle.kind === 'directory') {
+          // Iterate through files in this shard
+          const shardDir = shardHandle as FileSystemDirectoryHandle
+          for await (const [fileName, fileHandle] of shardDir.entries()) {
+            if (fileHandle.kind === 'file' && fileName.endsWith('.json')) {
+              verbFiles.push(`${shardName}/${fileName}`)
+            }
+          }
         }
       }
     }
-    
+
     // Sort files for consistent ordering
     verbFiles.sort()
-    
+
     // Apply cursor-based pagination
     let startIndex = 0
     if (cursor) {
@@ -1476,14 +1576,15 @@ export class OPFSStorage extends BaseStorage {
         startIndex = cursorIndex
       }
     }
-    
+
     // Get the subset of files for this page
     const pageFiles = verbFiles.slice(startIndex, startIndex + limit)
-    
+
     // Load verbs from files and convert to GraphVerb
     const items: GraphVerb[] = []
     for (const fileName of pageFiles) {
-      const id = fileName.replace('.json', '')
+      // fileName is in format "shard/uuid.json", extract just the UUID
+      const id = fileName.split('/')[1].replace('.json', '')
       const hnswVerb = await this.getVerb_internal(id)
       if (hnswVerb) {
         // Convert HNSWVerb to GraphVerb
@@ -1593,17 +1694,27 @@ export class OPFSStorage extends BaseStorage {
    */
   private async initializeCountsFromScan(): Promise<void> {
     try {
-      // Count nouns
+      // Count nouns across all shards
       let nounCount = 0
-      for await (const [, ] of this.nounsDir!.entries()) {
-        nounCount++
+      for await (const [shardName, shardHandle] of this.nounsDir!.entries()) {
+        if (shardHandle.kind === 'directory') {
+          const shardDir = shardHandle as FileSystemDirectoryHandle
+          for await (const [, ] of shardDir.entries()) {
+            nounCount++
+          }
+        }
       }
       this.totalNounCount = nounCount
 
-      // Count verbs
+      // Count verbs across all shards
       let verbCount = 0
-      for await (const [, ] of this.verbsDir!.entries()) {
-        verbCount++
+      for await (const [shardName, shardHandle] of this.verbsDir!.entries()) {
+        if (shardHandle.kind === 'directory') {
+          const shardDir = shardHandle as FileSystemDirectoryHandle
+          for await (const [, ] of shardDir.entries()) {
+            verbCount++
+          }
+        }
       }
       this.totalVerbCount = verbCount
 

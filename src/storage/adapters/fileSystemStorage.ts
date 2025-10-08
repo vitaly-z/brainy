@@ -627,7 +627,13 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.nounMetadataDir, `${id}.json`)
+    // Use UUID-based sharding for metadata (consistent with noun vectors)
+    const filePath = this.getShardedPath(this.nounMetadataDir, id)
+
+    // Ensure shard directory exists
+    const shardDir = path.dirname(filePath)
+    await fs.promises.mkdir(shardDir, { recursive: true })
+
     await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
   }
 
@@ -637,7 +643,8 @@ export class FileSystemStorage extends BaseStorage {
   public async getNounMetadata(id: string): Promise<any | null> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.nounMetadataDir, `${id}.json`)
+    // Use UUID-based sharding for metadata (consistent with noun vectors)
+    const filePath = this.getShardedPath(this.nounMetadataDir, id)
     try {
       const data = await fs.promises.readFile(filePath, 'utf-8')
       return JSON.parse(data)

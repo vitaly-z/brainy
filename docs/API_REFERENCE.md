@@ -776,30 +776,51 @@ const exported = await data.export({
 ---
 
 ### `getStats(): StatsResult`
-Gets complete statistics about entities and relationships.
+Gets complete statistics about entities and relationships. All stats are **O(1) pre-calculated** - updated when entities/relationships are added/removed.
 
 **Returns:**
 ```typescript
 {
   entities: {
-    total: number
-    byType: Record<string, number>
+    total: number                      // Total entity count
+    byType: Record<string, number>     // Entity count by type
   }
   relationships: {
-    totalRelationships: number
-    byType: Record<string, number>
+    totalRelationships: number         // Total relationship/edge count
+    relationshipsByType: Record<string, number>  // Relationship count by type
+    uniqueSourceNodes: number          // Number of unique source entities
+    uniqueTargetNodes: number          // Number of unique target entities
+    totalNodes: number                 // Total unique entities in relationships
   }
-  density: number  // relationships per entity
+  density: number  // Relationships per entity ratio
 }
 ```
 
 **Example:**
 ```typescript
 const stats = brain.getStats()
-console.log(`Total entities: ${stats.entities.total}`)
-console.log(`Total relationships: ${stats.relationships.totalRelationships}`)
-console.log(`Graph density: ${stats.density.toFixed(2)}`)
+
+// Total counts (O(1) operations)
+const totalNouns = stats.entities.total
+const totalVerbs = stats.relationships.totalRelationships
+const totalRelations = stats.relationships.totalRelationships  // alias
+
+// Counts by type (O(1) operations)
+const nounTypes = stats.entities.byType
+const verbTypes = stats.relationships.relationshipsByType
+
+// Graph metrics
+console.log(`Entities: ${totalNouns}`)
+console.log(`Relationships: ${totalVerbs}`)
+console.log(`Density: ${stats.density.toFixed(2)}`)
+console.log(`Types:`, Object.keys(nounTypes))
 ```
+
+**Performance:**
+- ✅ All counts pre-calculated in memory
+- ✅ O(1) access time
+- ✅ Updated automatically on add/remove
+- ✅ No expensive full scans required
 
 **Note:** For more granular counting operations, see the `brain.counts` API below.
 

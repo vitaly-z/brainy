@@ -27,6 +27,7 @@ import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
+import { getShardIdFromUuid, getAllShardIds, getShardIdByIndex, TOTAL_SHARDS } from '../sharding.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -123,9 +124,11 @@ export class S3CompatibleStorage extends BaseStorage {
 
   // Distributed components (optional)
   private coordinator?: any // DistributedCoordinator
-  private shardManager?: any // ShardManager
   private cacheSync?: any // CacheSync
   private readWriteSeparation?: any // ReadWriteSeparation
+
+  // Note: Sharding is always enabled via UUID-based prefixes (00-ff)
+  // ShardManager is no longer used - sharding is deterministic
 
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
@@ -356,23 +359,22 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Set distributed components for multi-node coordination
-   * Zero-config: Automatically optimizes based on components provided
+   *
+   * Note: Sharding is always enabled via UUID-based prefixes (00-ff).
+   * ShardManager is no longer required - sharding is deterministic based on UUID.
    */
   public setDistributedComponents(components: {
     coordinator?: any
-    shardManager?: any
+    shardManager?: any // Deprecated - kept for backward compatibility
     cacheSync?: any
     readWriteSeparation?: any
   }): void {
     this.coordinator = components.coordinator
-    this.shardManager = components.shardManager
     this.cacheSync = components.cacheSync
     this.readWriteSeparation = components.readWriteSeparation
 
-    // Auto-configure based on what's available
-    if (this.shardManager) {
-      console.log(`🎯 S3 Storage: Sharding enabled with ${this.shardManager.config?.shardCount || 64} shards`)
-    }
+    // Note: UUID-based sharding is always active (256 shards: 00-ff)
+    console.log(`🎯 S3 Storage: UUID-based sharding active (256 shards: 00-ff)`)
 
     if (this.coordinator) {
       console.log(`🤝 S3 Storage: Distributed coordination active (node: ${this.coordinator.nodeId})`)
@@ -388,25 +390,33 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
-   * Get the S3 key for a noun, using sharding if available
+   * Get the S3 key for a noun using UUID-based sharding
+   *
+   * Uses first 2 hex characters of UUID for consistent sharding.
+   * Path format: entities/nouns/vectors/{shardId}/{uuid}.json
+   *
+   * @example
+   * getNounKey('ab123456-1234-5678-9abc-def012345678')
+   * // returns 'entities/nouns/vectors/ab/ab123456-1234-5678-9abc-def012345678.json'
    */
   private getNounKey(id: string): string {
-    if (this.shardManager) {
-      const shardId = this.shardManager.getShardForKey(id)
-      return `shards/${shardId}/${this.nounPrefix}${id}.json`
-    }
-    return `${this.nounPrefix}${id}.json`
+    const shardId = getShardIdFromUuid(id)
+    return `${this.nounPrefix}${shardId}/${id}.json`
   }
 
   /**
-   * Get the S3 key for a verb, using sharding if available
+   * Get the S3 key for a verb using UUID-based sharding
+   *
+   * Uses first 2 hex characters of UUID for consistent sharding.
+   * Path format: verbs/{shardId}/{uuid}.json
+   *
+   * @example
+   * getVerbKey('cd987654-4321-8765-cba9-fed543210987')
+   * // returns 'verbs/cd/cd987654-4321-8765-cba9-fed543210987.json'
    */
   private getVerbKey(id: string): string {
-    if (this.shardManager) {
-      const shardId = this.shardManager.getShardForKey(id)
-      return `shards/${shardId}/${this.verbPrefix}${id}.json`
-    }
-    return `${this.verbPrefix}${id}.json`
+    const shardId = getShardIdFromUuid(id)
+    return `${this.verbPrefix}${shardId}/${id}.json`
   }
 
   /**
@@ -1036,7 +1046,8 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the GetObjectCommand only when needed
       const { GetObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.nounPrefix}${id}.json`
+      // Use getNounKey() to properly handle sharding
+      const key = this.getNounKey(id)
       this.logger.trace(`Getting node ${id} from key: ${key}`)
 
       // Try to get the node from the nouns directory
@@ -1133,9 +1144,23 @@ export class S3CompatibleStorage extends BaseStorage {
   }
   
   /**
-   * Get nodes with pagination
+   * Get nodes with pagination using UUID-based sharding
+   *
+   * Iterates through 256 UUID-based shards (00-ff) to retrieve nodes.
+   * Cursor format: "shardIndex:s3ContinuationToken" to support pagination across shards.
+   *
    * @param options Pagination options
    * @returns Promise that resolves to a paginated result of nodes
+   *
+   * @example
+   * // First page
+   * const page1 = await getNodesWithPagination({ limit: 100 })
+   * // page1.nodes contains up to 100 nodes
+   * // page1.nextCursor might be "5:some-s3-token" (currently in shard 05)
+   *
+   * // Next page
+   * const page2 = await getNodesWithPagination({ limit: 100, cursor: page1.nextCursor })
+   * // Continues from where page1 left off
    */
   protected async getNodesWithPagination(options: {
     limit?: number
@@ -1147,98 +1172,91 @@ export class S3CompatibleStorage extends BaseStorage {
     nextCursor?: string
   }> {
     await this.ensureInitialized()
-    
+
     const limit = options.limit || 100
     const useCache = options.useCache !== false
-    
+
     try {
-      // Import the ListObjectsV2Command and GetObjectCommand only when needed
       const { ListObjectsV2Command } = await import('@aws-sdk/client-s3')
-      
-      // List objects with pagination
-      const listResponse = await this.s3Client!.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucketName,
-          Prefix: this.nounPrefix,
-          MaxKeys: limit,
-          ContinuationToken: options.cursor
-        })
-      )
-      
-      // If listResponse is null/undefined or there are no objects, return an empty result
-      if (
-        !listResponse ||
-        !listResponse.Contents ||
-        listResponse.Contents.length === 0
-      ) {
-        return {
-          nodes: [],
-          hasMore: false
-        }
-      }
-      
-      // Extract node IDs from the keys
-      const nodeIds = listResponse.Contents
-        .filter((object: { Key?: string }) => object && object.Key)
-        .map((object: { Key?: string }) => object.Key!.replace(this.nounPrefix, '').replace('.json', ''))
-      
-      // Use the cache manager to get nodes efficiently
+
       const nodes: HNSWNode[] = []
-      
-      if (useCache) {
-        // Get nodes from cache manager
-        const cachedNodes = await this.nounCacheManager.getMany(nodeIds)
-        
-        // Add nodes to result in the same order as nodeIds
-        for (const id of nodeIds) {
-          const node = cachedNodes.get(id)
-          if (node) {
-            nodes.push(node)
+
+      // Parse cursor (format: "shardIndex:s3ContinuationToken")
+      let startShardIndex = 0
+      let s3ContinuationToken: string | undefined
+      if (options.cursor) {
+        const parts = options.cursor.split(':', 2)
+        startShardIndex = parseInt(parts[0]) || 0
+        s3ContinuationToken = parts[1] || undefined
+      }
+
+      // Iterate through shards starting from cursor position
+      for (let shardIndex = startShardIndex; shardIndex < TOTAL_SHARDS; shardIndex++) {
+        const shardId = getShardIdByIndex(shardIndex)
+        const shardPrefix = `${this.nounPrefix}${shardId}/`
+
+        // List objects in this shard
+        const listResponse = await this.s3Client!.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucketName,
+            Prefix: shardPrefix,
+            MaxKeys: limit - nodes.length,
+            ContinuationToken: shardIndex === startShardIndex ? s3ContinuationToken : undefined
+          })
+        )
+
+        // Extract node IDs from keys
+        if (listResponse.Contents && listResponse.Contents.length > 0) {
+          const nodeIds = listResponse.Contents
+            .filter((obj: { Key?: string }) => obj && obj.Key)
+            .map((obj: { Key?: string }) => {
+              // Extract UUID from: entities/nouns/vectors/ab/ab123456-uuid.json
+              let key = obj.Key!
+              if (key.startsWith(shardPrefix)) {
+                key = key.substring(shardPrefix.length)
+              }
+              if (key.endsWith('.json')) {
+                key = key.substring(0, key.length - 5)
+              }
+              return key
+            })
+
+          // Load nodes for this shard (use direct loading for pagination scans)
+          const shardNodes = await this.loadNodesByIds(nodeIds, false)
+          nodes.push(...shardNodes)
+        }
+
+        // Check if we've reached the limit
+        if (nodes.length >= limit) {
+          const hasMore = !!listResponse.IsTruncated || shardIndex < TOTAL_SHARDS - 1
+          const nextCursor = listResponse.IsTruncated
+            ? `${shardIndex}:${listResponse.NextContinuationToken}`
+            : shardIndex < TOTAL_SHARDS - 1
+            ? `${shardIndex + 1}:`
+            : undefined
+
+          return {
+            nodes: nodes.slice(0, limit),
+            hasMore,
+            nextCursor
           }
         }
-      } else {
-        // Get nodes directly from S3 without using cache
-        // Process in smaller batches to reduce memory usage
-        const batchSize = 50
-        const batches: string[][] = []
-        
-        // Split into batches
-        for (let i = 0; i < nodeIds.length; i += batchSize) {
-          const batch = nodeIds.slice(i, i + batchSize)
-          batches.push(batch)
-        }
-        
-        // Process each batch sequentially
-        for (const batch of batches) {
-          const batchNodes = await Promise.all(
-            batch.map(async (id) => {
-              try {
-                return await this.getNoun_internal(id)
-              } catch (error) {
-                return null
-              }
-            })
-          )
-          
-          // Add non-null nodes to result
-          for (const node of batchNodes) {
-            if (node) {
-              nodes.push(node)
-            }
+
+        // If this shard has more data but we haven't hit limit, continue to next shard
+        if (listResponse.IsTruncated) {
+          return {
+            nodes,
+            hasMore: true,
+            nextCursor: `${shardIndex}:${listResponse.NextContinuationToken}`
           }
         }
       }
-      
-      // Determine if there are more nodes
-      const hasMore = !!listResponse.IsTruncated
-      
-      // Set next cursor if there are more nodes
-      const nextCursor = listResponse.NextContinuationToken
-      
+
+      // All shards exhausted
       return {
         nodes,
-        hasMore,
-        nextCursor
+        hasMore: false,
+        nextCursor: undefined
       }
     } catch (error) {
       this.logger.error('Failed to get nodes with pagination:', error)
@@ -1247,6 +1265,47 @@ export class S3CompatibleStorage extends BaseStorage {
         hasMore: false
       }
     }
+  }
+
+  /**
+   * Load nodes by IDs efficiently using cache or direct fetch
+   */
+  private async loadNodesByIds(nodeIds: string[], useCache: boolean): Promise<HNSWNode[]> {
+    const nodes: HNSWNode[] = []
+
+    if (useCache) {
+      const cachedNodes = await this.nounCacheManager.getMany(nodeIds)
+      for (const id of nodeIds) {
+        const node = cachedNodes.get(id)
+        if (node) {
+          nodes.push(node)
+        }
+      }
+    } else {
+      // Load directly in batches
+      const batchSize = 50
+      for (let i = 0; i < nodeIds.length; i += batchSize) {
+        const batch = nodeIds.slice(i, i + batchSize)
+        const batchNodes = await Promise.all(
+          batch.map(async (id) => {
+            try {
+              return await this.getNoun_internal(id)
+            } catch (error) {
+              this.logger.warn(`Failed to load node ${id}:`, error)
+              return null
+            }
+          })
+        )
+
+        for (const node of batchNodes) {
+          if (node) {
+            nodes.push(node)
+          }
+        }
+      }
+    }
+
+    return nodes
   }
 
   /**
@@ -1434,7 +1493,7 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the GetObjectCommand only when needed
       const { GetObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.verbPrefix}${id}.json`
+      const key = this.getVerbKey(id)
       this.logger.trace(`Getting edge ${id} from key: ${key}`)
 
       // Try to get the edge from the verbs directory
@@ -2039,7 +2098,9 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the PutObjectCommand only when needed
       const { PutObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.metadataPrefix}${id}.json`
+      // Use UUID-based sharding for metadata (consistent with noun vectors)
+      const shardId = getShardIdFromUuid(id)
+      const key = `${this.metadataPrefix}${shardId}/${id}.json`
       const body = JSON.stringify(metadata, null, 2)
 
       this.logger.trace(`Saving noun metadata for ${id} to key: ${key}`)
@@ -2186,7 +2247,9 @@ export class S3CompatibleStorage extends BaseStorage {
       // Import the GetObjectCommand only when needed
       const { GetObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.metadataPrefix}${id}.json`
+      // Use UUID-based sharding for metadata (consistent with noun vectors)
+      const shardId = getShardIdFromUuid(id)
+      const key = `${this.metadataPrefix}${shardId}/${id}.json`
       this.logger.trace(`Getting noun metadata for ${id} from key: ${key}`)
 
       // Try to get the noun metadata
@@ -3459,11 +3522,63 @@ export class S3CompatibleStorage extends BaseStorage {
       }
     }
     
+    // Calculate total count efficiently
+    // For the first page (no cursor), we can estimate total count
+    let totalCount: number | undefined
+    if (!cursor) {
+      try {
+        totalCount = await this.estimateTotalNounCount()
+      } catch (error) {
+        this.logger.warn('Failed to estimate total noun count:', error)
+        // totalCount remains undefined
+      }
+    }
+
     return {
       items: filteredNodes,
+      totalCount,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
     }
+  }
+
+  /**
+   * Estimate total noun count by listing objects across all shards
+   * This is more efficient than loading all nouns
+   */
+  private async estimateTotalNounCount(): Promise<number> {
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3')
+
+    let totalCount = 0
+
+    // Count across all UUID-based shards (00-ff)
+    for (let shardIndex = 0; shardIndex < TOTAL_SHARDS; shardIndex++) {
+      const shardId = getShardIdByIndex(shardIndex)
+      const shardPrefix = `${this.nounPrefix}${shardId}/`
+
+      let shardCursor: string | undefined
+      let hasMore = true
+
+      while (hasMore) {
+        const listResponse = await this.s3Client!.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucketName,
+            Prefix: shardPrefix,
+            MaxKeys: 1000,
+            ContinuationToken: shardCursor
+          })
+        )
+
+        if (listResponse.Contents) {
+          totalCount += listResponse.Contents.length
+        }
+
+        hasMore = !!listResponse.IsTruncated
+        shardCursor = listResponse.NextContinuationToken
+      }
+    }
+
+    return totalCount
   }
 
   /**
