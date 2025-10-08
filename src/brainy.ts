@@ -1661,6 +1661,67 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Import files with auto-detection and dual storage (VFS + Knowledge Graph)
+   *
+   * Unified import system that:
+   * - Auto-detects format (Excel, PDF, CSV, JSON, Markdown)
+   * - Extracts entities and relationships
+   * - Stores in both VFS (organized files) and Knowledge Graph (connected entities)
+   * - Links VFS files to graph entities
+   *
+   * @example
+   * // Import from file path
+   * const result = await brain.import('/path/to/file.xlsx')
+   *
+   * @example
+   * // Import from buffer
+   * const result = await brain.import(buffer, { format: 'pdf' })
+   *
+   * @example
+   * // Import JSON object
+   * const result = await brain.import({ entities: [...] })
+   *
+   * @example
+   * // Custom VFS path and grouping
+   * const result = await brain.import(buffer, {
+   *   vfsPath: '/my-imports/data',
+   *   groupBy: 'type',
+   *   onProgress: (progress) => console.log(progress.message)
+   * })
+   */
+  async import(
+    source: Buffer | string | object,
+    options?: {
+      format?: 'excel' | 'pdf' | 'csv' | 'json' | 'markdown'
+      vfsPath?: string
+      groupBy?: 'type' | 'sheet' | 'flat' | 'custom'
+      customGrouping?: (entity: any) => string
+      createEntities?: boolean
+      createRelationships?: boolean
+      preserveSource?: boolean
+      enableNeuralExtraction?: boolean
+      enableRelationshipInference?: boolean
+      enableConceptExtraction?: boolean
+      confidenceThreshold?: number
+      onProgress?: (progress: {
+        stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'complete'
+        message: string
+        processed?: number
+        total?: number
+        entities?: number
+        relationships?: number
+      }) => void
+    }
+  ) {
+    // Lazy load ImportCoordinator
+    const { ImportCoordinator } = await import('./import/ImportCoordinator.js')
+    const coordinator = new ImportCoordinator(this)
+    await coordinator.init()
+
+    return await coordinator.import(source, options)
+  }
+
+  /**
    * Virtual File System API - Knowledge Operating System
    */
   vfs(): VirtualFileSystem {
