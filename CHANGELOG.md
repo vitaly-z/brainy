@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.25.2](https://github.com/soulcraftlabs/brainy/compare/v3.25.1...v3.25.2) (2025-10-08)
+
+
+### 🐛 Bug Fixes
+
+* export ImportManager and add getStats() convenience method ([06b3bc7](https://github.com/soulcraftlabs/brainy/commit/06b3bc77e1fd4c5544dc61cccd4814bd7a26a1dd))
+
 ### [3.25.1](https://github.com/soulcraftlabs/brainy/compare/v3.25.0...v3.25.1) (2025-10-07)
 
 
