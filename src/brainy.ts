@@ -2101,6 +2101,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
   }
 
+  /**
+   * Get complete statistics - convenience method
+   * For more granular counting, use brain.counts API
+   * @returns Complete statistics including entities, relationships, and density
+   */
+  getStats() {
+    return this.counts.getStats()
+  }
+
   // ============= HELPER METHODS =============
 
   /**

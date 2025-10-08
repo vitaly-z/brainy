@@ -62,13 +62,17 @@ export {
 
 // Export Neural Import (AI data understanding)
 export { NeuralImport } from './cortex/neuralImport.js'
-export type { 
+export type {
   NeuralAnalysisResult,
   DetectedEntity,
   DetectedRelationship,
   NeuralInsight,
-  NeuralImportOptions 
+  NeuralImportOptions
 } from './cortex/neuralImport.js'
+
+// Export Import Manager (comprehensive data import)
+export { ImportManager, createImportManager } from './importManager.js'
+export type { ImportOptions, ImportResult } from './importManager.js'
 
 // Augmentation types are already exported later in the file
 
