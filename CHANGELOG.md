@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.29.0](https://github.com/soulcraftlabs/brainy/compare/v3.28.0...v3.29.0) (2025-10-09)
+
+
+### 🐛 Bug Fixes
+
+* enable GCS native storage with Application Default Credentials ([1e77ecd](https://github.com/soulcraftlabs/brainy/commit/1e77ecd145d3dea46e04ca5ecc6692b41e569c1e))
+
 ### [3.28.0](https://github.com/soulcraftlabs/brainy/compare/v3.27.1...v3.28.0) (2025-10-08)
 
 - feat: add unified import system with auto-detection and dual storage (a06e877)
