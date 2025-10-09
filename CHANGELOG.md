@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.30.2](https://github.com/soulcraftlabs/brainy/compare/v3.30.1...v3.30.2) (2025-10-09)
+
+- chore: update dependencies to latest safe versions (053f292)
+
+
 ### [3.30.1](https://github.com/soulcraftlabs/brainy/compare/v3.30.0...v3.30.1) (2025-10-09)
 
 - fix: move metadata routing to base class, fix GCS/S3 system key crashes (1966c39)
