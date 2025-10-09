@@ -569,6 +569,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: Read object from path
    * All metadata operations use this internally via base class routing
+   * Enhanced error handling for corrupted metadata files (Bug #3 mitigation)
    */
   protected async readObjectFromPath(pathStr: string): Promise<any | null> {
     await this.ensureInitialized()
@@ -581,6 +582,17 @@ export class FileSystemStorage extends BaseStorage {
       if (error.code === 'ENOENT') {
         return null
       }
+
+      // Enhanced error handling for corrupted JSON files (race condition from Bug #3)
+      if (error instanceof SyntaxError || error.name === 'SyntaxError') {
+        console.warn(
+          `⚠️  Corrupted metadata file detected: ${pathStr}\n` +
+          `   This may be caused by concurrent writes during import.\n` +
+          `   Gracefully skipping this entry. File may be repaired on next write.`
+        )
+        return null
+      }
+
       console.error(`Error reading object from ${pathStr}:`, error)
       return null
     }

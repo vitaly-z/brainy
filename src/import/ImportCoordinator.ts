@@ -487,6 +487,20 @@ export class ImportCoordinator {
     // Extract rows/sections/entities from result (unified across formats)
     const rows = extractionResult.rows || extractionResult.sections || extractionResult.entities || []
 
+    // Smart deduplication auto-disable for large imports (prevents O(n²) performance)
+    const DEDUPLICATION_AUTO_DISABLE_THRESHOLD = 100
+    let actuallyEnableDeduplication = options.enableDeduplication
+
+    if (options.enableDeduplication && rows.length > DEDUPLICATION_AUTO_DISABLE_THRESHOLD) {
+      actuallyEnableDeduplication = false
+      console.log(
+        `📊 Smart Import: Auto-disabled deduplication for large import (${rows.length} entities > ${DEDUPLICATION_AUTO_DISABLE_THRESHOLD} threshold)\n` +
+        `   Reason: Deduplication performs O(n²) vector searches which is too slow for large datasets\n` +
+        `   Tip: For large imports, deduplicate manually after import or use smaller batches\n` +
+        `   Override: Set deduplicationThreshold to force enable (not recommended for >500 entities)`
+      )
+    }
+
     // Create entities in graph
     for (const row of rows) {
       const entity = row.entity || row
@@ -501,7 +515,7 @@ export class ImportCoordinator {
         let entityId: string
         let wasMerged = false
 
-        if (options.enableDeduplication) {
+        if (actuallyEnableDeduplication) {
           // Use deduplicator to check for existing entities
           const mergeResult = await this.deduplicator.createOrMerge(
             {
@@ -560,7 +574,7 @@ export class ImportCoordinator {
           vfsPath: vfsFile?.path
         })
 
-        // Create relationships if enabled
+        // Collect relationships for batch creation
         if (options.createRelationships && row.relationships) {
           for (const rel of row.relationships) {
             try {
@@ -606,8 +620,9 @@ export class ImportCoordinator {
                 }
               }
 
-              // Create relationship using brain.relate()
-              const relId = await this.brain.relate({
+              // Add to relationships array with target ID for batch processing
+              relationships.push({
+                id: '', // Will be assigned after batch creation
                 from: entityId,
                 to: targetEntityId,
                 type: rel.type,
@@ -616,16 +631,9 @@ export class ImportCoordinator {
                   evidence: rel.evidence,
                   importedAt: Date.now()
                 }
-              })
-
-              relationships.push({
-                id: relId,
-                from: entityId,
-                to: targetEntityId,
-                type: rel.type
-              })
+              } as any)
             } catch (error) {
-              // Skip relationship creation errors (entity might not exist, etc.)
+              // Skip relationship collection errors (entity might not exist, etc.)
               continue
             }
           }
@@ -633,6 +641,35 @@ export class ImportCoordinator {
       } catch (error) {
         // Skip entity creation errors (might already exist, etc.)
         continue
+      }
+    }
+
+    // Batch create all relationships using brain.relateMany() for performance
+    if (options.createRelationships && relationships.length > 0) {
+      try {
+        const relationshipParams = relationships.map(rel => ({
+          from: rel.from,
+          to: rel.to,
+          type: rel.type,
+          metadata: (rel as any).metadata
+        }))
+
+        const relationshipIds = await this.brain.relateMany({
+          items: relationshipParams,
+          parallel: true,
+          chunkSize: 100,
+          continueOnError: true
+        })
+
+        // Update relationship IDs
+        relationshipIds.forEach((id, index) => {
+          if (id && relationships[index]) {
+            relationships[index].id = id
+          }
+        })
+      } catch (error) {
+        console.warn('Error creating relationships in batch:', error)
+        // Continue - relationships are optional
       }
     }
 

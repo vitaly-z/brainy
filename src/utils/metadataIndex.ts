@@ -103,6 +103,11 @@ export class MetadataIndexManager {
   // Unified cache for coordinated memory management
   private unifiedCache: UnifiedCache
 
+  // File locking for concurrent write protection (prevents race conditions)
+  private activeLocks = new Map<string, { expiresAt: number; lockValue: string }>()
+  private lockPromises = new Map<string, Promise<boolean>>()
+  private lockTimers = new Map<string, NodeJS.Timeout>() // Track timers for cleanup
+
   constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}) {
     this.storage = storage
     this.config = {
@@ -125,6 +130,78 @@ export class MetadataIndexManager {
 
     // Lazy load counts from storage statistics on first access
     this.lazyLoadCounts()
+  }
+
+  /**
+   * Acquire an in-memory lock for coordinating concurrent metadata index writes
+   * Uses in-memory locks since MetadataIndexManager doesn't have direct file system access
+   * @param lockKey The key to lock on (e.g., 'field_noun', 'sorted_timestamp')
+   * @param ttl Time to live for the lock in milliseconds (default: 10 seconds)
+   * @returns Promise that resolves to true if lock was acquired, false otherwise
+   */
+  private async acquireLock(
+    lockKey: string,
+    ttl: number = 10000
+  ): Promise<boolean> {
+    const lockValue = `${Date.now()}_${Math.random()}`
+    const expiresAt = Date.now() + ttl
+
+    // Check if lock already exists and is still valid
+    const existingLock = this.activeLocks.get(lockKey)
+    if (existingLock && existingLock.expiresAt > Date.now()) {
+      // Lock exists and is still valid - wait briefly and retry once
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // Check again after wait
+      const recheckLock = this.activeLocks.get(lockKey)
+      if (recheckLock && recheckLock.expiresAt > Date.now()) {
+        return false // Lock still held
+      }
+    }
+
+    // Acquire the lock
+    this.activeLocks.set(lockKey, { expiresAt, lockValue })
+
+    // Schedule automatic cleanup when lock expires
+    const timer = setTimeout(() => {
+      this.releaseLock(lockKey, lockValue).catch((error) => {
+        prodLog.debug(`Failed to auto-release expired lock ${lockKey}:`, error)
+      })
+    }, ttl)
+
+    this.lockTimers.set(lockKey, timer)
+
+    return true
+  }
+
+  /**
+   * Release an in-memory lock
+   * @param lockKey The key to unlock
+   * @param lockValue The value used when acquiring the lock (for verification)
+   * @returns Promise that resolves when lock is released
+   */
+  private async releaseLock(
+    lockKey: string,
+    lockValue?: string
+  ): Promise<void> {
+    // If lockValue is provided, verify it matches before releasing
+    if (lockValue) {
+      const existingLock = this.activeLocks.get(lockKey)
+      if (existingLock && existingLock.lockValue !== lockValue) {
+        // Lock was acquired by someone else, don't release it
+        return
+      }
+    }
+
+    // Clear the timeout timer if it exists
+    const timer = this.lockTimers.get(lockKey)
+    if (timer) {
+      clearTimeout(timer)
+      this.lockTimers.delete(lockKey)
+    }
+
+    // Remove the lock
+    this.activeLocks.delete(lockKey)
   }
 
   /**
@@ -1405,49 +1482,79 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Save field index to storage
+   * Save field index to storage with file locking
    */
   private async saveFieldIndex(field: string, fieldIndex: FieldIndexData): Promise<void> {
     const filename = this.getFieldIndexFilename(field)
-    const indexId = `__metadata_field_index__${filename}`
-    const unifiedKey = `metadata:field:${filename}`
-    
-    await this.storage.saveMetadata(indexId, {
-      values: fieldIndex.values,
-      lastUpdated: fieldIndex.lastUpdated
-    })
-    
-    // Update unified cache
-    const size = JSON.stringify(fieldIndex).length
-    this.unifiedCache.set(unifiedKey, fieldIndex, 'metadata', size, 1)
-    
-    // Invalidate old cache
-    this.metadataCache.invalidatePattern(`field_index_${filename}`)
+    const lockKey = `field_index_${field}`
+    const lockAcquired = await this.acquireLock(lockKey, 5000) // 5 second timeout
+
+    if (!lockAcquired) {
+      prodLog.warn(
+        `Failed to acquire lock for field index '${field}', proceeding without lock`
+      )
+    }
+
+    try {
+      const indexId = `__metadata_field_index__${filename}`
+      const unifiedKey = `metadata:field:${filename}`
+
+      await this.storage.saveMetadata(indexId, {
+        values: fieldIndex.values,
+        lastUpdated: fieldIndex.lastUpdated
+      })
+
+      // Update unified cache
+      const size = JSON.stringify(fieldIndex).length
+      this.unifiedCache.set(unifiedKey, fieldIndex, 'metadata', size, 1)
+
+      // Invalidate old cache
+      this.metadataCache.invalidatePattern(`field_index_${filename}`)
+    } finally {
+      if (lockAcquired) {
+        await this.releaseLock(lockKey)
+      }
+    }
   }
   
   /**
-   * Save sorted index to storage for range queries
+   * Save sorted index to storage for range queries with file locking
    */
   private async saveSortedIndex(field: string, sortedIndex: SortedFieldIndex): Promise<void> {
     const filename = `sorted_${field}`
-    const indexId = `__metadata_sorted_index__${filename}`
-    const unifiedKey = `metadata:sorted:${field}`
-    
-    // Convert Set to Array for serialization
-    const serializable = {
-      values: sortedIndex.values.map(([value, ids]) => [value, Array.from(ids)]),
-      fieldType: sortedIndex.fieldType,
-      lastUpdated: Date.now()
+    const lockKey = `sorted_index_${field}`
+    const lockAcquired = await this.acquireLock(lockKey, 5000) // 5 second timeout
+
+    if (!lockAcquired) {
+      prodLog.warn(
+        `Failed to acquire lock for sorted index '${field}', proceeding without lock`
+      )
     }
-    
-    await this.storage.saveMetadata(indexId, serializable)
-    
-    // Mark as clean
-    sortedIndex.isDirty = false
-    
-    // Update unified cache (sorted indices are expensive to rebuild)
-    const size = JSON.stringify(serializable).length
-    this.unifiedCache.set(unifiedKey, sortedIndex, 'metadata', size, 100) // Higher rebuild cost
+
+    try {
+      const indexId = `__metadata_sorted_index__${filename}`
+      const unifiedKey = `metadata:sorted:${field}`
+
+      // Convert Set to Array for serialization
+      const serializable = {
+        values: sortedIndex.values.map(([value, ids]) => [value, Array.from(ids)]),
+        fieldType: sortedIndex.fieldType,
+        lastUpdated: Date.now()
+      }
+
+      await this.storage.saveMetadata(indexId, serializable)
+
+      // Mark as clean
+      sortedIndex.isDirty = false
+
+      // Update unified cache (sorted indices are expensive to rebuild)
+      const size = JSON.stringify(serializable).length
+      this.unifiedCache.set(unifiedKey, sortedIndex, 'metadata', size, 100) // Higher rebuild cost
+    } finally {
+      if (lockAcquired) {
+        await this.releaseLock(lockKey)
+      }
+    }
   }
   
   /**
@@ -1816,28 +1923,43 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Save index entry to storage using safe filenames
+   * Save index entry to storage using safe filenames with file locking
    */
   private async saveIndexEntry(key: string, entry: MetadataIndexEntry): Promise<void> {
-    const unifiedKey = `metadata:entry:${key}`
-    const data = {
-      field: entry.field,
-      value: entry.value,
-      ids: Array.from(entry.ids),
-      lastUpdated: entry.lastUpdated
+    const lockKey = `index_entry_${key}`
+    const lockAcquired = await this.acquireLock(lockKey, 5000) // 5 second timeout
+
+    if (!lockAcquired) {
+      prodLog.warn(
+        `Failed to acquire lock for index entry '${key}', proceeding without lock`
+      )
     }
-    
-    // Extract field and value from key for safe filename generation
-    const [field, value] = key.split(':', 2)
-    const filename = this.getValueChunkFilename(field, value)
-    
-    // Store metadata indexes with safe filename
-    const indexId = `__metadata_index__${filename}`
-    await this.storage.saveMetadata(indexId, data)
-    
-    // Update unified cache
-    const size = JSON.stringify(data.ids).length + 100
-    this.unifiedCache.set(unifiedKey, entry, 'metadata', size, 1)
+
+    try {
+      const unifiedKey = `metadata:entry:${key}`
+      const data = {
+        field: entry.field,
+        value: entry.value,
+        ids: Array.from(entry.ids),
+        lastUpdated: entry.lastUpdated
+      }
+
+      // Extract field and value from key for safe filename generation
+      const [field, value] = key.split(':', 2)
+      const filename = this.getValueChunkFilename(field, value)
+
+      // Store metadata indexes with safe filename
+      const indexId = `__metadata_index__${filename}`
+      await this.storage.saveMetadata(indexId, data)
+
+      // Update unified cache
+      const size = JSON.stringify(data.ids).length + 100
+      this.unifiedCache.set(unifiedKey, entry, 'metadata', size, 1)
+    } finally {
+      if (lockAcquired) {
+        await this.releaseLock(lockKey)
+      }
+    }
   }
 
   /**

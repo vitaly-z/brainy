@@ -187,21 +187,37 @@ Everything works with zero config, but you can customize:
 
 ```javascript
 await brain.import(data, {
-  format: 'auto',              // 'csv' | 'excel' | 'pdf' | 'json' | 'yaml' | 'text' | 'auto'
-  batchSize: 50,               // Process in batches
-  relationships: true,         // Extract relationships (default: true)
+  // Format detection
+  format: 'excel',                     // Force specific format (auto-detected if not specified)
 
-  // CSV-specific options
-  csvDelimiter: ',',           // Auto-detected if not specified
-  csvHeaders: true,            // First row is headers
-  encoding: 'utf-8',           // Auto-detected if not specified
+  // VFS & Organization
+  vfsPath: '/imports/my-data',         // Where to store in VFS (auto-generated if not specified)
+  groupBy: 'type',                     // Group entities by: 'type' | 'sheet' | 'flat' | 'custom'
+  preserveSource: true,                // Keep original source file in VFS (default: true)
 
-  // Excel-specific options
-  excelSheets: ['Sheet1'],     // or 'all' for all sheets
+  // Entity & Relationship Creation
+  createEntities: true,                // Create entities in knowledge graph (default: true)
+  createRelationships: true,           // Create relationships in knowledge graph (default: true)
 
-  // PDF-specific options
-  pdfExtractTables: true,      // Extract tables from PDFs
-  pdfPreserveLayout: true      // Preserve text layout
+  // Neural Intelligence
+  enableNeuralExtraction: true,        // Use AI to extract entities (default: true)
+  enableRelationshipInference: true,   // Use AI to infer relationships (default: true)
+  enableConceptExtraction: true,       // Extract concepts from text (default: true)
+  confidenceThreshold: 0.6,            // Minimum confidence for entities (0-1, default: 0.6)
+
+  // Deduplication
+  enableDeduplication: true,           // Check for duplicate entities (default: true)
+  deduplicationThreshold: 0.85,        // Similarity threshold for duplicates (0-1, default: 0.85)
+                                       // Note: Auto-disabled for imports >100 entities
+
+  // Performance
+  chunkSize: 100,                      // Batch size for processing (default: varies by operation)
+
+  // History & Progress
+  enableHistory: true,                 // Track import history (default: true)
+  onProgress: (progress) => {          // Progress callback
+    console.log(progress.stage, progress.message)
+  }
 })
 ```
 
