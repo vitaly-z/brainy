@@ -20,7 +20,7 @@ try {
   console.log('✅ find method:', typeof brain.find === 'function')
   console.log('✅ updateNoun method:', typeof brain.updateNoun === 'function')
   console.log('✅ deleteNoun method:', typeof brain.deleteNoun === 'function')
-  console.log('✅ getStatistics method:', typeof brain.getStatistics === 'function')
+  console.log('✅ getStatistics method:', typeof brain.getStats === 'function')
   
   console.log('\n🎯 CLI API Compatibility: 100% ✅')
   console.log('All required methods exist with correct names')

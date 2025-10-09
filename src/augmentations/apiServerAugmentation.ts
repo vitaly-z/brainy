@@ -270,7 +270,7 @@ export class APIServerAugmentation extends BaseAugmentation {
     // Statistics endpoint
     app.get('/api/stats', async (_req: any, res: any) => {
       try {
-        const stats = await this.context!.brain.getStatistics()
+        const stats = this.context!.brain.getStats()
         res.json({ success: true, stats })
       } catch (error: any) {
         res.status(500).json({ success: false, error: error.message })

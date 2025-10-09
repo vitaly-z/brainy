@@ -72,7 +72,7 @@ async function testStorageAdapter(name, config) {
     
     // Test statistics
     console.log('  Testing statistics...')
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     console.log(`  ✅ Stats: ${stats.nounCount} nouns, ${stats.verbCount} verbs`)
     
     // Test delete

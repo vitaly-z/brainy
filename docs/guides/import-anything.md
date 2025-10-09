@@ -218,10 +218,10 @@ const results = await brain.import(problematicData)
 
 ## Performance
 
-- **Parallel processing** - Fast imports
-- **Batch operations** - Memory efficient
-- **Lazy loading** - ImportManager loads only when needed
-- **Smart caching** - Type detection results are cached
+- **Parallel processing** - Fast imports with concurrent operations
+- **Batch operations** - Memory efficient chunk processing
+- **Lazy loading** - Import system loads only when needed
+- **Smart caching** - Type detection and format parsing results cached
 
 ## Use Cases
 

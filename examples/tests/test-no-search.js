@@ -50,7 +50,7 @@ async function testNoSearch() {
     console.log(`✅ Found ${verbs.length} verb(s) from TypeScript`)
 
     console.log('\n6. Checking statistics...')
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     console.log(`✅ Stats: ${stats.nounCount} nouns, ${stats.verbCount} verbs`)
 
     console.log('\n7. Memory check...')

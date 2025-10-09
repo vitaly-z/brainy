@@ -27,7 +27,7 @@ export class MyFirstAugmentation extends BaseAugmentation {
     if (operation === 'add') {
       console.log('Noun added:', params.noun)
       // You can access the brain instance
-      const stats = await context?.brain.getStatistics()
+      const stats = await context?.brain.getStats()
       console.log('Total nouns:', stats.totalNouns)
     }
   }
@@ -187,7 +187,7 @@ class ContextAwareAugmentation extends BaseAugmentation {
     if (!brain) return
     
     // Use any brain method
-    const stats = await brain.getStatistics()
+    const stats = await brain.getStats()
     const size = await brain.size()
     const results = await brain.search('query')
     

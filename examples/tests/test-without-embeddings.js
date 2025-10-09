@@ -125,7 +125,7 @@ async function testCoreFeatures() {
     
     // 10. Test statistics
     console.log('\n11. Testing statistics...')
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     console.log('✅ Stats - Total items:', stats.totalItems)
     console.log('  Dimensions:', stats.dimensions)
     console.log('  Index size:', stats.indexSize)

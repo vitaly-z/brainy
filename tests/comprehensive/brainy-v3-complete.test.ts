@@ -605,7 +605,7 @@ describe('Brainy v3.0 Complete Test Suite', () => {
         await brain.add({ data: 'Test', type: NounType.Document })
         await brain.find({ query: 'Test' })
         
-        const stats = await brain.getStatistics()
+        const stats = brain.getStats()
         
         expect(stats).toBeDefined()
         expect(stats.totalNouns).toBeGreaterThanOrEqual(1)
@@ -888,7 +888,7 @@ describe('Brainy v3.0 Complete Test Suite', () => {
     })
     
     it('should provide accurate statistics', async () => {
-      const stats = await brain.getStatistics()
+      const stats = brain.getStats()
       
       expect(stats).toBeDefined()
       expect(stats.totalNouns).toBeGreaterThanOrEqual(5)

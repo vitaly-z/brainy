@@ -45,7 +45,7 @@ async function quickTest() {
     }
     
     // Statistics
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     console.log(`✅ Stats: ${stats.totalItems} items, ${stats.dimensions}D`)
     
     console.log('\n🎯 CRITICAL FEATURES VERIFIED:')

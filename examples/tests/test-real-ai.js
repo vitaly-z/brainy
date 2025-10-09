@@ -68,7 +68,7 @@ async function testAllFeatures() {
     console.log(`   ✅ Found ${tripleResults.length} results with Triple Intelligence`)
     
     console.log('\n7. Testing statistics and health...')
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     console.log(`   ✅ Total items: ${stats.totalItems}`)
     console.log(`   ✅ Dimensions: ${stats.dimensions}`)
     console.log(`   ✅ Index size: ${stats.indexSize}`)

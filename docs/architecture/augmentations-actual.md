@@ -138,7 +138,7 @@ monitor.getThrottlingMetrics() // Rate limiting info
 ## 📊 Statistics System (Fully Working!)
 
 ```typescript
-const stats = await brain.getStatistics()
+const stats = await brain.getStats()
 // Returns comprehensive metrics:
 {
   nouns: {
@@ -269,7 +269,7 @@ await brain.neuralImport('data.csv')
 ### Access Statistics
 ```typescript
 // Get comprehensive stats
-const stats = await brain.getStatistics()
+const stats = await brain.getStats()
 
 // Get specific service stats
 const nounStats = await brain.getStatistics({ 

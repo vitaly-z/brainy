@@ -209,7 +209,7 @@ const cacheConfig = {
 ## 📊 Comprehensive Statistics
 
 ```typescript
-const stats = await brain.getStatistics()
+const stats = await brain.getStats()
 // Returns detailed metrics:
 {
   nouns: {

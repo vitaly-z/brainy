@@ -57,7 +57,7 @@ try {
   const searchResults = await brain.search('test', { limit: 1 })
   console.log(`✅ [${timeElapsed()}s] Search returned ${searchResults.length} results`)
   
-  const stats = await brain.getStatistics()
+  const stats = brain.getStats()
   console.log(`✅ [${timeElapsed()}s] Statistics: ${stats.nounCount} nouns`)
   
   console.log(`\n🎉 COMPLETE SUCCESS in ${timeElapsed()}s!`)

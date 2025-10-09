@@ -346,7 +346,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log('🔧 Testing index optimization and clustering...')
 
       // Get initial statistics
-      const initialStats = await brain.getStatistics()
+      const initialStats = brain.getStats()
       console.log(`   Initial index size: ${initialStats.indexSize}`)
       console.log(`   Total items: ${initialStats.totalItems}`)
       console.log(`   Dimensions: ${initialStats.dimensions}`)
@@ -362,7 +362,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       }
 
       // Check final statistics
-      const finalStats = await brain.getStatistics()
+      const finalStats = brain.getStats()
       console.log(`   Final index size: ${finalStats.indexSize}`)
       console.log(`   Final total items: ${finalStats.totalItems}`)
 
@@ -494,7 +494,7 @@ describe('Brainy 2.0 Complete Feature Test (Real AI)', () => {
       console.log(`   ✅ Brain Patterns returned ${patternResults.length} results`)
 
       // 5. Statistics and health check
-      const finalStats = await brain.getStatistics()
+      const finalStats = brain.getStats()
       expect(finalStats.totalItems).toBeGreaterThan(50)
       expect(finalStats.dimensions).toBe(384)
       console.log(`   ✅ Statistics: ${finalStats.totalItems} items, ${finalStats.dimensions}D`)

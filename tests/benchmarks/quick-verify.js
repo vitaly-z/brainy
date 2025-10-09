@@ -51,7 +51,7 @@ async function quickVerify() {
   console.log(`✅ Added verb: ${verbId}`)
   
   // Test 5: Get statistics
-  const stats = await brain.getStatistics()
+  const stats = brain.getStats()
   console.log(`✅ Stats: ${stats.totalNouns} nouns, ${stats.totalVerbs} verbs`)
   
   // Verify real implementations

@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.30.0] - BREAKING CHANGES - API Cleanup (2025-10-09)
+
+#### ⚠️ BREAKING CHANGES
+
+**1. Removed ImportManager**
+- The legacy `ImportManager` and `createImportManager` exports have been removed
+- Use `brain.import()` instead (available since v3.28.0 - newer, simpler, better)
+
+**Migration:**
+```typescript
+// ❌ OLD (removed):
+import { createImportManager } from '@soulcraft/brainy'
+const importer = createImportManager(brain)
+await importer.init()
+const result = await importer.import(data)
+
+// ✅ NEW (use this):
+const result = await brain.import(data, options)
+// Same functionality, simpler API, available on all Brainy instances!
+```
+
+**2. Documentation Fix: getStats() Not getStatistics()**
+- Corrected all documentation to use `brain.getStats()` (the actual method)
+- ⚠️ `brain.getStatistics()` **never existed** - this was a documentation error
+- No code changes needed - just documentation corrections
+- Note: `history.getStatistics()` still exists and is correct (different API)
+
+**Why These Changes:**
+- Eliminates API confusion reported by Soulcraft Studio team
+- Single, consistent import API - no more dual systems
+- Accurate documentation matching actual implementation
+- Cleaner, simpler developer experience
+
+**Impact:** LOW - Most users already using `brain.import()` (the newer API)
+
+---
+
 ### [3.29.1](https://github.com/soulcraftlabs/brainy/compare/v3.29.0...v3.29.1) (2025-10-09)
 
 

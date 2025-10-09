@@ -14,7 +14,7 @@ const id1 = await brain.addNoun('Test 1', { name: 'Test 1' })
 const id2 = await brain.addNoun('Test 2', { name: 'Test 2' })
 
 console.log('Getting statistics...')
-const stats = await brain.getStatistics()
+const stats = brain.getStats()
 
 console.log('\nStatistics after adding 2 nouns:')
 console.log('  nounCount:', stats.nounCount)

@@ -153,7 +153,7 @@ const brain = new Brainy({
 
 1. **Check if data exists**
    ```typescript
-   const stats = await brain.getStatistics()
+   const stats = await brain.getStats()
    console.log(`Total items: ${stats.nounCount}`)
    ```
 

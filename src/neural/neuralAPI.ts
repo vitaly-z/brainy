@@ -279,8 +279,8 @@ export class NeuralAPI {
    */
   async outliers(threshold: number = 0.3): Promise<string[]> {
     // Get all items
-    const stats = await this.brain.getStatistics()
-    const totalItems = stats.nounCount
+    const stats = this.brain.getStats()
+    const totalItems = stats.entities.total
     
     if (totalItems === 0) return []
     
@@ -539,8 +539,8 @@ export class NeuralAPI {
   // Enterprise clustering implementations
   private async getOptimalClusteringLevel(): Promise<number> {
     // Analyze dataset size and return optimal HNSW level
-    const stats = await this.brain.getStatistics()
-    const itemCount = stats.nounCount
+    const stats = this.brain.getStats()
+    const itemCount = stats.entities.total
     
     if (itemCount < 1000) return 0
     if (itemCount < 10000) return 1
@@ -551,8 +551,8 @@ export class NeuralAPI {
   private async getHNSWLevelNodes(level: number): Promise<any[]> {
     // Get nodes from specific HNSW level
     // For now, use search to get a representative sample
-    const stats = await this.brain.getStatistics()
-    const sampleSize = Math.min(100, Math.floor(stats.nounCount / (level + 1)))
+    const stats = this.brain.getStats()
+    const sampleSize = Math.min(100, Math.floor(stats.entities.total / (level + 1)))
     
     // Use search with a general query to get representative items
     const queryVector = await this.brain.embed('data information content')
@@ -568,8 +568,8 @@ export class NeuralAPI {
   
   private async getSample(size: number, strategy: string): Promise<any[]> {
     // Use search to get a sample of items
-    const stats = await this.brain.getStatistics()
-    const maxSize = Math.min(size * 3, stats.nounCount) // Get more than needed for sampling
+    const stats = this.brain.getStats()
+    const maxSize = Math.min(size * 3, stats.entities.total) // Get more than needed for sampling
     const queryVector = await this.brain.embed('sample data content')
     const allItems = await this.brain.search(queryVector, maxSize)
     

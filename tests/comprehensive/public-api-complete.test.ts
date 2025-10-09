@@ -661,7 +661,7 @@ describe('Brainy Public API - Complete Coverage', () => {
       await brain.close()
     })
 
-    describe('brain.getStatistics()', () => {
+    describe('brain.getStats()', () => {
       it('should return comprehensive statistics', async () => {
         // Add test data
         await brain.addMany([
@@ -670,7 +670,7 @@ describe('Brainy Public API - Complete Coverage', () => {
           { data: 'Item 3', type: NounType.Task }
         ])
 
-        const stats = await brain.getStatistics()
+        const stats = brain.getStats()
 
         expect(stats).toBeDefined()
         expect(stats.totalEntities).toBe(3)
@@ -681,12 +681,12 @@ describe('Brainy Public API - Complete Coverage', () => {
       })
 
       it('should track operation metrics', async () => {
-        const stats1 = await brain.getStatistics()
+        const stats1 = brain.getStats()
         
         await brain.add({ data: 'Test', type: NounType.Document })
         await brain.find({ query: 'Test' })
         
-        const stats2 = await brain.getStatistics()
+        const stats2 = brain.getStats()
 
         expect(stats2.operations.adds).toBeGreaterThan(stats1.operations.adds)
         expect(stats2.operations.searches).toBeGreaterThan(stats1.operations.searches)
@@ -1012,7 +1012,7 @@ describe('Brainy Public API - Complete Coverage', () => {
       const remaining = await brain.find({ limit: 100 })
       expect(remaining).toHaveLength(0)
       
-      const stats = await brain.getStatistics()
+      const stats = brain.getStats()
       expect(stats.totalEntities).toBe(0)
     })
 

@@ -70,9 +70,7 @@ export type {
   NeuralImportOptions
 } from './cortex/neuralImport.js'
 
-// Export Import Manager (comprehensive data import)
-export { ImportManager, createImportManager } from './importManager.js'
-export type { ImportOptions, ImportResult } from './importManager.js'
+// Import Manager removed - use brain.import() instead (available on all Brainy instances)
 
 // Augmentation types are already exported later in the file
 

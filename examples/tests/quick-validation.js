@@ -50,7 +50,7 @@ try {
 
   // Test 6: Statistics  
   console.log('\n6️⃣ Statistics...')
-  const stats = await brain.getStatistics()
+  const stats = brain.getStats()
   console.log(`✅ Statistics: ${stats.nounCount} nouns tracked`)
 
   // Test 7: Memory 

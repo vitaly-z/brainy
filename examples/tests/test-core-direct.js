@@ -90,7 +90,7 @@ async function testBrainyCore() {
     
     // Test 9: Statistics
     console.log('\n📊 Testing Statistics')
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     assert(typeof stats.totalItems === 'number', 'Should provide total items count')
     assert(stats.totalItems >= 3, 'Should count added items')
     console.log(`   Total items: ${stats.totalItems}`)

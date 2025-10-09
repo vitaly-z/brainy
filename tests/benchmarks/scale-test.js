@@ -191,7 +191,7 @@ async function runScaleTest() {
   
   // Final Statistics
   const totalTime = Date.now() - startTime
-  const stats = await brain.getStatistics()
+  const stats = brain.getStats()
   
   console.log('\n📊 Final Statistics:')
   console.log(`  Total nouns: ${stats.totalNouns.toLocaleString()}`)

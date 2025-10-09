@@ -176,7 +176,7 @@ async function testProductionFunctionality() {
     console.log('\n8️⃣ Testing statistics and monitoring...')
     try {
       const stats = await withTimeout(
-        brain.getStatistics(),
+        Promise.resolve(brain.getStats()),
         'Statistics retrieval',
         5000
       )

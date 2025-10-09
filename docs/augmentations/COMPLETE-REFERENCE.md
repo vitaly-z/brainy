@@ -141,7 +141,7 @@ brain.find({ where: { category: 'tech' } })
 **Auto-enabled**: Always active  
 **Purpose**: Performance metrics and statistics collection
 ```typescript
-brain.getStatistics()        // Comprehensive metrics
+brain.getStats()        // Comprehensive metrics
 ```
 
 ### MonitoringAugmentation
@@ -403,7 +403,7 @@ brain.disableAugmentation('cache')
 ### Performance issues?
 ```typescript
 // Check augmentation overhead
-const stats = brain.getStatistics()
+const stats = brain.getStats()
 console.log(stats.augmentations)
 
 // Disable non-critical augmentations

@@ -145,7 +145,7 @@ async function runValidation() {
     
     // Test 11: Statistics and monitoring
     const statsStart = performance.now()
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     const statsTime = Math.round(performance.now() - statsStart)
     const hasStats = stats && typeof stats.nounCount === 'number' && stats.nounCount > 0
     addResult('Statistics Collection', hasStats, `${stats.nounCount} nouns tracked`, statsTime)
@@ -184,9 +184,9 @@ async function runValidation() {
     
     // Test 14: Data persistence and retrieval
     const integrityStart = performance.now()
-    const beforeCount = (await brain.getStatistics()).nounCount
+    const beforeCount = (brain.getStats()).nounCount
     const testId = await brain.addNoun('Integrity test data', { critical: true })
-    const afterCount = (await brain.getStatistics()).nounCount
+    const afterCount = (brain.getStats()).nounCount
     const retrieved2 = await brain.getNoun(testId)
     const integrityTime = Math.round(performance.now() - integrityStart)
     const isIntact = afterCount > beforeCount && retrieved2 && retrieved2.metadata && retrieved2.metadata.critical === true

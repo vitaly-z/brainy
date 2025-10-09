@@ -444,7 +444,7 @@ async function showStatistics(brain) {
   const spinner = ora('Gathering statistics...').start()
   
   try {
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     spinner.succeed('Statistics loaded')
     
     console.log(boxen(

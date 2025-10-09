@@ -154,7 +154,7 @@ async function runTests() {
 
   // Test 5: Statistics
   await test('getStatistics() should provide stats', async () => {
-    const stats = await brain.getStatistics()
+    const stats = brain.getStats()
     if (typeof stats.totalItems !== 'number' || stats.totalItems <= 0) {
       throw new Error('getStatistics should return valid stats')
     }
