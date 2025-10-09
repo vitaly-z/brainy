@@ -958,7 +958,7 @@ export class GcsStorage extends BaseStorage {
     useCache?: boolean
   }): Promise<{
     nodes: HNSWNode[]
-    totalCount?: number
+    totalCount: number
     hasMore: boolean
     nextCursor?: string
   }> {
@@ -1029,6 +1029,7 @@ export class GcsStorage extends BaseStorage {
 
           return {
             nodes,
+            totalCount: this.totalNounCount,
             hasMore: !!nextCursor,
             nextCursor
           }
@@ -1038,6 +1039,7 @@ export class GcsStorage extends BaseStorage {
         if (response?.nextPageToken) {
           return {
             nodes,
+            totalCount: this.totalNounCount,
             hasMore: true,
             nextCursor: `${shardIndex}:${response.nextPageToken}`
           }
@@ -1049,6 +1051,7 @@ export class GcsStorage extends BaseStorage {
       // No more shards or nodes
       return {
         nodes,
+        totalCount: this.totalNounCount,
         hasMore: false,
         nextCursor: undefined
       }
@@ -1220,6 +1223,7 @@ export class GcsStorage extends BaseStorage {
 
       return {
         items: filteredVerbs,
+        totalCount: this.totalVerbCount,
         hasMore: !!response?.nextPageToken,
         nextCursor: response?.nextPageToken
       }

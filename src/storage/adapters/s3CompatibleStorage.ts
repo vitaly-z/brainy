@@ -346,7 +346,10 @@ export class S3CompatibleStorage extends BaseStorage {
       
       // Auto-cleanup legacy /index folder on initialization
       await this.cleanupLegacyIndexFolder()
-      
+
+      // Initialize counts from storage
+      await this.initializeCounts()
+
       this.isInitialized = true
       this.logger.info(`Initialized ${this.serviceType} storage with bucket ${this.bucketName}`)
     } catch (error) {
@@ -1843,6 +1846,7 @@ export class S3CompatibleStorage extends BaseStorage {
     
     return {
       items: filteredGraphVerbs,
+      totalCount: this.totalVerbCount,  // Use pre-calculated count from init()
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
     }
@@ -3367,21 +3371,9 @@ export class S3CompatibleStorage extends BaseStorage {
       }
     }
     
-    // Calculate total count efficiently
-    // For the first page (no cursor), we can estimate total count
-    let totalCount: number | undefined
-    if (!cursor) {
-      try {
-        totalCount = await this.estimateTotalNounCount()
-      } catch (error) {
-        this.logger.warn('Failed to estimate total noun count:', error)
-        // totalCount remains undefined
-      }
-    }
-
     return {
       items: filteredNodes,
-      totalCount,
+      totalCount: this.totalNounCount,  // Use pre-calculated count from init()
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
     }

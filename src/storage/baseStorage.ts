@@ -508,9 +508,21 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // This prevents pagination bugs from causing infinite loops
         const safeHasMore = items.length > 0 ? result.hasMore : false
 
+        // VALIDATION: Ensure adapter returns totalCount (prevents restart bugs)
+        // If adapter forgets to return totalCount, log warning and use pre-calculated count
+        let finalTotalCount = result.totalCount || totalCount
+        if (result.totalCount === undefined && this.totalNounCount > 0) {
+          console.warn(
+            `⚠️  Storage adapter missing totalCount in getNounsWithPagination result! ` +
+            `Using pre-calculated count (${this.totalNounCount}) as fallback. ` +
+            `Please ensure your storage adapter returns totalCount: this.totalNounCount`
+          )
+          finalTotalCount = this.totalNounCount
+        }
+
         return {
           items,
-          totalCount: result.totalCount || totalCount,
+          totalCount: finalTotalCount,
           hasMore: safeHasMore,
           nextCursor: result.nextCursor
         }
@@ -705,9 +717,21 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // This prevents pagination bugs from causing infinite loops
         const safeHasMore = items.length > 0 ? result.hasMore : false
 
+        // VALIDATION: Ensure adapter returns totalCount (prevents restart bugs)
+        // If adapter forgets to return totalCount, log warning and use pre-calculated count
+        let finalTotalCount = result.totalCount || totalCount
+        if (result.totalCount === undefined && this.totalVerbCount > 0) {
+          console.warn(
+            `⚠️  Storage adapter missing totalCount in getVerbsWithPagination result! ` +
+            `Using pre-calculated count (${this.totalVerbCount}) as fallback. ` +
+            `Please ensure your storage adapter returns totalCount: this.totalVerbCount`
+          )
+          finalTotalCount = this.totalVerbCount
+        }
+
         return {
           items,
-          totalCount: result.totalCount || totalCount,
+          totalCount: finalTotalCount,
           hasMore: safeHasMore,
           nextCursor: result.nextCursor
         }

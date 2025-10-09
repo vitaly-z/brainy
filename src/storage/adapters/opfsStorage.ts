@@ -132,6 +132,9 @@ export class OPFSStorage extends BaseStorage {
         create: true
       })
 
+      // Initialize counts from storage
+      await this.initializeCounts()
+
       this.isInitialized = true
     } catch (error) {
       console.error('Failed to initialize OPFS storage:', error)
