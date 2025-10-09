@@ -2666,8 +2666,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private normalizeConfig(config?: BrainyConfig): Required<BrainyConfig> {
     // Validate storage configuration
-    if (config?.storage?.type && !['auto', 'memory', 'filesystem', 'opfs', 'remote', 's3', 'r2', 'gcs'].includes(config.storage.type)) {
-      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: auto, memory, filesystem, opfs, remote, s3, r2, gcs`)
+    if (config?.storage?.type && !['auto', 'memory', 'filesystem', 'opfs', 'remote', 's3', 'r2', 'gcs', 'gcs-native'].includes(config.storage.type)) {
+      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: auto, memory, filesystem, opfs, remote, s3, r2, gcs, gcs-native`)
+    }
+
+    // Validate storage type/config pairing (catch common mismatches)
+    if (config?.storage) {
+      const storage = config.storage as any
+
+      // Check for gcs/gcsNativeStorage mismatch
+      if (storage.type === 'gcs' && storage.gcsNativeStorage) {
+        throw new Error(
+          `Storage type/config mismatch: type 'gcs' requires 'gcsStorage' config object (S3-compatible). ` +
+          `You provided 'gcsNativeStorage' which requires type 'gcs-native'. ` +
+          `Either change type to 'gcs-native' or use 'gcsStorage' instead of 'gcsNativeStorage'.`
+        )
+      }
+
+      // Check for gcs-native/gcsStorage mismatch
+      if (storage.type === 'gcs-native' && storage.gcsStorage) {
+        throw new Error(
+          `Storage type/config mismatch: type 'gcs-native' requires 'gcsNativeStorage' config object. ` +
+          `You provided 'gcsStorage' which requires type 'gcs' (S3-compatible). ` +
+          `Either change type to 'gcs' or use 'gcsNativeStorage' instead of 'gcsStorage'.`
+        )
+      }
     }
 
     // Validate model configuration

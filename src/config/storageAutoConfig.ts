@@ -10,10 +10,11 @@ import { isBrowser, isNode } from '../utils/environment.js'
  */
 export enum StorageType {
   MEMORY = 'memory',
-  FILESYSTEM = 'filesystem', 
+  FILESYSTEM = 'filesystem',
   OPFS = 'opfs',
   S3 = 's3',
   GCS = 'gcs',
+  GCS_NATIVE = 'gcs-native',
   R2 = 'r2'
 }
 
@@ -28,7 +29,7 @@ export enum StoragePreset {
 }
 
 // Backward compatibility type aliases
-export type StorageTypeString = 'memory' | 'filesystem' | 'opfs' | 's3' | 'gcs' | 'r2'
+export type StorageTypeString = 'memory' | 'filesystem' | 'opfs' | 's3' | 'gcs' | 'r2' | 'gcs-native'
 export type StoragePresetString = 'auto' | 'memory' | 'disk' | 'cloud'
 
 export interface StorageConfigResult {
@@ -197,14 +198,14 @@ async function detectCloudStorage(): Promise<{ type: StorageType; config: any } 
     }
   }
   
-  // Google Cloud Storage Detection
+  // Google Cloud Storage Detection (Native SDK with ADC)
   if (hasGCPConfig()) {
     return {
-      type: StorageType.GCS,
+      type: StorageType.GCS_NATIVE,
       config: {
-        gcsStorage: {
+        gcsNativeStorage: {
           bucketName: process.env.GCS_BUCKET || process.env.GOOGLE_STORAGE_BUCKET || 'brainy-data',
-          // Credentials will be picked up by GCP SDK automatically
+          // Application Default Credentials will be picked up automatically
         }
       }
     }
