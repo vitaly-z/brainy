@@ -2611,10 +2611,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Setup storage
    */
   private async setupStorage(): Promise<StorageAdapter> {
-    const storage = await createStorage({
-      type: this.config.storage?.type || 'auto',
-      ...this.config.storage?.options
-    })
+    // Pass the entire storage config object to createStorage
+    // This ensures all storage-specific configs (gcsNativeStorage, s3Storage, etc.) are passed through
+    const storage = await createStorage(this.config.storage as any)
     return storage
   }
 
