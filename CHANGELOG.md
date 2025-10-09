@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.30.0](https://github.com/soulcraftlabs/brainy/compare/v3.29.1...v3.30.0) (2025-10-09)
+
+- feat: remove legacy ImportManager, standardize getStats() API (58daf09)
+
+
 ### [3.30.0] - BREAKING CHANGES - API Cleanup (2025-10-09)
 
 #### ⚠️ BREAKING CHANGES
