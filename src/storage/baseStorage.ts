@@ -9,6 +9,19 @@ import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../coreTypes.js'
 import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
 import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
+import { getShardIdFromUuid } from './sharding.js'
+
+/**
+ * Storage key analysis result
+ * Used to determine whether a key is a system key or entity key, and its storage path
+ */
+interface StorageKeyInfo {
+  original: string
+  isEntity: boolean
+  shardId: string | null
+  directory: string
+  fullPath: string
+}
 
 // Common directory/prefix names
 // Option A: Entity-Based Directory Structure
@@ -65,6 +78,76 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected isInitialized = false
   protected graphIndex?: GraphAdjacencyIndex
   protected readOnly = false
+
+  /**
+   * Analyze a storage key to determine its routing and path
+   * @param id - The key to analyze (UUID or system key)
+   * @param context - The context for the key (noun-metadata, verb-metadata, or system)
+   * @returns Storage key information including path and shard ID
+   * @private
+   */
+  private analyzeKey(id: string, context: 'noun-metadata' | 'verb-metadata' | 'system'): StorageKeyInfo {
+    // System resource detection
+    const isSystemKey =
+      id.startsWith('__metadata_') ||
+      id.startsWith('__index_') ||
+      id.startsWith('__system_') ||
+      id.startsWith('statistics_') ||
+      id === 'statistics'
+
+    if (isSystemKey) {
+      return {
+        original: id,
+        isEntity: false,
+        shardId: null,
+        directory: SYSTEM_DIR,
+        fullPath: `${SYSTEM_DIR}/${id}.json`
+      }
+    }
+
+    // UUID validation for entity keys
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(id)) {
+      console.warn(`[Storage] Unknown key format: ${id} - treating as system resource`)
+      return {
+        original: id,
+        isEntity: false,
+        shardId: null,
+        directory: SYSTEM_DIR,
+        fullPath: `${SYSTEM_DIR}/${id}.json`
+      }
+    }
+
+    // Valid entity UUID - apply sharding
+    const shardId = getShardIdFromUuid(id)
+
+    if (context === 'noun-metadata') {
+      return {
+        original: id,
+        isEntity: true,
+        shardId,
+        directory: `${NOUNS_METADATA_DIR}/${shardId}`,
+        fullPath: `${NOUNS_METADATA_DIR}/${shardId}/${id}.json`
+      }
+    } else if (context === 'verb-metadata') {
+      return {
+        original: id,
+        isEntity: true,
+        shardId,
+        directory: `${VERBS_METADATA_DIR}/${shardId}`,
+        fullPath: `${VERBS_METADATA_DIR}/${shardId}/${id}.json`
+      }
+    } else {
+      // system context - but UUID format
+      return {
+        original: id,
+        isEntity: false,
+        shardId: null,
+        directory: SYSTEM_DIR,
+        fullPath: `${SYSTEM_DIR}/${id}.json`
+      }
+    }
+  }
 
   /**
    * Initialize the storage adapter
@@ -693,20 +776,63 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }>
 
   /**
-   * Save metadata to storage
-   * This method should be implemented by each specific adapter
+   * Write a JSON object to a specific path in storage
+   * This is a primitive operation that all adapters must implement
+   * @param path - Full path including filename (e.g., "_system/statistics.json" or "entities/nouns/metadata/3f/3fa85f64-....json")
+   * @param data - Data to write (will be JSON.stringify'd)
+   * @protected
    */
-  public abstract saveMetadata(id: string, metadata: any): Promise<void>
+  protected abstract writeObjectToPath(path: string, data: any): Promise<void>
+
+  /**
+   * Read a JSON object from a specific path in storage
+   * This is a primitive operation that all adapters must implement
+   * @param path - Full path including filename
+   * @returns The parsed JSON object, or null if not found
+   * @protected
+   */
+  protected abstract readObjectFromPath(path: string): Promise<any | null>
+
+  /**
+   * Delete an object from a specific path in storage
+   * This is a primitive operation that all adapters must implement
+   * @param path - Full path including filename
+   * @protected
+   */
+  protected abstract deleteObjectFromPath(path: string): Promise<void>
+
+  /**
+   * List all object paths under a given prefix
+   * This is a primitive operation that all adapters must implement
+   * @param prefix - Directory prefix to list (e.g., "entities/nouns/metadata/3f/")
+   * @returns Array of full paths
+   * @protected
+   */
+  protected abstract listObjectsUnderPath(prefix: string): Promise<string[]>
+
+  /**
+   * Save metadata to storage
+   * Routes to correct location (system or entity) based on key format
+   */
+  public async saveMetadata(id: string, metadata: any): Promise<void> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'system')
+    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+  }
 
   /**
    * Get metadata from storage
-   * This method should be implemented by each specific adapter
+   * Routes to correct location (system or entity) based on key format
    */
-  public abstract getMetadata(id: string): Promise<any | null>
+  public async getMetadata(id: string): Promise<any | null> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'system')
+    return this.readObjectFromPath(keyInfo.fullPath)
+  }
 
   /**
    * Save noun metadata to storage
-   * This method should be implemented by each specific adapter
+   * Routes to correct sharded location based on UUID
    */
   public async saveNounMetadata(id: string, metadata: any): Promise<void> {
     // Validate noun type in metadata - storage boundary protection
@@ -718,19 +844,28 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Internal method for saving noun metadata
-   * This method should be implemented by each specific adapter
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   * @protected
    */
-  protected abstract saveNounMetadata_internal(id: string, metadata: any): Promise<void>
+  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'noun-metadata')
+    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+  }
 
   /**
    * Get noun metadata from storage
-   * This method should be implemented by each specific adapter
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    */
-  public abstract getNounMetadata(id: string): Promise<any | null>
+  public async getNounMetadata(id: string): Promise<any | null> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'noun-metadata')
+    return this.readObjectFromPath(keyInfo.fullPath)
+  }
 
   /**
    * Save verb metadata to storage
-   * This method should be implemented by each specific adapter
+   * Routes to correct sharded location based on UUID
    */
   public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
     // Validate verb type in metadata - storage boundary protection
@@ -742,15 +877,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Internal method for saving verb metadata
-   * This method should be implemented by each specific adapter
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   * @protected
    */
-  protected abstract saveVerbMetadata_internal(id: string, metadata: any): Promise<void>
+  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'verb-metadata')
+    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+  }
 
   /**
    * Get verb metadata from storage
-   * This method should be implemented by each specific adapter
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    */
-  public abstract getVerbMetadata(id: string): Promise<any | null>
+  public async getVerbMetadata(id: string): Promise<any | null> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'verb-metadata')
+    return this.readObjectFromPath(keyInfo.fullPath)
+  }
 
   /**
    * Save a noun to storage

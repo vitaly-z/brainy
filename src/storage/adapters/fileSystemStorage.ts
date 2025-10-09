@@ -555,30 +555,83 @@ export class FileSystemStorage extends BaseStorage {
   }
 
   /**
-   * Save metadata to storage
+   * Primitive operation: Write object to path
+   * All metadata operations use this internally via base class routing
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
+  protected async writeObjectToPath(pathStr: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.metadataDir, `${id}.json`)
-    await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
+    const fullPath = path.join(this.rootDir, pathStr)
+    await this.ensureDirectoryExists(path.dirname(fullPath))
+    await fs.promises.writeFile(fullPath, JSON.stringify(data, null, 2))
   }
 
   /**
-   * Get metadata from storage
+   * Primitive operation: Read object from path
+   * All metadata operations use this internally via base class routing
    */
-  public async getMetadata(id: string): Promise<any | null> {
+  protected async readObjectFromPath(pathStr: string): Promise<any | null> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.metadataDir, `${id}.json`)
+    const fullPath = path.join(this.rootDir, pathStr)
     try {
-      const data = await fs.promises.readFile(filePath, 'utf-8')
+      const data = await fs.promises.readFile(fullPath, 'utf-8')
       return JSON.parse(data)
     } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error reading metadata ${id}:`, error)
+      if (error.code === 'ENOENT') {
+        return null
       }
+      console.error(`Error reading object from ${pathStr}:`, error)
       return null
+    }
+  }
+
+  /**
+   * Primitive operation: Delete object from path
+   * All metadata operations use this internally via base class routing
+   */
+  protected async deleteObjectFromPath(pathStr: string): Promise<void> {
+    await this.ensureInitialized()
+
+    const fullPath = path.join(this.rootDir, pathStr)
+    try {
+      await fs.promises.unlink(fullPath)
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        console.error(`Error deleting object from ${pathStr}:`, error)
+        throw error
+      }
+    }
+  }
+
+  /**
+   * Primitive operation: List objects under path prefix
+   * All metadata operations use this internally via base class routing
+   */
+  protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
+    await this.ensureInitialized()
+
+    const fullPath = path.join(this.rootDir, prefix)
+    const paths: string[] = []
+
+    try {
+      const entries = await fs.promises.readdir(fullPath, { withFileTypes: true })
+
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith('.json')) {
+          paths.push(path.join(prefix, entry.name))
+        } else if (entry.isDirectory()) {
+          const subdirPaths = await this.listObjectsUnderPath(path.join(prefix, entry.name))
+          paths.push(...subdirPaths)
+        }
+      }
+
+      return paths.sort()
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return []
+      }
+      throw error
     }
   }
 
@@ -598,7 +651,7 @@ export class FileSystemStorage extends BaseStorage {
 
       const batchPromises = batch.map(async (id) => {
         try {
-          const metadata = await this.getNounMetadata(id)
+          const metadata = await this.getMetadata(id)
           return { id, metadata }
         } catch (error) {
           console.debug(`Failed to read metadata for ${id}:`, error)
@@ -619,85 +672,6 @@ export class FileSystemStorage extends BaseStorage {
     }
 
     return results
-  }
-
-  /**
-   * Save noun metadata to storage
-   */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with noun vectors)
-    const filePath = this.getShardedPath(this.nounMetadataDir, id)
-
-    // Ensure shard directory exists
-    const shardDir = path.dirname(filePath)
-    await fs.promises.mkdir(shardDir, { recursive: true })
-
-    await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
-  }
-
-  /**
-   * Get noun metadata from storage
-   */
-  public async getNounMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with noun vectors)
-    const filePath = this.getShardedPath(this.nounMetadataDir, id)
-    try {
-      const data = await fs.promises.readFile(filePath, 'utf-8')
-      return JSON.parse(data)
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error reading noun metadata ${id}:`, error)
-      }
-      return null
-    }
-  }
-
-  /**
-   * Save verb metadata to storage
-   */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
-    await this.ensureInitialized()
-
-    console.log(`[DEBUG] Saving verb metadata for ${id} to: ${this.verbMetadataDir}`)
-    const filePath = path.join(this.verbMetadataDir, `${id}.json`)
-    console.log(`[DEBUG] Full file path: ${filePath}`)
-
-    try {
-      await this.ensureDirectoryExists(path.dirname(filePath))
-      console.log(`[DEBUG] Directory ensured: ${path.dirname(filePath)}`)
-
-      await fs.promises.writeFile(filePath, JSON.stringify(metadata, null, 2))
-      console.log(`[DEBUG] File written successfully: ${filePath}`)
-
-      // Verify the file was actually written
-      const exists = await fs.promises.access(filePath).then(() => true).catch(() => false)
-      console.log(`[DEBUG] File exists after write: ${exists}`)
-    } catch (error) {
-      console.error(`[DEBUG] Error saving verb metadata:`, error)
-      throw error
-    }
-  }
-
-  /**
-   * Get verb metadata from storage
-   */
-  public async getVerbMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    const filePath = path.join(this.verbMetadataDir, `${id}.json`)
-    try {
-      const data = await fs.promises.readFile(filePath, 'utf-8')
-      return JSON.parse(data)
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error reading verb metadata ${id}:`, error)
-      }
-      return null
-    }
   }
 
   /**

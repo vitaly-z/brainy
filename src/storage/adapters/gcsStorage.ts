@@ -583,134 +583,106 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Save noun metadata to storage (internal implementation)
+   * Write an object to a specific path in GCS
+   * Primitive operation required by base class
+   * @protected
    */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
     try {
-      // Use UUID-based sharding for metadata (consistent with noun vectors)
-      const shardId = getShardIdFromUuid(id)
-      const key = `${this.metadataPrefix}${shardId}/${id}.json`
+      this.logger.trace(`Writing object to path: ${path}`)
 
-      this.logger.trace(`Saving noun metadata for ${id} to key: ${key}`)
-
-      // Save to GCS
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(metadata, null, 2), {
+      const file = this.bucket!.file(path)
+      await file.save(JSON.stringify(data, null, 2), {
         contentType: 'application/json',
         resumable: false
       })
 
-      this.logger.debug(`Noun metadata for ${id} saved successfully`)
+      this.logger.trace(`Object written successfully to ${path}`)
     } catch (error) {
-      this.logger.error(`Failed to save noun metadata for ${id}:`, error)
-      throw new Error(`Failed to save noun metadata for ${id}: ${error}`)
+      this.logger.error(`Failed to write object to ${path}:`, error)
+      throw new Error(`Failed to write object to ${path}: ${error}`)
     }
   }
 
   /**
-   * Save metadata to storage (public API - delegates to saveNounMetadata_internal)
+   * Read an object from a specific path in GCS
+   * Primitive operation required by base class
+   * @protected
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
-    return this.saveNounMetadata_internal(id, metadata)
-  }
-
-  /**
-   * Get metadata from storage (public API - delegates to getNounMetadata)
-   */
-  public async getMetadata(id: string): Promise<any | null> {
-    return this.getNounMetadata(id)
-  }
-
-  /**
-   * Get noun metadata from storage
-   */
-  public async getNounMetadata(id: string): Promise<any | null> {
+  protected async readObjectFromPath(path: string): Promise<any | null> {
     await this.ensureInitialized()
 
     try {
-      // Use UUID-based sharding for metadata
-      const shardId = getShardIdFromUuid(id)
-      const key = `${this.metadataPrefix}${shardId}/${id}.json`
+      this.logger.trace(`Reading object from path: ${path}`)
 
-      this.logger.trace(`Getting noun metadata for ${id} from key: ${key}`)
-
-      // Download from GCS
-      const file = this.bucket!.file(key)
+      const file = this.bucket!.file(path)
       const [contents] = await file.download()
 
-      // Parse JSON
-      const metadata = JSON.parse(contents.toString())
+      const data = JSON.parse(contents.toString())
 
-      this.logger.trace(`Successfully retrieved noun metadata for ${id}`)
-      return metadata
+      this.logger.trace(`Object read successfully from ${path}`)
+      return data
     } catch (error: any) {
       // Check if this is a "not found" error
       if (error.code === 404) {
-        this.logger.trace(`Noun metadata not found for ${id}`)
+        this.logger.trace(`Object not found at ${path}`)
         return null
       }
 
-      // For other types of errors, convert to BrainyError
-      throw BrainyError.fromError(error, `getNounMetadata(${id})`)
+      this.logger.error(`Failed to read object from ${path}:`, error)
+      throw BrainyError.fromError(error, `readObjectFromPath(${path})`)
     }
   }
 
   /**
-   * Save verb metadata to storage (internal implementation)
+   * Delete an object from a specific path in GCS
+   * Primitive operation required by base class
+   * @protected
    */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
 
     try {
-      const key = `${this.verbMetadataPrefix}${id}.json`
+      this.logger.trace(`Deleting object at path: ${path}`)
 
-      this.logger.trace(`Saving verb metadata for ${id} to key: ${key}`)
+      const file = this.bucket!.file(path)
+      await file.delete()
 
-      // Save to GCS
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(metadata, null, 2), {
-        contentType: 'application/json',
-        resumable: false
-      })
-
-      this.logger.debug(`Verb metadata for ${id} saved successfully`)
-    } catch (error) {
-      this.logger.error(`Failed to save verb metadata for ${id}:`, error)
-      throw new Error(`Failed to save verb metadata for ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get verb metadata from storage
-   */
-  public async getVerbMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    try {
-      const key = `${this.verbMetadataPrefix}${id}.json`
-
-      this.logger.trace(`Getting verb metadata for ${id} from key: ${key}`)
-
-      // Download from GCS
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
-
-      // Parse JSON
-      const metadata = JSON.parse(contents.toString())
-
-      this.logger.trace(`Successfully retrieved verb metadata for ${id}`)
-      return metadata
+      this.logger.trace(`Object deleted successfully from ${path}`)
     } catch (error: any) {
-      // Check if this is a "not found" error
+      // If already deleted (404), treat as success
       if (error.code === 404) {
-        this.logger.trace(`Verb metadata not found for ${id}`)
-        return null
+        this.logger.trace(`Object at ${path} not found (already deleted)`)
+        return
       }
 
-      // For other types of errors, convert to BrainyError
-      throw BrainyError.fromError(error, `getVerbMetadata(${id})`)
+      this.logger.error(`Failed to delete object from ${path}:`, error)
+      throw new Error(`Failed to delete object from ${path}: ${error}`)
+    }
+  }
+
+  /**
+   * List all objects under a specific prefix in GCS
+   * Primitive operation required by base class
+   * @protected
+   */
+  protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.trace(`Listing objects under prefix: ${prefix}`)
+
+      const [files] = await this.bucket!.getFiles({ prefix })
+
+      const paths = files.map((file: any) => file.name).filter((name: string) => name && name.length > 0)
+
+      this.logger.trace(`Found ${paths.length} objects under ${prefix}`)
+      return paths
+    } catch (error) {
+      this.logger.error(`Failed to list objects under ${prefix}:`, error)
+      throw new Error(`Failed to list objects under ${prefix}: ${error}`)
     }
   }
 

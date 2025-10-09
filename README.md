@@ -888,6 +888,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - [Getting Started Guide](docs/guides/getting-started.md)
 - [API Reference](docs/api/README.md)
 - [Architecture Overview](docs/architecture/overview.md)
+- [Data Storage Architecture](docs/architecture/data-storage-architecture.md) - Deep dive into storage, indexing, and sharding
 - [Natural Language Guide](docs/guides/natural-language.md)
 - [Triple Intelligence](docs/architecture/triple-intelligence.md)
 - [Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)

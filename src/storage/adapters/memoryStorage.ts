@@ -17,10 +17,21 @@ export class MemoryStorage extends BaseStorage {
   // Single map of noun ID to noun
   private nouns: Map<string, HNSWNoun> = new Map()
   private verbs: Map<string, HNSWVerb> = new Map()
-  private metadata: Map<string, any> = new Map()
-  private nounMetadata: Map<string, any> = new Map()
-  private verbMetadata: Map<string, any> = new Map()
   private statistics: StatisticsData | null = null
+
+  // Unified object store for primitive operations (replaces metadata, nounMetadata, verbMetadata)
+  private objectStore: Map<string, any> = new Map()
+
+  // Backward compatibility aliases
+  private get metadata(): Map<string, any> {
+    return this.objectStore
+  }
+  private get nounMetadata(): Map<string, any> {
+    return this.objectStore
+  }
+  private get verbMetadata(): Map<string, any> {
+    return this.objectStore
+  }
 
   constructor() {
     super()
@@ -520,22 +531,46 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Save metadata to storage
+   * Primitive operation: Write object to path
+   * All metadata operations use this internally via base class routing
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
-    this.metadata.set(id, JSON.parse(JSON.stringify(metadata)))
+  protected async writeObjectToPath(path: string, data: any): Promise<void> {
+    // Store in unified object store using path as key
+    this.objectStore.set(path, JSON.parse(JSON.stringify(data)))
   }
 
   /**
-   * Get metadata from storage
+   * Primitive operation: Read object from path
+   * All metadata operations use this internally via base class routing
    */
-  public async getMetadata(id: string): Promise<any | null> {
-    const metadata = this.metadata.get(id)
-    if (!metadata) {
+  protected async readObjectFromPath(path: string): Promise<any | null> {
+    const data = this.objectStore.get(path)
+    if (!data) {
       return null
     }
+    return JSON.parse(JSON.stringify(data))
+  }
 
-    return JSON.parse(JSON.stringify(metadata))
+  /**
+   * Primitive operation: Delete object from path
+   * All metadata operations use this internally via base class routing
+   */
+  protected async deleteObjectFromPath(path: string): Promise<void> {
+    this.objectStore.delete(path)
+  }
+
+  /**
+   * Primitive operation: List objects under path prefix
+   * All metadata operations use this internally via base class routing
+   */
+  protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
+    const paths: string[] = []
+    for (const key of this.objectStore.keys()) {
+      if (key.startsWith(prefix)) {
+        paths.push(key)
+      }
+    }
+    return paths.sort()
   }
 
   /**
@@ -544,62 +579,16 @@ export class MemoryStorage extends BaseStorage {
    */
   public async getMetadataBatch(ids: string[]): Promise<Map<string, any>> {
     const results = new Map<string, any>()
-    
+
     // Memory storage can handle all IDs at once since it's in-memory
     for (const id of ids) {
-      const metadata = this.metadata.get(id)
+      const metadata = await this.getMetadata(id)
       if (metadata) {
-        // Deep clone to prevent mutation
-        results.set(id, JSON.parse(JSON.stringify(metadata)))
+        results.set(id, metadata)
       }
     }
-    
+
     return results
-  }
-
-  /**
-   * Save noun metadata to storage (internal implementation)
-   */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
-    this.nounMetadata.set(id, JSON.parse(JSON.stringify(metadata)))
-  }
-
-  /**
-   * Get noun metadata from storage
-   */
-  public async getNounMetadata(id: string): Promise<any | null> {
-    const metadata = this.nounMetadata.get(id)
-    if (!metadata) {
-      return null
-    }
-
-    return JSON.parse(JSON.stringify(metadata))
-  }
-
-  /**
-   * Save verb metadata to storage (internal implementation)
-   */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
-    const isNew = !this.verbMetadata.has(id)
-    this.verbMetadata.set(id, JSON.parse(JSON.stringify(metadata)))
-
-    // Update counts for new verbs
-    if (isNew) {
-      const type = metadata?.verb || metadata?.type || 'default'
-      this.incrementVerbCount(type)
-    }
-  }
-
-  /**
-   * Get verb metadata from storage
-   */
-  public async getVerbMetadata(id: string): Promise<any | null> {
-    const metadata = this.verbMetadata.get(id)
-    if (!metadata) {
-      return null
-    }
-
-    return JSON.parse(JSON.stringify(metadata))
   }
 
   /**
@@ -608,11 +597,9 @@ export class MemoryStorage extends BaseStorage {
   public async clear(): Promise<void> {
     this.nouns.clear()
     this.verbs.clear()
-    this.metadata.clear()
-    this.nounMetadata.clear()
-    this.verbMetadata.clear()
+    this.objectStore.clear()
     this.statistics = null
-    
+
     // Clear the statistics cache
     this.statisticsCache = null
     this.statisticsModified = false
@@ -634,7 +621,7 @@ export class MemoryStorage extends BaseStorage {
       details: {
         nodeCount: this.nouns.size,
         edgeCount: this.verbs.size,
-        metadataCount: this.metadata.size
+        metadataCount: this.objectStore.size
       }
     }
   }

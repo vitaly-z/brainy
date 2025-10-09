@@ -1926,152 +1926,120 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
-   * Save metadata to storage
+   * Primitive operation: Write object to path
+   * All metadata operations use this internally via base class routing
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
+  protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
     // Apply backpressure before starting operation
     const requestId = await this.applyBackpressure()
 
     try {
-      // Import the PutObjectCommand only when needed
       const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const body = JSON.stringify(data, null, 2)
 
-      const key = `${this.metadataPrefix}${id}.json`
-      const body = JSON.stringify(metadata, null, 2)
+      this.logger.trace(`Writing object to path: ${path}`)
 
-      this.logger.trace(`Saving metadata for ${id} to key: ${key}`)
-
-      // Save the metadata to S3-compatible storage
-      const result = await this.s3Client!.send(
+      await this.s3Client!.send(
         new PutObjectCommand({
           Bucket: this.bucketName,
-          Key: key,
+          Key: path,
           Body: body,
           ContentType: 'application/json'
         })
       )
 
-      this.logger.debug(`Metadata for ${id} saved successfully`)
+      this.logger.debug(`Object written successfully to ${path}`)
 
       // Log the change for efficient synchronization
       await this.appendToChangeLog({
         timestamp: Date.now(),
-        operation: 'add', // Could be 'update' if we track existing metadata
+        operation: 'add',
         entityType: 'metadata',
-        entityId: id,
-        data: metadata
+        entityId: path,
+        data: data
       })
 
-      // Verify the metadata was saved by trying to retrieve it
-      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
-      try {
-        const verifyResponse = await this.s3Client!.send(
-          new GetObjectCommand({
-            Bucket: this.bucketName,
-            Key: key
-          })
-        )
-
-        if (verifyResponse && verifyResponse.Body) {
-          this.logger.trace(`Verified metadata for ${id} was saved correctly`)
-        } else {
-          this.logger.warn(
-            `Failed to verify metadata for ${id} was saved correctly: no response or body`
-          )
-        }
-      } catch (verifyError) {
-        this.logger.warn(
-          `Failed to verify metadata for ${id} was saved correctly:`,
-          verifyError
-        )
-      }
-      
       // Release backpressure on success
       this.releaseBackpressure(true, requestId)
     } catch (error) {
       // Release backpressure on error
       this.releaseBackpressure(false, requestId)
-      this.logger.error(`Failed to save metadata for ${id}:`, error)
-      throw new Error(`Failed to save metadata for ${id}: ${error}`)
+      this.logger.error(`Failed to write object to ${path}:`, error)
+      throw new Error(`Failed to write object to ${path}: ${error}`)
     }
   }
 
   /**
-   * Save verb metadata to storage
+   * Primitive operation: Read object from path
+   * All metadata operations use this internally via base class routing
    */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async readObjectFromPath(path: string): Promise<any | null> {
     await this.ensureInitialized()
 
-    try {
-      // Import the PutObjectCommand only when needed
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-
-      const key = `${this.verbMetadataPrefix}${id}.json`
-      const body = JSON.stringify(metadata, null, 2)
-
-      this.logger.trace(`Saving verb metadata for ${id} to key: ${key}`)
-
-      // Save the verb metadata to S3-compatible storage
-      const result = await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: key,
-          Body: body,
-          ContentType: 'application/json'
-        })
-      )
-
-      this.logger.debug(`Verb metadata for ${id} saved successfully`)
-    } catch (error) {
-      this.logger.error(`Failed to save verb metadata for ${id}:`, error)
-      throw new Error(`Failed to save verb metadata for ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get verb metadata from storage
-   */
-  public async getVerbMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    try {
-      // Import the GetObjectCommand only when needed
-      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
-
-      const key = `${this.verbMetadataPrefix}${id}.json`
-      this.logger.trace(`Getting verb metadata for ${id} from key: ${key}`)
-
-      // Try to get the verb metadata
-      const response = await this.s3Client!.send(
-        new GetObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      // Check if response is null or undefined
-      if (!response || !response.Body) {
-        this.logger.trace(`No verb metadata found for ${id}`)
-        return null
-      }
-
-      // Convert the response body to a string
-      const bodyContents = await response.Body.transformToString()
-      this.logger.trace(`Retrieved verb metadata body for ${id}`)
-
-      // Parse the JSON string
+    return this.operationExecutors.executeGet(async () => {
       try {
-        const parsedMetadata = JSON.parse(bodyContents)
-        this.logger.trace(`Successfully retrieved verb metadata for ${id}`)
-        return parsedMetadata
-      } catch (parseError) {
-        this.logger.error(`Failed to parse verb metadata for ${id}:`, parseError)
-        return null
+        const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+
+        this.logger.trace(`Reading object from path: ${path}`)
+
+        const response = await this.s3Client!.send(
+          new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: path
+          })
+        )
+
+        if (!response || !response.Body) {
+          this.logger.trace(`Object not found at ${path}`)
+          return null
+        }
+
+        const bodyContents = await response.Body.transformToString()
+        const data = JSON.parse(bodyContents)
+        this.logger.trace(`Object read successfully from ${path}`)
+        return data
+      } catch (error: any) {
+        // 404 errors return null (object doesn't exist)
+        if (
+          error.name === 'NoSuchKey' ||
+          (error.message &&
+            (error.message.includes('NoSuchKey') ||
+              error.message.includes('not found') ||
+              error.message.includes('does not exist')))
+        ) {
+          this.logger.trace(`Object not found at ${path}`)
+          return null
+        }
+
+        throw BrainyError.fromError(error, `readObjectFromPath(${path})`)
       }
+    }, `readObjectFromPath(${path})`)
+  }
+
+  /**
+   * Primitive operation: Delete object from path
+   * All metadata operations use this internally via base class routing
+   */
+  protected async deleteObjectFromPath(path: string): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
+
+      this.logger.trace(`Deleting object at path: ${path}`)
+
+      await this.s3Client!.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: path
+        })
+      )
+
+      this.logger.trace(`Object deleted successfully from ${path}`)
     } catch (error: any) {
-      // Check if this is a "NoSuchKey" error (object doesn't exist)
+      // 404 errors are ok (already deleted)
       if (
         error.name === 'NoSuchKey' ||
         (error.message &&
@@ -2079,46 +2047,48 @@ export class S3CompatibleStorage extends BaseStorage {
             error.message.includes('not found') ||
             error.message.includes('does not exist')))
       ) {
-        this.logger.trace(`Verb metadata not found for ${id}`)
-        return null
+        this.logger.trace(`Object at ${path} not found (already deleted)`)
+        return
       }
 
-      // For other types of errors, convert to BrainyError for better classification
-      throw BrainyError.fromError(error, `getVerbMetadata(${id})`)
+      this.logger.error(`Failed to delete object from ${path}:`, error)
+      throw new Error(`Failed to delete object from ${path}: ${error}`)
     }
   }
 
   /**
-   * Save noun metadata to storage
+   * Primitive operation: List objects under path prefix
+   * All metadata operations use this internally via base class routing
    */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
     await this.ensureInitialized()
 
     try {
-      // Import the PutObjectCommand only when needed
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const { ListObjectsV2Command } = await import('@aws-sdk/client-s3')
 
-      // Use UUID-based sharding for metadata (consistent with noun vectors)
-      const shardId = getShardIdFromUuid(id)
-      const key = `${this.metadataPrefix}${shardId}/${id}.json`
-      const body = JSON.stringify(metadata, null, 2)
+      this.logger.trace(`Listing objects under prefix: ${prefix}`)
 
-      this.logger.trace(`Saving noun metadata for ${id} to key: ${key}`)
-
-      // Save the noun metadata to S3-compatible storage
-      const result = await this.s3Client!.send(
-        new PutObjectCommand({
+      const response = await this.s3Client!.send(
+        new ListObjectsV2Command({
           Bucket: this.bucketName,
-          Key: key,
-          Body: body,
-          ContentType: 'application/json'
+          Prefix: prefix
         })
       )
 
-      this.logger.debug(`Noun metadata for ${id} saved successfully`)
+      if (!response || !response.Contents || response.Contents.length === 0) {
+        this.logger.trace(`No objects found under ${prefix}`)
+        return []
+      }
+
+      const paths = response.Contents
+        .map((object: any) => object.Key)
+        .filter((key: string | undefined) => key && key.length > 0) as string[]
+
+      this.logger.trace(`Found ${paths.length} objects under ${prefix}`)
+      return paths
     } catch (error) {
-      this.logger.error(`Failed to save noun metadata for ${id}:`, error)
-      throw new Error(`Failed to save noun metadata for ${id}: ${error}`)
+      this.logger.error(`Failed to list objects under ${prefix}:`, error)
+      throw new Error(`Failed to list objects under ${prefix}: ${error}`)
     }
   }
 
@@ -2237,131 +2207,6 @@ export class S3CompatibleStorage extends BaseStorage {
     return results
   }
 
-  /**
-   * Get noun metadata from storage
-   */
-  public async getNounMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    try {
-      // Import the GetObjectCommand only when needed
-      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
-
-      // Use UUID-based sharding for metadata (consistent with noun vectors)
-      const shardId = getShardIdFromUuid(id)
-      const key = `${this.metadataPrefix}${shardId}/${id}.json`
-      this.logger.trace(`Getting noun metadata for ${id} from key: ${key}`)
-
-      // Try to get the noun metadata
-      const response = await this.s3Client!.send(
-        new GetObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      // Check if response is null or undefined
-      if (!response || !response.Body) {
-        this.logger.trace(`No noun metadata found for ${id}`)
-        return null
-      }
-
-      // Convert the response body to a string
-      const bodyContents = await response.Body.transformToString()
-      this.logger.trace(`Retrieved noun metadata body for ${id}`)
-
-      // Parse the JSON string
-      try {
-        const parsedMetadata = JSON.parse(bodyContents)
-        this.logger.trace(`Successfully retrieved noun metadata for ${id}`)
-        return parsedMetadata
-      } catch (parseError) {
-        this.logger.error(`Failed to parse noun metadata for ${id}:`, parseError)
-        return null
-      }
-    } catch (error: any) {
-      // Check if this is a "NoSuchKey" error (object doesn't exist)
-      if (
-        error.name === 'NoSuchKey' ||
-        (error.message &&
-          (error.message.includes('NoSuchKey') ||
-            error.message.includes('not found') ||
-            error.message.includes('does not exist')))
-      ) {
-        this.logger.trace(`Noun metadata not found for ${id}`)
-        return null
-      }
-
-      // For other types of errors, convert to BrainyError for better classification
-      throw BrainyError.fromError(error, `getNounMetadata(${id})`)
-    }
-  }
-
-  /**
-   * Get metadata from storage
-   */
-  public async getMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    return this.operationExecutors.executeGet(async () => {
-      try {
-        // Import the GetObjectCommand only when needed
-        const { GetObjectCommand } = await import('@aws-sdk/client-s3')
-
-        prodLog.debug(`Getting metadata for ${id} from bucket ${this.bucketName}`)
-        const key = `${this.metadataPrefix}${id}.json`
-        prodLog.debug(`Looking for metadata at key: ${key}`)
-
-        // Try to get the metadata from the metadata directory
-        const response = await this.s3Client!.send(
-          new GetObjectCommand({
-            Bucket: this.bucketName,
-            Key: key
-          })
-        )
-
-        // Check if response is null or undefined (can happen in mock implementations)
-        if (!response || !response.Body) {
-          prodLog.debug(`No metadata found for ${id}`)
-          return null
-        }
-
-        // Convert the response body to a string
-        const bodyContents = await response.Body.transformToString()
-        prodLog.debug(`Retrieved metadata body: ${bodyContents}`)
-
-        // Parse the JSON string
-        try {
-          const parsedMetadata = JSON.parse(bodyContents)
-          prodLog.debug(
-            `Successfully retrieved metadata for ${id}:`,
-            parsedMetadata
-          )
-          return parsedMetadata
-        } catch (parseError) {
-          prodLog.error(`Failed to parse metadata for ${id}:`, parseError)
-          return null
-        }
-      } catch (error: any) {
-        // Check if this is a "NoSuchKey" error (object doesn't exist)
-        // In AWS SDK, this would be error.name === 'NoSuchKey'
-        // In our mock, we might get different error types
-        if (
-          error.name === 'NoSuchKey' ||
-          (error.message &&
-            (error.message.includes('NoSuchKey') ||
-              error.message.includes('not found') ||
-              error.message.includes('does not exist')))
-        ) {
-          prodLog.debug(`Metadata not found for ${id}`)
-          return null
-        }
-
-        // For other types of errors, convert to BrainyError for better classification
-        throw BrainyError.fromError(error, `getMetadata(${id})`)
-      }
-    }, `getMetadata(${id})`)
-  }
 
   /**
    * Clear all data from storage

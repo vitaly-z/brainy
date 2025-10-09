@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.30.1] - Critical Storage Architecture Fix (2025-10-09)
+
+#### 🐛 Critical Bug Fixes
+
+**Fixed: GCS/S3 Storage Crash on System Metadata Keys**
+- GCS and S3 native adapters were crashing with "Invalid UUID format" errors when saving metadata index keys
+- Root cause: Storage adapters incorrectly assumed ALL metadata keys are UUIDs
+- System keys like `__metadata_field_index__status` and `statistics_` are NOT UUIDs and should not be sharded
+
+**Architecture Improvement: Base Class Enforcement Pattern**
+- Moved sharding/routing logic from individual adapters to BaseStorage class
+- All adapters now implement 4 primitive operations instead of metadata-specific methods:
+  - `writeObjectToPath(path, data)` - Write any object to storage
+  - `readObjectFromPath(path)` - Read any object from storage
+  - `deleteObjectFromPath(path)` - Delete object from storage
+  - `listObjectsUnderPath(prefix)` - List objects under path prefix
+- BaseStorage.analyzeKey() now routes ALL metadata operations through primitive layer
+- System keys automatically routed to `_system/` directory (no sharding)
+- Entity UUIDs automatically sharded to `entities/{type}/metadata/{shard}/` directories
+
+**Benefits:**
+- Impossible for future adapters to make the same mistake
+- Cleaner separation of concerns (routing vs. storage primitives)
+- Zero breaking changes for users
+- No data migration required
+- Full backward compatibility maintained
+
+**Updated Adapters:**
+- GcsStorage: Implements primitive operations using GCS bucket.file() API
+- S3CompatibleStorage: Implements primitive operations using AWS SDK
+- OPFSStorage: Implements primitive operations using browser FileSystem API
+- FileSystemStorage: Implements primitive operations using Node.js fs.promises
+- MemoryStorage: Implements primitive operations using Map data structures
+
+**Documentation:**
+- Added comprehensive storage architecture documentation: `docs/architecture/data-storage-architecture.md`
+- Linked from README for easy discovery
+
+**Impact:** CRITICAL FIX - GCS/S3 native storage now fully functional for metadata indexing
+
+---
+
 ### [3.30.0](https://github.com/soulcraftlabs/brainy/compare/v3.29.1...v3.30.0) (2025-10-09)
 
 - feat: remove legacy ImportManager, standardize getStats() API (58daf09)

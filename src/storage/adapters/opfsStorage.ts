@@ -640,44 +640,146 @@ export class OPFSStorage extends BaseStorage {
   }
 
   /**
-   * Save metadata to storage
+   * Primitive operation: Write object to path
+   * All metadata operations use this internally via base class routing
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
+  protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
     try {
-      // Create or get the file for this metadata
-      const fileHandle = await this.metadataDir!.getFileHandle(`${id}.json`, {
-        create: true
-      })
+      // Parse path to get directory structure and filename
+      // Path format: "dir1/dir2/file.json"
+      const parts = path.split('/')
+      const filename = parts.pop()!
 
-      // Write the metadata to the file
+      // Navigate to the correct directory, creating as needed
+      let currentDir = this.rootDir!
+      for (const dirName of parts) {
+        currentDir = await currentDir.getDirectoryHandle(dirName, { create: true })
+      }
+
+      // Create or get the file
+      const fileHandle = await currentDir.getFileHandle(filename, { create: true })
+
+      // Write the data to the file
       const writable = await fileHandle.createWritable()
-      await writable.write(JSON.stringify(metadata))
+      await writable.write(JSON.stringify(data, null, 2))
       await writable.close()
     } catch (error) {
-      console.error(`Failed to save metadata ${id}:`, error)
-      throw new Error(`Failed to save metadata ${id}: ${error}`)
+      console.error(`Failed to write object to ${path}:`, error)
+      throw new Error(`Failed to write object to ${path}: ${error}`)
     }
   }
 
   /**
-   * Get metadata from storage
+   * Primitive operation: Read object from path
+   * All metadata operations use this internally via base class routing
    */
-  public async getMetadata(id: string): Promise<any | null> {
+  protected async readObjectFromPath(path: string): Promise<any | null> {
     await this.ensureInitialized()
 
     try {
-      // Get the file handle for this metadata
-      const fileHandle = await this.metadataDir!.getFileHandle(`${id}.json`)
+      // Parse path to get directory structure and filename
+      const parts = path.split('/')
+      const filename = parts.pop()!
 
-      // Read the metadata from the file
+      // Navigate to the correct directory
+      let currentDir = this.rootDir!
+      for (const dirName of parts) {
+        currentDir = await currentDir.getDirectoryHandle(dirName)
+      }
+
+      // Get the file handle
+      const fileHandle = await currentDir.getFileHandle(filename)
+
+      // Read the data from the file
       const file = await fileHandle.getFile()
       const text = await file.text()
       return JSON.parse(text)
-    } catch (error) {
-      // Metadata not found or other error
+    } catch (error: any) {
+      // NotFoundError means object doesn't exist
+      if (error.name === 'NotFoundError') {
+        return null
+      }
+      console.error(`Failed to read object from ${path}:`, error)
       return null
+    }
+  }
+
+  /**
+   * Primitive operation: Delete object from path
+   * All metadata operations use this internally via base class routing
+   */
+  protected async deleteObjectFromPath(path: string): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      // Parse path to get directory structure and filename
+      const parts = path.split('/')
+      const filename = parts.pop()!
+
+      // Navigate to the correct directory
+      let currentDir = this.rootDir!
+      for (const dirName of parts) {
+        currentDir = await currentDir.getDirectoryHandle(dirName)
+      }
+
+      // Delete the file
+      await currentDir.removeEntry(filename)
+    } catch (error: any) {
+      // NotFoundError is ok (already deleted)
+      if (error.name === 'NotFoundError') {
+        return
+      }
+      console.error(`Failed to delete object from ${path}:`, error)
+      throw new Error(`Failed to delete object from ${path}: ${error}`)
+    }
+  }
+
+  /**
+   * Primitive operation: List objects under path prefix
+   * All metadata operations use this internally via base class routing
+   */
+  protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
+    await this.ensureInitialized()
+
+    try {
+      const paths: string[] = []
+
+      // Parse prefix to get directory structure
+      const parts = prefix.split('/')
+
+      // Navigate to the directory
+      let currentDir = this.rootDir!
+      for (const dirName of parts) {
+        if (dirName) {
+          currentDir = await currentDir.getDirectoryHandle(dirName)
+        }
+      }
+
+      // Recursively list all files
+      const listFiles = async (dir: FileSystemDirectoryHandle, pathPrefix: string): Promise<void> => {
+        for await (const [name, handle] of dir.entries()) {
+          const fullPath = pathPrefix ? `${pathPrefix}/${name}` : name
+
+          if (handle.kind === 'file') {
+            paths.push(`${prefix}${fullPath}`)
+          } else if (handle.kind === 'directory') {
+            await listFiles(handle as FileSystemDirectoryHandle, fullPath)
+          }
+        }
+      }
+
+      await listFiles(currentDir, '')
+
+      return paths
+    } catch (error: any) {
+      // NotFoundError means directory doesn't exist
+      if (error.name === 'NotFoundError') {
+        return []
+      }
+      console.error(`Failed to list objects under ${prefix}:`, error)
+      throw new Error(`Failed to list objects under ${prefix}: ${error}`)
     }
   }
 
@@ -720,107 +822,6 @@ export class OPFSStorage extends BaseStorage {
     return results
   }
 
-  /**
-   * Save verb metadata to storage
-   */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with verb vectors)
-    const shardId = getShardIdFromUuid(id)
-
-    // Get or create the shard directory
-    const shardDir = await (
-      this.verbMetadataDir as FileSystemDirectoryHandle
-    ).getDirectoryHandle(shardId, { create: true })
-
-    // Create or get the file in the shard directory
-    const fileName = `${id}.json`
-    const fileHandle = await shardDir.getFileHandle(fileName, { create: true })
-    const writable = await (fileHandle as FileSystemFileHandle).createWritable()
-    await writable.write(JSON.stringify(metadata, null, 2))
-    await writable.close()
-  }
-
-  /**
-   * Get verb metadata from storage
-   */
-  public async getVerbMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with verb vectors)
-    const shardId = getShardIdFromUuid(id)
-
-    const fileName = `${id}.json`
-    try {
-      // Get the shard directory
-      const shardDir = await (
-        this.verbMetadataDir as FileSystemDirectoryHandle
-      ).getDirectoryHandle(shardId)
-
-      // Get the file from the shard directory
-      const fileHandle = await shardDir.getFileHandle(fileName)
-      const file = await safeGetFile(fileHandle)
-      const text = await file.text()
-      return JSON.parse(text)
-    } catch (error: any) {
-      if (error.name !== 'NotFoundError') {
-        console.error(`Error reading verb metadata ${id}:`, error)
-      }
-      return null
-    }
-  }
-
-  /**
-   * Save noun metadata to storage
-   */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with noun vectors)
-    const shardId = getShardIdFromUuid(id)
-
-    // Get or create the shard directory
-    const shardDir = await (
-      this.nounMetadataDir as FileSystemDirectoryHandle
-    ).getDirectoryHandle(shardId, { create: true })
-
-    // Create or get the file in the shard directory
-    const fileName = `${id}.json`
-    const fileHandle = await shardDir.getFileHandle(fileName, { create: true })
-    const writable = await fileHandle.createWritable()
-    await writable.write(JSON.stringify(metadata, null, 2))
-    await writable.close()
-  }
-
-  /**
-   * Get noun metadata from storage
-   */
-  public async getNounMetadata(id: string): Promise<any | null> {
-    await this.ensureInitialized()
-
-    // Use UUID-based sharding for metadata (consistent with noun vectors)
-    const shardId = getShardIdFromUuid(id)
-
-    const fileName = `${id}.json`
-    try {
-      // Get the shard directory
-      const shardDir = await (
-        this.nounMetadataDir as FileSystemDirectoryHandle
-      ).getDirectoryHandle(shardId)
-
-      // Get the file from the shard directory
-      const fileHandle = await shardDir.getFileHandle(fileName)
-      const file = await safeGetFile(fileHandle)
-      const text = await file.text()
-      return JSON.parse(text)
-    } catch (error: any) {
-      if (error.name !== 'NotFoundError') {
-        console.error(`Error reading noun metadata ${id}:`, error)
-      }
-      return null
-    }
-  }
 
   /**
    * Clear all data from storage
