@@ -220,14 +220,9 @@ describe('Zero-Config Parameter Validation', () => {
       } as RelateParams)).toThrow('to entity ID is required')
     })
     
-    it('should reject self-referential relationships', () => {
-      expect(() => validateRelateParams({
-        from: 'entity1',
-        to: 'entity1',
-        type: VerbType.RelatedTo
-      })).toThrow('cannot create self-referential relationship')
-    })
-    
+    // Self-referential relationships are now allowed (valid in graph systems)
+    // Previous test "should reject self-referential relationships" removed
+
     it('should validate VerbType', () => {
       expect(() => validateRelateParams({
         from: 'entity1',

@@ -443,7 +443,7 @@ describe('Brainy.find()', () => {
       )).toBe(true)
     })
     
-    it.skip('should maintain consistency after updates', async () => {
+    it('should maintain consistency after updates', async () => {
       // Arrange - Use more distinct content for better embedding differentiation
       const id = await brain.add(createAddParams({
         data: 'JavaScript programming language for web development',

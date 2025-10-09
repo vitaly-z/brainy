@@ -82,7 +82,7 @@ describe('Brainy.relate()', () => {
       expect(relation!.weight).toBe(0.8)
     })
     
-    it.skip('should create relationship with metadata - BUG: metadata not stored', async () => {
+    it('should create relationship with metadata', async () => {
       // Arrange
       const metadata = {
         since: '2024-01-01',
@@ -165,7 +165,7 @@ describe('Brainy.relate()', () => {
       expect(toEntity2.some(r => r.type === 'reportsTo')).toBe(true)
     })
     
-    it.skip('should handle self-relationships - BUG: metadata not stored', async () => {
+    it('should handle self-relationships', async () => {
       // Act
       await brain.relate({
         from: entity1Id,
@@ -245,7 +245,7 @@ describe('Brainy.relate()', () => {
       expect(matches.length).toBe(2)
     })
     
-    it.skip('should handle very long metadata - BUG: metadata not stored', async () => {
+    it('should handle very long metadata', async () => {
       // Arrange
       const largeMetadata = {
         bigArray: new Array(100).fill('item'),
@@ -270,7 +270,7 @@ describe('Brainy.relate()', () => {
       expect(relation!.metadata?.bigArray).toHaveLength(100)
     })
     
-    it.skip('should handle special characters in metadata - BUG: metadata not stored', async () => {
+    it('should handle special characters in metadata', async () => {
       // Arrange
       const specialMetadata = {
         emoji: '🚀🎉💻',
@@ -361,7 +361,7 @@ describe('Brainy.relate()', () => {
   })
   
   describe('consistency', () => {
-    it.skip('should maintain relationship consistency - BUG: metadata not stored', async () => {
+    it('should maintain relationship consistency', async () => {
       // Act
       await brain.relate({
         from: entity1Id,

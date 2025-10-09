@@ -386,7 +386,7 @@ export class MemoryStorage extends BaseStorage {
     // Iterate through all verbs to find matches
     for (const [verbId, hnswVerb] of this.verbs.entries()) {
       // Get the metadata for this verb to do filtering
-      const metadata = this.verbMetadata.get(verbId)
+      const metadata = await this.getVerbMetadata(verbId)
       
       // Filter by verb type if specified
       if (verbTypes && metadata && !verbTypes.includes(metadata.type || metadata.verb || '')) {
@@ -437,7 +437,7 @@ export class MemoryStorage extends BaseStorage {
     const items: GraphVerb[] = []
     for (const id of paginatedIds) {
       const hnswVerb = this.verbs.get(id)
-      const metadata = this.verbMetadata.get(id)
+      const metadata = await this.getVerbMetadata(id)
       
       if (!hnswVerb) continue
       
@@ -468,7 +468,7 @@ export class MemoryStorage extends BaseStorage {
         updatedAt: metadata.updatedAt,
         createdBy: metadata.createdBy,
         data: metadata.data,
-        metadata: metadata.data // Alias for backward compatibility
+        metadata: metadata.metadata || metadata.data // Use metadata.metadata (user's custom metadata)
       }
       
       items.push(graphVerb)
@@ -525,9 +525,19 @@ export class MemoryStorage extends BaseStorage {
    * Delete a verb from storage
    */
   protected async deleteVerb_internal(id: string): Promise<void> {
-    // Count tracking will be handled when verb metadata is deleted
-    // since HNSWVerb doesn't contain type information
+    // Delete the HNSWVerb from the verbs map
     this.verbs.delete(id)
+
+    // CRITICAL: Also delete verb metadata - this is what getVerbs() uses to find verbs
+    // Without this, getVerbsBySource() will still find "deleted" verbs via their metadata
+    const metadata = await this.getVerbMetadata(id)
+    if (metadata) {
+      const verbType = metadata.verb || metadata.type || 'default'
+      this.decrementVerbCount(verbType)
+
+      // Delete the metadata using the base storage method
+      await this.deleteVerbMetadata(id)
+    }
   }
 
   /**

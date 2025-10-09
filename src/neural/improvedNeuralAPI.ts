@@ -2425,32 +2425,10 @@ export class ImprovedNeuralAPI {
         return []
       }
 
-      // Filter items that have the specified field (check both root level and metadata)
+      // Include ALL items for domain clustering - those without the field will be assigned to 'unknown' domain
       const itemsWithField = result.filter((item: any) => {
-        if (!item || !item.entity) return false
-
-        const entity = item.entity
-
-        // Check root level fields first (e.g., 'noun' for type)
-        if (field === 'type' || field === 'nounType') {
-          return entity.noun != null
-        }
-
-        // Check if field exists at root level
-        if (entity[field] != null) {
-          return true
-        }
-
-        // Check if field exists in metadata/data
-        if (entity.metadata?.[field] != null) {
-          return true
-        }
-
-        if (entity.data?.[field] != null) {
-          return true
-        }
-
-        return false
+        // Just ensure item has entity
+        return item && item.entity
       })
 
       // Map to format expected by clustering methods
@@ -2463,13 +2441,13 @@ export class ImprovedNeuralAPI {
             ...(entity.metadata || {}),
             ...(entity.data || {}),
             // Include root-level fields in metadata for easy access
-            noun: entity.noun,
-            type: entity.noun,
+            noun: entity.type,
+            type: entity.type,
             createdAt: entity.createdAt,
             updatedAt: entity.updatedAt,
             label: entity.label
           },
-          nounType: entity.noun,
+          nounType: entity.type,
           label: entity.label || entity.data || '',
           data: entity.data
         }

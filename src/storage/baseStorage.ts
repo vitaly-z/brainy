@@ -921,6 +921,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Delete verb metadata from storage
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   */
+  public async deleteVerbMetadata(id: string): Promise<void> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'verb-metadata')
+    return this.deleteObjectFromPath(keyInfo.fullPath)
+  }
+
+  /**
    * Save a noun to storage
    * This method should be implemented by each specific adapter
    */

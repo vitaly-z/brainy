@@ -22,7 +22,7 @@ describe('Domain and Time Clustering', () => {
   })
 
   describe('clusterByDomain() - Field-based clustering', () => {
-    it.skip('should cluster entities by type field', async () => {
+    it('should cluster entities by type field', async () => {
       // Add entities of different types
       await brain.add(createAddParams({
         data: 'John Smith is a person',
@@ -99,7 +99,7 @@ describe('Domain and Time Clustering', () => {
       expect(domains.has('cooking')).toBe(true)
     })
 
-    it.skip('should handle entities without the specified field', async () => {
+    it('should handle entities without the specified field', async () => {
       // Add entities with and without category
       await brain.add(createAddParams({
         data: 'Has category',

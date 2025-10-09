@@ -956,23 +956,6 @@ describe('Unified Find() Integration Tests', () => {
         expect(mlResult!.score).toBeGreaterThan(0.5)
       })
 
-// TODO: Implement natural language query processing
-// - NLP integration with unified find()
-// - Pattern matching for queries
-// Expected completion: 2-3 weeks
-
-      it.skip('should handle natural language queries - SKIPPED: NLP features not yet implemented', async () => {
-        const results = await brain.find('find people connected to Alice who are over 25')
-
-        expect(Array.isArray(results)).toBe(true)
-        expect(results.length).toBeGreaterThan(0)
-
-        // Should parse and execute the natural language query
-        results.forEach((result: any) => {
-          expect(result.score).toBeGreaterThan(0)
-          expect(result.score).toBeLessThanOrEqual(1)
-        })
-      })
     })
 
     describe('Real Data Scenarios', () => {

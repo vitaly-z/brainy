@@ -31,7 +31,7 @@ describe('Brainy.delete()', () => {
       expect(after).toBeNull()
     })
     
-    it.skip('should delete entity with relationships', async () => {
+    it('should delete entity with relationships', async () => {
       // TODO: Fix relationship cleanup - verbs are being found after deletion
       //  Possible causes: storage cache, metadata index, or graph index not updating
       // Arrange - Create entities and relationships
@@ -122,7 +122,7 @@ describe('Brainy.delete()', () => {
       expect(results.every(r => r === null)).toBe(true)
     })
     
-    it.skip('should handle deleting entity with bidirectional relationships', async () => {
+    it('should handle deleting entity with bidirectional relationships', async () => {
       // Arrange
       const entity1 = await brain.add(createAddParams({ data: 'Entity 1' }))
       const entity2 = await brain.add(createAddParams({ data: 'Entity 2' }))
@@ -182,7 +182,7 @@ describe('Brainy.delete()', () => {
   })
   
   describe('edge cases', () => {
-    it.skip('should handle deletion with circular relationships', async () => {
+    it('should handle deletion with circular relationships', async () => {
       // TODO: Fix relationship cleanup - related to same issue as above
       // Arrange - Create circular relationship
       const entity1 = await brain.add(createAddParams({ data: 'Entity 1' }))
@@ -224,7 +224,7 @@ describe('Brainy.delete()', () => {
       expect(results.every(r => r === null)).toBe(true)
     })
     
-    it.skip('should maintain data integrity after deletion', async () => {
+    it('should maintain data integrity after deletion', async () => {
       // Arrange
       const keepId = await brain.add(createAddParams({
         data: 'Keep this',
@@ -317,7 +317,7 @@ describe('Brainy.delete()', () => {
       expect(after.some(r => r.entity.id === id)).toBe(false)
     })
     
-    it.skip('should maintain consistency across operations', async () => {
+    it('should maintain consistency across operations', async () => {
       // Arrange
       const entity1 = await brain.add(createAddParams({ data: 'Entity 1' }))
       const entity2 = await brain.add(createAddParams({ data: 'Entity 2' }))

@@ -219,18 +219,6 @@ describe('Brainy 3.0 API', () => {
       expect(results[0].entity.type).toBe(NounType.Document)
     })
 
-// TODO: Implement natural language entity finding
-// - NLP-based entity search
-// - Semantic query processing
-// Expected completion: 2-3 weeks
-
-    it.skip('should find entities by natural language - SKIPPED: NLP features not yet implemented', async () => {
-      const results = await brain.find('neural networks and AI')
-      
-      expect(results.length).toBeGreaterThan(0)
-      expect(results[0].entity.metadata.category).toBe('AI')
-    })
-
     it('should find similar entities', async () => {
       const aiDocId = await brain.add({
         data: 'Deep learning algorithms',

@@ -239,11 +239,10 @@ export function validateRelateParams(params: RelateParams): void {
   if (!params.to) {
     throw new Error('to entity ID is required')
   }
-  
-  if (params.from === params.to) {
-    throw new Error('cannot create self-referential relationship')
-  }
-  
+
+  // Allow self-referential relationships - they're valid in graph systems
+  // (e.g., a person can be related to themselves, a file can reference itself, etc.)
+
   // Validate verb type - default to RelatedTo if not specified
   if (params.type === undefined) {
     params.type = VerbType.RelatedTo
