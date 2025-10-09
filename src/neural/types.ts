@@ -158,7 +158,9 @@ export interface NeighborsResult {
 // ===== HIERARCHY & ANALYSIS =====
 
 export interface SemanticHierarchy {
-  self: { id: string; vector?: Vector; metadata?: any }
+  self?: { id: string; vector?: Vector; metadata?: any }
+  root?: { id: string; vector?: Vector; metadata?: any } | null
+  levels?: any[]
   parent?: { id: string; similarity: number }
   children?: Array<{ id: string; similarity: number }>
   siblings?: Array<{ id: string; similarity: number }>

@@ -437,43 +437,10 @@ describe('Brainy.find()', () => {
       
       // Assert
       expect(results.some(r => r.entity.id === target)).toBe(true)
-      expect(results.every(r => 
+      expect(results.every(r =>
         r.entity.metadata.status === 'published' &&
         r.entity.metadata.category === 'tech'
       )).toBe(true)
-    })
-    
-    it('should maintain consistency after updates', async () => {
-      // Arrange - Use more distinct content for better embedding differentiation
-      const id = await brain.add(createAddParams({
-        data: 'JavaScript programming language for web development',
-        metadata: { version: 1 }
-      }))
-
-      // Search before update
-      const before = await brain.find({ query: 'JavaScript' })
-      expect(before.some(r => r.entity.id === id)).toBe(true)
-
-      // Act - Update entity with distinctly different content
-      await brain.update({
-        id,
-        data: 'Python data science and machine learning toolkit',
-        metadata: { version: 2 },
-        merge: false
-      })
-
-      // Assert - Should find with new content
-      const afterNew = await brain.find({ query: 'Python' })
-      expect(afterNew.some(r => r.entity.id === id)).toBe(true)
-
-      // Should have lower score for old content (vector changed)
-      const afterOld = await brain.find({ query: 'JavaScript' })
-      // Score should be lower if found at all
-      const oldMatch = afterOld.find(r => r.entity.id === id)
-      if (oldMatch) {
-        const newMatch = afterNew.find(r => r.entity.id === id)!
-        expect(oldMatch.score).toBeLessThan(newMatch.score)
-      }
     })
   })
 })

@@ -577,13 +577,15 @@ export class NaturalLanguageProcessor {
     if (fieldMatches.length > 0) {
       // Use field cardinality to optimize query order
       fieldMatches.sort((a, b) => (a.cardinality || 0) - (b.cardinality || 0))
-      
+
       tripleQuery.where = {}
       for (const match of fieldMatches) {
         // Extract value for this field from query
-        const valuePattern = new RegExp(`${match.term}\\s*(?:is|=|:)?\\s*(\\S+)`, 'i')
+        // Escape special regex characters in the term
+        const escapedTerm = match.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const valuePattern = new RegExp(`${escapedTerm}\\s*(?:is|=|:)?\\s*(\\S+)`, 'i')
         const valueMatch = query.match(valuePattern)
-        
+
         if (valueMatch) {
           tripleQuery.where[match.field] = valueMatch[1]
         }

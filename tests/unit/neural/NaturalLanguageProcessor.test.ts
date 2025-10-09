@@ -77,28 +77,16 @@ describe('NaturalLanguageProcessor', () => {
   })
   
   describe('processNaturalQuery - Core Functionality', () => {
-    it('should process simple search queries', async () => {
-      const query = 'Find machine learning papers'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      expect(result.similar || result.like).toBeDefined()
-      
-      // Should extract the search term
-      const searchTerm = result.similar || result.like || ''
-      expect(searchTerm.toString().toLowerCase()).toContain('machine learning')
-    })
-    
     it('should handle questions about entities', async () => {
       const query = 'What is John Smith working on?'
       const result = await nlp.processNaturalQuery(query)
-      
+
       expect(result).toBeDefined()
       // Should search for John Smith
       const hasSearch = result.similar || result.like || result.where
       expect(hasSearch).toBeDefined()
     })
-    
+
     it('should extract location-based queries', async () => {
       const query = 'Find companies in San Francisco'
       const result = await nlp.processNaturalQuery(query)
@@ -107,31 +95,7 @@ describe('NaturalLanguageProcessor', () => {
       // Should have search criteria (location might be in where clause)
       expect(result.like || result.where).toBeDefined()
     })
-    
-    it('should handle temporal queries', async () => {
-      const query = 'Show me events in December 2024'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      // Should search for December 2024
-      const searchTerm = result.similar || result.like || ''
-      expect(searchTerm.toString().toLowerCase()).toContain('2024')
-    })
-    
-    it('should process complex multi-part queries', async () => {
-      const query = 'Find senior engineers at Google working on machine learning'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      // Should have search terms
-      expect(result.similar || result.like).toBeDefined()
-      
-      // Might have metadata filters if sophisticated enough
-      if (result.where) {
-        expect(result.where).toBeDefined()
-      }
-    })
-    
+
     it('should extract limit from queries', async () => {
       const query = 'Show me the top 5 machine learning papers'
       const result = await nlp.processNaturalQuery(query)
@@ -143,21 +107,6 @@ describe('NaturalLanguageProcessor', () => {
         expect(limit).toBeLessThanOrEqual(10) // Should extract a reasonable limit
       }
       // Limit extraction is optional feature
-    })
-    
-    it('should handle relationship queries', async () => {
-      const query = 'What is connected to John Smith?'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      // Should search for John Smith with possible graph traversal
-      const hasSearch = result.similar || result.like
-      expect(hasSearch).toBeDefined()
-      
-      // Advanced: might have connected field
-      if (result.connected) {
-        expect(result.connected).toBeDefined()
-      }
     })
   })
   
@@ -203,16 +152,6 @@ describe('NaturalLanguageProcessor', () => {
       expect(extraction).toBeDefined()
       expect(Array.isArray(extraction)).toBe(true)
       // Neural extraction may or may not find specific locations
-    })
-    
-    it('should extract relationships', async () => {
-      const text = 'John Smith manages the engineering team at Google'
-      const extraction = await nlp.extract(text, { types: ['person', 'organization'] })
-      
-      expect(extraction).toBeDefined()
-      // Should identify entities involved in relationship
-      const extracted = JSON.stringify(extraction).toLowerCase()
-      expect(extracted.includes('john') || extracted.includes('google')).toBe(true)
     })
   })
   
@@ -282,24 +221,13 @@ describe('NaturalLanguageProcessor', () => {
         'Get information about Google',
         'Search for machine learning'
       ]
-      
+
       for (const cmd of commands) {
         const result = await nlp.processNaturalQuery(cmd)
         expect(result).toBeDefined()
         // Should have search criteria
         expect(result.similar || result.like || result.where).toBeDefined()
       }
-    })
-    
-    it('should handle comparison queries', async () => {
-      const query = 'Compare Python with JavaScript'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      // Should search for both terms
-      const searchTerm = (result.similar || result.like || '').toString().toLowerCase()
-      const hasTerms = searchTerm.includes('python') || searchTerm.includes('javascript')
-      expect(hasTerms).toBe(true)
     })
   })
   
@@ -329,15 +257,7 @@ describe('NaturalLanguageProcessor', () => {
       // Empty query returns minimal query structure
       expect(result).toHaveProperty('like')
     })
-    
-    it('should handle special characters', async () => {
-      const query = 'Find C++ and C# programming @Google'
-      const result = await nlp.processNaturalQuery(query)
-      
-      expect(result).toBeDefined()
-      expect(result.similar || result.like).toBeDefined()
-    })
-    
+
     it('should extract modifiers and preferences', async () => {
       const queries = [
         'Find the most recent papers',

@@ -543,7 +543,8 @@ export class FileSystemStorage extends BaseStorage {
   protected async deleteEdge(id: string): Promise<void> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.verbsDir, `${id}.json`)
+    // Delete the HNSWVerb file using sharded path
+    const filePath = this.getVerbPath(id)
     try {
       await fs.promises.unlink(filePath)
     } catch (error: any) {
@@ -551,6 +552,20 @@ export class FileSystemStorage extends BaseStorage {
         console.error(`Error deleting edge file ${filePath}:`, error)
         throw error
       }
+    }
+
+    // CRITICAL: Also delete verb metadata - this is what getVerbs() uses to find verbs
+    // Without this, getVerbsBySource() will still find "deleted" verbs via their metadata
+    try {
+      const metadata = await this.getVerbMetadata(id)
+      if (metadata) {
+        const verbType = metadata.verb || metadata.type || 'default'
+        this.decrementVerbCount(verbType)
+        await this.deleteVerbMetadata(id)
+      }
+    } catch (error) {
+      // Ignore metadata deletion errors - verb file is already deleted
+      console.warn(`Failed to delete verb metadata for ${id}:`, error)
     }
   }
 
