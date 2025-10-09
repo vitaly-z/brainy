@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.29.1](https://github.com/soulcraftlabs/brainy/compare/v3.29.0...v3.29.1) (2025-10-09)
+
+
+### 🐛 Bug Fixes
+
+* pass entire storage config to createStorage (gcsNativeStorage now detected) ([7a58dd7](https://github.com/soulcraftlabs/brainy/commit/7a58dd774d956cb3b548064724f9f86c0754f82e))
+
 ## [3.29.0](https://github.com/soulcraftlabs/brainy/compare/v3.28.0...v3.29.0) (2025-10-09)
 
 
