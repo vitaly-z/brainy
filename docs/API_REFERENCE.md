@@ -26,7 +26,7 @@ import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
 // Initialize
 const brain = new Brainy({
-  storage: { type: 'memory' },
+  storage: { type: 'filesystem', path: './brainy-data' },
   model: { type: 'fast', precision: 'Q8' }
 })
 await brain.init()
@@ -554,16 +554,7 @@ Brainy supports multiple storage backends for different deployment scenarios.
 
 ### Storage Types
 
-#### Memory Storage (Default)
-Fast in-memory storage, ideal for testing and development.
-
-```typescript
-const brain = new Brainy({
-  storage: { type: 'memory' }
-})
-```
-
-#### File System Storage
+#### File System Storage (Recommended for Development)
 Persistent local storage using the filesystem.
 
 ```typescript

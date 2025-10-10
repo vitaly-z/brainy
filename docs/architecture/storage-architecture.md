@@ -68,18 +68,6 @@ const brain = new Brainy({
 - **Performance**: Near-native file system speed
 - **Persistence**: Permanent in browser (with quota limits)
 
-### Memory Storage
-```typescript
-const brain = new Brainy({
-  storage: {
-    type: 'memory'
-  }
-})
-```
-- **Use case**: Testing, temporary processing
-- **Performance**: Fastest possible
-- **Persistence**: Volatile (lost on restart)
-
 ## Metadata Indexing System
 
 ### Field Discovery Index
@@ -284,14 +272,15 @@ console.log(stats)
 ## Best Practices
 
 ### Choose the Right Adapter
-1. **Development**: Memory or FileSystem
+1. **Development**: FileSystem (local persistence)
 2. **Production Server**: FileSystem or S3
-3. **Browser Apps**: OPFS or Memory
+3. **Browser Apps**: OPFS
 4. **Distributed**: S3 with caching
 
 ### Optimize for Your Use Case
 1. **Read-heavy**: Enable aggressive caching
-3. **Real-time**: Memory with periodic persistence
+2. **Write-heavy**: Batch operations
+3. **Real-time**: FileSystem with periodic snapshots
 4. **Archival**: S3 with compression
 
 ### Monitor and Maintain

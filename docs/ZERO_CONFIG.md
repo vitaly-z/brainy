@@ -30,7 +30,7 @@ await brain.init()
 #### Development
 ```typescript
 const brain = new Brainy(PresetName.DEVELOPMENT)
-// ✅ Memory storage for fast iteration
+// ✅ Filesystem storage for persistence
 // ✅ FP32 models for best quality
 // ✅ Verbose logging
 // ✅ All features enabled
@@ -48,7 +48,7 @@ const brain = new Brainy(PresetName.PRODUCTION)
 #### Minimal
 ```typescript
 const brain = new Brainy(PresetName.MINIMAL)
-// ✅ Memory storage
+// ✅ Filesystem storage
 // ✅ Q8 models for small size
 // ✅ Core features only
 // ✅ Minimal resource usage
@@ -147,11 +147,10 @@ Brainy automatically detects the best storage option:
 
 2. **Browser Storage**
    - OPFS (if supported)
-   - Memory (fallback)
+   - Filesystem fallback
 
 3. **Node.js Storage**
    - Filesystem (`./brainy-data` or `~/.brainy/data`)
-   - Memory (for serverless)
 
 ### Manual Storage Control
 
@@ -159,7 +158,6 @@ Brainy automatically detects the best storage option:
 import { StorageOption } from '@soulcraft/brainy'
 
 // Force specific storage with enum
-const brain = new Brainy({ storage: StorageOption.MEMORY })
 const brain = new Brainy({ storage: StorageOption.DISK })
 const brain = new Brainy({ storage: StorageOption.CLOUD })
 const brain = new Brainy({ storage: StorageOption.AUTO })
@@ -254,7 +252,6 @@ enum ModelPrecision {
 
 enum StorageOption {
   AUTO = 'auto',
-  MEMORY = 'memory',
   DISK = 'disk',
   CLOUD = 'cloud'
 }

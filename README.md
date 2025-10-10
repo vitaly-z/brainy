@@ -19,6 +19,32 @@
 
 ## 🎉 Key Features
 
+### ⚡ **NEW in 3.36.0: Production-Scale Memory & Performance**
+
+**Enterprise-grade adaptive sizing and zero-overhead optimizations:**
+
+- **🎯 Adaptive Memory Sizing**: Auto-scales from 2GB to 128GB+ based on available system resources
+  - Container-aware (Docker/K8s cgroups v1/v2 detection)
+  - Environment-smart (development 25%, container 40%, production 50% allocation)
+  - Model memory accounting (150MB Q8, 250MB FP32 reserved before cache)
+
+- **⚡ Sync Fast Path**: Zero async overhead when vectors are cached
+  - Intelligent sync/async branching - synchronous when data is in memory
+  - Falls back to async only when loading from storage
+  - Massive performance win for hot paths (vector search, distance calculations)
+
+- **📊 Production Monitoring**: Comprehensive diagnostics
+  - `getCacheStats()` - UnifiedCache hit rates, fairness metrics, memory pressure
+  - Actionable recommendations for tuning
+  - Tracks model memory, cache efficiency, and competition across indexes
+
+- **🛡️ Zero Breaking Changes**: All optimizations are internal - your code stays the same
+  - Public API unchanged
+  - Automatic memory detection and allocation
+  - Progressive enhancement for existing applications
+
+**[📖 Operations Guide →](docs/operations/capacity-planning.md)** | **[🎯 Migration Guide →](docs/guides/migration-3.36.0.md)**
+
 ### 🚀 **NEW in 3.21.0: Enhanced Import & Neural Processing**
 
 - **📊 Progress Tracking**: Unified progress reporting with automatic time estimation
@@ -38,7 +64,7 @@
 
 - **Modern Syntax**: `brain.add()`, `brain.find()`, `brain.relate()`
 - **Type Safety**: Full TypeScript integration
-- **Zero Config**: Works out of the box with memory storage
+- **Zero Config**: Works out of the box with intelligent storage auto-detection
 - **Consistent Parameters**: Clean, predictable API surface
 
 ### ⚡ **Performance & Reliability**
@@ -352,7 +378,7 @@ const brain = new Brainy()
 
 // 2. Custom configuration
 const brain = new Brainy({
-  storage: { type: 'memory' },
+  storage: { type: 'filesystem', path: './brainy-data' },
   embeddings: { model: 'all-MiniLM-L6-v2' },
   cache: { enabled: true, maxSize: 1000 }
 })
@@ -368,7 +394,7 @@ const customBrain = new Brainy({
 
 **What's Auto-Detected:**
 
-- **Storage**: S3/GCS/R2 → Filesystem → Memory (priority order)
+- **Storage**: S3/GCS/R2 → Filesystem (priority order)
 - **Models**: Always Q8 for optimal balance
 - **Features**: Minimal → Default → Full based on environment
 - **Memory**: Optimal cache sizes and batching
@@ -390,13 +416,12 @@ Most users **never need this** - zero-config handles everything. For advanced us
 const brain = new Brainy()  // Uses Q8 automatically
 
 // Storage control (auto-detected by default)
-const memoryBrain = new Brainy({storage: 'memory'})     // RAM only
-const diskBrain = new Brainy({storage: 'disk'})         // Local filesystem  
+const diskBrain = new Brainy({storage: 'disk'})         // Local filesystem
 const cloudBrain = new Brainy({storage: 'cloud'})       // S3/GCS/R2
 
 // Legacy full config (still supported)
 const legacyBrain = new Brainy({
-    storage: {forceMemoryStorage: true}
+    storage: {type: 'filesystem', path: './data'}
 })
 ```
 
@@ -665,12 +690,7 @@ const context = await brain.find({
 Brainy supports multiple storage backends:
 
 ```javascript
-// Memory (default for testing)
-const brain = new Brainy({
-    storage: {type: 'memory'}
-})
-
-// FileSystem (Node.js)
+// FileSystem (Node.js - recommended for development)
 const brain = new Brainy({
     storage: {
         type: 'filesystem',

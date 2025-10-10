@@ -12,7 +12,6 @@ import {
   VectorDocument
 } from '../coreTypes.js'
 import { HNSWIndex } from './hnswIndex.js'
-import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
 import type { BaseStorage } from '../storage/baseStorage.js'
 
 // Configuration for the optimized HNSW index
@@ -297,9 +296,6 @@ export class HNSWIndexOptimized extends HNSWIndex {
   // Thread safety for memory usage tracking
   private memoryUpdateLock: Promise<void> = Promise.resolve()
 
-  // Unified cache for coordinated memory management
-  private unifiedCache: UnifiedCache
-
   constructor(
     config: Partial<HNSWOptimizedConfig> = {},
     distanceFunction: DistanceFunction,
@@ -322,9 +318,7 @@ export class HNSWIndexOptimized extends HNSWIndex {
 
     // Set disk-based index flag
     this.useDiskBasedIndex = this.optimizedConfig.useDiskBasedIndex || false
-    
-    // Get global unified cache for coordinated memory management
-    this.unifiedCache = getGlobalCache()
+    // Note: UnifiedCache is inherited from base HNSWIndex class
   }
 
   /**
@@ -454,7 +448,7 @@ export class HNSWIndexOptimized extends HNSWIndex {
   /**
    * Remove an item from the index
    */
-  public override removeItem(id: string): boolean {
+  public override async removeItem(id: string): Promise<boolean> {
     // If product quantization is active, remove the quantized vector
     if (this.useProductQuantization) {
       this.quantizedVectors.delete(id)
@@ -474,7 +468,7 @@ export class HNSWIndexOptimized extends HNSWIndex {
     })
 
     // Remove the item from the in-memory index
-    return super.removeItem(id)
+    return await super.removeItem(id)
   }
 
   /**

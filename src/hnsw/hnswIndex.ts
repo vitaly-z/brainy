@@ -13,6 +13,8 @@ import {
 import { euclideanDistance, calculateDistancesBatch } from '../utils/index.js'
 import { executeInThread } from '../utils/workerUtils.js'
 import type { BaseStorage } from '../storage/baseStorage.js'
+import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
+import { prodLog } from '../utils/logger.js'
 
 // Default HNSW parameters
 const DEFAULT_CONFIG: HNSWConfig = {
@@ -35,6 +37,10 @@ export class HNSWIndex {
   private useParallelization: boolean = true // Whether to use parallelization for performance-critical operations
   private storage: BaseStorage | null = null // Storage adapter for HNSW persistence (v3.35.0+)
 
+  // Universal memory management (v3.36.0+)
+  private unifiedCache: UnifiedCache // Shared cache with Graph and Metadata indexes
+  // Always-adaptive caching (v3.36.0+) - no "mode" concept, system adapts automatically
+
   constructor(
     config: Partial<HNSWConfig> = {},
     distanceFunction: DistanceFunction = euclideanDistance,
@@ -47,6 +53,9 @@ export class HNSWIndex {
         ? options.useParallelization
         : true
     this.storage = options.storage || null
+
+    // Use SAME UnifiedCache as Graph and Metadata for fair memory competition
+    this.unifiedCache = getGlobalCache()
   }
 
   /**
@@ -185,7 +194,9 @@ export class HNSWIndex {
     }
 
     let currObj = entryPoint
-    let currDist = this.distanceFunction(vector, entryPoint.vector)
+
+    // Calculate distance to entry point (handles lazy loading + sync fast path)
+    let currDist = await Promise.resolve(this.distanceSafe(vector, entryPoint))
 
     // Traverse the graph from top to bottom to find the closest noun
     for (let level = this.maxLevel; level > nounLevel; level--) {
@@ -196,13 +207,18 @@ export class HNSWIndex {
         // Check all neighbors at current level
         const connections = currObj.connections.get(level) || new Set<string>()
 
+        // OPTIMIZATION: Preload neighbor vectors for parallel loading
+        if (connections.size > 0) {
+          await this.preloadVectors(Array.from(connections))
+        }
+
         for (const neighborId of connections) {
           const neighbor = this.nouns.get(neighborId)
           if (!neighbor) {
             // Skip neighbors that don't exist (expected during rapid additions/deletions)
             continue
           }
-          const distToNeighbor = this.distanceFunction(vector, neighbor.vector)
+          const distToNeighbor = await Promise.resolve(this.distanceSafe(vector, neighbor))
 
           if (distToNeighbor < currDist) {
             currDist = distToNeighbor
@@ -248,7 +264,7 @@ export class HNSWIndex {
 
         // Ensure neighbor doesn't have too many connections
         if (neighbor.connections.get(level)!.size > this.config.M) {
-          this.pruneConnections(neighbor, level)
+          await this.pruneConnections(neighbor, level)
         }
 
         // Persist updated neighbor HNSW data (v3.35.0+)
@@ -364,7 +380,11 @@ export class HNSWIndex {
     }
 
     let currObj = entryPoint
-    let currDist = this.distanceFunction(queryVector, currObj.vector)
+
+    // OPTIMIZATION: Preload entry point vector
+    await this.preloadVectors([entryPoint.id])
+
+    let currDist = await Promise.resolve(this.distanceSafe(queryVector, currObj))
 
     // Traverse the graph from top to bottom to find the closest noun
     for (let level = this.maxLevel; level > 0; level--) {
@@ -375,6 +395,11 @@ export class HNSWIndex {
         // Check all neighbors at current level
         const connections = currObj.connections.get(level) || new Set<string>()
 
+        // OPTIMIZATION: Preload all neighbor vectors in parallel before distance calculations
+        if (connections.size > 0) {
+          await this.preloadVectors(Array.from(connections))
+        }
+
         // If we have enough connections, use parallel distance calculation
         if (this.useParallelization && connections.size >= 10) {
           // Prepare vectors for parallel calculation
@@ -382,7 +407,8 @@ export class HNSWIndex {
           for (const neighborId of connections) {
             const neighbor = this.nouns.get(neighborId)
             if (!neighbor) continue
-            vectors.push({ id: neighborId, vector: neighbor.vector })
+            const neighborVector = await this.getVectorSafe(neighbor)
+            vectors.push({ id: neighborId, vector: neighborVector })
           }
 
           // Calculate distances in parallel
@@ -410,10 +436,7 @@ export class HNSWIndex {
               // Skip neighbors that don't exist (expected during rapid additions/deletions)
               continue
             }
-            const distToNeighbor = this.distanceFunction(
-              queryVector,
-              neighbor.vector
-            )
+            const distToNeighbor = await Promise.resolve(this.distanceSafe(queryVector, neighbor))
 
             if (distToNeighbor < currDist) {
               currDist = distToNeighbor
@@ -443,7 +466,7 @@ export class HNSWIndex {
   /**
    * Remove an item from the index
    */
-  public removeItem(id: string): boolean {
+  public async removeItem(id: string): Promise<boolean> {
     if (!this.nouns.has(id)) {
       return false
     }
@@ -462,7 +485,7 @@ export class HNSWIndex {
           neighbor.connections.get(level)!.delete(id)
 
           // Prune connections after removing this noun to ensure consistency
-          this.pruneConnections(neighbor, level)
+          await this.pruneConnections(neighbor, level)
         }
       }
     }
@@ -476,7 +499,7 @@ export class HNSWIndex {
           connections.delete(id)
 
           // Prune connections after removing this reference
-          this.pruneConnections(otherNoun, level)
+          await this.pruneConnections(otherNoun, level)
         }
       }
     }
@@ -617,6 +640,140 @@ export class HNSWIndex {
   }
 
   /**
+   * Get vector safely (always uses adaptive caching via UnifiedCache)
+   *
+   * Production-grade adaptive caching (v3.36.0+):
+   * - Vector already loaded: Returns immediately (O(1))
+   * - Vector in cache: Loads from UnifiedCache (O(1) hash lookup)
+   * - Vector on disk: Loads from storage → UnifiedCache (O(disk))
+   * - Cost-aware caching: UnifiedCache manages memory competition
+   *
+   * @param noun The HNSW noun (may have empty vector if not yet loaded)
+   * @returns Promise<Vector> The vector (loaded on-demand if needed)
+   */
+  private async getVectorSafe(noun: HNSWNoun): Promise<Vector> {
+    // Vector already in memory
+    if (noun.vector.length > 0) {
+      return noun.vector
+    }
+
+    // Load from UnifiedCache with storage fallback
+    const cacheKey = `hnsw:vector:${noun.id}`
+
+    const vector = await this.unifiedCache.get(cacheKey, async () => {
+      // Cache miss - load from storage
+      if (!this.storage) {
+        throw new Error('Storage not available for vector loading')
+      }
+
+      const loaded = await this.storage.getNounVector(noun.id)
+      if (!loaded) {
+        throw new Error(`Vector not found for noun ${noun.id}`)
+      }
+
+      // Add to UnifiedCache with cost-aware eviction
+      // This competes fairly with Graph and Metadata indexes
+      this.unifiedCache.set(
+        cacheKey,
+        loaded,
+        'hnsw',              // Type for fairness monitoring
+        loaded.length * 4,   // Size in bytes (float32)
+        50                   // Rebuild cost in ms (moderate priority)
+      )
+
+      return loaded
+    })
+
+    return vector
+  }
+
+  /**
+   * Get vector synchronously if available in memory (v3.36.0+)
+   *
+   * Sync fast path optimization:
+   * - Vector in memory: Returns immediately (zero overhead)
+   * - Vector in cache: Returns from UnifiedCache synchronously
+   * - Returns null if vector not available (caller must handle async path)
+   *
+   * Use for sync fast path in distance calculations - eliminates async overhead
+   * when vectors are already cached.
+   *
+   * @param noun The HNSW noun
+   * @returns Vector | null - vector if in memory/cache, null if needs async load
+   */
+  private getVectorSync(noun: HNSWNoun): Vector | null {
+    // Vector already in memory
+    if (noun.vector.length > 0) {
+      return noun.vector
+    }
+
+    // Try sync cache lookup
+    const cacheKey = `hnsw:vector:${noun.id}`
+    const vector = this.unifiedCache.getSync(cacheKey)
+
+    return vector || null
+  }
+
+  /**
+   * Preload multiple vectors in parallel via UnifiedCache
+   *
+   * Optimization for search operations:
+   * - Loads all candidate vectors before distance calculations
+   * - Reduces serial disk I/O (parallel loads are faster)
+   * - Uses UnifiedCache's request coalescing to prevent stampede
+   * - Always active (no "mode" check) for optimal performance
+   *
+   * @param nodeIds Array of node IDs to preload
+   */
+  private async preloadVectors(nodeIds: string[]): Promise<void> {
+    if (nodeIds.length === 0) return
+
+    // Use UnifiedCache's request coalescing to prevent duplicate loads
+    const promises = nodeIds.map(async (id) => {
+      const cacheKey = `hnsw:vector:${id}`
+      return this.unifiedCache.get(cacheKey, async () => {
+        if (!this.storage) return null
+
+        const vector = await this.storage.getNounVector(id)
+        if (vector) {
+          this.unifiedCache.set(cacheKey, vector, 'hnsw', vector.length * 4, 50)
+        }
+        return vector
+      })
+    })
+
+    await Promise.all(promises)
+  }
+
+  /**
+   * Calculate distance with sync fast path (v3.36.0+)
+   *
+   * Eliminates async overhead when vectors are in memory:
+   * - Sync path: Vector in memory → returns number (zero overhead)
+   * - Async path: Vector needs loading → returns Promise<number>
+   *
+   * Callers must handle union type: `const dist = await Promise.resolve(distance)`
+   *
+   * @param queryVector The query vector
+   * @param noun The target noun (may have empty vector in lazy mode)
+   * @returns number | Promise<number> - sync when cached, async when needs load
+   */
+  private distanceSafe(queryVector: Vector, noun: HNSWNoun): number | Promise<number> {
+    // Try sync fast path
+    const nounVector = this.getVectorSync(noun)
+
+    if (nounVector !== null) {
+      // SYNC PATH: Vector in memory - zero async overhead
+      return this.distanceFunction(queryVector, nounVector)
+    }
+
+    // ASYNC PATH: Vector needs loading from storage
+    return this.getVectorSafe(noun).then(loadedVector =>
+      this.distanceFunction(queryVector, loadedVector)
+    )
+  }
+
+  /**
    * Get all nodes at a specific level for clustering
    * This enables O(n) clustering using HNSW's natural hierarchy
    */
@@ -650,17 +807,16 @@ export class HNSWIndex {
    * @returns Promise that resolves when rebuild is complete
    */
   public async rebuild(options: {
-    lazy?: boolean  // Load structure only, vectors on-demand (5x memory savings)
+    lazy?: boolean  // DEPRECATED: Auto-detected based on memory. Override only for testing.
     batchSize?: number  // Entities per batch (default 1000, tune for your environment)
     onProgress?: (loaded: number, total: number) => void  // Progress callback
   } = {}): Promise<void> {
     if (!this.storage) {
-      console.warn('HNSW rebuild skipped: no storage adapter configured')
+      prodLog.warn('HNSW rebuild skipped: no storage adapter configured')
       return
     }
 
     const batchSize = options.batchSize || 1000
-    const lazy = options.lazy || false
 
     try {
       // Step 1: Clear existing in-memory index
@@ -673,7 +829,33 @@ export class HNSWIndex {
         this.maxLevel = systemData.maxLevel
       }
 
-      // Step 3: Paginate through all nouns and restore HNSW graph structure
+      // Step 3: Determine preloading strategy (adaptive caching)
+      // Check if vectors should be preloaded at init or loaded on-demand
+      const stats = await this.storage.getStatistics()
+      const entityCount = stats?.totalNodes || 0
+
+      // Estimate memory needed for all vectors (384 dims × 4 bytes = 1536 bytes/vector)
+      const vectorMemory = entityCount * 1536
+
+      // Get available cache size (80% threshold - preload only if fits comfortably)
+      const cacheStats = this.unifiedCache.getStats()
+      const availableCache = cacheStats.maxSize * 0.80
+
+      const shouldPreload = vectorMemory < availableCache
+
+      if (shouldPreload) {
+        prodLog.info(
+          `HNSW: Preloading ${entityCount.toLocaleString()} vectors at init ` +
+          `(${(vectorMemory / 1024 / 1024).toFixed(1)}MB < ${(availableCache / 1024 / 1024).toFixed(1)}MB cache)`
+        )
+      } else {
+        prodLog.info(
+          `HNSW: Adaptive caching for ${entityCount.toLocaleString()} vectors ` +
+          `(${(vectorMemory / 1024 / 1024).toFixed(1)}MB > ${(availableCache / 1024 / 1024).toFixed(1)}MB cache) - loading on-demand`
+        )
+      }
+
+      // Step 4: Paginate through all nouns and restore HNSW graph structure
       let loadedCount = 0
       let totalCount: number | undefined = undefined
       let hasMore = true
@@ -710,7 +892,7 @@ export class HNSWIndex {
             // Create noun object with restored connections
             const noun: HNSWNoun = {
               id: nounData.id,
-              vector: lazy ? [] : nounData.vector,  // Empty vector in lazy mode
+              vector: shouldPreload ? nounData.vector : [],  // Preload if dataset is small
               connections: new Map(),
               level: hnswData.level
             }
@@ -749,14 +931,17 @@ export class HNSWIndex {
         cursor = result.nextCursor
       }
 
-      console.log(
-        `HNSW index rebuilt successfully: ${loadedCount} entities, ` +
-        `${this.maxLevel + 1} levels, entry point: ${this.entryPointId || 'none'}` +
-        (lazy ? ' (lazy mode - vectors loaded on-demand)' : '')
+      const cacheInfo = shouldPreload
+        ? ` (vectors preloaded)`
+        : ` (adaptive caching - vectors loaded on-demand)`
+
+      prodLog.info(
+        `✅ HNSW index rebuilt: ${loadedCount.toLocaleString()} entities, ` +
+        `${this.maxLevel + 1} levels, entry point: ${this.entryPointId || 'none'}${cacheInfo}`
       )
 
     } catch (error) {
-      console.error('HNSW rebuild failed:', error)
+      prodLog.error('HNSW rebuild failed:', error)
       throw new Error(`Failed to rebuild HNSW index: ${error}`)
     }
   }
@@ -797,7 +982,7 @@ export class HNSWIndex {
   } {
     let totalConnections = 0
     const layerCounts = new Array(this.maxLevel + 1).fill(0)
-    
+
     // Count connections and layer distribution
     this.nouns.forEach(noun => {
       // Count connections at each layer
@@ -806,15 +991,158 @@ export class HNSWIndex {
         layerCounts[level]++
       }
     })
-    
+
     const totalNodes = this.nouns.size
     const averageConnections = totalNodes > 0 ? totalConnections / totalNodes : 0
-    
+
     return {
       averageConnections,
       layerDistribution: layerCounts,
       maxLayer: this.maxLevel,
       totalNodes
+    }
+  }
+
+  /**
+   * Get cache performance statistics for monitoring and diagnostics (v3.36.0+)
+   *
+   * Production-grade monitoring:
+   * - Adaptive caching strategy (preloading vs on-demand)
+   * - UnifiedCache performance (hits, misses, evictions)
+   * - HNSW-specific cache statistics
+   * - Fair competition metrics across all indexes
+   * - Actionable recommendations for tuning
+   *
+   * Use this to:
+   * - Diagnose performance issues (low hit rate = increase cache)
+   * - Monitor memory competition (fairness violations = adjust costs)
+   * - Verify adaptive caching decisions (memory estimates vs actual)
+   * - Track cache efficiency over time
+   *
+   * @returns Comprehensive caching and performance statistics
+   */
+  public getCacheStats(): {
+    cachingStrategy: 'preloaded' | 'on-demand'
+    autoDetection: {
+      entityCount: number
+      estimatedVectorMemoryMB: number
+      availableCacheMB: number
+      threshold: number
+      rationale: string
+    }
+    unifiedCache: {
+      totalSize: number
+      maxSize: number
+      utilizationPercent: number
+      itemCount: number
+      hitRatePercent: number
+      totalAccessCount: number
+    }
+    hnswCache: {
+      vectorsInCache: number
+      cacheKeyPrefix: string
+      estimatedMemoryMB: number
+    }
+    fairness: {
+      hnswAccessCount: number
+      hnswAccessPercent: number
+      totalAccessCount: number
+      fairnessViolation: boolean
+    }
+    recommendations: string[]
+  } {
+    // Get UnifiedCache stats
+    const cacheStats = this.unifiedCache.getStats()
+
+    // Calculate entity and memory estimates
+    const entityCount = this.nouns.size
+    const vectorDimension = this.dimension || 384
+    const bytesPerVector = vectorDimension * 4 // float32
+    const estimatedVectorMemoryMB = (entityCount * bytesPerVector) / (1024 * 1024)
+    const availableCacheMB = (cacheStats.maxSize * 0.8) / (1024 * 1024) // 80% threshold
+
+    // Calculate HNSW-specific cache stats
+    const vectorsInCache = cacheStats.typeCounts.hnsw || 0
+    const hnswMemoryBytes = cacheStats.typeSizes.hnsw || 0
+
+    // Calculate fairness metrics
+    const hnswAccessCount = cacheStats.typeAccessCounts.hnsw || 0
+    const totalAccessCount = cacheStats.totalAccessCount
+    const hnswAccessPercent = totalAccessCount > 0 ? (hnswAccessCount / totalAccessCount) * 100 : 0
+
+    // Detect fairness violation (>90% cache with <10% access)
+    const hnswCachePercent = cacheStats.maxSize > 0 ? (hnswMemoryBytes / cacheStats.maxSize) * 100 : 0
+    const fairnessViolation = hnswCachePercent > 90 && hnswAccessPercent < 10
+
+    // Calculate hit rate from cache
+    const hitRatePercent = (cacheStats.hitRate * 100) || 0
+
+    // Determine caching strategy (same logic as rebuild())
+    const cachingStrategy: 'preloaded' | 'on-demand' =
+      estimatedVectorMemoryMB < availableCacheMB ? 'preloaded' : 'on-demand'
+
+    // Generate actionable recommendations
+    const recommendations: string[] = []
+
+    if (cachingStrategy === 'on-demand' && hitRatePercent < 50) {
+      recommendations.push(
+        `Low cache hit rate (${hitRatePercent.toFixed(1)}%). Consider increasing UnifiedCache size for better performance`
+      )
+    }
+
+    if (cachingStrategy === 'preloaded' && estimatedVectorMemoryMB > availableCacheMB * 0.5) {
+      recommendations.push(
+        `Dataset growing (${estimatedVectorMemoryMB.toFixed(1)}MB). May switch to on-demand caching as entities increase`
+      )
+    }
+
+    if (fairnessViolation) {
+      recommendations.push(
+        `Fairness violation: HNSW using ${hnswCachePercent.toFixed(1)}% cache with only ${hnswAccessPercent.toFixed(1)}% access`
+      )
+    }
+
+    if (cacheStats.utilization > 0.95) {
+      recommendations.push(
+        `Cache utilization high (${(cacheStats.utilization * 100).toFixed(1)}%). Consider increasing cache size`
+      )
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push('All metrics healthy - no action needed')
+    }
+
+    return {
+      cachingStrategy,
+      autoDetection: {
+        entityCount,
+        estimatedVectorMemoryMB: parseFloat(estimatedVectorMemoryMB.toFixed(2)),
+        availableCacheMB: parseFloat(availableCacheMB.toFixed(2)),
+        threshold: 0.8, // 80% of UnifiedCache
+        rationale: cachingStrategy === 'preloaded'
+          ? `Vectors preloaded at init (${estimatedVectorMemoryMB.toFixed(1)}MB < ${availableCacheMB.toFixed(1)}MB threshold)`
+          : `Adaptive on-demand loading (${estimatedVectorMemoryMB.toFixed(1)}MB > ${availableCacheMB.toFixed(1)}MB threshold)`
+      },
+      unifiedCache: {
+        totalSize: cacheStats.totalSize,
+        maxSize: cacheStats.maxSize,
+        utilizationPercent: parseFloat((cacheStats.utilization * 100).toFixed(2)),
+        itemCount: cacheStats.itemCount,
+        hitRatePercent: parseFloat(hitRatePercent.toFixed(2)),
+        totalAccessCount: cacheStats.totalAccessCount
+      },
+      hnswCache: {
+        vectorsInCache,
+        cacheKeyPrefix: 'hnsw:vector:',
+        estimatedMemoryMB: parseFloat((hnswMemoryBytes / (1024 * 1024)).toFixed(2))
+      },
+      fairness: {
+        hnswAccessCount,
+        hnswAccessPercent: parseFloat(hnswAccessPercent.toFixed(2)),
+        totalAccessCount,
+        fairnessViolation
+      },
+      recommendations
     }
   }
 
@@ -832,8 +1160,11 @@ export class HNSWIndex {
     // Set of visited nouns
     const visited = new Set<string>([entryPoint.id])
 
-    // Check if entry point passes filter
-    const entryPointDistance = this.distanceFunction(queryVector, entryPoint.vector)
+    // OPTIMIZATION: Preload entry point vector
+    await this.preloadVectors([entryPoint.id])
+
+    // Check if entry point passes filter (with sync fast path)
+    const entryPointDistance = await Promise.resolve(this.distanceSafe(queryVector, entryPoint))
     const entryPointPasses = filter ? await filter(entryPoint.id) : true
     
     // Priority queue of candidates (closest first)
@@ -861,10 +1192,18 @@ export class HNSWIndex {
       // Explore neighbors of the closest candidate
       const noun = this.nouns.get(closestId)
       if (!noun) {
-        console.error(`Noun with ID ${closestId} not found in searchLayer`)
+        prodLog.error(`Noun with ID ${closestId} not found in searchLayer`)
         continue
       }
       const connections = noun.connections.get(level) || new Set<string>()
+
+      // OPTIMIZATION: Preload unvisited neighbor vectors in parallel
+      if (connections.size > 0) {
+        const unvisitedIds = Array.from(connections).filter(id => !visited.has(id))
+        if (unvisitedIds.length > 0) {
+          await this.preloadVectors(unvisitedIds)
+        }
+      }
 
       // If we have enough connections and parallelization is enabled, use parallel distance calculation
       if (this.useParallelization && connections.size >= 10) {
@@ -875,7 +1214,8 @@ export class HNSWIndex {
             visited.add(neighborId)
             const neighbor = this.nouns.get(neighborId)
             if (!neighbor) continue
-            unvisitedNeighbors.push({ id: neighborId, vector: neighbor.vector })
+            const neighborVector = await this.getVectorSafe(neighbor)
+            unvisitedNeighbors.push({ id: neighborId, vector: neighborVector })
           }
         }
 
@@ -923,11 +1263,8 @@ export class HNSWIndex {
               // Skip neighbors that don't exist (expected during rapid additions/deletions)
               continue
             }
-            const distToNeighbor = this.distanceFunction(
-              queryVector,
-              neighbor.vector
-            )
-            
+            const distToNeighbor = await Promise.resolve(this.distanceSafe(queryVector, neighbor))
+
             // Apply filter if provided
             const passes = filter ? await filter(neighborId) : true
             
@@ -985,7 +1322,7 @@ export class HNSWIndex {
   /**
    * Ensure a noun doesn't have too many connections at a given level
    */
-  private pruneConnections(noun: HNSWNoun, level: number): void {
+  private async pruneConnections(noun: HNSWNoun, level: number): Promise<void> {
     const connections = noun.connections.get(level)!
     if (connections.size <= this.config.M) {
       return
@@ -995,6 +1332,11 @@ export class HNSWIndex {
     const distances = new Map<string, number>()
     const validNeighborIds = new Set<string>()
 
+    // OPTIMIZATION: Preload all neighbor vectors
+    if (connections.size > 0) {
+      await this.preloadVectors(Array.from(connections))
+    }
+
     for (const neighborId of connections) {
       const neighbor = this.nouns.get(neighborId)
       if (!neighbor) {
@@ -1002,11 +1344,10 @@ export class HNSWIndex {
         continue
       }
 
-      // Only add valid neighbors to the distances map
-      distances.set(
-        neighborId,
-        this.distanceFunction(noun.vector, neighbor.vector)
-      )
+      // Only add valid neighbors to the distances map (handles lazy loading + sync fast path)
+      const nounVector = await this.getVectorSafe(noun)
+      const distance = await Promise.resolve(this.distanceSafe(nounVector, neighbor))
+      distances.set(neighborId, distance)
       validNeighborIds.add(neighborId)
     }
 

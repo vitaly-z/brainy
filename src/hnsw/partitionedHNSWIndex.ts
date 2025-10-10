@@ -382,7 +382,7 @@ export class PartitionedHNSWIndex {
   public async removeItem(id: string): Promise<boolean> {
     // Find which partition contains this item
     for (const [partitionId, partition] of this.partitions.entries()) {
-      if (partition.removeItem(id)) {
+      if (await partition.removeItem(id)) {
         // Update metadata
         const metadata = this.partitionMetadata.get(partitionId)!
         metadata.nodeCount = partition.size()

@@ -51,9 +51,13 @@ export type RebuildProgressCallback = (loaded: number, total: number) => void
  */
 export interface RebuildOptions {
   /**
-   * Lazy mode: Load structure only, data on-demand
-   * Saves memory at cost of first-access latency
-   * (HNSW: vectors loaded on-demand, Graph: relationships cached, Metadata: lazy field indexing)
+   * @deprecated Lazy mode is now auto-detected based on available memory.
+   * System automatically chooses between:
+   * - Preloading: Small datasets that fit comfortably in cache (< 80% threshold)
+   * - On-demand: Large datasets loaded adaptively via UnifiedCache
+   *
+   * This option is kept for backwards compatibility but is ignored.
+   * The system always uses adaptive caching (v3.36.0+).
    */
   lazy?: boolean
 
@@ -96,11 +100,16 @@ export interface IIndex {
    * - Load data from storage using pagination
    * - Restore index structure efficiently (O(N) preferred over O(N log N))
    * - Handle millions of entities via batching
-   * - Support lazy loading for memory-constrained environments
+   * - Auto-detect caching strategy based on dataset size vs available memory
    * - Provide progress reporting for large datasets
    * - Recover gracefully from partial failures
    *
-   * @param options Rebuild options (lazy mode, batch size, progress callback, force)
+   * Adaptive Caching (v3.36.0+):
+   * System automatically chooses optimal strategy:
+   * - Small datasets: Preload all data at init for zero-latency access
+   * - Large datasets: Load on-demand via UnifiedCache for memory efficiency
+   *
+   * @param options Rebuild options (batch size, progress callback, force)
    * @returns Promise that resolves when rebuild is complete
    * @throws Error if rebuild fails critically (should log warnings for partial failures)
    */

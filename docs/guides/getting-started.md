@@ -30,7 +30,7 @@ await brain.init()
 const brain = new Brainy({
   // Storage configuration
   storage: {
-    type: 'filesystem',  // or 's3', 'opfs', 'memory'
+    type: 'filesystem',  // or 's3', 'opfs'
     path: './my-data'
   },
   
@@ -218,12 +218,12 @@ async function processStream(item) {
 
 ## Storage Options
 
-### Development (Memory)
+### Development (FileSystem)
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'memory' }
+  storage: { type: 'filesystem', path: '/tmp/brainy-dev' }
 })
-// Fast, temporary, perfect for testing
+// Fast, persistent, perfect for testing
 ```
 
 ### Production (FileSystem)

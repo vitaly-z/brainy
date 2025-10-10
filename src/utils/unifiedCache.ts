@@ -1,9 +1,22 @@
 /**
  * UnifiedCache - Single cache for both HNSW and MetadataIndex
  * Prevents resource competition with cost-aware eviction
+ *
+ * Features (v3.36.0+):
+ * - Adaptive sizing: Automatically scales from 2GB to 128GB+ based on available memory
+ * - Container-aware: Detects Docker/K8s limits (cgroups v1/v2)
+ * - Environment detection: Production vs development allocation strategies
+ * - Memory pressure monitoring: Warns when approaching limits
  */
 
 import { prodLog } from './logger.js'
+import {
+  getRecommendedCacheConfig,
+  formatBytes,
+  checkMemoryPressure,
+  type MemoryInfo,
+  type CacheAllocationStrategy
+} from './memoryDetection.js'
 
 export interface CacheItem {
   key: string
@@ -16,11 +29,32 @@ export interface CacheItem {
 }
 
 export interface UnifiedCacheConfig {
-  maxSize?: number  // bytes
+  /** Maximum cache size in bytes (auto-detected if not specified) */
+  maxSize?: number
+
+  /** Minimum cache size in bytes (default 256MB) */
+  minSize?: number
+
+  /** Force development mode allocation (25% instead of 40-50%) */
+  developmentMode?: boolean
+
+  /** Enable request coalescing to prevent duplicate loads */
   enableRequestCoalescing?: boolean
+
+  /** Enable fairness monitoring to prevent cache starvation */
   enableFairnessCheck?: boolean
-  fairnessCheckInterval?: number  // ms
+
+  /** Fairness check interval in milliseconds */
+  fairnessCheckInterval?: number
+
+  /** Enable access pattern persistence for warm starts */
   persistPatterns?: boolean
+
+  /** Enable memory pressure monitoring (default true) */
+  enableMemoryMonitoring?: boolean
+
+  /** Memory pressure check interval in milliseconds (default 30s) */
+  memoryCheckInterval?: number
 }
 
 export class UnifiedCache {
@@ -33,18 +67,66 @@ export class UnifiedCache {
   private readonly maxSize: number
   private readonly config: UnifiedCacheConfig
 
+  // Memory management (v3.36.0+)
+  private readonly memoryInfo: MemoryInfo
+  private readonly allocationStrategy: CacheAllocationStrategy
+  private memoryPressureCheckTimer: NodeJS.Timeout | null = null
+  private lastMemoryWarning = 0
+
   constructor(config: UnifiedCacheConfig = {}) {
-    this.maxSize = config.maxSize || 2 * 1024 * 1024 * 1024  // 2GB default
+    // Adaptive cache sizing (v3.36.0+)
+    const recommendation = getRecommendedCacheConfig({
+      manualSize: config.maxSize,
+      minSize: config.minSize,
+      developmentMode: config.developmentMode
+    })
+
+    this.memoryInfo = recommendation.memoryInfo
+    this.allocationStrategy = recommendation.allocation
+    this.maxSize = recommendation.allocation.cacheSize
+
+    // Log allocation decision (v3.36.0+: includes model memory)
+    prodLog.info(
+      `UnifiedCache initialized: ${formatBytes(this.maxSize)} ` +
+      `(${this.allocationStrategy.environment} mode, ` +
+      `${(this.allocationStrategy.ratio * 100).toFixed(0)}% of ${formatBytes(this.allocationStrategy.availableForCache)} ` +
+      `after ${formatBytes(this.allocationStrategy.modelMemory)} ${this.allocationStrategy.modelPrecision.toUpperCase()} model)`
+    )
+
+    // Log memory detection details
+    prodLog.debug(
+      `Memory detection: source=${this.memoryInfo.source}, ` +
+      `container=${this.memoryInfo.isContainer}, ` +
+      `system=${formatBytes(this.memoryInfo.systemTotal)}, ` +
+      `free=${formatBytes(this.memoryInfo.free)}, ` +
+      `totalAvailable=${formatBytes(this.memoryInfo.available)}, ` +
+      `modelReserved=${formatBytes(this.allocationStrategy.modelMemory)}, ` +
+      `availableForCache=${formatBytes(this.allocationStrategy.availableForCache)}`
+    )
+
+    // Log warnings if any
+    for (const warning of recommendation.warnings) {
+      prodLog.warn(`UnifiedCache: ${warning}`)
+    }
+
+    // Finalize configuration
     this.config = {
       enableRequestCoalescing: true,
       enableFairnessCheck: true,
       fairnessCheckInterval: 60000,  // Check fairness every minute
       persistPatterns: true,
+      enableMemoryMonitoring: true,
+      memoryCheckInterval: 30000,  // Check memory every 30s
       ...config
     }
 
+    // Start monitoring
     if (this.config.enableFairnessCheck) {
       this.startFairnessMonitor()
+    }
+
+    if (this.config.enableMemoryMonitoring) {
+      this.startMemoryPressureMonitor()
     }
   }
 
@@ -90,6 +172,27 @@ export class UnifiedCache {
         this.loadingPromises.delete(key)
       }
     }
+  }
+
+  /**
+   * Synchronous cache lookup (v3.36.0+)
+   * Returns cached data immediately or undefined if not cached
+   * Use for sync fast path optimization - zero async overhead
+   */
+  getSync(key: string): any | undefined {
+    // Check if in cache
+    const item = this.cache.get(key)
+    if (item) {
+      // Update access tracking synchronously
+      this.access.set(key, (this.access.get(key) || 0) + 1)
+      this.totalAccessCount++
+      item.lastAccess = Date.now()
+      item.accessCount++
+      this.typeAccessCounts[item.type]++
+      return item.data
+    }
+
+    return undefined
   }
 
   /**
@@ -300,7 +403,55 @@ export class UnifiedCache {
   }
 
   /**
-   * Get cache statistics
+   * Start memory pressure monitoring
+   * Periodically checks if we're approaching memory limits
+   */
+  private startMemoryPressureMonitor(): void {
+    const checkInterval = this.config.memoryCheckInterval || 30000
+
+    this.memoryPressureCheckTimer = setInterval(() => {
+      this.checkMemoryPressure()
+    }, checkInterval)
+
+    // Unref so it doesn't keep process alive
+    if (this.memoryPressureCheckTimer.unref) {
+      this.memoryPressureCheckTimer.unref()
+    }
+  }
+
+  /**
+   * Check current memory pressure and warn if needed
+   */
+  private checkMemoryPressure(): void {
+    const pressure = checkMemoryPressure(this.currentSize, this.memoryInfo)
+
+    // Only log warnings every 5 minutes to avoid spam
+    const now = Date.now()
+    const fiveMinutes = 5 * 60 * 1000
+
+    if (pressure.warnings.length > 0 && now - this.lastMemoryWarning > fiveMinutes) {
+      for (const warning of pressure.warnings) {
+        prodLog.warn(`UnifiedCache: ${warning}`)
+      }
+      this.lastMemoryWarning = now
+    }
+
+    // If critical, force aggressive eviction
+    if (pressure.pressure === 'critical') {
+      const targetSize = Math.floor(this.maxSize * 0.7)  // Evict to 70%
+      const bytesToFree = this.currentSize - targetSize
+
+      if (bytesToFree > 0) {
+        prodLog.warn(
+          `UnifiedCache: Critical memory pressure - forcing eviction of ${formatBytes(bytesToFree)}`
+        )
+        this.evictForSize(bytesToFree)
+      }
+    }
+  }
+
+  /**
+   * Get cache statistics with memory information
    */
   getStats() {
     const typeSizes = { hnsw: 0, metadata: 0, embedding: 0, other: 0 }
@@ -311,7 +462,11 @@ export class UnifiedCache {
       typeCounts[item.type]++
     }
 
+    const hitRate = this.cache.size > 0 ?
+      Array.from(this.cache.values()).reduce((sum, item) => sum + item.accessCount, 0) / this.totalAccessCount : 0
+
     return {
+      // Cache statistics
       totalSize: this.currentSize,
       maxSize: this.maxSize,
       utilization: this.currentSize / this.maxSize,
@@ -320,8 +475,28 @@ export class UnifiedCache {
       typeCounts,
       typeAccessCounts: this.typeAccessCounts,
       totalAccessCount: this.totalAccessCount,
-      hitRate: this.cache.size > 0 ? 
-        Array.from(this.cache.values()).reduce((sum, item) => sum + item.accessCount, 0) / this.totalAccessCount : 0
+      hitRate,
+
+      // Memory management (v3.36.0+)
+      memory: {
+        available: this.memoryInfo.available,
+        source: this.memoryInfo.source,
+        isContainer: this.memoryInfo.isContainer,
+        systemTotal: this.memoryInfo.systemTotal,
+        allocationRatio: this.allocationStrategy.ratio,
+        environment: this.allocationStrategy.environment
+      }
+    }
+  }
+
+  /**
+   * Get detailed memory information
+   */
+  getMemoryInfo() {
+    return {
+      memoryInfo: { ...this.memoryInfo },
+      allocationStrategy: { ...this.allocationStrategy },
+      currentPressure: checkMemoryPressure(this.currentSize, this.memoryInfo)
     }
   }
 

@@ -77,14 +77,9 @@ chmod 755 ./brainy-data
 # Use custom writable path
 const brain = new Brainy({
   storage: {
-    adapter: 'filesystem',
+    type: 'filesystem',
     path: '/tmp/brainy-data'
   }
-})
-
-# Or use memory storage
-const brain = new Brainy({
-  storage: { forceMemoryStorage: true }
 })
 ```
 
@@ -100,7 +95,7 @@ mkdir -p ./brainy-data
 # Check storage configuration
 const brain = new Brainy({
   storage: {
-    adapter: 'filesystem',
+    type: 'filesystem',
     path: '/full/path/to/storage' // Use absolute path
   }
 })
@@ -280,11 +275,11 @@ const brain = new Brainy({
      run: npm test
    ```
 
-2. **Use memory storage in tests**
+2. **Use temporary filesystem storage in tests**
    ```typescript
    // In test setup
    const brain = new Brainy({
-     storage: { forceMemoryStorage: true }
+     storage: { type: 'filesystem', path: '/tmp/brainy-test' }
    })
    ```
 

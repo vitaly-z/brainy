@@ -37,7 +37,7 @@ await vfs.init()
 console.log('🎉 VFS ready!')
 ```
 
-> **🚨 Common Mistake**: Don't use `storage: { type: 'memory' }` for file explorers - your data will disappear when the process exits!
+> **💡 Pro Tip**: Always use persistent storage (`filesystem`, `s3`, or `opfs`) for file explorers - your data persists across process restarts!
 
 ## 📁 Step 2: Safe Directory Listing (2 minutes)
 

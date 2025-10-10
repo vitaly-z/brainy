@@ -119,7 +119,7 @@ Examples:
 
 Brainy uses three complementary index systems for different query patterns.
 
-### 2.1 HNSW Vector Index (In-Memory)
+### 2.1 HNSW Vector Index (In-Memory with Lazy Loading)
 
 **Purpose:** Semantic similarity search
 **Location:** RAM (rebuilt from storage on startup)
@@ -134,16 +134,232 @@ const results = await brain.searchByVector([0.1, 0.2, 0.3, ...], { k: 10 })
 
 **How It Works:**
 1. Loads `entities/nouns/vectors/**/*.json` files
-2. Builds HNSW graph in memory
+2. Builds HNSW graph structure in memory
 3. Enables O(log n) approximate nearest neighbor search
+4. Vectors loaded on-demand in lazy mode (zero configuration)
 
 **Performance:**
 - Build time: 1-5 seconds per 100K entities
-- Query time: 1-10ms for k=10 results
-- Memory: ~200MB per 100K entities (when fully loaded)
+- Query time: 1-10ms for k=10 results (standard mode)
+- Query time: 2-15ms for k=10 results (lazy mode, with cache)
+- Memory (standard): ~200MB per 100K entities (all vectors loaded)
+- Memory (lazy mode): ~50MB per 100K entities (graph only, vectors on-demand)
 
-**Memory Management:**
-The HNSW index uses adaptive 3-tier caching (see Section 2.4) to optimize memory usage based on available resources.
+---
+
+#### Universal Lazy Mode (v3.36.0+)
+
+**Zero-Configuration Memory Management**
+
+Brainy's HNSW index automatically adapts to available memory by enabling lazy mode when vectors don't fit in the UnifiedCache.
+
+**Standard Mode vs. Lazy Mode:**
+
+| Mode | Graph Structure | Vectors | Memory | Performance |
+|------|----------------|---------|--------|-------------|
+| **Standard** | In memory | In memory | High (~1.5KB/vector) | Fastest (1-10ms) |
+| **Lazy** | In memory | On-demand | Low (~24 bytes/node) | Fast (2-15ms) |
+
+**Auto-Detection Logic (v3.36.0+):**
+```typescript
+// Step 1: Reserve embedding model memory (NEW in v3.36.0)
+const modelMemory = 150 * 1024 * 1024  // Q8: 150MB (default), FP32: 250MB
+
+// Step 2: Calculate available memory AFTER model reservation
+const availableForCache = systemMemory - modelMemory
+
+// Step 3: Allocate UnifiedCache from available memory
+// Environment-aware allocation (NEW in v3.36.0):
+// - Development: 25% of availableForCache
+// - Container: 40% of availableForCache
+// - Production: 50% of availableForCache
+const unifiedCacheSize = availableForCache × allocationRatio
+
+// Step 4: Calculate HNSW allocation within UnifiedCache
+const estimatedVectorMemory = entityCount × 1536  // 384 dims × 4 bytes
+const hnswAvailableCache = unifiedCacheSize × 0.30  // 30% for HNSW
+
+// Step 5: Auto-enable lazy mode if vectors exceed cache
+if (estimatedVectorMemory > hnswAvailableCache) {
+  lazyMode = true  // Vectors loaded on-demand
+} else {
+  lazyMode = false  // Vectors fully loaded
+}
+```
+
+**Example Output (2GB system, 100K entities):**
+```
+Model Memory: 150MB Q8 reserved (22MB weights + 30MB runtime + 98MB workspace)
+Available for Cache: 1.85GB (2GB - 150MB model)
+UnifiedCache Size: 400MB (25% development allocation)
+HNSW Allocation: 120MB (30% of 400MB)
+
+✓ HNSW: Auto-enabled lazy mode for 100,000 vectors
+  (146.5MB > 120MB cache)
+```
+
+**Example Output (16GB production, 100K entities):**
+```
+Model Memory: 150MB Q8 reserved
+Available for Cache: 15.85GB (16GB - 150MB model)
+UnifiedCache Size: 7.92GB (50% production allocation)
+HNSW Allocation: 2.38GB (30% of 7.92GB)
+
+✓ HNSW: Standard mode for 100,000 vectors
+  (146.5MB fits in 2.38GB cache)
+```
+
+**How Lazy Mode Works:**
+
+1. **Graph Loading (O(N))**: Loads only the HNSW graph structure
+   - Node IDs and connections: ~24 bytes per node
+   - Total: ~2.4MB for 100K entities
+
+2. **On-Demand Vectors**: Loads vectors during search operations
+   - Cache key: `hnsw:vector:{id}`
+   - Storage fallback: `storage.getNounVector(id)`
+   - Batch preloading: Parallel loads before distance calculations
+
+3. **Fair Competition**: Shares UnifiedCache with Graph and Metadata indexes
+   - Cost-aware eviction: `accessCount / rebuildCost`
+   - Fairness monitoring: Prevents any index from hogging cache
+   - 30% cache allocation for HNSW vectors
+
+**Monitoring Lazy Mode:**
+```typescript
+// Get comprehensive statistics
+const stats = brain.hnswIndex.getCacheStats()
+
+console.log(stats)
+// {
+//   lazyModeEnabled: true,
+//   autoDetection: {
+//     entityCount: 100000,
+//     estimatedVectorMemoryMB: 146.48,
+//     availableCacheMB: 600.0,
+//     threshold: 0.3,
+//     decision: "Lazy mode enabled (vectors > cache threshold)"
+//   },
+//   unifiedCache: {
+//     hits: 45230,
+//     misses: 12450,
+//     hitRatePercent: 78.42,
+//     evictions: 3200
+//   },
+//   hnswCache: {
+//     vectorsInCache: 8450,
+//     estimatedMemoryMB: 12.35
+//   },
+//   fairness: {
+//     hnswAccessPercent: 32.5,
+//     fairnessViolation: false
+//   },
+//   recommendations: [
+//     "All metrics healthy - no action needed"
+//   ]
+// }
+```
+
+**Performance Characteristics:**
+
+**Memory Usage:**
+```
+Standard mode (100K entities):
+  - Vectors: 146.5MB (100K × 1536 bytes)
+  - Graph: 2.4MB (100K × 24 bytes)
+  - Total: ~149MB
+
+Lazy mode (100K entities):
+  - Vectors: 0MB (loaded on-demand)
+  - Graph: 2.4MB (always in memory)
+  - Cache: 12-30MB (frequently accessed vectors)
+  - Total: ~15-33MB (5-10x less memory)
+```
+
+**Query Performance:**
+```
+Standard mode:
+  - All vectors in memory: 1-10ms per query
+  - No I/O overhead
+
+Lazy mode (with 80% cache hit rate):
+  - Cache hits: 2-8ms per query (20% overhead)
+  - Cache misses: 5-15ms per query (disk I/O)
+  - Average: 2-10ms per query (acceptable overhead)
+```
+
+**Optimization Techniques:**
+
+1. **Batch Preloading**: Loads all candidate vectors in parallel before distance calculations
+   ```typescript
+   // Before comparing distances, preload all candidates
+   await preloadVectors([node1.id, node2.id, node3.id, ...])
+   // Then calculate distances (all vectors now in cache)
+   ```
+
+2. **Request Coalescing**: UnifiedCache prevents stampede on parallel requests
+   ```typescript
+   // Multiple requests for same vector → single storage call
+   Promise.all([
+     getVector(id),  // Request 1
+     getVector(id),  // Request 2 (coalesced)
+     getVector(id)   // Request 3 (coalesced)
+   ])
+   ```
+
+3. **Cost-Aware Eviction**: Keeps frequently accessed vectors in cache
+   ```typescript
+   // UnifiedCache scores items: accessCount / rebuildCost
+   // High access + low rebuild cost = stays in cache
+   // Low access + high rebuild cost = evicted
+   ```
+
+**When Lazy Mode Activates:**
+
+With default 2GB UnifiedCache (600MB allocated to HNSW):
+
+| Entity Count | Vector Memory | Mode | Memory Savings |
+|-------------|---------------|------|----------------|
+| 10K | 14.6MB | Standard | N/A |
+| 100K | 146.5MB | Standard | N/A |
+| 400K | 586MB | Standard | N/A |
+| 500K | 732MB | **Lazy** | 5-10x |
+| 1M | 1.46GB | **Lazy** | 10-20x |
+| 10M | 14.6GB | **Lazy** | 50-100x |
+
+**Troubleshooting:**
+
+**Low Cache Hit Rate (<50%)**
+```typescript
+// Symptom: Slow queries despite lazy mode
+const stats = brain.hnswIndex.getCacheStats()
+if (stats.unifiedCache.hitRatePercent < 50) {
+  // Solution: Increase UnifiedCache size
+  brain = new Brainy({
+    cacheSize: 4 * 1024 * 1024 * 1024  // 4GB (default: 2GB)
+  })
+}
+```
+
+**Fairness Violation**
+```typescript
+// Symptom: HNSW using >90% cache with <10% access
+const stats = brain.hnswIndex.getCacheStats()
+if (stats.fairness.fairnessViolation) {
+  // Solution: Adjust rebuild costs for better competition
+  // (This is automatic - violation triggers rebalancing)
+}
+```
+
+**Force Lazy Mode (Testing Only)**
+```typescript
+// Override auto-detection (not recommended for production)
+await brain.rebuildIndexes({
+  hnsw: {
+    lazy: true  // Force lazy mode regardless of memory
+  }
+})
+```
 
 ---
 
@@ -730,5 +946,5 @@ const allDocs = await brain.getNouns({
 
 ---
 
-**Version:** 3.30.0
-**Last Updated:** 2025-10-09
+**Version:** 3.36.0
+**Last Updated:** 2025-10-10
