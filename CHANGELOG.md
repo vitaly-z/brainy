@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.34.0](https://github.com/soulcraftlabs/brainy/compare/v3.33.0...v3.34.0) (2025-10-09)
+
+- test: adjust type-matching tests for real embeddings (v3.33.0) (1c5c77e)
+- perf: pre-compute type embeddings at build time (zero runtime cost) (0d649b8)
+- perf: optimize concept extraction for production (15x faster) (87eb60d)
+- perf: implement smart count batching for 10x faster bulk operations (e52bcaf)
+
+
 ## [3.33.0](https://github.com/soulcraftlabs/brainy/compare/v3.32.5...v3.33.0) (2025-10-09)
 
 ### 🚀 Performance - Build-Time Type Embeddings (Zero Runtime Cost)
