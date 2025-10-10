@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.35.0](https://github.com/soulcraftlabs/brainy/compare/v3.34.0...v3.35.0) (2025-10-10)
+
+- feat: implement HNSW index rebuild and unified index interface (6a4d1ae)
+- cleaning up (12d78ba)
+
+
 ### [3.34.0](https://github.com/soulcraftlabs/brainy/compare/v3.33.0...v3.34.0) (2025-10-09)
 
 - test: adjust type-matching tests for real embeddings (v3.33.0) (1c5c77e)
