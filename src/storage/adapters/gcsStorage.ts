@@ -38,6 +38,11 @@ type Storage = any
 type Bucket = any
 type File = any
 
+// GCS API limits
+// Maximum value for maxResults parameter in GCS API calls
+// Values above this cause "Invalid unsigned integer" errors
+const MAX_GCS_PAGE_SIZE = 5000
+
 /**
  * Native Google Cloud Storage adapter for server environments
  * Uses the @google-cloud/storage library with Application Default Credentials
@@ -516,7 +521,8 @@ export class GcsStorage extends BaseStorage {
         id: data.id,
         vector: data.vector,
         connections,
-        level: data.level || 0
+        level: data.level || 0,
+        metadata: data.metadata  // CRITICAL: Include metadata for entity reconstruction
       }
 
       // Update cache
@@ -995,9 +1001,13 @@ export class GcsStorage extends BaseStorage {
         const shardPrefix = `${this.nounPrefix}${shardId}/`
 
         // List objects in this shard
+        // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
+        const requestedPageSize = limit - nodes.length
+        const cappedPageSize = Math.min(requestedPageSize, MAX_GCS_PAGE_SIZE)
+
         const [files, , response] = await this.bucket!.getFiles({
           prefix: shardPrefix,
-          maxResults: limit - nodes.length,
+          maxResults: cappedPageSize,
           pageToken: shardIndex === startShardIndex ? gcsPageToken : undefined
         })
 
@@ -1149,9 +1159,12 @@ export class GcsStorage extends BaseStorage {
 
     try {
       // List verbs (simplified - not sharded yet in original implementation)
+      // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
+      const cappedLimit = Math.min(limit, MAX_GCS_PAGE_SIZE)
+
       const [files, , response] = await this.bucket!.getFiles({
         prefix: this.verbPrefix,
-        maxResults: limit,
+        maxResults: cappedLimit,
         pageToken: options.cursor
       })
 
@@ -1370,7 +1383,7 @@ export class GcsStorage extends BaseStorage {
       const [metadata] = await this.bucket!.getMetadata()
 
       return {
-        type: 'gcs-native',
+        type: 'gcs',
         used: 0, // GCS doesn't provide usage info easily
         quota: null, // No quota in GCS
         details: {
@@ -1383,7 +1396,7 @@ export class GcsStorage extends BaseStorage {
     } catch (error) {
       this.logger.error('Failed to get storage status:', error)
       return {
-        type: 'gcs-native',
+        type: 'gcs',
         used: 0,
         quota: null
       }
