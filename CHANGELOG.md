@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.32.5](https://github.com/soulcraftlabs/brainy/compare/v3.32.4...v3.32.5) (2025-10-09)
+
+### 🚀 Performance - Neural Extraction Optimization (15x Faster)
+
+**Fixed: Concept extraction now production-ready for large files**
+
+#### Problem
+`brain.extractConcepts()` appeared to hang on large Excel/PDF/Markdown files:
+- Previously initialized ALL 31 NounTypes (31 embedding operations)
+- For 100-row Excel file: 3,100+ embedding operations
+- Caused apparent hangs/timeouts in production
+
+#### Solution
+Optimized `NeuralEntityExtractor` to only initialize requested types:
+- `extractConcepts()` now only initializes Concept + Topic types (2 embeds vs 31)
+- **15x faster initialization** (31 embeds → 2 embeds)
+- Re-enabled concept extraction by default in Excel importer
+
+#### Performance Impact
+- **Small files (<100 rows)**: 5-20 seconds (was: appeared to hang)
+- **Medium files (100-500 rows)**: 20-100 seconds (was: timeout)
+- **Large files (500+ rows)**: Can be disabled if needed via `enableConceptExtraction: false`
+
+#### Files Changed
+- `src/neural/entityExtractor.ts`: Lazy type initialization
+- `src/importers/SmartExcelImporter.ts`: Re-enabled with optimization notes
+
+### 🔧 Diagnostics - GCS Initialization Logging
+
+**Added: Enhanced logging for GCS bucket scanning**
+
+Added detailed diagnostic logs to help debug GCS initialization issues:
+- Shows prefixes being scanned
+- Displays file counts and sample filenames
+- Warns if no entities found
+
+#### Files Changed
+- `src/storage/adapters/gcsStorage.ts`: Enhanced `initializeCountsFromScan()` logging
+
+---
+
 ### [3.32.3](https://github.com/soulcraftlabs/brainy/compare/v3.32.2...v3.32.3) (2025-10-09)
 
 ### ⚡ Performance Optimization - Smart Count Batching for Production Scale

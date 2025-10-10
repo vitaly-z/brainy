@@ -42,10 +42,10 @@ export class NeuralEntityExtractor {
   
   /**
    * Initialize type embeddings for neural matching
+   * PERFORMANCE FIX (v3.32.5): Only initialize requested types instead of all 31 types
+   * This reduces initialization from 31 embed calls to ~2-5 embed calls
    */
-  private async initializeTypeEmbeddings(): Promise<void> {
-    if (this.initialized) return
-    
+  private async initializeTypeEmbeddings(requestedTypes?: NounType[]): Promise<void> {
     // Create representative embeddings for each NounType
     const typeExamples: Record<NounType, string[]> = {
       [NounType.Person]: ['John Smith', 'Jane Doe', 'person', 'individual', 'human'],
@@ -80,15 +80,28 @@ export class NeuralEntityExtractor {
       [NounType.Hypothesis]: ['hypothesis', 'theory', 'assumption'],
       [NounType.Experiment]: ['experiment', 'test', 'trial', 'study']
     }
-    
-    // Generate embeddings for each type
-    for (const [type, examples] of Object.entries(typeExamples) as [NounType, string[]][]) {
+
+    // PERFORMANCE OPTIMIZATION: Only initialize the types we need
+    // This is especially important for extractConcepts() which only needs Concept + Topic
+    const typesToInitialize = requestedTypes || Object.values(NounType)
+
+    // Generate embeddings only for requested types
+    for (const type of typesToInitialize) {
+      // Skip if already initialized
+      if (this.typeEmbeddings.has(type)) continue
+
+      const examples = typeExamples[type]
+      if (!examples) continue
+
       const combinedText = examples.join(' ')
       const embedding = await this.getEmbedding(combinedText)
       this.typeEmbeddings.set(type, embedding)
     }
-    
-    this.initialized = true
+
+    // Mark as initialized if we've loaded at least some types
+    if (this.typeEmbeddings.size > 0) {
+      this.initialized = true
+    }
   }
   
   /**
@@ -111,7 +124,9 @@ export class NeuralEntityExtractor {
       }
     }
   ): Promise<ExtractedEntity[]> {
-    await this.initializeTypeEmbeddings()
+    // PERFORMANCE FIX (v3.32.5): Only initialize requested types
+    // For extractConcepts(), this reduces init from 31 types → 2 types
+    await this.initializeTypeEmbeddings(options?.types)
 
     // Check cache if enabled
     if (options?.cache?.enabled !== false && (options?.path || options?.cache?.invalidateOn === 'hash')) {

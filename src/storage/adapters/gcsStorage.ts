@@ -1484,19 +1484,38 @@ export class GcsStorage extends BaseStorage {
   private async initializeCountsFromScan(): Promise<void> {
     try {
       prodLog.info('📊 Scanning GCS bucket to initialize counts...')
+      prodLog.info(`🔍 Noun prefix: ${this.nounPrefix}`)
+      prodLog.info(`🔍 Verb prefix: ${this.verbPrefix}`)
 
       // Count nouns
       const [nounFiles] = await this.bucket!.getFiles({ prefix: this.nounPrefix })
-      this.totalNounCount = nounFiles?.filter((f: any) => f.name?.endsWith('.json')).length || 0
+      prodLog.info(`🔍 Found ${nounFiles?.length || 0} total files under noun prefix`)
+
+      const jsonNounFiles = nounFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
+      this.totalNounCount = jsonNounFiles.length
+
+      if (jsonNounFiles.length > 0 && jsonNounFiles.length <= 5) {
+        prodLog.info(`📄 Sample noun files: ${jsonNounFiles.slice(0, 5).map((f: any) => f.name).join(', ')}`)
+      }
 
       // Count verbs
       const [verbFiles] = await this.bucket!.getFiles({ prefix: this.verbPrefix })
-      this.totalVerbCount = verbFiles?.filter((f: any) => f.name?.endsWith('.json')).length || 0
+      prodLog.info(`🔍 Found ${verbFiles?.length || 0} total files under verb prefix`)
+
+      const jsonVerbFiles = verbFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
+      this.totalVerbCount = jsonVerbFiles.length
+
+      if (jsonVerbFiles.length > 0 && jsonVerbFiles.length <= 5) {
+        prodLog.info(`📄 Sample verb files: ${jsonVerbFiles.slice(0, 5).map((f: any) => f.name).join(', ')}`)
+      }
 
       // Save initial counts
-      await this.persistCounts()
-
-      prodLog.info(`✅ Initialized counts from scan: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+      if (this.totalNounCount > 0 || this.totalVerbCount > 0) {
+        await this.persistCounts()
+        prodLog.info(`✅ Initialized counts from scan: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+      } else {
+        prodLog.warn(`⚠️  No entities found during bucket scan. Check that entities exist and prefixes are correct.`)
+      }
     } catch (error) {
       // CRITICAL FIX: Don't silently fail - this prevents data loss scenarios
       this.logger.error('❌ CRITICAL: Failed to initialize counts from GCS bucket scan:', error)
