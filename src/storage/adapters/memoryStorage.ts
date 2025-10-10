@@ -52,12 +52,14 @@ export class MemoryStorage extends BaseStorage {
     const isNew = !this.nouns.has(noun.id)
 
     // Create a deep copy to avoid reference issues
+    // CRITICAL: Only save lightweight vector data (no metadata)
+    // Metadata is saved separately via saveNounMetadata() (2-file system)
     const nounCopy: HNSWNoun = {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0,
-      metadata: noun.metadata
+      level: noun.level || 0
+      // NO metadata field - saved separately for scalability
     }
 
     // Copy connections
@@ -88,12 +90,14 @@ export class MemoryStorage extends BaseStorage {
     }
 
     // Return a deep copy to avoid reference issues
+    // CRITICAL: Only return lightweight vector data (no metadata)
+    // Metadata is retrieved separately via getNounMetadata() (2-file system)
     const nounCopy: HNSWNoun = {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
-      level: noun.level || 0,
-      metadata: noun.metadata
+      level: noun.level || 0
+      // NO metadata field - retrieved separately for scalability
     }
 
     // Copy connections
@@ -592,7 +596,9 @@ export class MemoryStorage extends BaseStorage {
 
     // Memory storage can handle all IDs at once since it's in-memory
     for (const id of ids) {
-      const metadata = await this.getMetadata(id)
+      // CRITICAL: Use getNounMetadata() instead of deprecated getMetadata()
+      // This ensures we fetch from the correct noun metadata store (2-file system)
+      const metadata = await this.getNounMetadata(id)
       if (metadata) {
         results.set(id, metadata)
       }

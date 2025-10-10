@@ -169,12 +169,37 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async saveNoun(noun: HNSWNoun): Promise<void> {
     await this.ensureInitialized()
+
     // Validate noun type before saving - storage boundary protection
-    const metadata = await this.getNounMetadata(noun.id)
-    if (metadata?.noun) {
-      validateNounType(metadata.noun)
+    if (noun.metadata?.noun) {
+      validateNounType(noun.metadata.noun)
     }
-    return this.saveNoun_internal(noun)
+
+    // Save both the HNSWNoun vector data and metadata separately (2-file system)
+    try {
+      // Save the lightweight HNSWNoun vector file first
+      await this.saveNoun_internal(noun)
+
+      // Then save the metadata to separate file (if present)
+      if (noun.metadata) {
+        await this.saveNounMetadata(noun.id, noun.metadata)
+      }
+    } catch (error) {
+      console.error(`[ERROR] Failed to save noun ${noun.id}:`, error)
+
+      // Attempt cleanup - remove noun file if metadata failed
+      try {
+        const nounExists = await this.getNoun_internal(noun.id)
+        if (nounExists) {
+          console.log(`[CLEANUP] Attempting to remove orphaned noun file ${noun.id}`)
+          await this.deleteNoun_internal(noun.id)
+        }
+      } catch (cleanupError) {
+        console.error(`[ERROR] Failed to cleanup orphaned noun ${noun.id}:`, cleanupError)
+      }
+
+      throw new Error(`Failed to save noun ${noun.id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**
@@ -200,7 +225,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async deleteNoun(id: string): Promise<void> {
     await this.ensureInitialized()
-    return this.deleteNoun_internal(id)
+
+    // Delete both the vector file and metadata file (2-file system)
+    await this.deleteNoun_internal(id)
+
+    // Delete metadata file (if it exists)
+    try {
+      await this.deleteNounMetadata(id)
+    } catch (error) {
+      // Ignore if metadata file doesn't exist
+      console.debug(`No metadata file to delete for noun ${id}`)
+    }
   }
 
   /**
@@ -762,8 +797,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public async deleteVerb(id: string): Promise<void> {
     await this.ensureInitialized()
-    return this.deleteVerb_internal(id)
 
+    // Delete both the vector file and metadata file (2-file system)
+    await this.deleteVerb_internal(id)
+
+    // Delete metadata file (if it exists)
+    try {
+      await this.deleteVerbMetadata(id)
+    } catch (error) {
+      // Ignore if metadata file doesn't exist
+      console.debug(`No metadata file to delete for verb ${id}`)
+    }
   }
   /**
    * Get graph index (lazy initialization)
@@ -885,6 +929,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
     return this.readObjectFromPath(keyInfo.fullPath)
+  }
+
+  /**
+   * Delete noun metadata from storage
+   * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   */
+  public async deleteNounMetadata(id: string): Promise<void> {
+    await this.ensureInitialized()
+    const keyInfo = this.analyzeKey(id, 'noun-metadata')
+    return this.deleteObjectFromPath(keyInfo.fullPath)
   }
 
   /**

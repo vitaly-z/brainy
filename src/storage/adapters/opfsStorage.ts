@@ -201,12 +201,16 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Convert connections Map to a serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveNounMetadata() (2-file system)
       const serializableNoun = {
-        ...noun,
+        id: noun.id,
+        vector: noun.vector,
         connections: this.mapToObject(noun.connections, (set) =>
           Array.from(set as Set<string>)
-        )
+        ),
+        level: noun.level || 0
+        // NO metadata field - saved separately for scalability
       }
 
       // Use UUID-based sharding for nouns
@@ -387,12 +391,15 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Convert connections Map to a serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveVerbMetadata() (2-file system)
       const serializableEdge = {
-        ...edge,
+        id: edge.id,
+        vector: edge.vector,
         connections: this.mapToObject(edge.connections, (set) =>
           Array.from(set as Set<string>)
         )
+        // NO metadata field - saved separately for scalability
       }
 
       // Use UUID-based sharding for verbs

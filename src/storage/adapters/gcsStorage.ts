@@ -430,14 +430,19 @@ export class GcsStorage extends BaseStorage {
       this.logger.trace(`Saving node ${node.id}`)
 
       // Convert connections Map to a serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveNounMetadata() (2-file system)
       const serializableNode = {
-        ...node,
+        id: node.id,
+        vector: node.vector,
         connections: Object.fromEntries(
           Array.from(node.connections.entries()).map(([level, nounIds]) => [
             level,
             Array.from(nounIds)
           ])
-        )
+        ),
+        level: node.level || 0
+        // NO metadata field - saved separately for scalability
       }
 
       // Get the GCS key with UUID-based sharding
@@ -517,12 +522,14 @@ export class GcsStorage extends BaseStorage {
         connections.set(Number(level), new Set(nounIds as string[]))
       }
 
+      // CRITICAL: Only return lightweight vector data (no metadata)
+      // Metadata is retrieved separately via getNounMetadata() (2-file system)
       const node: HNSWNode = {
         id: data.id,
         vector: data.vector,
         connections,
-        level: data.level || 0,
-        metadata: data.metadata  // CRITICAL: Include metadata for entity reconstruction
+        level: data.level || 0
+        // NO metadata field - retrieved separately for scalability
       }
 
       // Update cache
@@ -741,14 +748,18 @@ export class GcsStorage extends BaseStorage {
       this.logger.trace(`Saving edge ${edge.id}`)
 
       // Convert connections Map to serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveVerbMetadata() (2-file system)
       const serializableEdge = {
-        ...edge,
+        id: edge.id,
+        vector: edge.vector,
         connections: Object.fromEntries(
           Array.from(edge.connections.entries()).map(([level, verbIds]) => [
             level,
             Array.from(verbIds)
           ])
         )
+        // NO metadata field - saved separately for scalability
       }
 
       // Get the GCS key with UUID-based sharding
@@ -1318,6 +1329,53 @@ export class GcsStorage extends BaseStorage {
       cursor,
       filter: options?.filter
     })
+  }
+
+  /**
+   * Batch fetch metadata for multiple noun IDs (efficient for large queries)
+   * Uses smaller batches to prevent GCS socket exhaustion
+   * @param ids Array of noun IDs to fetch metadata for
+   * @returns Map of ID to metadata
+   */
+  public async getMetadataBatch(ids: string[]): Promise<Map<string, any>> {
+    await this.ensureInitialized()
+
+    const results = new Map<string, any>()
+    const batchSize = 10 // Smaller batches for metadata to prevent socket exhaustion
+
+    // Process in smaller batches
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize)
+
+      const batchPromises = batch.map(async (id) => {
+        try {
+          // CRITICAL: Use getNounMetadata() instead of deprecated getMetadata()
+          // This ensures we fetch from the correct noun metadata store (2-file system)
+          const metadata = await this.getNounMetadata(id)
+          return { id, metadata }
+        } catch (error: any) {
+          // Handle GCS-specific errors
+          if (this.isThrottlingError(error)) {
+            await this.handleThrottling(error)
+          }
+          this.logger.debug(`Failed to read metadata for ${id}:`, error)
+          return { id, metadata: null }
+        }
+      })
+
+      const batchResults = await Promise.all(batchPromises)
+
+      for (const { id, metadata } of batchResults) {
+        if (metadata !== null) {
+          results.set(id, metadata)
+        }
+      }
+
+      // Small yield between batches to prevent overwhelming GCS
+      await new Promise(resolve => setImmediate(resolve))
+    }
+
+    return results
   }
 
   /**

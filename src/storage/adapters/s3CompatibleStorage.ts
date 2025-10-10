@@ -959,11 +959,16 @@ export class S3CompatibleStorage extends BaseStorage {
       this.logger.trace(`Saving node ${node.id}`)
 
       // Convert connections Map to a serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveNounMetadata() (2-file system)
       const serializableNode = {
-        ...node,
+        id: node.id,
+        vector: node.vector,
         connections: this.mapToObject(node.connections, (set) =>
           Array.from(set as Set<string>)
-        )
+        ),
+        level: node.level || 0
+        // NO metadata field - saved separately for scalability
       }
 
       // Import the PutObjectCommand only when needed
@@ -1022,6 +1027,15 @@ export class S3CompatibleStorage extends BaseStorage {
           verifyError
         )
       }
+
+      // Increment noun count - always increment total, and increment by type if metadata exists
+      this.totalNounCount++
+      const metadata = await this.getNounMetadata(node.id)
+      if (metadata && metadata.type) {
+        const currentCount = this.entityCounts.get(metadata.type) || 0
+        this.entityCounts.set(metadata.type, currentCount + 1)
+      }
+
       // Release backpressure on success
       this.releaseBackpressure(true, requestId)
     } catch (error) {
@@ -1438,11 +1452,15 @@ export class S3CompatibleStorage extends BaseStorage {
 
     try {
       // Convert connections Map to a serializable format
+      // CRITICAL: Only save lightweight vector data (no metadata)
+      // Metadata is saved separately via saveVerbMetadata() (2-file system)
       const serializableEdge = {
-        ...edge,
+        id: edge.id,
+        vector: edge.vector,
         connections: this.mapToObject(edge.connections, (set) =>
           Array.from(set as Set<string>)
         )
+        // NO metadata field - saved separately for scalability
       }
 
       // Import the PutObjectCommand only when needed
@@ -1468,7 +1486,15 @@ export class S3CompatibleStorage extends BaseStorage {
           vector: edge.vector
         }
       })
-      
+
+      // Increment verb count - always increment total, and increment by type if metadata exists
+      this.totalVerbCount++
+      const metadata = await this.getVerbMetadata(edge.id)
+      if (metadata && metadata.type) {
+        const currentCount = this.verbCounts.get(metadata.type) || 0
+        this.verbCounts.set(metadata.type, currentCount + 1)
+      }
+
       // Release backpressure on success
       this.releaseBackpressure(true, requestId)
     } catch (error) {
@@ -2114,9 +2140,11 @@ export class S3CompatibleStorage extends BaseStorage {
       const batchPromises = batch.map(async (id) => {
         try {
           // Add timeout wrapper for individual metadata reads
+          // CRITICAL: Use getNounMetadata() instead of deprecated getMetadata()
+          // This ensures we fetch from the correct noun metadata store (2-file system)
           const metadata = await Promise.race([
-            this.getMetadata(id),
-            new Promise<null>((_, reject) => 
+            this.getNounMetadata(id),
+            new Promise<null>((_, reject) =>
               setTimeout(() => reject(new Error('Metadata read timeout')), 5000) // 5 second timeout
             )
           ])

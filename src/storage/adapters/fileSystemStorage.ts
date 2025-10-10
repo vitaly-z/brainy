@@ -225,11 +225,16 @@ export class FileSystemStorage extends BaseStorage {
     const isNew = !(await this.fileExists(this.getNodePath(node.id)))
 
     // Convert connections Map to a serializable format
+    // CRITICAL: Only save lightweight vector data (no metadata)
+    // Metadata is saved separately via saveNounMetadata() (2-file system)
     const serializableNode = {
-      ...node,
+      id: node.id,
+      vector: node.vector,
       connections: this.mapToObject(node.connections, (set) =>
         Array.from(set as Set<string>)
-      )
+      ),
+      level: node.level || 0
+      // NO metadata field - saved separately for scalability
     }
 
     const filePath = this.getNodePath(node.id)
@@ -269,12 +274,14 @@ export class FileSystemStorage extends BaseStorage {
         connections.set(Number(level), new Set(nodeIds as string[]))
       }
 
+      // CRITICAL: Only return lightweight vector data (no metadata)
+      // Metadata is retrieved separately via getNounMetadata() (2-file system)
       return {
         id: parsedNode.id,
         vector: parsedNode.vector,
         connections,
-        level: parsedNode.level || 0,
-        metadata: parsedNode.metadata
+        level: parsedNode.level || 0
+        // NO metadata field - retrieved separately for scalability
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -414,11 +421,15 @@ export class FileSystemStorage extends BaseStorage {
     const isNew = !(await this.fileExists(this.getVerbPath(edge.id)))
 
     // Convert connections Map to a serializable format
+    // CRITICAL: Only save lightweight vector data (no metadata)
+    // Metadata is saved separately via saveVerbMetadata() (2-file system)
     const serializableEdge = {
-      ...edge,
+      id: edge.id,
+      vector: edge.vector,
       connections: this.mapToObject(edge.connections, (set) =>
         Array.from(set as Set<string>)
       )
+      // NO metadata field - saved separately for scalability
     }
 
     const filePath = this.getVerbPath(edge.id)
@@ -678,7 +689,9 @@ export class FileSystemStorage extends BaseStorage {
 
       const batchPromises = batch.map(async (id) => {
         try {
-          const metadata = await this.getMetadata(id)
+          // CRITICAL: Use getNounMetadata() instead of deprecated getMetadata()
+          // This ensures we fetch from the correct noun metadata store (2-file system)
+          const metadata = await this.getNounMetadata(id)
           return { id, metadata }
         } catch (error) {
           console.debug(`Failed to read metadata for ${id}:`, error)
