@@ -1048,9 +1048,23 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get a noun from storage (internal implementation)
+   * Combines vector data from getNode() with metadata from getNounMetadata()
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    return this.getNode(id)
+    // Get vector data (lightweight)
+    const node = await this.getNode(id)
+    if (!node) {
+      return null
+    }
+
+    // Get metadata (entity data in 2-file system)
+    const metadata = await this.getNounMetadata(id)
+
+    // Combine into complete noun object
+    return {
+      ...node,
+      metadata: metadata || {}
+    }
   }
 
   /**
@@ -1507,9 +1521,23 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
+   * Combines vector data from getEdge() with metadata from getVerbMetadata()
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    return this.getEdge(id)
+    // Get vector data (lightweight)
+    const edge = await this.getEdge(id)
+    if (!edge) {
+      return null
+    }
+
+    // Get metadata (relationship data in 2-file system)
+    const metadata = await this.getVerbMetadata(id)
+
+    // Combine into complete verb object
+    return {
+      ...edge,
+      metadata: metadata || {}
+    }
   }
 
   /**

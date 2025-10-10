@@ -78,7 +78,8 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Get a noun from storage
+   * Get a noun from storage (internal implementation)
+   * Combines vector data from nouns map with metadata from getNounMetadata()
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
     // Get the noun directly from the nouns map
@@ -90,14 +91,11 @@ export class MemoryStorage extends BaseStorage {
     }
 
     // Return a deep copy to avoid reference issues
-    // CRITICAL: Only return lightweight vector data (no metadata)
-    // Metadata is retrieved separately via getNounMetadata() (2-file system)
     const nounCopy: HNSWNoun = {
       id: noun.id,
       vector: [...noun.vector],
       connections: new Map(),
       level: noun.level || 0
-      // NO metadata field - retrieved separately for scalability
     }
 
     // Copy connections
@@ -105,7 +103,14 @@ export class MemoryStorage extends BaseStorage {
       nounCopy.connections.set(level, new Set(connections))
     }
 
-    return nounCopy
+    // Get metadata (entity data in 2-file system)
+    const metadata = await this.getNounMetadata(id)
+
+    // Combine into complete noun object
+    return {
+      ...nounCopy,
+      metadata: metadata || {}
+    }
   }
 
   /**
@@ -303,7 +308,8 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Get a verb from storage
+   * Get a verb from storage (internal implementation)
+   * Combines vector data from verbs map with metadata from getVerbMetadata()
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
     // Get the verb directly from the verbs map
@@ -312,18 +318,6 @@ export class MemoryStorage extends BaseStorage {
     // If not found, return null
     if (!verb) {
       return null
-    }
-
-    // Create default timestamp if not present
-    const defaultTimestamp = {
-      seconds: Math.floor(Date.now() / 1000),
-      nanoseconds: (Date.now() % 1000) * 1000000
-    }
-
-    // Create default createdBy if not present
-    const defaultCreatedBy = {
-      augmentation: 'unknown',
-      version: '1.0'
     }
 
     // Return a deep copy of the HNSWVerb
@@ -338,7 +332,14 @@ export class MemoryStorage extends BaseStorage {
       verbCopy.connections.set(level, new Set(connections))
     }
 
-    return verbCopy
+    // Get metadata (relationship data in 2-file system)
+    const metadata = await this.getVerbMetadata(id)
+
+    // Combine into complete verb object
+    return {
+      ...verbCopy,
+      metadata: metadata || {}
+    }
   }
 
   /**

@@ -94,6 +94,7 @@ export interface HNSWVerb {
   id: string
   vector: Vector
   connections: Map<number, Set<string>> // level -> set of connected verb ids
+  metadata?: any // Optional metadata for the verb (2-file system)
 }
 
 /**

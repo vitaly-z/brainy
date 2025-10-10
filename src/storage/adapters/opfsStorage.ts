@@ -237,7 +237,8 @@ export class OPFSStorage extends BaseStorage {
   }
 
   /**
-   * Get a noun from storage
+   * Get a noun from storage (internal implementation)
+   * Combines vector data from file with metadata from getNounMetadata()
    */
   protected async getNoun_internal(
     id: string
@@ -265,11 +266,20 @@ export class OPFSStorage extends BaseStorage {
         connections.set(Number(level), new Set(nounIds as string[]))
       }
 
-      return {
+      const node = {
         id: data.id,
         vector: data.vector,
         connections,
         level: data.level || 0
+      }
+
+      // Get metadata (entity data in 2-file system)
+      const metadata = await this.getNounMetadata(id)
+
+      // Combine into complete noun object
+      return {
+        ...node,
+        metadata: metadata || {}
       }
     } catch (error) {
       // Noun not found or other error
@@ -427,9 +437,23 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
+   * Combines vector data from getEdge() with metadata from getVerbMetadata()
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    return this.getEdge(id)
+    // Get vector data (lightweight)
+    const edge = await this.getEdge(id)
+    if (!edge) {
+      return null
+    }
+
+    // Get metadata (relationship data in 2-file system)
+    const metadata = await this.getVerbMetadata(id)
+
+    // Combine into complete verb object
+    return {
+      ...edge,
+      metadata: metadata || {}
+    }
   }
 
   /**
