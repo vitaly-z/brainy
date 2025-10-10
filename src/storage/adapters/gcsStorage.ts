@@ -294,6 +294,18 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
+   * Override base class to enable smart batching for cloud storage (v3.32.3+)
+   *
+   * GCS is cloud storage with network latency (~50ms per write).
+   * Smart batching reduces writes from 1000 ops → 100 batches.
+   *
+   * @returns true (GCS is cloud storage)
+   */
+  protected isCloudStorage(): boolean {
+    return true  // GCS benefits from batching
+  }
+
+  /**
    * Apply backpressure before starting an operation
    * @returns Request ID for tracking
    */

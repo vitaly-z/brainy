@@ -58,6 +58,10 @@ import { BrainyInterface } from './types/brainyInterface.js'
  * Implements BrainyInterface to ensure consistency across integrations
  */
 export class Brainy<T = any> implements BrainyInterface<T> {
+  // Static shutdown hook tracking (global, not per-instance)
+  private static shutdownHooksRegisteredGlobally = false
+  private static instances: Brainy[] = []
+
   // Core components
   private index!: HNSWIndex | HNSWIndexOptimized
   private storage!: StorageAdapter
@@ -106,6 +110,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (this.config.distributed?.enabled) {
       this.setupDistributedComponents()
     }
+
+    // Track this instance for shutdown hooks
+    Brainy.instances.push(this)
 
     // Index and storage are initialized in init() because they may need each other
   }
@@ -203,10 +210,65 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         await this.warmup()
       }
 
+      // Register shutdown hooks for graceful count flushing (once globally)
+      if (!Brainy.shutdownHooksRegisteredGlobally) {
+        this.registerShutdownHooks()
+        Brainy.shutdownHooksRegisteredGlobally = true
+      }
+
       this.initialized = true
     } catch (error) {
       throw new Error(`Failed to initialize Brainy: ${error}`)
     }
+  }
+
+  /**
+   * Register shutdown hooks for graceful count flushing (v3.32.3+)
+   *
+   * Ensures pending count batches are persisted before container shutdown.
+   * Critical for Cloud Run, Fargate, Lambda, and other containerized deployments.
+   *
+   * Handles:
+   * - SIGTERM: Graceful termination (Cloud Run, Fargate, Lambda)
+   * - SIGINT: Ctrl+C (development/local testing)
+   * - beforeExit: Node.js cleanup hook (fallback)
+   *
+   * NOTE: Registers globally (once for all instances) to avoid MaxListenersExceededWarning
+   */
+  private registerShutdownHooks(): void {
+    const flushOnShutdown = async () => {
+      console.log('⚠️  Shutdown signal received - flushing pending counts...')
+      try {
+        // Flush counts for all Brainy instances
+        let flushedCount = 0
+        for (const instance of Brainy.instances) {
+          if (instance.storage && typeof (instance.storage as any).flushCounts === 'function') {
+            await (instance.storage as any).flushCounts()
+            flushedCount++
+          }
+        }
+        if (flushedCount > 0) {
+          console.log(`✅ Counts flushed successfully (${flushedCount} instance${flushedCount > 1 ? 's' : ''})`)
+        }
+      } catch (error) {
+        console.error('❌ Failed to flush counts on shutdown:', error)
+      }
+    }
+
+    // Graceful shutdown signals (registered once globally)
+    process.on('SIGTERM', async () => {
+      await flushOnShutdown()
+      process.exit(0)
+    })
+
+    process.on('SIGINT', async () => {
+      await flushOnShutdown()
+      process.exit(0)
+    })
+
+    process.on('beforeExit', async () => {
+      await flushOnShutdown()
+    })
   }
 
   /**

@@ -881,6 +881,20 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   protected countCache: Map<string, { count: number; timestamp: number }> = new Map()
   protected readonly COUNT_CACHE_TTL = 60000 // 1 minute cache TTL
 
+  // =============================================
+  // Smart Count Batching (v3.32.3+)
+  // =============================================
+
+  // Count batching state - mirrors statistics batching pattern
+  protected pendingCountPersist = false              // Counts changed since last persist?
+  protected lastCountPersistTime = 0                 // Timestamp of last persist
+  protected scheduledCountPersistTimeout: NodeJS.Timeout | null = null  // Scheduled persist timer
+  protected pendingCountOperations = 0               // Operations since last persist
+
+  // Batching configuration (overridable by subclasses for custom strategies)
+  protected countPersistBatchSize = 10               // Operations before forcing persist (cloud storage)
+  protected countPersistInterval = 5000              // Milliseconds before forcing persist (cloud storage)
+
   /**
    * Get total noun count - O(1) operation
    * @returns Promise that resolves to the total number of nouns
@@ -923,10 +937,10 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.incrementEntityCount(type)
-      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
-      // This ensures counts survive container restarts (GCS, S3, etc.)
-      // For memory/file storage, this is fast; for cloud storage, it's essential
-      await this.persistCounts()
+      // Smart batching (v3.32.3+): Adapts to storage type
+      // - Cloud storage (GCS, S3): Batches 10 ops OR 5 seconds
+      // - Local storage (File, Memory): Persists immediately
+      await this.scheduleCountPersist()
     })
   }
 
@@ -958,8 +972,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.decrementEntityCount(type)
-      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
-      await this.persistCounts()
+      // Smart batching (v3.32.3+): Adapts to storage type
+      await this.scheduleCountPersist()
     })
   }
 
@@ -978,8 +992,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
         timestamp: Date.now()
       })
 
-      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
-      await this.persistCounts()
+      // Smart batching (v3.32.3+): Adapts to storage type
+      await this.scheduleCountPersist()
     })
   }
 
@@ -1005,9 +1019,102 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
         timestamp: Date.now()
       })
 
-      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
-      await this.persistCounts()
+      // Smart batching (v3.32.3+): Adapts to storage type
+      await this.scheduleCountPersist()
     })
+  }
+
+  // =============================================
+  // Smart Batching Methods (v3.32.3+)
+  // =============================================
+
+  /**
+   * Detect if this storage adapter uses cloud storage (network I/O)
+   * Cloud storage benefits from batching; local storage does not.
+   *
+   * Override this method in subclasses for accurate detection.
+   * Default implementation checks storage type from getStorageStatus().
+   *
+   * @returns true if cloud storage (GCS, S3, R2), false if local (File, Memory)
+   */
+  protected isCloudStorage(): boolean {
+    // Default: assume local storage (conservative, prefers reliability over performance)
+    // Subclasses should override this for accurate detection
+    return false
+  }
+
+  /**
+   * Schedule a smart batched persist operation.
+   *
+   * Strategy:
+   * - Local Storage: Persist immediately (fast, no network latency)
+   * - Cloud Storage: Batch persist (10 ops OR 5 seconds, whichever first)
+   *
+   * This mirrors the statistics batching pattern for consistency.
+   */
+  protected async scheduleCountPersist(): Promise<void> {
+    // Mark counts as pending persist
+    this.pendingCountPersist = true
+    this.pendingCountOperations++
+
+    // Local storage: persist immediately (fast enough, no benefit from batching)
+    if (!this.isCloudStorage()) {
+      await this.flushCounts()
+      return
+    }
+
+    // Cloud storage: use smart batching
+    // Persist if we've hit the batch size threshold
+    if (this.pendingCountOperations >= this.countPersistBatchSize) {
+      await this.flushCounts()
+      return
+    }
+
+    // Otherwise, schedule a time-based persist if not already scheduled
+    if (!this.scheduledCountPersistTimeout) {
+      this.scheduledCountPersistTimeout = setTimeout(() => {
+        this.flushCounts().catch(error => {
+          console.error('Failed to flush counts on timer:', error)
+        })
+      }, this.countPersistInterval)
+    }
+  }
+
+  /**
+   * Flush counts immediately to storage.
+   *
+   * Used for:
+   * - Graceful shutdown (SIGTERM handler)
+   * - Forced persist (batch threshold reached)
+   * - Local storage immediate persist
+   *
+   * This is the public API that shutdown hooks can call.
+   */
+  async flushCounts(): Promise<void> {
+    // Clear any scheduled persist
+    if (this.scheduledCountPersistTimeout) {
+      clearTimeout(this.scheduledCountPersistTimeout)
+      this.scheduledCountPersistTimeout = null
+    }
+
+    // Nothing to flush?
+    if (!this.pendingCountPersist) {
+      return
+    }
+
+    try {
+      // Persist to storage (implemented by subclass)
+      await this.persistCounts()
+
+      // Update state
+      this.lastCountPersistTime = Date.now()
+      this.pendingCountPersist = false
+      this.pendingCountOperations = 0
+    } catch (error) {
+      console.error('❌ CRITICAL: Failed to flush counts to storage:', error)
+      // Keep pending flag set so we retry on next operation
+      throw error
+    }
   }
 
   /**

@@ -3509,4 +3509,16 @@ export class S3CompatibleStorage extends BaseStorage {
       console.error('Error persisting counts to S3:', error)
     }
   }
+
+  /**
+   * Override base class to enable smart batching for cloud storage (v3.32.3+)
+   *
+   * S3 is cloud storage with network latency (~50ms per write).
+   * Smart batching reduces writes from 1000 ops → 100 batches.
+   *
+   * @returns true (S3 is cloud storage)
+   */
+  protected isCloudStorage(): boolean {
+    return true  // S3 benefits from batching
+  }
 }
