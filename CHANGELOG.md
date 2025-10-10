@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.37.1](https://github.com/soulcraftlabs/brainy/compare/v3.37.0...v3.37.1) (2025-10-10)
+
+
+### 🐛 Bug Fixes
+
+* combine vector and metadata in getNoun/getVerb internal methods ([cb1e37c](https://github.com/soulcraftlabs/brainy/commit/cb1e37c0e8132f53be0f359feaef5dcf342462d2))
+
 ### [3.37.0](https://github.com/soulcraftlabs/brainy/compare/v3.36.1...v3.37.0) (2025-10-10)
 
 - fix: implement 2-file storage architecture for GCS scalability (59da5f6)
