@@ -923,10 +923,10 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.incrementEntityCount(type)
-      // Persist counts periodically
-      if (this.totalNounCount % 10 === 0) {
-        await this.persistCounts()
-      }
+      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
+      // This ensures counts survive container restarts (GCS, S3, etc.)
+      // For memory/file storage, this is fast; for cloud storage, it's essential
+      await this.persistCounts()
     })
   }
 
@@ -958,9 +958,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.decrementEntityCount(type)
-      if (this.totalNounCount % 10 === 0) {
-        await this.persistCounts()
-      }
+      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
+      await this.persistCounts()
     })
   }
 
@@ -979,10 +978,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
         timestamp: Date.now()
       })
 
-      // Persist counts immediately for consistency
-      if (this.totalVerbCount % 10 === 0) {
-        await this.persistCounts()
-      }
+      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
+      await this.persistCounts()
     })
   }
 
@@ -1008,10 +1005,8 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
         timestamp: Date.now()
       })
 
-      // Persist counts immediately for consistency
-      if (this.totalVerbCount % 10 === 0) {
-        await this.persistCounts()
-      }
+      // CRITICAL FIX: Persist counts on EVERY change for cloud storage adapters
+      await this.persistCounts()
     })
   }
 

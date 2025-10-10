@@ -1435,9 +1435,9 @@ export class GcsStorage extends BaseStorage {
    * Initialize counts from storage
    */
   protected async initializeCounts(): Promise<void> {
-    try {
-      const key = `${this.systemPrefix}counts.json`
+    const key = `${this.systemPrefix}counts.json`
 
+    try {
       const file = this.bucket!.file(key)
       const [contents] = await file.download()
 
@@ -1448,14 +1448,20 @@ export class GcsStorage extends BaseStorage {
       this.entityCounts = new Map(Object.entries(counts.entityCounts || {})) as Map<string, number>
       this.verbCounts = new Map(Object.entries(counts.verbCounts || {})) as Map<string, number>
 
-      prodLog.info(`📊 Loaded counts: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+      prodLog.info(`📊 Loaded counts from storage: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
     } catch (error: any) {
       if (error.code === 404) {
-        // No counts file yet - initialize from scan
-        prodLog.info('📊 No counts file found - initializing from storage scan...')
+        // No counts file yet - initialize from scan (first-time setup or counts not persisted)
+        prodLog.info('📊 No counts file found - this is normal for first init or if <10 entities were added')
         await this.initializeCountsFromScan()
       } else {
-        this.logger.error('Error loading counts:', error)
+        // CRITICAL FIX: Don't silently fail on network/permission errors
+        this.logger.error('❌ CRITICAL: Failed to load counts from GCS:', error)
+        prodLog.error(`❌ Error loading ${key}: ${error.message}`)
+
+        // Try to recover by scanning the bucket
+        prodLog.warn('⚠️  Attempting recovery by scanning GCS bucket...')
+        await this.initializeCountsFromScan()
       }
     }
   }
@@ -1465,6 +1471,8 @@ export class GcsStorage extends BaseStorage {
    */
   private async initializeCountsFromScan(): Promise<void> {
     try {
+      prodLog.info('📊 Scanning GCS bucket to initialize counts...')
+
       // Count nouns
       const [nounFiles] = await this.bucket!.getFiles({ prefix: this.nounPrefix })
       this.totalNounCount = nounFiles?.filter((f: any) => f.name?.endsWith('.json')).length || 0
@@ -1476,9 +1484,11 @@ export class GcsStorage extends BaseStorage {
       // Save initial counts
       await this.persistCounts()
 
-      prodLog.info(`✅ Initialized counts: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+      prodLog.info(`✅ Initialized counts from scan: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
     } catch (error) {
-      this.logger.error('Error initializing counts from scan:', error)
+      // CRITICAL FIX: Don't silently fail - this prevents data loss scenarios
+      this.logger.error('❌ CRITICAL: Failed to initialize counts from GCS bucket scan:', error)
+      throw new Error(`Failed to initialize GCS storage counts: ${error}. This prevents container restarts from working correctly.`)
     }
   }
 
