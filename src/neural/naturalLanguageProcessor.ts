@@ -14,6 +14,7 @@ import { TripleQuery } from '../triple/TripleIntelligence.js'
 import { Brainy } from '../brainy.js'
 import { PatternLibrary } from './patternLibrary.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
+import { getNounTypeEmbeddings, getVerbTypeEmbeddings } from './embeddedTypeEmbeddings.js'
 
 export interface NaturalQueryIntent {
   type: 'vector' | 'field' | 'graph' | 'combined'
@@ -98,48 +99,30 @@ export class NaturalLanguageProcessor {
   
   /**
    * Initialize embeddings for all NounTypes and VerbTypes
-   * These are fixed types that never change - perfect for caching
+   * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed type embeddings
+   * Zero runtime cost - embeddings are loaded instantly from embedded data
    */
   private async initializeTypeEmbeddings(): Promise<void> {
     if (this.typeEmbeddingsInitialized) return
-    
-    // Embed all NounTypes (30+ types)
-    for (const [key, value] of Object.entries(NounType)) {
-      if (typeof value === 'string') {
-        // Embed both the key (Person) and value (person)
-        const keyEmbedding = await this.getEmbedding(key)
-        const valueEmbedding = await this.getEmbedding(value)
-        
-        this.nounTypeEmbeddings.set(key, keyEmbedding)
-        this.nounTypeEmbeddings.set(value, valueEmbedding)
-        
-        // Also embed common variations
-        const spaceSeparated = key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
-        if (spaceSeparated !== value) {
-          const variantEmbedding = await this.getEmbedding(spaceSeparated)
-          this.nounTypeEmbeddings.set(spaceSeparated, variantEmbedding)
-        }
-      }
+
+    // Load pre-computed embeddings (instant, no computation)
+    const nounEmbeddings = getNounTypeEmbeddings()
+    const verbEmbeddings = getVerbTypeEmbeddings()
+
+    // Store noun type embeddings with all variations for lookup
+    for (const [type, embedding] of nounEmbeddings.entries()) {
+      this.nounTypeEmbeddings.set(type, embedding)
+      // Also store lowercase version for case-insensitive matching
+      this.nounTypeEmbeddings.set(type.toLowerCase(), embedding)
     }
-    
-    // Embed all VerbTypes (40+ types)
-    for (const [key, value] of Object.entries(VerbType)) {
-      if (typeof value === 'string') {
-        const keyEmbedding = await this.getEmbedding(key)
-        const valueEmbedding = await this.getEmbedding(value)
-        
-        this.verbTypeEmbeddings.set(key, keyEmbedding)
-        this.verbTypeEmbeddings.set(value, valueEmbedding)
-        
-        // Common variations for verbs
-        const spaceSeparated = key.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
-        if (spaceSeparated !== value) {
-          const variantEmbedding = await this.getEmbedding(spaceSeparated)
-          this.verbTypeEmbeddings.set(spaceSeparated, variantEmbedding)
-        }
-      }
+
+    // Store verb type embeddings with all variations for lookup
+    for (const [type, embedding] of verbEmbeddings.entries()) {
+      this.verbTypeEmbeddings.set(type, embedding)
+      // Also store lowercase version for case-insensitive matching
+      this.verbTypeEmbeddings.set(type.toLowerCase(), embedding)
     }
-    
+
     this.typeEmbeddingsInitialized = true
   }
   

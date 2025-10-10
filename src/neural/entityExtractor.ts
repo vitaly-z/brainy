@@ -15,6 +15,7 @@ import {
   generateContentCacheKey,
   computeContentHash
 } from './entityExtractionCache.js'
+import { getNounTypeEmbeddings } from './embeddedTypeEmbeddings.js'
 
 export interface ExtractedEntity {
   text: string
@@ -42,60 +43,24 @@ export class NeuralEntityExtractor {
   
   /**
    * Initialize type embeddings for neural matching
-   * PERFORMANCE FIX (v3.32.5): Only initialize requested types instead of all 31 types
-   * This reduces initialization from 31 embed calls to ~2-5 embed calls
+   * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed embeddings from build time
+   * Zero runtime cost - embeddings are loaded instantly from embedded data
    */
   private async initializeTypeEmbeddings(requestedTypes?: NounType[]): Promise<void> {
-    // Create representative embeddings for each NounType
-    const typeExamples: Record<NounType, string[]> = {
-      [NounType.Person]: ['John Smith', 'Jane Doe', 'person', 'individual', 'human'],
-      [NounType.Organization]: ['Microsoft Corporation', 'company', 'organization', 'business', 'enterprise'],
-      [NounType.Location]: ['New York City', 'location', 'place', 'address', 'geography'],
-      [NounType.Document]: ['document', 'file', 'report', 'paper', 'text'],
-      [NounType.Event]: ['conference', 'meeting', 'event', 'occurrence', 'happening'],
-      [NounType.Product]: ['iPhone', 'product', 'item', 'merchandise', 'goods'],
-      [NounType.Service]: ['consulting', 'service', 'offering', 'provision'],
-      [NounType.Concept]: ['idea', 'concept', 'theory', 'principle', 'notion'],
-      [NounType.Media]: ['image', 'video', 'audio', 'media', 'content'],
-      [NounType.Message]: ['email', 'message', 'communication', 'note'],
-      [NounType.Task]: ['task', 'todo', 'assignment', 'job', 'work'],
-      [NounType.Project]: ['project', 'initiative', 'program', 'endeavor'],
-      [NounType.Process]: ['workflow', 'process', 'procedure', 'method'],
-      [NounType.User]: ['user', 'account', 'profile', 'member'],
-      [NounType.Role]: ['manager', 'role', 'position', 'title', 'responsibility'],
-      [NounType.Topic]: ['subject', 'topic', 'theme', 'matter'],
-      [NounType.Language]: ['English', 'language', 'tongue', 'dialect'],
-      [NounType.Currency]: ['dollar', 'currency', 'money', 'USD', 'EUR'],
-      [NounType.Measurement]: ['meter', 'measurement', 'unit', 'quantity'],
-      [NounType.Contract]: ['agreement', 'contract', 'deal', 'treaty'],
-      [NounType.Regulation]: ['law', 'regulation', 'rule', 'policy'],
-      [NounType.Resource]: ['resource', 'asset', 'material', 'supply'],
-      [NounType.Dataset]: ['database', 'dataset', 'data', 'records'],
-      [NounType.Interface]: ['API', 'interface', 'endpoint', 'connection'],
-      [NounType.Thing]: ['thing', 'object', 'item', 'entity'],
-      [NounType.Content]: ['content', 'material', 'information'],
-      [NounType.Collection]: ['collection', 'group', 'set', 'list'],
-      [NounType.File]: ['file', 'document', 'archive'],
-      [NounType.State]: ['state', 'status', 'condition'],
-      [NounType.Hypothesis]: ['hypothesis', 'theory', 'assumption'],
-      [NounType.Experiment]: ['experiment', 'test', 'trial', 'study']
-    }
+    // Skip if already initialized
+    if (this.initialized) return
 
-    // PERFORMANCE OPTIMIZATION: Only initialize the types we need
-    // This is especially important for extractConcepts() which only needs Concept + Topic
-    const typesToInitialize = requestedTypes || Object.values(NounType)
+    // Load pre-computed embeddings (instant, no computation)
+    const allEmbeddings = getNounTypeEmbeddings()
 
-    // Generate embeddings only for requested types
-    for (const type of typesToInitialize) {
-      // Skip if already initialized
-      if (this.typeEmbeddings.has(type)) continue
+    // If specific types requested, only load those; otherwise load all
+    const typesToLoad = requestedTypes || Object.values(NounType)
 
-      const examples = typeExamples[type]
-      if (!examples) continue
-
-      const combinedText = examples.join(' ')
-      const embedding = await this.getEmbedding(combinedText)
-      this.typeEmbeddings.set(type, embedding)
+    for (const type of typesToLoad) {
+      const embedding = allEmbeddings.get(type)
+      if (embedding) {
+        this.typeEmbeddings.set(type, embedding)
+      }
     }
 
     // Mark as initialized if we've loaded at least some types
@@ -124,8 +89,8 @@ export class NeuralEntityExtractor {
       }
     }
   ): Promise<ExtractedEntity[]> {
-    // PERFORMANCE FIX (v3.32.5): Only initialize requested types
-    // For extractConcepts(), this reduces init from 31 types → 2 types
+    // PRODUCTION OPTIMIZATION (v3.33.0): Load pre-computed type embeddings
+    // Zero runtime cost - embeddings were computed at build time
     await this.initializeTypeEmbeddings(options?.types)
 
     // Check cache if enabled

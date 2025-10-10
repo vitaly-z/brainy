@@ -141,18 +141,18 @@ export class SmartExcelImporter {
     const opts = {
       enableNeuralExtraction: true,
       enableRelationshipInference: true,
-      // CONCEPT EXTRACTION NOW PRODUCTION-READY (v3.32.5+):
-      // Performance optimization: Only initializes needed types (Concept + Topic = 2 embeds)
-      // Previously initialized all 31 types (31 embeds) which caused apparent hangs
+      // CONCEPT EXTRACTION PRODUCTION-READY (v3.33.0+):
+      // Type embeddings are now pre-computed at build time - zero runtime cost!
+      // All 31 noun types + 40 verb types instantly available
       //
       // Performance profile:
+      // - Type embeddings: INSTANT (pre-computed at build time, ~100KB in-memory)
       // - Model loading: ~2-5 seconds (one-time, cached after first use)
-      // - Type init: 2 embeds for Concept + Topic (vs 31 previously)
       // - Per-row extraction: ~50-200ms depending on definition length
-      // - 100 rows: ~5-20 seconds total (acceptable for production)
-      // - 1000 rows: ~50-200 seconds (may want to disable for very large files)
+      // - 100 rows: ~5-20 seconds total (production ready)
+      // - 1000 rows: ~50-200 seconds (disable if needed via enableConceptExtraction: false)
       //
-      // Enabled by default for production use. Disable for files >500 rows if needed.
+      // Enabled by default for production use.
       enableConceptExtraction: true,
       confidenceThreshold: 0.6,
       termColumn: 'term|name|title|concept',

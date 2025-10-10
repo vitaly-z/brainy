@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "3.32.5",
+  "version": "3.33.0",
   "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. 31 nouns × 40 verbs for infinite expressiveness.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -55,7 +55,10 @@
     "node": "22.x"
   },
   "scripts": {
-    "build": "npm run build:patterns:if-needed && tsc && tsc -p tsconfig.cli.json",
+    "build": "npm run build:types:if-needed && npm run build:patterns:if-needed && tsc && tsc -p tsconfig.cli.json",
+    "build:types": "tsx scripts/buildTypeEmbeddings.ts",
+    "build:types:if-needed": "node scripts/check-type-embeddings.cjs || npm run build:types",
+    "build:types:force": "npm run build:types",
     "build:patterns": "tsx scripts/buildEmbeddedPatterns.ts",
     "build:patterns:if-needed": "node scripts/check-patterns.cjs || npm run build:patterns",
     "build:patterns:force": "npm run build:patterns",

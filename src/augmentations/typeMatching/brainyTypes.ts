@@ -15,6 +15,7 @@ import { NounType, VerbType } from '../../types/graphTypes.js'
 import { TransformerEmbedding } from '../../utils/embedding.js'
 import { cosineDistance } from '../../utils/distance.js'
 import { Vector } from '../../coreTypes.js'
+import { getNounTypeEmbeddings, getVerbTypeEmbeddings } from '../../neural/embeddedTypeEmbeddings.js'
 
 /**
  * Type descriptions for semantic matching
@@ -140,38 +141,45 @@ export interface TypeMatchResult {
 
 /**
  * BrainyTypes - Intelligent type detection for nouns and verbs
+ * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed type embeddings
+ * Type embeddings are loaded instantly; only input objects are embedded at runtime
  */
 export class BrainyTypes {
-  private embedder: TransformerEmbedding
+  private embedder: TransformerEmbedding  // Only for embedding input objects
   private nounEmbeddings: Map<string, Vector> = new Map()
   private verbEmbeddings: Map<string, Vector> = new Map()
   private initialized = false
   private cache: Map<string, TypeMatchResult> = new Map()
-  
+
   constructor() {
+    // Embedder only used for input objects, NOT for type embeddings
     this.embedder = new TransformerEmbedding({ verbose: false })
   }
-  
+
   /**
-   * Initialize the type matcher by generating embeddings for all types
+   * Initialize the type matcher by loading pre-computed embeddings
+   * INSTANT - type embeddings are loaded from pre-computed data
+   * Only the model for input embedding needs initialization
    */
   async init(): Promise<void> {
     if (this.initialized) return
-    
+
+    // Initialize embedder for input objects only
     await this.embedder.init()
-    
-    // Generate embeddings for noun types
-    for (const [type, description] of Object.entries(NOUN_TYPE_DESCRIPTIONS)) {
-      const embedding = await this.embedder.embed(description)
+
+    // Load pre-computed type embeddings (instant, no computation)
+    const nounEmbeddings = getNounTypeEmbeddings()
+    const verbEmbeddings = getVerbTypeEmbeddings()
+
+    // Convert NounType/VerbType keys to strings for lookup
+    for (const [type, embedding] of nounEmbeddings.entries()) {
       this.nounEmbeddings.set(type, embedding)
     }
-    
-    // Generate embeddings for verb types
-    for (const [type, description] of Object.entries(VERB_TYPE_DESCRIPTIONS)) {
-      const embedding = await this.embedder.embed(description)
+
+    for (const [type, embedding] of verbEmbeddings.entries()) {
       this.verbEmbeddings.set(type, embedding)
     }
-    
+
     this.initialized = true
   }
   
