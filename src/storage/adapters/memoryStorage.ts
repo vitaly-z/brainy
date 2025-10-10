@@ -735,4 +735,65 @@ export class MemoryStorage extends BaseStorage {
     // No persistence needed for in-memory storage
     // Counts are always accurate from the live data structures
   }
+
+  // =============================================
+  // HNSW Index Persistence (v3.35.0+)
+  // =============================================
+
+  /**
+   * Get vector for a noun
+   */
+  public async getNounVector(id: string): Promise<number[] | null> {
+    const noun = this.nouns.get(id)
+    return noun ? [...noun.vector] : null
+  }
+
+  /**
+   * Save HNSW graph data for a noun
+   */
+  public async saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void> {
+    // For memory storage, HNSW data is already in the noun object
+    // This method is a no-op since saveNoun already stores the full graph
+    // But we store it separately for consistency with other adapters
+    const path = `hnsw/${nounId}.json`
+    await this.writeObjectToPath(path, hnswData)
+  }
+
+  /**
+   * Get HNSW graph data for a noun
+   */
+  public async getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null> {
+    const path = `hnsw/${nounId}.json`
+    const data = await this.readObjectFromPath(path)
+    return data || null
+  }
+
+  /**
+   * Save HNSW system data (entry point, max level)
+   */
+  public async saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void> {
+    const path = 'system/hnsw-system.json'
+    await this.writeObjectToPath(path, systemData)
+  }
+
+  /**
+   * Get HNSW system data
+   */
+  public async getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null> {
+    const path = 'system/hnsw-system.json'
+    const data = await this.readObjectFromPath(path)
+    return data || null
+  }
 }

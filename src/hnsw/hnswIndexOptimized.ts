@@ -12,8 +12,8 @@ import {
   VectorDocument
 } from '../coreTypes.js'
 import { HNSWIndex } from './hnswIndex.js'
-import { StorageAdapter } from '../coreTypes.js'
 import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
+import type { BaseStorage } from '../storage/baseStorage.js'
 
 // Configuration for the optimized HNSW index
 export interface HNSWOptimizedConfig extends HNSWConfig {
@@ -288,32 +288,28 @@ class ProductQuantizer {
 export class HNSWIndexOptimized extends HNSWIndex {
   private optimizedConfig: HNSWOptimizedConfig
   private productQuantizer: ProductQuantizer | null = null
-  private storage: StorageAdapter | null = null
   private useDiskBasedIndex: boolean = false
   private useProductQuantization: boolean = false
   private quantizedVectors: Map<string, number[]> = new Map()
   private memoryUsage: number = 0
   private vectorCount: number = 0
-  
+
   // Thread safety for memory usage tracking
   private memoryUpdateLock: Promise<void> = Promise.resolve()
-  
+
   // Unified cache for coordinated memory management
   private unifiedCache: UnifiedCache
 
   constructor(
     config: Partial<HNSWOptimizedConfig> = {},
     distanceFunction: DistanceFunction,
-    storage: StorageAdapter | null = null
+    storage: BaseStorage | null = null
   ) {
-    // Initialize base HNSW index with standard config
-    super(config, distanceFunction)
+    // Initialize base HNSW index with standard config and storage
+    super(config, distanceFunction, { storage: storage || undefined })
 
     // Set optimized config
     this.optimizedConfig = { ...DEFAULT_OPTIMIZED_CONFIG, ...config }
-
-    // Set storage adapter
-    this.storage = storage
 
     // Initialize product quantizer if enabled
     if (this.optimizedConfig.productQuantization?.enabled) {
@@ -413,19 +409,9 @@ export class HNSWIndexOptimized extends HNSWIndex {
     }
 
     // If disk-based index is active and storage is available, store the vector
-    if (this.useDiskBasedIndex && this.storage) {
-      // Create a noun object
-      const noun: HNSWNoun = {
-        id,
-        vector,
-        connections: new Map(),
-        level: 0
-      }
-
-      // Store the noun
-      this.storage.saveNoun(noun).catch((error) => {
-        console.error(`Failed to save noun ${id} to storage:`, error)
-      })
+    if (this.useDiskBasedIndex) {
+      // Storage is handled by the base class now via HNSW persistence
+      // No additional storage needed here
     }
 
     // Add the vector to the in-memory index
@@ -474,12 +460,8 @@ export class HNSWIndexOptimized extends HNSWIndex {
       this.quantizedVectors.delete(id)
     }
 
-    // If disk-based index is active and storage is available, remove the vector from storage
-    if (this.useDiskBasedIndex && this.storage) {
-      this.storage.deleteNoun(id).catch((error) => {
-        console.error(`Failed to delete noun ${id} from storage:`, error)
-      })
-    }
+    // If disk-based index is active, removal is handled by base class
+    // No additional removal needed here
 
     // Update memory usage estimate (async operation, but don't block removal)
     this.getMemoryUsageAsync().then((currentMemoryUsage) => {
@@ -573,21 +555,7 @@ export class HNSWIndexOptimized extends HNSWIndex {
     return this.memoryUsage
   }
 
-  /**
-   * Set the storage adapter
-   * @param storage Storage adapter
-   */
-  public setStorage(storage: StorageAdapter): void {
-    this.storage = storage
-  }
-
-  /**
-   * Get the storage adapter
-   * @returns Storage adapter or null if not set
-   */
-  public getStorage(): StorageAdapter | null {
-    return this.storage
-  }
+  // Storage methods removed - now handled by base class
 
   /**
    * Set whether to use disk-based index

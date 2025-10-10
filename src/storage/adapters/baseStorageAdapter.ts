@@ -44,6 +44,31 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
   abstract getVerbMetadata(id: string): Promise<any | null>
 
+  // HNSW Index Persistence (v3.35.0+)
+  // These methods enable HNSW index rebuilding after container restarts
+
+  abstract getNounVector(id: string): Promise<number[] | null>
+
+  abstract saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void>
+
+  abstract getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null>
+
+  abstract saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void>
+
+  abstract getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null>
+
   abstract clear(): Promise<void>
 
   abstract getStorageStatus(): Promise<{

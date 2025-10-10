@@ -1752,4 +1752,133 @@ export class OPFSStorage extends BaseStorage {
       console.error('Error persisting counts to OPFS:', error)
     }
   }
+
+  // HNSW Index Persistence (v3.35.0+)
+
+  /**
+   * Get a noun's vector for HNSW rebuild
+   */
+  public async getNounVector(id: string): Promise<number[] | null> {
+    await this.ensureInitialized()
+    const noun = await this.getNoun_internal(id)
+    return noun ? noun.vector : null
+  }
+
+  /**
+   * Save HNSW graph data for a noun
+   * Storage path: nouns/hnsw/{shard}/{id}.json
+   */
+  public async saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      // Get or create the hnsw directory under nouns
+      const hnswDir = await this.nounsDir!.getDirectoryHandle('hnsw', { create: true })
+
+      // Use sharded path for HNSW data
+      const shard = getShardIdFromUuid(nounId)
+      const shardDir = await hnswDir.getDirectoryHandle(shard, { create: true })
+
+      // Create or get the file in the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${nounId}.json`, { create: true })
+
+      // Write the HNSW data to the file
+      const writable = await fileHandle.createWritable()
+      await writable.write(JSON.stringify(hnswData, null, 2))
+      await writable.close()
+    } catch (error) {
+      console.error(`Failed to save HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW graph data for a noun
+   * Storage path: nouns/hnsw/{shard}/{id}.json
+   */
+  public async getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      // Get the hnsw directory under nouns
+      const hnswDir = await this.nounsDir!.getDirectoryHandle('hnsw')
+
+      // Use sharded path for HNSW data
+      const shard = getShardIdFromUuid(nounId)
+      const shardDir = await hnswDir.getDirectoryHandle(shard)
+
+      // Get the file handle from the shard directory
+      const fileHandle = await shardDir.getFileHandle(`${nounId}.json`)
+
+      // Read the HNSW data from the file
+      const file = await fileHandle.getFile()
+      const text = await file.text()
+      return JSON.parse(text)
+    } catch (error: any) {
+      if (error.name === 'NotFoundError') {
+        return null
+      }
+
+      console.error(`Failed to get HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Save HNSW system data (entry point, max level)
+   * Storage path: index/hnsw-system.json
+   */
+  public async saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      // Create or get the file in the index directory
+      const fileHandle = await this.indexDir!.getFileHandle('hnsw-system.json', { create: true })
+
+      // Write the system data to the file
+      const writable = await fileHandle.createWritable()
+      await writable.write(JSON.stringify(systemData, null, 2))
+      await writable.close()
+    } catch (error) {
+      console.error('Failed to save HNSW system data:', error)
+      throw new Error(`Failed to save HNSW system data: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW system data (entry point, max level)
+   * Storage path: index/hnsw-system.json
+   */
+  public async getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      // Get the file handle from the index directory
+      const fileHandle = await this.indexDir!.getFileHandle('hnsw-system.json')
+
+      // Read the system data from the file
+      const file = await fileHandle.getFile()
+      const text = await file.text()
+      return JSON.parse(text)
+    } catch (error: any) {
+      if (error.name === 'NotFoundError') {
+        return null
+      }
+
+      console.error('Failed to get HNSW system data:', error)
+      throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
 }

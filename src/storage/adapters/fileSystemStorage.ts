@@ -2522,4 +2522,94 @@ export class FileSystemStorage extends BaseStorage {
       return false
     }
   }
+
+  // =============================================
+  // HNSW Index Persistence (v3.35.0+)
+  // =============================================
+
+  /**
+   * Get vector for a noun
+   */
+  public async getNounVector(id: string): Promise<number[] | null> {
+    await this.ensureInitialized()
+
+    const noun = await this.getNode(id)
+    return noun ? noun.vector : null
+  }
+
+  /**
+   * Save HNSW graph data for a noun
+   */
+  public async saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    // Use sharded path for HNSW data
+    const shard = nounId.substring(0, 2).toLowerCase()
+    const hnswDir = path.join(this.rootDir, 'entities', 'nouns', 'hnsw', shard)
+    await this.ensureDirectoryExists(hnswDir)
+
+    const filePath = path.join(hnswDir, `${nounId}.json`)
+    await fs.promises.writeFile(filePath, JSON.stringify(hnswData, null, 2))
+  }
+
+  /**
+   * Get HNSW graph data for a noun
+   */
+  public async getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null> {
+    await this.ensureInitialized()
+
+    const shard = nounId.substring(0, 2).toLowerCase()
+    const filePath = path.join(this.rootDir, 'entities', 'nouns', 'hnsw', shard, `${nounId}.json`)
+
+    try {
+      const data = await fs.promises.readFile(filePath, 'utf-8')
+      return JSON.parse(data)
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        console.error(`Error reading HNSW data for ${nounId}:`, error)
+      }
+      return null
+    }
+  }
+
+  /**
+   * Save HNSW system data (entry point, max level)
+   */
+  public async saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    const filePath = path.join(this.systemDir, 'hnsw-system.json')
+    await fs.promises.writeFile(filePath, JSON.stringify(systemData, null, 2))
+  }
+
+  /**
+   * Get HNSW system data
+   */
+  public async getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null> {
+    await this.ensureInitialized()
+
+    const filePath = path.join(this.systemDir, 'hnsw-system.json')
+
+    try {
+      const data = await fs.promises.readFile(filePath, 'utf-8')
+      return JSON.parse(data)
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        console.error('Error reading HNSW system data:', error)
+      }
+      return null
+    }
+  }
 }

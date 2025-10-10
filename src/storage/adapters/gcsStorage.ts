@@ -1547,4 +1547,120 @@ export class GcsStorage extends BaseStorage {
       this.logger.error('Error persisting counts:', error)
     }
   }
+
+  // HNSW Index Persistence (v3.35.0+)
+
+  /**
+   * Get a noun's vector for HNSW rebuild
+   */
+  public async getNounVector(id: string): Promise<number[] | null> {
+    await this.ensureInitialized()
+    const noun = await this.getNode(id)
+    return noun ? noun.vector : null
+  }
+
+  /**
+   * Save HNSW graph data for a noun
+   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   */
+  public async saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      // Use sharded path for HNSW data
+      const shard = getShardIdFromUuid(nounId)
+      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+
+      const file = this.bucket!.file(key)
+      await file.save(JSON.stringify(hnswData, null, 2), {
+        contentType: 'application/json',
+        resumable: false
+      })
+    } catch (error) {
+      this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW graph data for a noun
+   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   */
+  public async getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      const shard = getShardIdFromUuid(nounId)
+      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+
+      const file = this.bucket!.file(key)
+      const [contents] = await file.download()
+
+      return JSON.parse(contents.toString())
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null
+      }
+
+      this.logger.error(`Failed to get HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Save HNSW system data (entry point, max level)
+   * Storage path: system/hnsw-system.json
+   */
+  public async saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const key = `${this.systemPrefix}hnsw-system.json`
+
+      const file = this.bucket!.file(key)
+      await file.save(JSON.stringify(systemData, null, 2), {
+        contentType: 'application/json',
+        resumable: false
+      })
+    } catch (error) {
+      this.logger.error('Failed to save HNSW system data:', error)
+      throw new Error(`Failed to save HNSW system data: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW system data (entry point, max level)
+   * Storage path: system/hnsw-system.json
+   */
+  public async getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      const key = `${this.systemPrefix}hnsw-system.json`
+
+      const file = this.bucket!.file(key)
+      const [contents] = await file.download()
+
+      return JSON.parse(contents.toString())
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null
+      }
+
+      this.logger.error('Failed to get HNSW system data:', error)
+      throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
 }

@@ -3521,4 +3521,160 @@ export class S3CompatibleStorage extends BaseStorage {
   protected isCloudStorage(): boolean {
     return true  // S3 benefits from batching
   }
+
+  // HNSW Index Persistence (v3.35.0+)
+
+  /**
+   * Get a noun's vector for HNSW rebuild
+   */
+  public async getNounVector(id: string): Promise<number[] | null> {
+    await this.ensureInitialized()
+    const noun = await this.getNode(id)
+    return noun ? noun.vector : null
+  }
+
+  /**
+   * Save HNSW graph data for a noun
+   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   */
+  public async saveHNSWData(nounId: string, hnswData: {
+    level: number
+    connections: Record<string, string[]>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+
+      // Use sharded path for HNSW data
+      const shard = getShardIdFromUuid(nounId)
+      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+
+      await this.s3Client!.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+          Body: JSON.stringify(hnswData, null, 2),
+          ContentType: 'application/json'
+        })
+      )
+    } catch (error) {
+      this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW graph data for a noun
+   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   */
+  public async getHNSWData(nounId: string): Promise<{
+    level: number
+    connections: Record<string, string[]>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+
+      const shard = getShardIdFromUuid(nounId)
+      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+
+      const response = await this.s3Client!.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key
+        })
+      )
+
+      if (!response || !response.Body) {
+        return null
+      }
+
+      const bodyContents = await response.Body.transformToString()
+      return JSON.parse(bodyContents)
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchKey' ||
+        error.message?.includes('NoSuchKey') ||
+        error.message?.includes('not found')
+      ) {
+        return null
+      }
+
+      this.logger.error(`Failed to get HNSW data for ${nounId}:`, error)
+      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    }
+  }
+
+  /**
+   * Save HNSW system data (entry point, max level)
+   * Storage path: system/hnsw-system.json
+   */
+  public async saveHNSWSystem(systemData: {
+    entryPointId: string | null
+    maxLevel: number
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+
+      const key = `${this.systemPrefix}hnsw-system.json`
+
+      await this.s3Client!.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+          Body: JSON.stringify(systemData, null, 2),
+          ContentType: 'application/json'
+        })
+      )
+    } catch (error) {
+      this.logger.error('Failed to save HNSW system data:', error)
+      throw new Error(`Failed to save HNSW system data: ${error}`)
+    }
+  }
+
+  /**
+   * Get HNSW system data (entry point, max level)
+   * Storage path: system/hnsw-system.json
+   */
+  public async getHNSWSystem(): Promise<{
+    entryPointId: string | null
+    maxLevel: number
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+
+      const key = `${this.systemPrefix}hnsw-system.json`
+
+      const response = await this.s3Client!.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key
+        })
+      )
+
+      if (!response || !response.Body) {
+        return null
+      }
+
+      const bodyContents = await response.Body.transformToString()
+      return JSON.parse(bodyContents)
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchKey' ||
+        error.message?.includes('NoSuchKey') ||
+        error.message?.includes('not found')
+      ) {
+        return null
+      }
+
+      this.logger.error('Failed to get HNSW system data:', error)
+      throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
 }
