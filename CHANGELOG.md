@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.36.0](https://github.com/soulcraftlabs/brainy/compare/v3.35.0...v3.36.0) (2025-10-10)
+
+#### 🚀 Always-Adaptive Caching with Enhanced Monitoring
+
+**Zero Breaking Changes** - Internal optimizations with automatic performance improvements
+
+#### What's New
+
+- **Renamed API**: `getLazyModeStats()` → `getCacheStats()` (backward compatible)
+- **Enhanced Metrics**: Changed `lazyModeEnabled: boolean` → `cachingStrategy: 'preloaded' | 'on-demand'`
+- **Improved Thresholds**: Updated preloading threshold from 30% to 80% for better cache utilization
+- **Better Terminology**: Eliminated "lazy mode" concept in favor of "adaptive caching strategy"
+- **Production Monitoring**: Comprehensive diagnostics for capacity planning and tuning
+
+#### Benefits
+
+- ✅ **Clearer Semantics**: "preloaded" vs "on-demand" instead of confusing "lazy mode enabled/disabled"
+- ✅ **Better Cache Utilization**: 80% threshold maximizes memory usage before switching to on-demand
+- ✅ **Enhanced Monitoring**: `getCacheStats()` provides actionable insights for production deployments
+- ✅ **Backward Compatible**: Deprecated `lazy` option still accepted (ignored, always adaptive)
+- ✅ **Zero Config**: System automatically chooses optimal strategy based on dataset size and available memory
+
+#### API Changes
+
+```typescript
+// New API (recommended)
+const stats = brain.hnsw.getCacheStats()
+console.log(`Strategy: ${stats.cachingStrategy}`) // 'preloaded' or 'on-demand'
+console.log(`Hit Rate: ${stats.unifiedCache.hitRatePercent}%`)
+console.log(`Recommendations: ${stats.recommendations.join(', ')}`)
+
+// Old API (deprecated but still works)
+const oldStats = brain.hnsw.getLazyModeStats() // Returns same data
+```
+
+#### Documentation Updates
+
+- Added comprehensive migration guide: `docs/guides/migration-3.36.0.md`
+- Added operations guide: `docs/operations/capacity-planning.md`
+- Updated architecture docs with new terminology
+- Renamed example: `monitor-lazy-mode.ts` → `monitor-cache-performance.ts`
+
+#### Files Changed
+
+- `src/hnsw/hnswIndex.ts`: Core adaptive caching improvements
+- `src/interfaces/IIndex.ts`: Updated interface documentation
+- `docs/guides/migration-3.36.0.md`: Complete migration guide
+- `docs/operations/capacity-planning.md`: Enterprise operations guide
+- `examples/monitor-cache-performance.ts`: Production monitoring example
+- All documentation updated to reflect new terminology
+
+#### Migration
+
+**No action required!** All changes are backward compatible. Update your code to use `getCacheStats()` when convenient.
+
+---
+
 ### [3.35.0](https://github.com/soulcraftlabs/brainy/compare/v3.34.0...v3.35.0) (2025-10-10)
 
 - feat: implement HNSW index rebuild and unified index interface (6a4d1ae)
