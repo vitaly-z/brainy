@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.32.2](https://github.com/soulcraftlabs/brainy/compare/v3.32.1...v3.32.2) (2025-10-09)
+
+### 🐛 Critical Bug Fixes - Container Restart Persistence
+
+**Fixed: brain.find({ where: {...} }) returns empty array after restart**
+**Fixed: brain.init() returns 0 entities after container restart**
+
+#### Root Cause
+Count persistence was optimized to save only every 10 operations. If <10 entities were added before container restart, counts were never persisted to storage. After restart: `totalNounCount = 0`, causing empty query results.
+
+#### Impact
+Critical for serverless/containerized deployments (Cloud Run, Fargate, Lambda) where containers restart frequently. The basic write→restart→read scenario was broken.
+
+#### Changes
+- `baseStorageAdapter.ts`: Persist counts on EVERY operation (not every 10)
+  - `incrementEntityCountSafe()`: Now persists immediately
+  - `decrementEntityCountSafe()`: Now persists immediately
+  - `incrementVerbCount()`: Now persists immediately
+  - `decrementVerbCount()`: Now persists immediately
+
+- `gcsStorage.ts`: Better error handling for count initialization
+  - `initializeCounts()`: Fail loudly on network/permission errors
+  - `initializeCountsFromScan()`: Throw on scan failures instead of silent fail
+  - Added recovery logic with bucket scan fallback
+
+#### Test Scenario (Now Fixed)
+```typescript
+// Service A: Add 2 entities
+await brain.add({ data: 'Entity 1' })
+await brain.add({ data: 'Entity 2' })
+
+// Container restarts (Cloud Run, Fargate, etc.)
+
+// Service B: Query data
+const stats = await brain.getStats()
+console.log(stats.entities.total) // Was: 0 ❌ | Now: 2 ✅
+
+const results = await brain.find({ where: { status: 'active' }})
+console.log(results.length) // Was: 0 ❌ | Now: 2 ✅
+```
+
+---
+
 ## [3.31.0](https://github.com/soulcraftlabs/brainy/compare/v3.30.2...v3.31.0) (2025-10-09)
 
 ### 🐛 Critical Bug Fixes - Production-Scale Import Performance
