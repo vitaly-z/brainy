@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { Brainy } from '../../src/brainy'
+import { Brainy, VerbType } from '../../src/brainy'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
@@ -182,9 +182,9 @@ describe('HNSW Index Rebuild (Integration Tests)', () => {
       await brain1.init()
 
       const testData = createTestData(MEDIUM_DATASET_SIZE)
-      const ids = await brain1.addMany({ items: testData })
+      const result = await brain1.addMany({ items: testData })
 
-      expect(ids).toHaveLength(MEDIUM_DATASET_SIZE)
+      expect(result.successful).toHaveLength(MEDIUM_DATASET_SIZE)
       console.log(`✅ Phase 1: Added ${MEDIUM_DATASET_SIZE} entities`)
 
       // Perform multiple searches to establish baseline
@@ -257,12 +257,12 @@ describe('HNSW Index Rebuild (Integration Tests)', () => {
       const addStart = Date.now()
 
       const testData = createTestData(LARGE_DATASET_SIZE)
-      const ids = await brain1.addMany({ items: testData })
+      const result = await brain1.addMany({ items: testData })
 
       const addDuration = Date.now() - addStart
       console.log(`✅ Added ${LARGE_DATASET_SIZE} entities in ${addDuration}ms`)
 
-      expect(ids).toHaveLength(LARGE_DATASET_SIZE)
+      expect(result.successful).toHaveLength(LARGE_DATASET_SIZE)
 
       // Test search before rebuild
       const queryBefore = await brain1.find({
@@ -326,9 +326,9 @@ describe('HNSW Index Rebuild (Integration Tests)', () => {
       await brain1.init()
 
       const testData = createTestData(50)
-      const ids = await brain1.addMany({ items: testData })
+      const result = await brain1.addMany({ items: testData })
 
-      expect(ids).toHaveLength(50)
+      expect(result.successful).toHaveLength(50)
 
       // Perform search
       const queryResults = await brain1.find({
@@ -400,13 +400,13 @@ describe('HNSW Index Rebuild (Integration Tests)', () => {
       await brain1.relate({
         from: alice,
         to: project,
-        type: 'worksOn'
+        type: VerbType.WorksWith
       })
 
       await brain1.relate({
         from: bob,
         to: project,
-        type: 'worksOn'
+        type: VerbType.WorksWith
       })
 
       console.log('✅ Phase 1: Created entities and relationships')
