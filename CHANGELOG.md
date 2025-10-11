@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.37.2](https://github.com/soulcraftlabs/brainy/compare/v3.37.1...v3.37.2) (2025-10-10)
+
+- fix: ensure GCS storage initialization before pagination (2565685)
+
+
 ### [3.37.1](https://github.com/soulcraftlabs/brainy/compare/v3.37.0...v3.37.1) (2025-10-10)
 
 
