@@ -1019,6 +1019,8 @@ export class GcsStorage extends BaseStorage {
     hasMore: boolean
     nextCursor?: string
   }> {
+    await this.ensureInitialized()  // CRITICAL: Must initialize before using this.bucket
+
     const limit = options.limit || 100
     const useCache = options.useCache !== false
 
