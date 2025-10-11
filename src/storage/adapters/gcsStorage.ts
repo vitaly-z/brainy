@@ -524,14 +524,22 @@ export class GcsStorage extends BaseStorage {
       const key = this.getNounKey(id)
 
       // DIAGNOSTIC LOGGING: Show exact path being accessed
-      this.logger.trace(`Computed GCS key: ${key}`)
+      prodLog.info(`[getNode] 🔍 Attempting to load:`)
+      prodLog.info(`[getNode]   UUID: ${id}`)
+      prodLog.info(`[getNode]   Path: ${key}`)
+      prodLog.info(`[getNode]   Bucket: ${this.bucketName}`)
 
       // Download from GCS
       const file = this.bucket!.file(key)
+
+      prodLog.info(`[getNode] 📥 Downloading file...`)
       const [contents] = await file.download()
+      prodLog.info(`[getNode] ✅ Download successful: ${contents.length} bytes`)
 
       // Parse JSON
+      prodLog.info(`[getNode] 🔧 Parsing JSON...`)
       const data = JSON.parse(contents.toString())
+      prodLog.info(`[getNode] ✅ JSON parsed successfully, id: ${data.id}`)
 
       // Convert serialized connections back to Map<number, Set<string>>
       const connections = new Map<number, Set<string>>()
@@ -558,23 +566,32 @@ export class GcsStorage extends BaseStorage {
     } catch (error: any) {
       this.releaseBackpressure(false, requestId)
 
+      // DIAGNOSTIC LOGGING: Log EVERY error before any conditional checks
+      const key = this.getNounKey(id)
+      prodLog.error(`[getNode] ❌ EXCEPTION CAUGHT:`)
+      prodLog.error(`[getNode]   UUID: ${id}`)
+      prodLog.error(`[getNode]   Path: ${key}`)
+      prodLog.error(`[getNode]   Bucket: ${this.bucketName}`)
+      prodLog.error(`[getNode]   Error type: ${error?.constructor?.name || typeof error}`)
+      prodLog.error(`[getNode]   Error code: ${JSON.stringify(error?.code)}`)
+      prodLog.error(`[getNode]   Error message: ${error?.message || String(error)}`)
+      prodLog.error(`[getNode]   Error object:`, JSON.stringify(error, null, 2))
+
       // Check if this is a "not found" error
       if (error.code === 404) {
-        // DIAGNOSTIC LOGGING: Upgrade 404 errors to WARN level with full details
-        const key = this.getNounKey(id)
-        prodLog.warn(`[getNode] ❌ 404 NOT FOUND: File does not exist at GCS path: ${key}`)
-        prodLog.warn(`[getNode] UUID: ${id}`)
-        prodLog.warn(`[getNode] Bucket: ${this.bucketName}`)
-        prodLog.warn(`[getNode] This suggests a path mismatch or the file was not written correctly`)
+        prodLog.warn(`[getNode] Identified as 404 error - returning null`)
         return null
       }
 
       // Handle throttling
       if (this.isThrottlingError(error)) {
+        prodLog.warn(`[getNode] Identified as throttling error - rethrowing`)
         await this.handleThrottling(error)
         throw error
       }
 
+      // All other errors should throw, not return null
+      prodLog.error(`[getNode] Unhandled error - rethrowing`)
       this.logger.error(`Failed to get node ${id}:`, error)
       throw BrainyError.fromError(error, `getNoun(${id})`)
     }

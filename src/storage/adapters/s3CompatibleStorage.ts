@@ -1079,9 +1079,15 @@ export class S3CompatibleStorage extends BaseStorage {
 
       // Use getNounKey() to properly handle sharding
       const key = this.getNounKey(id)
-      this.logger.trace(`Getting node ${id} from key: ${key}`)
+
+      // DIAGNOSTIC LOGGING: Show exact path being accessed
+      prodLog.info(`[getNode] 🔍 Attempting to load:`)
+      prodLog.info(`[getNode]   UUID: ${id}`)
+      prodLog.info(`[getNode]   Path: ${key}`)
+      prodLog.info(`[getNode]   Bucket: ${this.bucketName}`)
 
       // Try to get the node from the nouns directory
+      prodLog.info(`[getNode] 📥 Downloading file...`)
       const response = await this.s3Client!.send(
         new GetObjectCommand({
           Bucket: this.bucketName,
@@ -1091,53 +1097,79 @@ export class S3CompatibleStorage extends BaseStorage {
 
       // Check if response is null or undefined
       if (!response || !response.Body) {
-        this.logger.trace(`No node found for ${id}`)
+        prodLog.warn(`[getNode] ❌ Response or Body is null/undefined`)
         return null
       }
 
       // Convert the response body to a string
       const bodyContents = await response.Body.transformToString()
-      this.logger.trace(`Retrieved node body for ${id}`)
+      prodLog.info(`[getNode] ✅ Download successful: ${bodyContents.length} bytes`)
 
       // Parse the JSON string
-      try {
-        const parsedNode = JSON.parse(bodyContents)
-        this.logger.trace(`Parsed node data for ${id}`)
+      prodLog.info(`[getNode] 🔧 Parsing JSON...`)
+      const parsedNode = JSON.parse(bodyContents)
+      prodLog.info(`[getNode] ✅ JSON parsed successfully, id: ${parsedNode.id}`)
 
-        // Ensure the parsed node has the expected properties
-        if (
-          !parsedNode ||
-          !parsedNode.id ||
-          !parsedNode.vector ||
-          !parsedNode.connections
-        ) {
-          this.logger.warn(`Invalid node data for ${id}`)
-          return null
-        }
-
-        // Convert serialized connections back to Map<number, Set<string>>
-        const connections = new Map<number, Set<string>>()
-        for (const [level, nodeIds] of Object.entries(parsedNode.connections)) {
-          connections.set(Number(level), new Set(nodeIds as string[]))
-        }
-
-        const node = {
-          id: parsedNode.id,
-          vector: parsedNode.vector,
-          connections,
-          level: parsedNode.level || 0
-        }
-
-        this.logger.trace(`Successfully retrieved node ${id}`)
-        return node
-      } catch (parseError) {
-        this.logger.error(`Failed to parse node data for ${id}:`, parseError)
+      // Ensure the parsed node has the expected properties
+      if (
+        !parsedNode ||
+        !parsedNode.id ||
+        !parsedNode.vector ||
+        !parsedNode.connections
+      ) {
+        prodLog.error(`[getNode] ❌ Invalid node data structure for ${id}`)
+        prodLog.error(`[getNode]   Has id: ${!!parsedNode?.id}`)
+        prodLog.error(`[getNode]   Has vector: ${!!parsedNode?.vector}`)
+        prodLog.error(`[getNode]   Has connections: ${!!parsedNode?.connections}`)
         return null
       }
-    } catch (error) {
-      // Node not found or other error
-      this.logger.trace(`Node not found for ${id}`)
-      return null
+
+      // Convert serialized connections back to Map<number, Set<string>>
+      const connections = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(parsedNode.connections)) {
+        connections.set(Number(level), new Set(nodeIds as string[]))
+      }
+
+      const node = {
+        id: parsedNode.id,
+        vector: parsedNode.vector,
+        connections,
+        level: parsedNode.level || 0
+      }
+
+      this.logger.trace(`Successfully retrieved node ${id}`)
+      return node
+    } catch (error: any) {
+      // DIAGNOSTIC LOGGING: Log EVERY error before any conditional checks
+      const key = this.getNounKey(id)
+      prodLog.error(`[getNode] ❌ EXCEPTION CAUGHT:`)
+      prodLog.error(`[getNode]   UUID: ${id}`)
+      prodLog.error(`[getNode]   Path: ${key}`)
+      prodLog.error(`[getNode]   Bucket: ${this.bucketName}`)
+      prodLog.error(`[getNode]   Error type: ${error?.constructor?.name || typeof error}`)
+      prodLog.error(`[getNode]   Error name: ${error?.name}`)
+      prodLog.error(`[getNode]   Error code: ${JSON.stringify(error?.Code || error?.code)}`)
+      prodLog.error(`[getNode]   Error message: ${error?.message || String(error)}`)
+      prodLog.error(`[getNode]   HTTP status: ${error?.$metadata?.httpStatusCode}`)
+      prodLog.error(`[getNode]   Error object:`, JSON.stringify(error, null, 2))
+
+      // Check if this is a "not found" error (S3 uses "NoSuchKey")
+      if (error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
+        prodLog.warn(`[getNode] Identified as 404/NoSuchKey error - returning null`)
+        return null
+      }
+
+      // Handle throttling
+      if (this.isThrottlingError(error)) {
+        prodLog.warn(`[getNode] Identified as throttling error - rethrowing`)
+        await this.handleThrottling(error)
+        throw error
+      }
+
+      // All other errors should throw, not return null
+      prodLog.error(`[getNode] Unhandled error - rethrowing`)
+      this.logger.error(`Failed to get node ${id}:`, error)
+      throw BrainyError.fromError(error, `getNoun(${id})`)
     }
   }
 
