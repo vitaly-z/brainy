@@ -523,6 +523,9 @@ export class GcsStorage extends BaseStorage {
       // Get the GCS key with UUID-based sharding
       const key = this.getNounKey(id)
 
+      // DIAGNOSTIC LOGGING: Show exact path being accessed
+      this.logger.trace(`Computed GCS key: ${key}`)
+
       // Download from GCS
       const file = this.bucket!.file(key)
       const [contents] = await file.download()
@@ -557,7 +560,12 @@ export class GcsStorage extends BaseStorage {
 
       // Check if this is a "not found" error
       if (error.code === 404) {
-        this.logger.trace(`Node not found: ${id}`)
+        // DIAGNOSTIC LOGGING: Upgrade 404 errors to WARN level with full details
+        const key = this.getNounKey(id)
+        prodLog.warn(`[getNode] ❌ 404 NOT FOUND: File does not exist at GCS path: ${key}`)
+        prodLog.warn(`[getNode] UUID: ${id}`)
+        prodLog.warn(`[getNode] Bucket: ${this.bucketName}`)
+        prodLog.warn(`[getNode] This suggests a path mismatch or the file was not written correctly`)
         return null
       }
 
@@ -1024,6 +1032,14 @@ export class GcsStorage extends BaseStorage {
     const limit = options.limit || 100
     const useCache = options.useCache !== false
 
+    // DIAGNOSTIC LOGGING: Track pagination performance
+    prodLog.info(`[getNodesWithPagination] Starting pagination: limit=${limit}, cursor=${options.cursor || 'none'}`)
+    const startTime = Date.now()
+    let shardsChecked = 0
+    let filesFound = 0
+    let nodesLoaded = 0
+    let nodesFailed = 0
+
     try {
       const nodes: HNSWNode[] = []
 
@@ -1040,6 +1056,7 @@ export class GcsStorage extends BaseStorage {
       for (let shardIndex = startShardIndex; shardIndex < TOTAL_SHARDS; shardIndex++) {
         const shardId = getShardIdByIndex(shardIndex)
         const shardPrefix = `${this.nounPrefix}${shardId}/`
+        shardsChecked++
 
         // List objects in this shard
         // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
@@ -1051,6 +1068,13 @@ export class GcsStorage extends BaseStorage {
           maxResults: cappedPageSize,
           pageToken: shardIndex === startShardIndex ? gcsPageToken : undefined
         })
+
+        // DIAGNOSTIC LOGGING: Show files found per shard (only log non-empty shards)
+        if (files && files.length > 0) {
+          filesFound += files.length
+          prodLog.info(`[Shard ${shardId}] Found ${files.length} files in "${shardPrefix}"`)
+          prodLog.info(`[Shard ${shardId}] Sample file names: ${files.slice(0, 3).map((f: any) => f.name).join(', ')}`)
+        }
 
         // Extract node IDs from file names
         if (files && files.length > 0) {
@@ -1069,11 +1093,22 @@ export class GcsStorage extends BaseStorage {
             })
             .filter((id: string) => id && id.length > 0)
 
+          // DIAGNOSTIC LOGGING: Show extracted UUIDs
+          prodLog.info(`[Shard ${shardId}] Extracted ${nodeIds.length} UUIDs: ${nodeIds.slice(0, 3).join(', ')}...`)
+
           // Load nodes
           for (const id of nodeIds) {
+            // DIAGNOSTIC LOGGING: Show each getNode() attempt
+            prodLog.info(`[Shard ${shardId}] Calling getNode("${id}")...`)
             const node = await this.getNode(id)
+
             if (node) {
               nodes.push(node)
+              nodesLoaded++
+              prodLog.info(`[Shard ${shardId}] ✅ Successfully loaded node ${id}`)
+            } else {
+              nodesFailed++
+              prodLog.warn(`[Shard ${shardId}] ❌ getNode("${id}") returned null!`)
             }
 
             if (nodes.length >= limit) {
@@ -1112,6 +1147,15 @@ export class GcsStorage extends BaseStorage {
       }
 
       // No more shards or nodes
+      // DIAGNOSTIC LOGGING: Final summary
+      const elapsedTime = Date.now() - startTime
+      prodLog.info(`[getNodesWithPagination] COMPLETED in ${elapsedTime}ms:`)
+      prodLog.info(`  - Shards checked: ${shardsChecked}/${TOTAL_SHARDS}`)
+      prodLog.info(`  - Files found: ${filesFound}`)
+      prodLog.info(`  - Nodes loaded: ${nodesLoaded}`)
+      prodLog.info(`  - Nodes failed: ${nodesFailed}`)
+      prodLog.info(`  - Success rate: ${filesFound > 0 ? ((nodesLoaded / filesFound) * 100).toFixed(1) : 'N/A'}%`)
+
       return {
         nodes,
         totalCount: this.totalNounCount,
