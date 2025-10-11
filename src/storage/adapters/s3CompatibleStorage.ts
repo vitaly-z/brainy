@@ -2742,13 +2742,17 @@ export class S3CompatibleStorage extends BaseStorage {
         verbCount: { ...this.statisticsCache.verbCount },
         metadataCount: { ...this.statisticsCache.metadataCount },
         hnswIndexSize: this.statisticsCache.hnswIndexSize,
+        // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+        // HNSW rebuild depends on these fields to determine entity count
+        totalNodes: this.totalNounCount,
+        totalEdges: this.totalVerbCount,
         lastUpdated: this.statisticsCache.lastUpdated
       }
     }
 
     try {
       // Fetching fresh statistics from storage
-      
+
       // Import the GetObjectCommand only when needed
       const { GetObjectCommand } = await import('@aws-sdk/client-s3')
 
@@ -2760,15 +2764,15 @@ export class S3CompatibleStorage extends BaseStorage {
         ...(this.shouldTryYesterday() ? [this.getStatisticsKeyForDate(this.getYesterday())] : [])
         // Legacy fallback removed - /index folder is auto-cleaned on initialization
       ]
-      
+
       let statistics: StatisticsData | null = null
-      
+
       // Try each key with a timeout to prevent hanging
       for (const key of keys) {
         try {
           statistics = await Promise.race([
             this.tryGetStatisticsFromKey(key),
-            new Promise<null>((_, reject) => 
+            new Promise<null>((_, reject) =>
               setTimeout(() => reject(new Error('Timeout')), 2000) // 2 second timeout per key
             )
           ])
@@ -2789,15 +2793,31 @@ export class S3CompatibleStorage extends BaseStorage {
           hnswIndexSize: statistics.hnswIndexSize,
           lastUpdated: statistics.lastUpdated
         }
+
+        // CRITICAL FIX: Add totalNodes and totalEdges from in-memory counts
+        // HNSW rebuild depends on these fields to determine entity count
+        return {
+          ...statistics,
+          totalNodes: this.totalNounCount,
+          totalEdges: this.totalVerbCount
+        }
       }
 
       // Successfully loaded statistics from storage
-      
+
       return statistics
     } catch (error: any) {
       this.logger.warn('Error getting statistics data, returning cached or null:', error)
       // Return cached data if available, even if stale, rather than throwing
-      return this.statisticsCache || null
+      // CRITICAL FIX: Add totalNodes and totalEdges when returning cached data
+      if (this.statisticsCache) {
+        return {
+          ...this.statisticsCache,
+          totalNodes: this.totalNounCount,
+          totalEdges: this.totalVerbCount
+        }
+      }
+      return null
     }
   }
 

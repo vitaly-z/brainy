@@ -691,6 +691,10 @@ export class MemoryStorage extends BaseStorage {
       verbCount: {...this.statistics.verbCount},
       metadataCount: {...this.statistics.metadataCount},
       hnswIndexSize: this.statistics.hnswIndexSize,
+      // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+      // HNSW rebuild depends on these fields to determine entity count
+      totalNodes: this.totalNounCount,
+      totalEdges: this.totalVerbCount,
       lastUpdated: this.statistics.lastUpdated,
       // Include serviceActivity if present
       ...(this.statistics.serviceActivity && {
@@ -703,11 +707,11 @@ export class MemoryStorage extends BaseStorage {
         services: this.statistics.services.map(s => ({...s}))
       }),
       // Include distributedConfig if present
-      ...(this.statistics.distributedConfig && { 
-        distributedConfig: JSON.parse(JSON.stringify(this.statistics.distributedConfig)) 
+      ...(this.statistics.distributedConfig && {
+        distributedConfig: JSON.parse(JSON.stringify(this.statistics.distributedConfig))
       })
     }
-    
+
     // Since this is in-memory, there's no need for fallback mechanisms
     // to check multiple storage locations
   }

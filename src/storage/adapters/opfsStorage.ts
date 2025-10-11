@@ -1346,6 +1346,10 @@ export class OPFSStorage extends BaseStorage {
         verbCount: { ...this.statistics.verbCount },
         metadataCount: { ...this.statistics.metadataCount },
         hnswIndexSize: this.statistics.hnswIndexSize,
+        // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+        // HNSW rebuild depends on these fields to determine entity count
+        totalNodes: this.totalNounCount,
+        totalEdges: this.totalVerbCount,
         lastUpdated: this.statistics.lastUpdated
       }
     }
@@ -1374,6 +1378,10 @@ export class OPFSStorage extends BaseStorage {
             verbCount: { ...this.statistics.verbCount },
             metadataCount: { ...this.statistics.metadataCount },
             hnswIndexSize: this.statistics.hnswIndexSize,
+            // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+            // HNSW rebuild depends on these fields to determine entity count
+            totalNodes: this.totalNounCount,
+            totalEdges: this.totalVerbCount,
             lastUpdated: this.statistics.lastUpdated
           }
         }
@@ -1397,6 +1405,10 @@ export class OPFSStorage extends BaseStorage {
               verbCount: { ...this.statistics.verbCount },
               metadataCount: { ...this.statistics.metadataCount },
               hnswIndexSize: this.statistics.hnswIndexSize,
+              // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+              // HNSW rebuild depends on these fields to determine entity count
+              totalNodes: this.totalNounCount,
+              totalEdges: this.totalVerbCount,
               lastUpdated: this.statistics.lastUpdated
             }
           }
@@ -1418,6 +1430,10 @@ export class OPFSStorage extends BaseStorage {
                 verbCount: { ...this.statistics.verbCount },
                 metadataCount: { ...this.statistics.metadataCount },
                 hnswIndexSize: this.statistics.hnswIndexSize,
+                // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+                // HNSW rebuild depends on these fields to determine entity count
+                totalNodes: this.totalNounCount,
+                totalEdges: this.totalVerbCount,
                 lastUpdated: this.statistics.lastUpdated
               }
             }

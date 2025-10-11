@@ -1532,7 +1532,15 @@ export class GcsStorage extends BaseStorage {
       const statistics = JSON.parse(contents.toString())
 
       this.logger.trace('Statistics retrieved successfully')
-      return statistics
+
+      // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
+      // HNSW rebuild depends on these fields to determine entity count
+      return {
+        ...statistics,
+        totalNodes: this.totalNounCount,
+        totalEdges: this.totalVerbCount,
+        lastUpdated: new Date().toISOString()
+      }
     } catch (error: any) {
       if (error.code === 404) {
         this.logger.trace('Statistics not found (creating new)')
