@@ -1543,8 +1543,20 @@ export class GcsStorage extends BaseStorage {
       }
     } catch (error: any) {
       if (error.code === 404) {
-        this.logger.trace('Statistics not found (creating new)')
-        return null
+        // CRITICAL FIX (v3.37.4): Statistics file doesn't exist yet (first restart)
+        // Return minimal stats with counts instead of null
+        // This prevents HNSW from seeing entityCount=0 during index rebuild
+        this.logger.trace('Statistics file not found - returning minimal stats with counts')
+        return {
+          nounCount: {},
+          verbCount: {},
+          metadataCount: {},
+          hnswIndexSize: 0,
+          totalNodes: this.totalNounCount,
+          totalEdges: this.totalVerbCount,
+          totalMetadata: 0,
+          lastUpdated: new Date().toISOString()
+        }
       }
 
       this.logger.error('Failed to get statistics:', error)

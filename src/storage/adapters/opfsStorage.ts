@@ -1438,14 +1438,38 @@ export class OPFSStorage extends BaseStorage {
               }
             }
           } catch (error) {
-            // If the legacy file doesn't exist either, return null
-            return null
+            // CRITICAL FIX (v3.37.4): No statistics files exist (first init)
+            // Return minimal stats with counts instead of null
+            // This prevents HNSW from seeing entityCount=0 during index rebuild
+            return {
+              nounCount: {},
+              verbCount: {},
+              metadataCount: {},
+              hnswIndexSize: 0,
+              totalNodes: this.totalNounCount,
+              totalEdges: this.totalVerbCount,
+              totalMetadata: 0,
+              lastUpdated: new Date().toISOString()
+            }
           }
         }
       }
 
-      // If we get here and statistics is null, return default statistics
-      return this.statistics ? this.statistics : null
+      // If we get here and statistics is null, return minimal stats with counts
+      if (!this.statistics) {
+        return {
+          nounCount: {},
+          verbCount: {},
+          metadataCount: {},
+          hnswIndexSize: 0,
+          totalNodes: this.totalNounCount,
+          totalEdges: this.totalVerbCount,
+          totalMetadata: 0,
+          lastUpdated: new Date().toISOString()
+        }
+      }
+
+      return this.statistics
     } catch (error) {
       console.error('Failed to get statistics data:', error)
       throw new Error(`Failed to get statistics data: ${error}`)

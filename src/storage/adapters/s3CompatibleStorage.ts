@@ -2803,6 +2803,20 @@ export class S3CompatibleStorage extends BaseStorage {
         }
       }
 
+      // If we get here and statistics is null, return minimal stats with counts
+      if (!statistics) {
+        return {
+          nounCount: {},
+          verbCount: {},
+          metadataCount: {},
+          hnswIndexSize: 0,
+          totalNodes: this.totalNounCount,
+          totalEdges: this.totalVerbCount,
+          totalMetadata: 0,
+          lastUpdated: new Date().toISOString()
+        }
+      }
+
       // Successfully loaded statistics from storage
 
       return statistics
@@ -2817,7 +2831,19 @@ export class S3CompatibleStorage extends BaseStorage {
           totalEdges: this.totalVerbCount
         }
       }
-      return null
+      // CRITICAL FIX (v3.37.4): Statistics file doesn't exist yet (first restart)
+      // Return minimal stats with counts instead of null
+      // This prevents HNSW from seeing entityCount=0 during index rebuild
+      return {
+        nounCount: {},
+        verbCount: {},
+        metadataCount: {},
+        hnswIndexSize: 0,
+        totalNodes: this.totalNounCount,
+        totalEdges: this.totalVerbCount,
+        totalMetadata: 0,
+        lastUpdated: new Date().toISOString()
+      }
     }
   }
 

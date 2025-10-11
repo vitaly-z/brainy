@@ -1641,13 +1641,17 @@ export class FileSystemStorage extends BaseStorage {
   ): StatisticsData {
     // Handle null cases
     if (!storageStats && !localStats) {
+      // CRITICAL FIX (v3.37.4): Statistics files don't exist yet (first init)
+      // Return minimal stats with counts instead of zeros
+      // This prevents HNSW from seeing entityCount=0 during index rebuild
       return {
         nounCount: {},
         verbCount: {},
         metadataCount: {},
         hnswIndexSize: 0,
-        totalNodes: 0,
-        totalEdges: 0,
+        totalNodes: this.totalNounCount,
+        totalEdges: this.totalVerbCount,
+        totalMetadata: 0,
         lastUpdated: new Date().toISOString()
       }
     }
