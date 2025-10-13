@@ -6,9 +6,8 @@ Brainy is a multi-dimensional AI database that combines vector similarity, graph
 
 ### Brainy (Main Entry Point)
 The central orchestrator that manages all subsystems:
-- **HNSW Index**: O(log n) vector similarity search
+- **4-Index Architecture**: MetadataIndex, HNSWIndex, GraphAdjacencyIndex, DeletedItemsIndex (see [Index Architecture](./index-architecture.md))
 - **Storage System**: Universal storage adapters (FileSystem, S3, OPFS, Memory)
-- **Metadata Index**: O(1) field lookups with inverted indexing
 - **Augmentation System**: Extensible plugin architecture
 - **Triple Intelligence**: Unified query engine
 
@@ -114,8 +113,11 @@ Multi-layered caching for optimal performance:
 ### Key Objects for Extensions
 - `brain.index`: Access HNSW vector index
 - `brain.metadataIndex`: Access field indexing
+- `brain.graphIndex`: Access graph adjacency index
 - `brain.storage`: Access storage layer
 - `brain.augmentations`: Access augmentation manager
+
+For detailed information about each index, see [Index Architecture](./index-architecture.md).
 
 ### Event System
 ```typescript
@@ -142,6 +144,7 @@ brain.on('error', (error) => console.error('Error:', error))
 
 ## Next Steps
 
+- [Index Architecture](./index-architecture.md) - Deep dive into the 4-index system
 - [Storage Architecture](./storage-architecture.md) - Deep dive into storage system
 - [Triple Intelligence](./triple-intelligence.md) - Advanced query system
 - [API Reference](../api/README.md) - Complete API documentation
