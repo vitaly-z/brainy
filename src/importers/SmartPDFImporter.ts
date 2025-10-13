@@ -39,12 +39,18 @@ export interface SmartPDFOptions extends FormatHandlerOptions {
   /** Group by page or full document */
   groupBy?: 'page' | 'document'
 
-  /** Progress callback */
+  /** Progress callback (v3.39.0: Enhanced with performance metrics) */
   onProgress?: (stats: {
     processed: number
     total: number
     entities: number
     relationships: number
+    /** Sections per second (v3.39.0) */
+    throughput?: number
+    /** Estimated time remaining in ms (v3.39.0) */
+    eta?: number
+    /** Current phase (v3.39.0) */
+    phase?: string
   }) => void
 }
 
@@ -183,7 +189,7 @@ export class SmartPDFImporter {
     // Group data by page or combine into single document
     const grouped = this.groupData(data, opts)
 
-    // Process each group
+    // Process each group with BATCHED PARALLEL PROCESSING (v3.39.0)
     const sections: ExtractedSection[] = []
     const entityMap = new Map<string, string>()
     const stats = {
@@ -192,20 +198,44 @@ export class SmartPDFImporter {
       bySource: { paragraphs: 0, tables: 0 }
     }
 
-    let processedCount = 0
+    // Batch processing configuration
+    const CHUNK_SIZE = 5 // Process 5 sections at a time (smaller than rows due to section size)
+    let totalProcessed = 0
+    const performanceStartTime = Date.now()
     const totalGroups = grouped.length
 
-    for (const group of grouped) {
-      const sectionResult = await this.processSection(group, opts, stats, entityMap)
-      sections.push(sectionResult)
+    // Process sections in chunks
+    for (let chunkStart = 0; chunkStart < grouped.length; chunkStart += CHUNK_SIZE) {
+      const chunk = grouped.slice(chunkStart, Math.min(chunkStart + CHUNK_SIZE, grouped.length))
 
-      processedCount++
+      // Process chunk in parallel for better performance
+      const chunkResults = await Promise.all(
+        chunk.map(group => this.processSection(group, opts, stats, entityMap))
+      )
+
+      // Add results sequentially to maintain order
+      sections.push(...chunkResults)
+
+      // Update progress tracking
+      totalProcessed += chunk.length
+
+      // Calculate performance metrics
+      const elapsed = Date.now() - performanceStartTime
+      const sectionsPerSecond = totalProcessed / (elapsed / 1000)
+      const remainingSections = grouped.length - totalProcessed
+      const estimatedTimeRemaining = remainingSections / sectionsPerSecond
+
+      // Report progress with enhanced metrics
       opts.onProgress({
-        processed: processedCount,
+        processed: totalProcessed,
         total: totalGroups,
         entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
-        relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0)
-      })
+        relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0),
+        // Additional performance metrics (v3.39.0)
+        throughput: Math.round(sectionsPerSecond * 10) / 10,
+        eta: Math.round(estimatedTimeRemaining),
+        phase: 'extracting'
+      } as any)
     }
 
     const pagesProcessed = new Set(data.map(d => d._page)).size
@@ -298,25 +328,22 @@ export class SmartPDFImporter {
 
     const combinedText = texts.join('\n\n')
 
-    // Extract entities if enabled
-    let extractedEntities: ExtractedEntity[] = []
-    if (options.enableNeuralExtraction && combinedText.length > 0) {
-      extractedEntities = await this.extractor.extract(combinedText, {
-        confidence: options.confidenceThreshold || 0.6,
-        neuralMatching: true,
-        cache: { enabled: true }
-      })
-    }
+    // Parallel extraction: entities AND concepts at the same time (v3.39.0)
+    const [extractedEntities, concepts] = await Promise.all([
+      // Extract entities if enabled
+      options.enableNeuralExtraction && combinedText.length > 0
+        ? this.extractor.extract(combinedText, {
+            confidence: options.confidenceThreshold || 0.6,
+            neuralMatching: true,
+            cache: { enabled: true }
+          })
+        : Promise.resolve([]),
 
-    // Extract concepts if enabled
-    let concepts: string[] = []
-    if (options.enableConceptExtraction && combinedText.length > 0) {
-      try {
-        concepts = await this.brain.extractConcepts(combinedText, { limit: 15 })
-      } catch (error) {
-        concepts = []
-      }
-    }
+      // Extract concepts (in parallel with entity extraction)
+      options.enableConceptExtraction && combinedText.length > 0
+        ? this.brain.extractConcepts(combinedText, { limit: 15 }).catch(() => [])
+        : Promise.resolve([])
+    ])
 
     // Create entity objects
     const entities = extractedEntities.map(e => {
