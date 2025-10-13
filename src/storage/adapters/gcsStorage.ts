@@ -466,9 +466,8 @@ export class GcsStorage extends BaseStorage {
       // This prevents cache pollution from HNSW's lazy-loading nodes (vector: [])
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
-      } else {
-        prodLog.warn(`[saveNode] Not caching node ${node.id.substring(0, 8)}... with empty vector (HNSW lazy mode)`)
       }
+      // Note: Empty vectors are intentional during HNSW lazy mode - not logged
 
       // Increment noun count
       const metadata = await this.getNounMetadata(node.id)
@@ -519,53 +518,29 @@ export class GcsStorage extends BaseStorage {
   protected async getNode(id: string): Promise<HNSWNode | null> {
     await this.ensureInitialized()
 
-    // Check cache first WITH LOGGING
+    // Check cache first
     const cached: HNSWNode | null = await this.nounCacheManager.get(id)
 
-    // DIAGNOSTIC LOGGING: Reveal cache poisoning
-    prodLog.info(`[getNode] 🔍 Cache check for ${id.substring(0, 8)}...:`, {
-      hasCached: cached !== undefined,
-      isNull: cached === null,
-      isObject: cached !== null && typeof cached === 'object',
-      type: typeof cached
-    })
-
-    // CRITICAL FIX (v3.37.8): Validate cached object before returning
+    // Validate cached object before returning (v3.37.8+)
     if (cached !== undefined && cached !== null) {
-      // Log cached object structure to diagnose incomplete objects
-      prodLog.info(`[getNode] Cached object structure:`, {
-        hasId: !!cached.id,
-        idMatches: cached.id === id,
-        hasVector: !!cached.vector,
-        vectorLength: cached.vector?.length,
-        hasConnections: !!cached.connections,
-        connectionsType: typeof cached.connections,
-        hasLevel: cached.level !== undefined,
-        level: cached.level,
-        objectKeys: Object.keys(cached || {})
-      })
-
       // Validate cached object has required fields (including non-empty vector!)
       if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
-        prodLog.error(`[getNode] ❌ INVALID cached object for ${id.substring(0, 8)}...:`, {
-          reason: !cached.id ? 'missing id' :
-                  !cached.vector ? 'missing vector' :
-                  !Array.isArray(cached.vector) ? 'vector not array' :
-                  cached.vector.length === 0 ? 'vector is empty array' :
-                  'unknown'
-        })
-        prodLog.error(`[getNode] Removing invalid object from cache and loading from GCS`)
+        // Invalid cache detected - log and auto-recover
+        prodLog.warn(`[GCS] Invalid cached object for ${id.substring(0, 8)} (${
+          !cached.id ? 'missing id' :
+          !cached.vector ? 'missing vector' :
+          !Array.isArray(cached.vector) ? 'vector not array' :
+          'empty vector'
+        }) - removing from cache and reloading`)
         this.nounCacheManager.delete(id)
         // Fall through to load from GCS
       } else {
-        prodLog.info(`[getNode] ✅ Valid cached object - returning`)
+        // Valid cache hit
         this.logger.trace(`Cache hit for noun ${id}`)
         return cached
       }
     } else if (cached === null) {
-      prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from GCS`)
-    } else {
-      prodLog.info(`[getNode] ❌ Cache MISS - loading from GCS for ${id.substring(0, 8)}...`)
+      prodLog.warn(`[GCS] Cache contains null for ${id.substring(0, 8)} - reloading from storage`)
     }
 
     // Apply backpressure
@@ -577,23 +552,12 @@ export class GcsStorage extends BaseStorage {
       // Get the GCS key with UUID-based sharding
       const key = this.getNounKey(id)
 
-      // DIAGNOSTIC LOGGING: Show exact path being accessed
-      prodLog.info(`[getNode] 🔍 Attempting to load:`)
-      prodLog.info(`[getNode]   UUID: ${id}`)
-      prodLog.info(`[getNode]   Path: ${key}`)
-      prodLog.info(`[getNode]   Bucket: ${this.bucketName}`)
-
       // Download from GCS
       const file = this.bucket!.file(key)
-
-      prodLog.info(`[getNode] 📥 Downloading file...`)
       const [contents] = await file.download()
-      prodLog.info(`[getNode] ✅ Download successful: ${contents.length} bytes`)
 
       // Parse JSON
-      prodLog.info(`[getNode] 🔧 Parsing JSON...`)
       const data = JSON.parse(contents.toString())
-      prodLog.info(`[getNode] ✅ JSON parsed successfully, id: ${data.id}`)
 
       // Convert serialized connections back to Map<number, Set<string>>
       const connections = new Map<number, Set<string>>()
@@ -614,9 +578,8 @@ export class GcsStorage extends BaseStorage {
       // CRITICAL FIX: Only cache valid nodes with non-empty vectors (never cache null or empty)
       if (node && node.id && node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(id, node)
-        prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
       } else {
-        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}... (missing id/vector or empty vector)`)
+        prodLog.warn(`[GCS] Not caching invalid node ${id.substring(0, 8)} (missing id/vector or empty vector)`)
       }
 
       this.logger.trace(`Successfully retrieved node ${id}`)
@@ -1109,14 +1072,6 @@ export class GcsStorage extends BaseStorage {
     const limit = options.limit || 100
     const useCache = options.useCache !== false
 
-    // DIAGNOSTIC LOGGING: Track pagination performance
-    prodLog.info(`[getNodesWithPagination] Starting pagination: limit=${limit}, cursor=${options.cursor || 'none'}`)
-    const startTime = Date.now()
-    let shardsChecked = 0
-    let filesFound = 0
-    let nodesLoaded = 0
-    let nodesFailed = 0
-
     try {
       const nodes: HNSWNode[] = []
 
@@ -1133,7 +1088,6 @@ export class GcsStorage extends BaseStorage {
       for (let shardIndex = startShardIndex; shardIndex < TOTAL_SHARDS; shardIndex++) {
         const shardId = getShardIdByIndex(shardIndex)
         const shardPrefix = `${this.nounPrefix}${shardId}/`
-        shardsChecked++
 
         // List objects in this shard
         // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
@@ -1145,13 +1099,6 @@ export class GcsStorage extends BaseStorage {
           maxResults: cappedPageSize,
           pageToken: shardIndex === startShardIndex ? gcsPageToken : undefined
         })
-
-        // DIAGNOSTIC LOGGING: Show files found per shard (only log non-empty shards)
-        if (files && files.length > 0) {
-          filesFound += files.length
-          prodLog.info(`[Shard ${shardId}] Found ${files.length} files in "${shardPrefix}"`)
-          prodLog.info(`[Shard ${shardId}] Sample file names: ${files.slice(0, 3).map((f: any) => f.name).join(', ')}`)
-        }
 
         // Extract node IDs from file names
         if (files && files.length > 0) {
@@ -1170,22 +1117,11 @@ export class GcsStorage extends BaseStorage {
             })
             .filter((id: string) => id && id.length > 0)
 
-          // DIAGNOSTIC LOGGING: Show extracted UUIDs
-          prodLog.info(`[Shard ${shardId}] Extracted ${nodeIds.length} UUIDs: ${nodeIds.slice(0, 3).join(', ')}...`)
-
           // Load nodes
           for (const id of nodeIds) {
-            // DIAGNOSTIC LOGGING: Show each getNode() attempt
-            prodLog.info(`[Shard ${shardId}] Calling getNode("${id}")...`)
             const node = await this.getNode(id)
-
             if (node) {
               nodes.push(node)
-              nodesLoaded++
-              prodLog.info(`[Shard ${shardId}] ✅ Successfully loaded node ${id}`)
-            } else {
-              nodesFailed++
-              prodLog.warn(`[Shard ${shardId}] ❌ getNode("${id}") returned null!`)
             }
 
             if (nodes.length >= limit) {
@@ -1224,15 +1160,6 @@ export class GcsStorage extends BaseStorage {
       }
 
       // No more shards or nodes
-      // DIAGNOSTIC LOGGING: Final summary
-      const elapsedTime = Date.now() - startTime
-      prodLog.info(`[getNodesWithPagination] COMPLETED in ${elapsedTime}ms:`)
-      prodLog.info(`  - Shards checked: ${shardsChecked}/${TOTAL_SHARDS}`)
-      prodLog.info(`  - Files found: ${filesFound}`)
-      prodLog.info(`  - Nodes loaded: ${nodesLoaded}`)
-      prodLog.info(`  - Nodes failed: ${nodesFailed}`)
-      prodLog.info(`  - Success rate: ${filesFound > 0 ? ((nodesLoaded / filesFound) * 100).toFixed(1) : 'N/A'}%`)
-
       return {
         nodes,
         totalCount: this.totalNounCount,

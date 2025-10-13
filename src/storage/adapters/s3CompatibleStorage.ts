@@ -1083,51 +1083,29 @@ export class S3CompatibleStorage extends BaseStorage {
   protected async getNode(id: string): Promise<HNSWNode | null> {
     await this.ensureInitialized()
 
-    // Check cache first WITH LOGGING
+    // Check cache first
     const cached = this.nodeCache.get(id)
 
-    // DIAGNOSTIC LOGGING: Reveal cache poisoning
-    prodLog.info(`[getNode] 🔍 Cache check for ${id.substring(0, 8)}...:`, {
-      hasCached: cached !== undefined,
-      isNull: cached === null,
-      isObject: cached !== null && typeof cached === 'object',
-      type: typeof cached
-    })
-
-    // CRITICAL FIX (v3.37.8): Validate cached object before returning
+    // Validate cached object before returning (v3.37.8+)
     if (cached !== undefined && cached !== null) {
-      // Log cached object structure to diagnose incomplete objects
-      prodLog.info(`[getNode] Cached object structure:`, {
-        hasId: !!cached.id,
-        idMatches: cached.id === id,
-        hasVector: !!cached.vector,
-        vectorLength: cached.vector?.length,
-        hasConnections: !!cached.connections,
-        connectionsType: typeof cached.connections,
-        objectKeys: Object.keys(cached || {})
-      })
-
       // Validate cached object has required fields (including non-empty vector!)
       if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
-        prodLog.error(`[getNode] ❌ INVALID cached object for ${id.substring(0, 8)}...:`, {
-          reason: !cached.id ? 'missing id' :
-                  !cached.vector ? 'missing vector' :
-                  !Array.isArray(cached.vector) ? 'vector not array' :
-                  cached.vector.length === 0 ? 'vector is empty array' :
-                  'unknown'
-        })
-        prodLog.error(`[getNode] Removing invalid object from cache and loading from S3`)
+        // Invalid cache detected - log and auto-recover
+        prodLog.warn(`[S3] Invalid cached object for ${id.substring(0, 8)} (${
+          !cached.id ? 'missing id' :
+          !cached.vector ? 'missing vector' :
+          !Array.isArray(cached.vector) ? 'vector not array' :
+          'empty vector'
+        }) - removing from cache and reloading`)
         this.nodeCache.delete(id)
         // Fall through to load from S3
       } else {
-        prodLog.info(`[getNode] ✅ Valid cached object - returning`)
+        // Valid cache hit
         this.logger.trace(`Cache hit for node ${id}`)
         return cached
       }
     } else if (cached === null) {
-      prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from S3`)
-    } else {
-      prodLog.info(`[getNode] ❌ Cache MISS - loading from S3 for ${id.substring(0, 8)}...`)
+      prodLog.warn(`[S3] Cache contains null for ${id.substring(0, 8)} - reloading from storage`)
     }
 
     try {
@@ -1137,14 +1115,7 @@ export class S3CompatibleStorage extends BaseStorage {
       // Use getNounKey() to properly handle sharding
       const key = this.getNounKey(id)
 
-      // DIAGNOSTIC LOGGING: Show exact path being accessed
-      prodLog.info(`[getNode] 🔍 Attempting to load:`)
-      prodLog.info(`[getNode]   UUID: ${id}`)
-      prodLog.info(`[getNode]   Path: ${key}`)
-      prodLog.info(`[getNode]   Bucket: ${this.bucketName}`)
-
       // Try to get the node from the nouns directory
-      prodLog.info(`[getNode] 📥 Downloading file...`)
       const response = await this.s3Client!.send(
         new GetObjectCommand({
           Bucket: this.bucketName,
@@ -1154,18 +1125,13 @@ export class S3CompatibleStorage extends BaseStorage {
 
       // Check if response is null or undefined
       if (!response || !response.Body) {
-        prodLog.warn(`[getNode] ❌ Response or Body is null/undefined`)
+        prodLog.warn(`[S3] Response or Body is null/undefined for ${id.substring(0, 8)}`)
         return null
       }
 
-      // Convert the response body to a string
+      // Convert the response body to a string and parse JSON
       const bodyContents = await response.Body.transformToString()
-      prodLog.info(`[getNode] ✅ Download successful: ${bodyContents.length} bytes`)
-
-      // Parse the JSON string
-      prodLog.info(`[getNode] 🔧 Parsing JSON...`)
       const parsedNode = JSON.parse(bodyContents)
-      prodLog.info(`[getNode] ✅ JSON parsed successfully, id: ${parsedNode.id}`)
 
       // Ensure the parsed node has the expected properties
       if (
@@ -1197,43 +1163,26 @@ export class S3CompatibleStorage extends BaseStorage {
       // CRITICAL FIX: Only cache valid nodes with non-empty vectors (never cache null or empty)
       if (node && node.id && node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nodeCache.set(id, node)
-        prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
       } else {
-        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}... (missing id/vector or empty vector)`)
+        prodLog.warn(`[S3] Not caching invalid node ${id.substring(0, 8)} (missing id/vector or empty vector)`)
       }
 
       this.logger.trace(`Successfully retrieved node ${id}`)
       return node
     } catch (error: any) {
-      // DIAGNOSTIC LOGGING: Log EVERY error before any conditional checks
-      const key = this.getNounKey(id)
-      prodLog.error(`[getNode] ❌ EXCEPTION CAUGHT:`)
-      prodLog.error(`[getNode]   UUID: ${id}`)
-      prodLog.error(`[getNode]   Path: ${key}`)
-      prodLog.error(`[getNode]   Bucket: ${this.bucketName}`)
-      prodLog.error(`[getNode]   Error type: ${error?.constructor?.name || typeof error}`)
-      prodLog.error(`[getNode]   Error name: ${error?.name}`)
-      prodLog.error(`[getNode]   Error code: ${JSON.stringify(error?.Code || error?.code)}`)
-      prodLog.error(`[getNode]   Error message: ${error?.message || String(error)}`)
-      prodLog.error(`[getNode]   HTTP status: ${error?.$metadata?.httpStatusCode}`)
-      prodLog.error(`[getNode]   Error object:`, JSON.stringify(error, null, 2))
-
       // Check if this is a "not found" error (S3 uses "NoSuchKey")
       if (error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
-        prodLog.warn(`[getNode] Identified as 404/NoSuchKey error - returning null WITHOUT caching`)
-        // CRITICAL FIX: Do NOT cache null values
+        // File not found - not cached, just return null
         return null
       }
 
       // Handle throttling
       if (this.isThrottlingError(error)) {
-        prodLog.warn(`[getNode] Identified as throttling error - rethrowing`)
         await this.handleThrottling(error)
         throw error
       }
 
       // All other errors should throw, not return null
-      prodLog.error(`[getNode] Unhandled error - rethrowing`)
       this.logger.error(`Failed to get node ${id}:`, error)
       throw BrainyError.fromError(error, `getNoun(${id})`)
     }
