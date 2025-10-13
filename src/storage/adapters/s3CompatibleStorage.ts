@@ -1094,11 +1094,36 @@ export class S3CompatibleStorage extends BaseStorage {
       type: typeof cached
     })
 
-    // CRITICAL FIX: Only return cached value if it's valid (not null/undefined)
+    // CRITICAL FIX (v3.37.8): Validate cached object before returning
     if (cached !== undefined && cached !== null) {
-      prodLog.info(`[getNode] ✅ Cache HIT - returning cached node for ${id.substring(0, 8)}...`)
-      this.logger.trace(`Cache hit for node ${id}`)
-      return cached
+      // Log cached object structure to diagnose incomplete objects
+      prodLog.info(`[getNode] Cached object structure:`, {
+        hasId: !!cached.id,
+        idMatches: cached.id === id,
+        hasVector: !!cached.vector,
+        vectorLength: cached.vector?.length,
+        hasConnections: !!cached.connections,
+        connectionsType: typeof cached.connections,
+        objectKeys: Object.keys(cached || {})
+      })
+
+      // Validate cached object has required fields (including non-empty vector!)
+      if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
+        prodLog.error(`[getNode] ❌ INVALID cached object for ${id.substring(0, 8)}...:`, {
+          reason: !cached.id ? 'missing id' :
+                  !cached.vector ? 'missing vector' :
+                  !Array.isArray(cached.vector) ? 'vector not array' :
+                  cached.vector.length === 0 ? 'vector is empty array' :
+                  'unknown'
+        })
+        prodLog.error(`[getNode] Removing invalid object from cache and loading from S3`)
+        this.nodeCache.delete(id)
+        // Fall through to load from S3
+      } else {
+        prodLog.info(`[getNode] ✅ Valid cached object - returning`)
+        this.logger.trace(`Cache hit for node ${id}`)
+        return cached
+      }
     } else if (cached === null) {
       prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from S3`)
     } else {
@@ -1169,12 +1194,12 @@ export class S3CompatibleStorage extends BaseStorage {
         level: parsedNode.level || 0
       }
 
-      // CRITICAL FIX: Only cache valid nodes (never cache null)
-      if (node && node.id && node.vector && Array.isArray(node.vector)) {
+      // CRITICAL FIX: Only cache valid nodes with non-empty vectors (never cache null or empty)
+      if (node && node.id && node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nodeCache.set(id, node)
         prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
       } else {
-        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}...`)
+        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}... (missing id/vector or empty vector)`)
       }
 
       this.logger.trace(`Successfully retrieved node ${id}`)

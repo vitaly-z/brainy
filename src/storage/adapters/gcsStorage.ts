@@ -462,8 +462,13 @@ export class GcsStorage extends BaseStorage {
         resumable: false // For small objects, non-resumable is faster
       })
 
-      // Update cache
-      this.nounCacheManager.set(node.id, node)
+      // CRITICAL FIX (v3.37.8): Only cache nodes with non-empty vectors
+      // This prevents cache pollution from HNSW's lazy-loading nodes (vector: [])
+      if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
+        this.nounCacheManager.set(node.id, node)
+      } else {
+        prodLog.warn(`[saveNode] Not caching node ${node.id.substring(0, 8)}... with empty vector (HNSW lazy mode)`)
+      }
 
       // Increment noun count
       const metadata = await this.getNounMetadata(node.id)
@@ -515,7 +520,7 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     // Check cache first WITH LOGGING
-    const cached = this.nounCacheManager.get(id)
+    const cached: HNSWNode | null = await this.nounCacheManager.get(id)
 
     // DIAGNOSTIC LOGGING: Reveal cache poisoning
     prodLog.info(`[getNode] 🔍 Cache check for ${id.substring(0, 8)}...:`, {
@@ -525,11 +530,38 @@ export class GcsStorage extends BaseStorage {
       type: typeof cached
     })
 
-    // CRITICAL FIX: Only return cached value if it's valid (not null/undefined)
+    // CRITICAL FIX (v3.37.8): Validate cached object before returning
     if (cached !== undefined && cached !== null) {
-      prodLog.info(`[getNode] ✅ Cache HIT - returning cached node for ${id.substring(0, 8)}...`)
-      this.logger.trace(`Cache hit for noun ${id}`)
-      return cached
+      // Log cached object structure to diagnose incomplete objects
+      prodLog.info(`[getNode] Cached object structure:`, {
+        hasId: !!cached.id,
+        idMatches: cached.id === id,
+        hasVector: !!cached.vector,
+        vectorLength: cached.vector?.length,
+        hasConnections: !!cached.connections,
+        connectionsType: typeof cached.connections,
+        hasLevel: cached.level !== undefined,
+        level: cached.level,
+        objectKeys: Object.keys(cached || {})
+      })
+
+      // Validate cached object has required fields (including non-empty vector!)
+      if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
+        prodLog.error(`[getNode] ❌ INVALID cached object for ${id.substring(0, 8)}...:`, {
+          reason: !cached.id ? 'missing id' :
+                  !cached.vector ? 'missing vector' :
+                  !Array.isArray(cached.vector) ? 'vector not array' :
+                  cached.vector.length === 0 ? 'vector is empty array' :
+                  'unknown'
+        })
+        prodLog.error(`[getNode] Removing invalid object from cache and loading from GCS`)
+        this.nounCacheManager.delete(id)
+        // Fall through to load from GCS
+      } else {
+        prodLog.info(`[getNode] ✅ Valid cached object - returning`)
+        this.logger.trace(`Cache hit for noun ${id}`)
+        return cached
+      }
     } else if (cached === null) {
       prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from GCS`)
     } else {
@@ -579,12 +611,12 @@ export class GcsStorage extends BaseStorage {
         // NO metadata field - retrieved separately for scalability
       }
 
-      // CRITICAL FIX: Only cache valid nodes (never cache null)
-      if (node && node.id && node.vector && Array.isArray(node.vector)) {
+      // CRITICAL FIX: Only cache valid nodes with non-empty vectors (never cache null or empty)
+      if (node && node.id && node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(id, node)
         prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
       } else {
-        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}...`)
+        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}... (missing id/vector or empty vector)`)
       }
 
       this.logger.trace(`Successfully retrieved node ${id}`)
