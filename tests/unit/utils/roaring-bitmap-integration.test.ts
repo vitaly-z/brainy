@@ -13,7 +13,7 @@ import { EntityIdMapper } from '../../../src/utils/entityIdMapper.js'
 import { ChunkManager } from '../../../src/utils/metadataIndexChunking.js'
 import { MetadataIndexManager } from '../../../src/utils/metadataIndex.js'
 import { MemoryStorage } from '../../../src/storage/adapters/memoryStorage.js'
-import RoaringBitmap32 from 'roaring/RoaringBitmap32'
+import { RoaringBitmap32 } from 'roaring'
 import { v4 as uuidv4 } from '../../../src/universal/uuid.js'
 
 describe('EntityIdMapper', () => {

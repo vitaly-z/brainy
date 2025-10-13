@@ -22,7 +22,7 @@
 
 import { StorageAdapter } from '../coreTypes.js'
 import { prodLog } from './logger.js'
-import RoaringBitmap32 from 'roaring/RoaringBitmap32'
+import { RoaringBitmap32 } from 'roaring'
 import type { EntityIdMapper } from './entityIdMapper.js'
 
 // ============================================================================

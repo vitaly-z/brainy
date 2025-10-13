@@ -18,7 +18,7 @@ import {
   ZoneMap
 } from './metadataIndexChunking.js'
 import { EntityIdMapper } from './entityIdMapper.js'
-import RoaringBitmap32 from 'roaring/RoaringBitmap32'
+import { RoaringBitmap32 } from 'roaring'
 
 export interface MetadataIndexEntry {
   field: string

@@ -13,7 +13,7 @@
  * @module utils/entityIdMapper
  */
 
-import type { BaseStorage } from '../storage/baseStorage'
+import type { BaseStorage } from '../storage/baseStorage.js'
 
 export interface EntityIdMapperOptions {
   storage: BaseStorage
