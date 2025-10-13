@@ -36,6 +36,15 @@ export class NeuralEntityExtractor {
   // Entity extraction cache
   private cache: EntityExtractionCache
 
+  // Runtime embedding cache for performance (v3.38.0)
+  // Caches candidate embeddings during an extraction session to avoid redundant model calls
+  private embeddingCache: Map<string, Vector> = new Map()
+  private embeddingCacheStats = {
+    hits: 0,
+    misses: 0,
+    size: 0
+  }
+
   constructor(brain: Brainy | Brainy<any>, cacheOptions?: EntityCacheOptions) {
     this.brain = brain
     this.cache = new EntityExtractionCache(cacheOptions)
@@ -346,19 +355,51 @@ export class NeuralEntityExtractor {
   }
   
   /**
-   * Get embedding for text
+   * Get embedding for text with caching (v3.38.0)
+   *
+   * PERFORMANCE OPTIMIZATION: Caches embeddings during extraction session
+   * to avoid redundant model calls for repeated text (common in large imports)
    */
   private async getEmbedding(text: string): Promise<Vector> {
+    // Normalize text for cache key
+    const normalizedText = text.trim().toLowerCase()
+
+    // Check cache first
+    const cached = this.embeddingCache.get(normalizedText)
+    if (cached) {
+      this.embeddingCacheStats.hits++
+      return cached
+    }
+
+    // Cache miss - generate embedding
+    this.embeddingCacheStats.misses++
+
+    let vector: Vector
     if ('embed' in this.brain && typeof (this.brain as any).embed === 'function') {
-      return await (this.brain as any).embed(text)
+      vector = await (this.brain as any).embed(text)
     } else {
       // Fallback - create simple hash-based vector
-      const vector = new Array(384).fill(0)
+      vector = new Array(384).fill(0)
       for (let i = 0; i < text.length; i++) {
         vector[i % 384] += text.charCodeAt(i) / 255
       }
-      return vector.map(v => v / text.length)
+      vector = vector.map(v => v / text.length)
     }
+
+    // Store in cache
+    this.embeddingCache.set(normalizedText, vector)
+    this.embeddingCacheStats.size = this.embeddingCache.size
+
+    // Memory management: Clear cache if it grows too large (>10000 entries)
+    if (this.embeddingCache.size > 10000) {
+      // Keep most recent 5000 entries (simple LRU approximation)
+      const entries = Array.from(this.embeddingCache.entries())
+      this.embeddingCache.clear()
+      entries.slice(-5000).forEach(([k, v]) => this.embeddingCache.set(k, v))
+      this.embeddingCacheStats.size = this.embeddingCache.size
+    }
+
+    return vector
   }
   
   /**
@@ -463,5 +504,38 @@ export class NeuralEntityExtractor {
    */
   cleanupCache(): number {
     return this.cache.cleanup()
+  }
+
+  /**
+   * Clear embedding cache (v3.38.0)
+   *
+   * Clears the runtime embedding cache. Useful for:
+   * - Freeing memory after large imports
+   * - Testing with fresh cache state
+   */
+  clearEmbeddingCache(): void {
+    this.embeddingCache.clear()
+    this.embeddingCacheStats = {
+      hits: 0,
+      misses: 0,
+      size: 0
+    }
+  }
+
+  /**
+   * Get embedding cache statistics (v3.38.0)
+   *
+   * Returns performance metrics for the embedding cache:
+   * - hits: Number of cache hits (avoided model calls)
+   * - misses: Number of cache misses (required model calls)
+   * - size: Current cache size
+   * - hitRate: Percentage of requests served from cache
+   */
+  getEmbeddingCacheStats() {
+    const total = this.embeddingCacheStats.hits + this.embeddingCacheStats.misses
+    return {
+      ...this.embeddingCacheStats,
+      hitRate: total > 0 ? this.embeddingCacheStats.hits / total : 0
+    }
   }
 }

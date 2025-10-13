@@ -35,12 +35,18 @@ export interface SmartExcelOptions extends FormatHandlerOptions {
   typeColumn?: string      // e.g., "Type", "Category"
   relatedColumn?: string   // e.g., "Related Terms", "See Also"
 
-  /** Progress callback */
+  /** Progress callback (v3.38.0: Enhanced with performance metrics) */
   onProgress?: (stats: {
     processed: number
     total: number
     entities: number
     relationships: number
+    /** Rows per second (v3.38.0) */
+    throughput?: number
+    /** Estimated time remaining in ms (v3.38.0) */
+    eta?: number
+    /** Current phase (v3.38.0) */
+    phase?: string
   }) => void
 }
 
@@ -174,7 +180,7 @@ export class SmartExcelImporter {
     // Detect column names
     const columns = this.detectColumns(rows[0], opts)
 
-    // Process each row
+    // Process each row with BATCHED PARALLEL PROCESSING (v3.38.0)
     const extractedRows: ExtractedRow[] = []
     const entityMap = new Map<string, string>()
     const stats = {
@@ -182,127 +188,161 @@ export class SmartExcelImporter {
       byConfidence: { high: 0, medium: 0, low: 0 }
     }
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]
+    // Batch processing configuration
+    const CHUNK_SIZE = 10 // Process 10 rows at a time for optimal performance
+    let totalProcessed = 0
+    const performanceStartTime = Date.now()
 
-      // Extract data from row
-      const term = this.getColumnValue(row, columns.term) || `Entity_${i}`
-      const definition = this.getColumnValue(row, columns.definition) || ''
-      const type = this.getColumnValue(row, columns.type)
-      const relatedTerms = this.getColumnValue(row, columns.related)
+    // Process rows in chunks
+    for (let chunkStart = 0; chunkStart < rows.length; chunkStart += CHUNK_SIZE) {
+      const chunk = rows.slice(chunkStart, Math.min(chunkStart + CHUNK_SIZE, rows.length))
 
-      // Extract entities from definition
-      let relatedEntities: ExtractedEntity[] = []
-      if (opts.enableNeuralExtraction && definition) {
-        relatedEntities = await this.extractor.extract(definition, {
-          confidence: opts.confidenceThreshold * 0.8, // Lower threshold for related entities
-          neuralMatching: true,
-          cache: { enabled: true }
-        })
+      // Process chunk in parallel for massive speedup
+      const chunkResults = await Promise.all(
+        chunk.map(async (row, chunkIndex) => {
+          const i = chunkStart + chunkIndex
 
-        // Filter out the main term from related entities
-        relatedEntities = relatedEntities.filter(
-          e => e.text.toLowerCase() !== term.toLowerCase()
-        )
-      }
+          // Extract data from row
+          const term = this.getColumnValue(row, columns.term) || `Entity_${i}`
+          const definition = this.getColumnValue(row, columns.definition) || ''
+          const type = this.getColumnValue(row, columns.type)
+          const relatedTerms = this.getColumnValue(row, columns.related)
 
-      // Determine main entity type
-      const mainEntityType = type ?
-        this.mapTypeString(type) :
-        (relatedEntities.length > 0 ? relatedEntities[0].type : NounType.Thing)
+          // Parallel extraction: entities AND concepts at the same time
+          const [relatedEntities, concepts] = await Promise.all([
+            // Extract entities from definition
+            opts.enableNeuralExtraction && definition
+              ? this.extractor.extract(definition, {
+                  confidence: opts.confidenceThreshold * 0.8,
+                  neuralMatching: true,
+                  cache: { enabled: true }
+                }).then(entities =>
+                  // Filter out the main term from related entities
+                  entities.filter(e => e.text.toLowerCase() !== term.toLowerCase())
+                )
+              : Promise.resolve([]),
 
-      // Generate entity ID
-      const entityId = this.generateEntityId(term)
-      entityMap.set(term.toLowerCase(), entityId)
+            // Extract concepts (in parallel with entity extraction)
+            opts.enableConceptExtraction && definition
+              ? this.brain.extractConcepts(definition, { limit: 10 }).catch(() => [])
+              : Promise.resolve([])
+          ])
 
-      // Extract concepts
-      let concepts: string[] = []
-      if (opts.enableConceptExtraction && definition) {
-        try {
-          concepts = await this.brain.extractConcepts(definition, { limit: 10 })
-        } catch (error) {
-          // Concept extraction is optional
-          concepts = []
-        }
-      }
+          // Determine main entity type
+          const mainEntityType = type ?
+            this.mapTypeString(type) :
+            (relatedEntities.length > 0 ? relatedEntities[0].type : NounType.Thing)
 
-      // Create main entity
-      const mainEntity = {
-        id: entityId,
-        name: term,
-        type: mainEntityType,
-        description: definition,
-        confidence: 0.95, // Main entity from row has high confidence
-        metadata: {
-          source: 'excel',
-          row: i + 1,
-          originalData: row,
-          concepts,
-          extractedAt: Date.now()
-        }
-      }
+          // Generate entity ID
+          const entityId = this.generateEntityId(term)
 
-      // Track statistics
-      this.updateStats(stats, mainEntityType, mainEntity.confidence)
-
-      // Infer relationships
-      const relationships: ExtractedRow['relationships'] = []
-
-      if (opts.enableRelationshipInference) {
-        // Extract relationships from definition text
-        for (const relEntity of relatedEntities) {
-          const verbType = await this.inferRelationship(
-            term,
-            relEntity.text,
-            definition
-          )
-
-          relationships.push({
-            from: entityId,
-            to: relEntity.text, // Use entity name directly, will be resolved later
-            type: verbType,
-            confidence: relEntity.confidence,
-            evidence: `Extracted from: "${definition.substring(0, 100)}..."`
-          })
-        }
-
-        // Parse explicit "Related Terms" column
-        if (relatedTerms) {
-          const terms = relatedTerms.split(/[,;]/).map(t => t.trim()).filter(Boolean)
-          for (const relTerm of terms) {
-            // Ensure we don't create self-relationships
-            if (relTerm.toLowerCase() !== term.toLowerCase()) {
-              relationships.push({
-                from: entityId,
-                to: relTerm, // Use term name directly
-                type: VerbType.RelatedTo,
-                confidence: 0.9, // Explicit relationships have high confidence
-                evidence: `Explicitly listed in "Related" column`
-              })
+          // Create main entity
+          const mainEntity = {
+            id: entityId,
+            name: term,
+            type: mainEntityType,
+            description: definition,
+            confidence: 0.95,
+            metadata: {
+              source: 'excel',
+              row: i + 1,
+              originalData: row,
+              concepts,
+              extractedAt: Date.now()
             }
           }
-        }
+
+          // Infer relationships
+          const relationships: ExtractedRow['relationships'] = []
+
+          if (opts.enableRelationshipInference) {
+            // Extract relationships from definition text
+            for (const relEntity of relatedEntities) {
+              const verbType = await this.inferRelationship(
+                term,
+                relEntity.text,
+                definition
+              )
+
+              relationships.push({
+                from: entityId,
+                to: relEntity.text,
+                type: verbType,
+                confidence: relEntity.confidence,
+                evidence: `Extracted from: "${definition.substring(0, 100)}..."`
+              })
+            }
+
+            // Parse explicit "Related Terms" column
+            if (relatedTerms) {
+              const terms = relatedTerms.split(/[,;]/).map(t => t.trim()).filter(Boolean)
+              for (const relTerm of terms) {
+                if (relTerm.toLowerCase() !== term.toLowerCase()) {
+                  relationships.push({
+                    from: entityId,
+                    to: relTerm,
+                    type: VerbType.RelatedTo,
+                    confidence: 0.9,
+                    evidence: `Explicitly listed in "Related" column`
+                  })
+                }
+              }
+            }
+          }
+
+          return {
+            term,
+            entityId,
+            mainEntity,
+            mainEntityType,
+            relatedEntities,
+            relationships,
+            concepts
+          }
+        })
+      )
+
+      // Process chunk results sequentially to maintain order
+      for (const result of chunkResults) {
+        // Store entity ID mapping
+        entityMap.set(result.term.toLowerCase(), result.entityId)
+
+        // Track statistics
+        this.updateStats(stats, result.mainEntityType, result.mainEntity.confidence)
+
+        // Add extracted row
+        extractedRows.push({
+          entity: result.mainEntity,
+          relatedEntities: result.relatedEntities.map(e => ({
+            name: e.text,
+            type: e.type,
+            confidence: e.confidence
+          })),
+          relationships: result.relationships,
+          concepts: result.concepts
+        })
       }
 
-      // Add extracted row
-      extractedRows.push({
-        entity: mainEntity,
-        relatedEntities: relatedEntities.map(e => ({
-          name: e.text,
-          type: e.type,
-          confidence: e.confidence
-        })),
-        relationships,
-        concepts
-      })
+      // Update progress tracking
+      totalProcessed += chunk.length
 
-      // Report progress
+      // Calculate performance metrics
+      const elapsed = Date.now() - performanceStartTime
+      const rowsPerSecond = totalProcessed / (elapsed / 1000)
+      const remainingRows = rows.length - totalProcessed
+      const estimatedTimeRemaining = remainingRows / rowsPerSecond
+
+      // Report progress with enhanced metrics
       opts.onProgress({
-        processed: i + 1,
+        processed: totalProcessed,
         total: rows.length,
-        entities: extractedRows.length + relatedEntities.length,
-        relationships: relationships.length
-      })
+        entities: extractedRows.reduce((sum, row) => sum + 1 + row.relatedEntities.length, 0),
+        relationships: extractedRows.reduce((sum, row) => sum + row.relationships.length, 0),
+        // Additional performance metrics (v3.38.0)
+        throughput: Math.round(rowsPerSecond * 10) / 10,
+        eta: Math.round(estimatedTimeRemaining),
+        phase: 'extracting'
+      } as any)
     }
 
     return {

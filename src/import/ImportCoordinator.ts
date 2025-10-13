@@ -93,6 +93,10 @@ export interface ImportProgress {
   total?: number
   entities?: number
   relationships?: number
+  /** Rows per second (v3.38.0) */
+  throughput?: number
+  /** Estimated time remaining in ms (v3.38.0) */
+  eta?: number
 }
 
 export interface ImportResult {
@@ -415,13 +419,21 @@ export class ImportCoordinator {
       enableConceptExtraction: options.enableConceptExtraction !== false,
       confidenceThreshold: options.confidenceThreshold || 0.6,
       onProgress: (stats: any) => {
+        // Enhanced progress reporting (v3.38.0) with throughput and ETA
+        const message = stats.throughput
+          ? `Extracting entities from ${format} (${stats.throughput} rows/sec, ETA: ${Math.round(stats.eta / 1000)}s)...`
+          : `Extracting entities from ${format}...`
+
         options.onProgress?.({
           stage: 'extracting',
-          message: `Extracting entities from ${format}...`,
+          message,
           processed: stats.processed,
           total: stats.total,
           entities: stats.entities,
-          relationships: stats.relationships
+          relationships: stats.relationships,
+          // Pass through enhanced metrics if available
+          throughput: stats.throughput,
+          eta: stats.eta
         })
       }
     }
