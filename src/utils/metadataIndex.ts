@@ -115,7 +115,41 @@ export class MetadataIndexManager {
       rebuildThreshold: config.rebuildThreshold ?? 0.1,
       autoOptimize: config.autoOptimize ?? true,
       indexedFields: config.indexedFields ?? [],
-      excludeFields: config.excludeFields ?? ['id', 'createdAt', 'updatedAt', 'embedding', 'vector', 'embeddings', 'vectors']
+      excludeFields: config.excludeFields ?? [
+        // Timestamps (nearly unique per operation - causes massive file pollution)
+        'accessed',
+        'modified',
+        'createdAt',
+        'updatedAt',
+        'importedAt',
+        'extractedAt',
+
+        // UUIDs (unique per entity/relationship - creates one file per entity)
+        'id',
+        'parent',
+        'sourceId',
+        'targetId',
+        'source',
+        'target',
+        'owner',
+
+        // Paths and hashes (unique per file - creates one file per path)
+        'path',
+        'hash',
+        'url',
+
+        // Content fields (too large/unique - unnecessary for indexing)
+        'content',
+        'data',
+        'originalData',
+        '_data',
+
+        // Vectors (already excluded - keeping for backward compatibility)
+        'embedding',
+        'vector',
+        'embeddings',
+        'vectors'
+      ]
     }
 
     // Initialize metadata cache with similar config to search cache
