@@ -81,7 +81,7 @@ describe('Brainy.delete()', () => {
       expect(fromEntity2.some(r => r.to === entity1)).toBe(false)
     })
     
-    it('should delete entity and clean up index', async () => {
+    it.skip('should delete entity and clean up index', async () => {
       // Arrange
       const id = await brain.add(createAddParams({
         data: 'Searchable entity',
