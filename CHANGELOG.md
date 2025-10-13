@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.41.1](https://github.com/soulcraftlabs/brainy/compare/v3.41.0...v3.41.1) (2025-10-13)
+
+- test: skip failing delete test temporarily (7c47de8)
+- test: skip failing domain-time-clustering tests temporarily (71c4a54)
+- docs: add comprehensive index architecture documentation (75b4b02)
+
+
 ## [3.41.0](https://github.com/soulcraftlabs/brainy/compare/v3.40.3...v3.41.0) (2025-10-13)
 
 
