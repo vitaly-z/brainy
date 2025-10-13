@@ -580,7 +580,7 @@ export class MetadataIndexManager {
     }
 
     // Combine multiple bitmaps with OR operation
-    return RoaringBitmap32.or(...bitmaps)
+    return RoaringBitmap32.orMany(bitmaps)
   }
 
   /**
@@ -623,7 +623,11 @@ export class MetadataIndexManager {
 
     // Hardware-accelerated intersection using SIMD instructions (AVX2/SSE4.2)
     // This is 500-900x faster than JavaScript array filtering
-    const intersectionBitmap = RoaringBitmap32.and(...bitmaps)
+    // Note: RoaringBitmap32.and() only takes 2 params, so we reduce manually
+    let intersectionBitmap = bitmaps[0]
+    for (let i = 1; i < bitmaps.length; i++) {
+      intersectionBitmap = RoaringBitmap32.and(intersectionBitmap, bitmaps[i])
+    }
 
     // Check if empty before converting
     if (intersectionBitmap.size === 0) {

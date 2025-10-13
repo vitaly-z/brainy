@@ -13,10 +13,10 @@
  * @module utils/entityIdMapper
  */
 
-import type { BaseStorage } from '../storage/baseStorage.js'
+import type { StorageAdapter } from '../coreTypes.js'
 
 export interface EntityIdMapperOptions {
-  storage: BaseStorage
+  storage: StorageAdapter
   storageKey?: string
 }
 
@@ -30,7 +30,7 @@ export interface EntityIdMapperData {
  * Maps entity UUIDs to integer IDs for use with Roaring Bitmaps
  */
 export class EntityIdMapper {
-  private storage: BaseStorage
+  private storage: StorageAdapter
   private storageKey: string
 
   // Bidirectional maps
