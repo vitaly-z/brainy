@@ -241,9 +241,9 @@ export class UnifiedCache {
     let lowestScore = Infinity
 
     for (const [key, item] of this.cache) {
-      // Calculate value score: access frequency / rebuild cost
+      // Calculate value score: access frequency * rebuild cost (higher is better)
       const accessScore = (this.access.get(key) || 1)
-      const score = accessScore / Math.max(item.rebuildCost, 1)
+      const score = accessScore * item.rebuildCost
       
       if (score < lowestScore) {
         lowestScore = score
@@ -267,9 +267,9 @@ export class UnifiedCache {
    */
   evictForSize(bytesNeeded: number): boolean {
     const candidates: Array<[string, number, CacheItem]> = []
-    
+
     for (const [key, item] of this.cache) {
-      const score = (this.access.get(key) || 1) / item.rebuildCost
+      const score = (this.access.get(key) || 1) * item.rebuildCost
       candidates.push([key, score, item])
     }
 
@@ -349,10 +349,10 @@ export class UnifiedCache {
    */
   private evictType(type: 'hnsw' | 'metadata' | 'embedding' | 'other'): void {
     const candidates: Array<[string, number, CacheItem]> = []
-    
+
     for (const [key, item] of this.cache) {
       if (item.type === type) {
-        const score = (this.access.get(key) || 1) / item.rebuildCost
+        const score = (this.access.get(key) || 1) * item.rebuildCost
         candidates.push([key, score, item])
       }
     }
