@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.41.0](https://github.com/soulcraftlabs/brainy/compare/v3.40.3...v3.41.0) (2025-10-13)
+
+
+### ✨ Features
+
+* automatic temporal bucketing for metadata indexes ([b3edd4b](https://github.com/soulcraftlabs/brainy/commit/b3edd4b60a49d26d1ca776d459aa013736a0db9d))
+
 ### [3.40.3](https://github.com/soulcraftlabs/brainy/compare/v3.40.2...v3.40.3) (2025-10-13)
 
 - fix: prevent metadata index file pollution by excluding high-cardinality fields (0c86c4f)
