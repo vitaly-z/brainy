@@ -238,6 +238,13 @@ export class GcsStorage extends BaseStorage {
       // Initialize counts from storage
       await this.initializeCounts()
 
+      // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
+      // This prevents cache poisoning from causing silent failures on container restart
+      prodLog.info('🧹 Clearing cache from previous run to prevent cache poisoning')
+      this.nounCacheManager.clear()
+      this.verbCacheManager.clear()
+      prodLog.info('✅ Cache cleared - starting fresh')
+
       this.isInitialized = true
     } catch (error) {
       this.logger.error('Failed to initialize GCS storage:', error)
@@ -507,11 +514,26 @@ export class GcsStorage extends BaseStorage {
   protected async getNode(id: string): Promise<HNSWNode | null> {
     await this.ensureInitialized()
 
-    // Check cache first
+    // Check cache first WITH LOGGING
     const cached = this.nounCacheManager.get(id)
-    if (cached) {
+
+    // DIAGNOSTIC LOGGING: Reveal cache poisoning
+    prodLog.info(`[getNode] 🔍 Cache check for ${id.substring(0, 8)}...:`, {
+      hasCached: cached !== undefined,
+      isNull: cached === null,
+      isObject: cached !== null && typeof cached === 'object',
+      type: typeof cached
+    })
+
+    // CRITICAL FIX: Only return cached value if it's valid (not null/undefined)
+    if (cached !== undefined && cached !== null) {
+      prodLog.info(`[getNode] ✅ Cache HIT - returning cached node for ${id.substring(0, 8)}...`)
       this.logger.trace(`Cache hit for noun ${id}`)
       return cached
+    } else if (cached === null) {
+      prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from GCS`)
+    } else {
+      prodLog.info(`[getNode] ❌ Cache MISS - loading from GCS for ${id.substring(0, 8)}...`)
     }
 
     // Apply backpressure
@@ -557,8 +579,13 @@ export class GcsStorage extends BaseStorage {
         // NO metadata field - retrieved separately for scalability
       }
 
-      // Update cache
-      this.nounCacheManager.set(id, node)
+      // CRITICAL FIX: Only cache valid nodes (never cache null)
+      if (node && node.id && node.vector && Array.isArray(node.vector)) {
+        this.nounCacheManager.set(id, node)
+        prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
+      } else {
+        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}...`)
+      }
 
       this.logger.trace(`Successfully retrieved node ${id}`)
       this.releaseBackpressure(true, requestId)
@@ -579,7 +606,8 @@ export class GcsStorage extends BaseStorage {
 
       // Check if this is a "not found" error
       if (error.code === 404) {
-        prodLog.warn(`[getNode] Identified as 404 error - returning null`)
+        prodLog.warn(`[getNode] Identified as 404 error - returning null WITHOUT caching`)
+        // CRITICAL FIX: Do NOT cache null values
         return null
       }
 

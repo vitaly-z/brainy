@@ -350,6 +350,16 @@ export class S3CompatibleStorage extends BaseStorage {
       // Initialize counts from storage
       await this.initializeCounts()
 
+      // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
+      // This prevents cache poisoning from causing silent failures on container restart
+      const nodeCacheSize = this.nodeCache?.size || 0
+      if (nodeCacheSize > 0) {
+        prodLog.info(`🧹 Clearing ${nodeCacheSize} cached node entries from previous run`)
+        this.nodeCache.clear()
+      } else {
+        prodLog.info('🧹 Node cache is empty - starting fresh')
+      }
+
       this.isInitialized = true
       this.logger.info(`Initialized ${this.serviceType} storage with bucket ${this.bucketName}`)
     } catch (error) {
@@ -1073,6 +1083,28 @@ export class S3CompatibleStorage extends BaseStorage {
   protected async getNode(id: string): Promise<HNSWNode | null> {
     await this.ensureInitialized()
 
+    // Check cache first WITH LOGGING
+    const cached = this.nodeCache.get(id)
+
+    // DIAGNOSTIC LOGGING: Reveal cache poisoning
+    prodLog.info(`[getNode] 🔍 Cache check for ${id.substring(0, 8)}...:`, {
+      hasCached: cached !== undefined,
+      isNull: cached === null,
+      isObject: cached !== null && typeof cached === 'object',
+      type: typeof cached
+    })
+
+    // CRITICAL FIX: Only return cached value if it's valid (not null/undefined)
+    if (cached !== undefined && cached !== null) {
+      prodLog.info(`[getNode] ✅ Cache HIT - returning cached node for ${id.substring(0, 8)}...`)
+      this.logger.trace(`Cache hit for node ${id}`)
+      return cached
+    } else if (cached === null) {
+      prodLog.warn(`[getNode] ⚠️ Cache contains NULL for ${id.substring(0, 8)}... - ignoring and loading from S3`)
+    } else {
+      prodLog.info(`[getNode] ❌ Cache MISS - loading from S3 for ${id.substring(0, 8)}...`)
+    }
+
     try {
       // Import the GetObjectCommand only when needed
       const { GetObjectCommand } = await import('@aws-sdk/client-s3')
@@ -1137,6 +1169,14 @@ export class S3CompatibleStorage extends BaseStorage {
         level: parsedNode.level || 0
       }
 
+      // CRITICAL FIX: Only cache valid nodes (never cache null)
+      if (node && node.id && node.vector && Array.isArray(node.vector)) {
+        this.nodeCache.set(id, node)
+        prodLog.info(`[getNode] 💾 Cached node ${id.substring(0, 8)}... successfully`)
+      } else {
+        prodLog.warn(`[getNode] ⚠️ NOT caching invalid node for ${id.substring(0, 8)}...`)
+      }
+
       this.logger.trace(`Successfully retrieved node ${id}`)
       return node
     } catch (error: any) {
@@ -1155,7 +1195,8 @@ export class S3CompatibleStorage extends BaseStorage {
 
       // Check if this is a "not found" error (S3 uses "NoSuchKey")
       if (error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
-        prodLog.warn(`[getNode] Identified as 404/NoSuchKey error - returning null`)
+        prodLog.warn(`[getNode] Identified as 404/NoSuchKey error - returning null WITHOUT caching`)
+        // CRITICAL FIX: Do NOT cache null values
         return null
       }
 
