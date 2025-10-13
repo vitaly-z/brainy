@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.40.2](https://github.com/soulcraftlabs/brainy/compare/v3.40.1...v3.40.2) (2025-10-13)
+
+
+### ⚡ Performance Improvements
+
+* more aggressive cache fairness to prevent thrashing ([829a8a6](https://github.com/soulcraftlabs/brainy/commit/829a8a61a23688aae1384b2844f1e75b1fd773d9))
+
 ### [3.40.1](https://github.com/soulcraftlabs/brainy/compare/v3.40.0...v3.40.1) (2025-10-13)
 
 
