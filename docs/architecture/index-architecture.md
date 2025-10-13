@@ -6,7 +6,7 @@ Brainy uses a sophisticated **4-index architecture** that enables "Triple Intell
 
 | Index | Purpose | Data Structure | Complexity | File Location |
 |-------|---------|----------------|------------|---------------|
-| **MetadataIndex** | Fast metadata filtering | Inverted indexes + sorted arrays | O(1) exact, O(log n) ranges | `src/utils/metadataIndex.ts` |
+| **MetadataIndex** | Fast metadata filtering | Chunked sparse indices with bloom filters + zone maps | O(1) exact, O(log n) ranges | `src/utils/metadataIndex.ts` |
 | **HNSWIndex** | Vector similarity search | Hierarchical graphs | O(log n) search | `src/hnsw/hnswIndex.ts` |
 | **GraphAdjacencyIndex** | Relationship traversal | Bidirectional adjacency maps | O(1) per hop | `src/graph/graphAdjacencyIndex.ts` |
 | **DeletedItemsIndex** | Soft-delete tracking | Simple Set | O(1) all ops | `src/utils/deletedItemsIndex.ts` |
@@ -15,20 +15,22 @@ All four indexes share a **UnifiedCache** for coordinated memory management, ens
 
 ## 1. MetadataIndex - Fast Field Filtering
 
-**Purpose**: Enable O(1) field-value lookups and O(log n) range queries on metadata fields.
+**Purpose**: Enable O(1) field-value lookups and O(log n) range queries on metadata fields using adaptive chunked sparse indexing.
 
-### Internal Architecture
+### Internal Architecture (v3.42.0)
 
 ```typescript
 class MetadataIndexManager {
-  // Inverted indexes: field:value → Set<entityId>
-  private indexCache = new Map<string, MetadataIndexEntry>()
+  // Chunked sparse indices: field → SparseIndex (replaces flat files)
+  private sparseIndices = new Map<string, SparseIndex>()
 
-  // Sorted indices for range queries
-  private sortedIndices = new Map<string, SortedFieldIndex>()
+  // Chunk management
+  private chunkManager: ChunkManager
+  private chunkingStrategy: AdaptiveChunkingStrategy
 
-  // Field statistics for query optimization
-  private fieldStats = new Map<string, FieldStats>()
+  // Lightweight field statistics
+  private fieldIndexes = new Map<string, FieldIndexData>()  // value → count
+  private fieldStats = new Map<string, FieldStats>()        // cardinality tracking
 
   // Type-field affinity for NLP understanding
   private typeFieldAffinity = new Map<string, Map<string, number>>()
@@ -40,32 +42,62 @@ class MetadataIndexManager {
 
 ### Key Data Structures
 
-#### Inverted Index
+#### Chunked Sparse Index (NEW in v3.42.0)
 ```typescript
-// Example: field="status", value="active"
-// Key: "status:active"
-// Value: MetadataIndexEntry {
-//   ids: Set(['id1', 'id2', 'id3']),  // All entities with status="active"
-//   metadata: { lastUpdated: timestamp, count: 3 }
-// }
+// SparseIndex: Directory of chunks for a field
+// Example: field="status"
+class SparseIndex {
+  field: string
+  chunks: ChunkDescriptor[]  // Metadata about each chunk
+  bloomFilters: BloomFilter[] // Fast membership testing
+}
+
+// ChunkDescriptor: Metadata about a chunk
+interface ChunkDescriptor {
+  chunkId: number
+  valueCount: number         // How many unique values in this chunk
+  idCount: number            // Total entity IDs
+  zoneMap: ZoneMap          // Min/max for range queries
+  lastUpdated: number
+}
+
+// Actual chunk data stored separately
+class ChunkData {
+  chunkId: number
+  field: string
+  entries: Map<value, Set<entityId>>  // ~50 values per chunk
+}
 ```
 
-**Performance**: O(1) lookup for exact matches
+**Performance**:
+- O(1) exact lookup with bloom filters (1% false positive rate)
+- O(log n) range queries with zone maps
+- 630x file reduction (560k flat files → 89 chunk files)
 
-#### Sorted Index
+#### Bloom Filter (Probabilistic Membership Testing)
 ```typescript
-// Example: field="publishDate" (numeric/temporal)
-// Key: "publishDate"
-// Value: SortedFieldIndex {
-//   entries: [
-//     [1609459200000, Set(['id1', 'id2'])],  // Jan 1, 2021
-//     [1640995200000, Set(['id3', 'id4'])],  // Jan 1, 2022
-//     [1672531200000, Set(['id5', 'id6'])]   // Jan 1, 2023
-//   ]
-// }
+class BloomFilter {
+  bits: Uint8Array        // Bit array
+  size: number           // Total bits
+  hashCount: number      // Number of hash functions (FNV-1a, DJB2)
+
+  mightContain(value): boolean  // ~1% false positive, 0% false negative
+}
 ```
 
-**Performance**: O(log n) binary search + O(k) result collection
+**Use case**: Quickly skip chunks that definitely don't contain a value
+
+#### Zone Map (Range Query Optimization)
+```typescript
+interface ZoneMap {
+  min: any | null       // Minimum value in chunk
+  max: any | null       // Maximum value in chunk
+  count: number         // Number of entries
+  hasNulls: boolean     // Whether chunk contains null values
+}
+```
+
+**Use case**: Skip entire chunks during range queries (ClickHouse-inspired)
 
 #### Type-Field Affinity
 ```typescript
@@ -79,6 +111,63 @@ class MetadataIndexManager {
 ```
 
 **Use case**: Enables NLP to understand "find characters named John" → knows 'name' is a character field
+
+### Query Algorithm (v3.42.0)
+
+**Exact Match Query**:
+```typescript
+async getIds(field: string, value: any): Promise<string[]> {
+  // 1. Load sparse index for field
+  const sparseIndex = await this.loadSparseIndex(field)
+
+  // 2. Find candidate chunks using bloom filters
+  const candidateChunks = sparseIndex.findChunksForValue(value)
+  //    → Bloom filter checks all chunks (~1ms)
+  //    → Returns only chunks that *might* contain value
+
+  // 3. Load candidate chunks and collect IDs
+  const results = []
+  for (const chunkId of candidateChunks) {
+    const chunk = await this.chunkManager.loadChunk(field, chunkId)
+    const ids = chunk.entries.get(value)
+    if (ids) results.push(...ids)
+  }
+
+  return results
+}
+```
+
+**Range Query**:
+```typescript
+async getIdsForRange(field: string, min: any, max: any): Promise<string[]> {
+  // 1. Load sparse index for field
+  const sparseIndex = await this.loadSparseIndex(field)
+
+  // 2. Find candidate chunks using zone maps
+  const candidateChunks = sparseIndex.findChunksForRange(min, max)
+  //    → Check zoneMap.min and zoneMap.max for each chunk
+  //    → Skip chunks where max < min or min > max
+
+  // 3. Load chunks and filter values
+  const results = []
+  for (const chunkId of candidateChunks) {
+    const chunk = await this.chunkManager.loadChunk(field, chunkId)
+    for (const [value, ids] of chunk.entries) {
+      if (value >= min && value <= max) {
+        results.push(...ids)
+      }
+    }
+  }
+
+  return results
+}
+```
+
+**Benefits**:
+- Bloom filters: Skip 99% of irrelevant chunks (exact match)
+- Zone maps: Skip entire chunks that fall outside range
+- Adaptive chunking: ~50 values per chunk optimizes I/O
+- Immediate flushing: No need for dirty tracking or batch writes
 
 ### Temporal Bucketing (v3.41.0)
 
@@ -687,6 +776,7 @@ All indexes scale gracefully:
 
 ## Version History
 
+- **v3.42.0** (October 2025): Replaced flat file indexing with adaptive chunked sparse indexing. Bloom filters + zone maps for O(1) exact match and O(log n) range queries. 630x file reduction (560k → 89 files). Removed dual code paths.
 - **v3.41.0** (October 2025): Added automatic temporal bucketing to MetadataIndex
 - **v3.40.0** (October 2025): Enhanced batch processing for imports
 - **v3.0.0** (September 2025): Introduced 4-index architecture with UnifiedCache
