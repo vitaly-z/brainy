@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.40.1](https://github.com/soulcraftlabs/brainy/compare/v3.40.0...v3.40.1) (2025-10-13)
+
+
+### 🐛 Bug Fixes
+
+* correct cache eviction formula to prioritize high-value items ([8e7b52b](https://github.com/soulcraftlabs/brainy/commit/8e7b52bda98e637164e2fb321251c254d03cdf70))
+
 ## [3.40.0](https://github.com/soulcraftlabs/brainy/compare/v3.39.0...v3.40.0) (2025-10-13)
 
 
