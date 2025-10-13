@@ -113,7 +113,7 @@ export class UnifiedCache {
     this.config = {
       enableRequestCoalescing: true,
       enableFairnessCheck: true,
-      fairnessCheckInterval: 60000,  // Check fairness every minute
+      fairnessCheckInterval: 30000,  // Check fairness every 30 seconds (v3.40.2: was 60s)
       persistPatterns: true,
       enableMemoryMonitoring: true,
       memoryCheckInterval: 30000,  // Check memory every 30s
@@ -231,6 +231,12 @@ export class UnifiedCache {
     this.currentSize += size
     this.typeAccessCounts[type]++
     this.totalAccessCount++
+
+    // Proactive fairness check (v3.40.2): Check immediately if adding to a dominant type
+    // This prevents imbalance formation instead of reacting to it
+    if (this.config.enableFairnessCheck && this.cache.size > 10) {
+      this.checkProactiveFairness(type)
+    }
   }
 
   /**
@@ -335,12 +341,37 @@ export class UnifiedCache {
       other: typeSizes.other / totalSize
     }
 
-    // Check for starvation (90% cache but <10% accesses)
+    // Check for starvation (v3.40.2: more aggressive - 70% cache with <15% accesses)
+    // Previous: 90% cache, <10% access (too lenient, caused thrashing)
     for (const type of ['hnsw', 'metadata', 'embedding', 'other'] as const) {
-      if (sizeRatios[type] > 0.9 && accessRatios[type] < 0.1) {
+      if (sizeRatios[type] > 0.7 && accessRatios[type] < 0.15) {
         prodLog.warn(`Type ${type} is hogging cache (${(sizeRatios[type] * 100).toFixed(1)}% size, ${(accessRatios[type] * 100).toFixed(1)}% access)`)
         this.evictType(type)
       }
+    }
+  }
+
+  /**
+   * Proactive fairness check (v3.40.2)
+   * Called immediately when adding items to prevent imbalance formation
+   * Uses same thresholds as periodic check but runs on-demand
+   */
+  private checkProactiveFairness(addedType: 'hnsw' | 'metadata' | 'embedding' | 'other'): void {
+    // Quick check: only evaluate the type being added
+    let typeSize = 0
+    for (const item of this.cache.values()) {
+      if (item.type === addedType) {
+        typeSize += item.size
+      }
+    }
+
+    const sizeRatio = typeSize / (this.currentSize || 1)
+    const accessRatio = this.typeAccessCounts[addedType] / (this.totalAccessCount || 1)
+
+    // Same threshold as periodic check: 70% size, <15% access
+    if (sizeRatio > 0.7 && accessRatio < 0.15) {
+      prodLog.debug(`Proactive fairness: ${addedType} reaching dominance (${(sizeRatio * 100).toFixed(1)}% size, ${(accessRatio * 100).toFixed(1)}% access)`)
+      this.evictType(addedType)
     }
   }
 
@@ -360,9 +391,9 @@ export class UnifiedCache {
     // Sort by score (lower is worse)
     candidates.sort((a, b) => a[1] - b[1])
 
-    // Evict bottom 20% of this type
-    const evictCount = Math.max(1, Math.floor(candidates.length * 0.2))
-    
+    // Evict bottom 50% of this type (v3.40.2: was 20%, too slow to prevent thrashing)
+    const evictCount = Math.max(1, Math.floor(candidates.length * 0.5))
+
     for (let i = 0; i < evictCount && i < candidates.length; i++) {
       const [key, , item] = candidates[i]
       this.currentSize -= item.size
