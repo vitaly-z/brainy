@@ -65,7 +65,7 @@ interface ChunkDescriptor {
 class ChunkData {
   chunkId: number
   field: string
-  entries: Map<value, Set<entityId>>  // ~50 values per chunk
+  entries: Map<value, RoaringBitmap32>  // ~50 values per chunk (v3.43.0: roaring bitmaps!)
 }
 ```
 
@@ -73,6 +73,101 @@ class ChunkData {
 - O(1) exact lookup with bloom filters (1% false positive rate)
 - O(log n) range queries with zone maps
 - 630x file reduction (560k flat files → 89 chunk files)
+
+#### Roaring Bitmap Optimization (NEW in v3.43.0)
+
+**Problem Solved**: JavaScript `Set<string>` for storing entity IDs was inefficient:
+- Memory overhead: ~40 bytes per UUID string (36 chars + overhead)
+- Slow intersection: JavaScript array filtering for multi-field queries
+- No hardware acceleration
+
+**Solution**: Replace `Set<string>` with `RoaringBitmap32` for 90% memory savings and hardware-accelerated operations.
+
+```typescript
+// EntityIdMapper: UUID ↔ Integer mapping
+class EntityIdMapper {
+  private uuidToInt = new Map<string, number>()
+  private intToUuid = new Map<number, string>()
+  private nextId = 1
+
+  getOrAssign(uuid: string): number {
+    // O(1) mapping: UUIDs → integers for bitmap storage
+    let intId = this.uuidToInt.get(uuid)
+    if (!intId) {
+      intId = this.nextId++
+      this.uuidToInt.set(uuid, intId)
+      this.intToUuid.set(intId, uuid)
+    }
+    return intId
+  }
+
+  intsIterableToUuids(ints: Iterable<number>): string[] {
+    // Convert bitmap results back to UUIDs
+    const result: string[] = []
+    for (const intId of ints) {
+      const uuid = this.intToUuid.get(intId)
+      if (uuid) result.push(uuid)
+    }
+    return result
+  }
+}
+
+// ChunkData now uses RoaringBitmap32 instead of Set<string>
+class ChunkData {
+  chunkId: number
+  field: string
+  entries: Map<string, RoaringBitmap32>  // value → bitmap of integer IDs
+}
+```
+
+**Key Benefits**:
+- **90% memory savings**: Roaring bitmaps compress much better than UUID strings
+- **Hardware-accelerated operations**: SIMD instructions (AVX2/SSE4.2) for ultra-fast bitmap AND/OR
+- **Portable serialization**: Cross-platform compatible format (Java/Go/Node.js)
+- **Lazy conversion**: UUIDs converted to integers only once, not per query
+
+**Multi-Field Intersection (THE BIG WIN!)**:
+```typescript
+// Before (v3.42.0): JavaScript array filtering
+async getIdsForFilter(filter: {status: 'active', role: 'admin'}): Promise<string[]> {
+  // 1. Fetch UUID arrays for each field
+  const statusIds = await this.getIds('status', 'active')  // ["uuid1", "uuid2", ...]
+  const roleIds = await this.getIds('role', 'admin')       // ["uuid2", "uuid3", ...]
+
+  // 2. JavaScript intersection (SLOW!)
+  return statusIds.filter(id => roleIds.includes(id))      // O(n*m) array filtering
+}
+
+// After (v3.43.0): Roaring bitmap intersection
+async getIdsForMultipleFields(pairs: [{field, value}, ...]): Promise<string[]> {
+  // 1. Fetch roaring bitmaps (integers, not UUIDs)
+  const bitmaps: RoaringBitmap32[] = []
+  for (const {field, value} of pairs) {
+    const bitmap = await this.getBitmapFromChunks(field, value)
+    if (!bitmap) return []  // Short-circuit if any field has no matches
+    bitmaps.push(bitmap)
+  }
+
+  // 2. Hardware-accelerated intersection (FAST! AVX2/SSE4.2 SIMD)
+  const result = RoaringBitmap32.and(...bitmaps)           // O(1) hardware operation!
+
+  // 3. Convert final bitmap to UUIDs (once, not per-field)
+  return this.idMapper.intsIterableToUuids(result)
+}
+```
+
+**Performance Impact**:
+- Multi-field intersection: **1.4x average speedup**, up to 3.3x on 10K entities
+- Memory usage: **90% reduction** (17.17 MB → 2.01 MB for 100K entities)
+- Hardware acceleration: SIMD instructions make bitmap operations nearly free
+
+**Benchmark Results** (1,000 queries on various dataset sizes):
+| Dataset Size | Operation | Set Time | Roaring Time | Speedup | Memory Savings |
+|--------------|-----------|----------|--------------|---------|----------------|
+| 10,000 entities | 3-field intersection | 3.74ms | 1.14ms | **3.3x faster** | 90% |
+| 100,000 entities | 3-field intersection | 2.60ms | 1.78ms | **1.5x faster** | 88% |
+
+**Implementation**: See `src/utils/entityIdMapper.ts` and benchmark at `tests/performance/roaring-bitmap-benchmark.ts`
 
 #### Bloom Filter (Probabilistic Membership Testing)
 ```typescript

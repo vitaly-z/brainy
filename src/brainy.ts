@@ -179,10 +179,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Initialize core metadata index
       this.metadataIndex = new MetadataIndexManager(this.storage)
-      
+      await this.metadataIndex.init()
+
       // Initialize core graph index
       this.graphIndex = new GraphAdjacencyIndex(this.storage)
-      
+
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
 
