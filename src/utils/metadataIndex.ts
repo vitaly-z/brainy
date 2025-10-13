@@ -116,39 +116,27 @@ export class MetadataIndexManager {
       autoOptimize: config.autoOptimize ?? true,
       indexedFields: config.indexedFields ?? [],
       excludeFields: config.excludeFields ?? [
-        // Timestamps (nearly unique per operation - causes massive file pollution)
-        'accessed',
-        'modified',
-        'createdAt',
-        'updatedAt',
-        'importedAt',
-        'extractedAt',
+        // ONLY exclude truly un-indexable fields (binary data, large content)
+        // Timestamps are NOW indexed with automatic bucketing (prevents pollution)
 
-        // UUIDs (unique per entity/relationship - creates one file per entity)
-        'id',
-        'parent',
-        'sourceId',
-        'targetId',
-        'source',
-        'target',
-        'owner',
+        // Vectors and embeddings (binary data, already have HNSW indexes)
+        'embedding',
+        'vector',
+        'embeddings',
+        'vectors',
 
-        // Paths and hashes (unique per file - creates one file per path)
-        'path',
-        'hash',
-        'url',
-
-        // Content fields (too large/unique - unnecessary for indexing)
+        // Large content fields (too large for metadata indexing)
         'content',
         'data',
         'originalData',
         '_data',
 
-        // Vectors (already excluded - keeping for backward compatibility)
-        'embedding',
-        'vector',
-        'embeddings',
-        'vectors'
+        // Primary keys (use direct lookups instead)
+        'id'
+
+        // NOTE: 'accessed', 'modified', 'createdAt', etc. are NO LONGER excluded!
+        // They are now indexed with automatic 1-minute bucketing to prevent file pollution
+        // This enables range queries like: modified > yesterday
       ]
     }
 
@@ -264,7 +252,7 @@ export class MetadataIndexManager {
    * Get index key for field and value
    */
   private getIndexKey(field: string, value: any): string {
-    const normalizedValue = this.normalizeValue(value)
+    const normalizedValue = this.normalizeValue(value, field)  // Pass field for bucketing!
     return `${field}:${normalizedValue}`
   }
   
@@ -404,8 +392,8 @@ export class MetadataIndexManager {
     }
     
     const sortedIndex = this.sortedIndices.get(field)!
-    const normalizedValue = this.normalizeValue(value)
-    
+    const normalizedValue = this.normalizeValue(value, field)  // Pass field for bucketing!
+
     // Find where this value should be in the sorted array
     const insertPos = this.findInsertPosition(
       sortedIndex.values, 
@@ -432,8 +420,8 @@ export class MetadataIndexManager {
   private updateSortedIndexRemove(field: string, value: any, id: string): void {
     const sortedIndex = this.sortedIndices.get(field)
     if (!sortedIndex || sortedIndex.values.length === 0) return
-    
-    const normalizedValue = this.normalizeValue(value)
+
+    const normalizedValue = this.normalizeValue(value, field)  // Pass field for bucketing!
     
     // Binary search to find the value
     const pos = this.findInsertPosition(
@@ -595,11 +583,10 @@ export class MetadataIndexManager {
       stats.indexType = 'hash'
     }
 
-    // Determine normalization strategy for high cardinality fields
+    // Determine normalization strategy for high cardinality NON-temporal fields
+    // (Temporal fields are already bucketed in normalizeValue from the start!)
     if (hasHighCardinality) {
-      if (field.toLowerCase().includes('time') || field.toLowerCase().includes('date')) {
-        stats.normalizationStrategy = 'bucket' // Time bucketing
-      } else if (isNumeric) {
+      if (isNumeric) {
         stats.normalizationStrategy = 'precision' // Reduce float precision
       } else {
         stats.normalizationStrategy = 'none' // Keep as-is for strings
@@ -674,7 +661,7 @@ export class MetadataIndexManager {
    * Generate value chunk filename for scalable storage
    */
   private getValueChunkFilename(field: string, value: any, chunkIndex: number = 0): string {
-    const normalizedValue = this.normalizeValue(value)
+    const normalizedValue = this.normalizeValue(value, field)  // Pass field for bucketing!
     const safeValue = this.makeSafeFilename(normalizedValue)
     return `${field}_${safeValue}_chunk${chunkIndex}`
   }
@@ -696,26 +683,35 @@ export class MetadataIndexManager {
   private normalizeValue(value: any, field?: string): string {
     if (value === null || value === undefined) return '__NULL__'
     if (typeof value === 'boolean') return value ? '__TRUE__' : '__FALSE__'
-    
-    // Apply smart normalization based on field statistics
+
+    // ALWAYS apply bucketing to temporal fields (prevents pollution from the start!)
+    // This is the key fix: don't wait for cardinality stats, just bucket immediately
+    if (field && typeof value === 'number') {
+      const fieldLower = field.toLowerCase()
+      const isTemporal = fieldLower.includes('time') || fieldLower.includes('date') ||
+                        fieldLower.includes('accessed') || fieldLower.includes('modified') ||
+                        fieldLower.includes('created') || fieldLower.includes('updated')
+
+      if (isTemporal) {
+        // Apply time bucketing immediately (no need to wait for stats)
+        const bucketSize = this.TIMESTAMP_PRECISION_MS  // 1 minute buckets
+        const bucketed = Math.floor(value / bucketSize) * bucketSize
+        return bucketed.toString()
+      }
+    }
+
+    // Apply smart normalization based on field statistics (for non-temporal fields)
     if (field && this.fieldStats.has(field)) {
       const stats = this.fieldStats.get(field)!
       const strategy = stats.normalizationStrategy
-      
-      if (strategy === 'bucket' && typeof value === 'number') {
-        // Time bucketing for timestamps
-        if (field.toLowerCase().includes('time') || field.toLowerCase().includes('date')) {
-          const bucketSize = this.TIMESTAMP_PRECISION_MS
-          const bucketed = Math.floor(value / bucketSize) * bucketSize
-          return bucketed.toString()
-        }
-      } else if (strategy === 'precision' && typeof value === 'number') {
+
+      if (strategy === 'precision' && typeof value === 'number') {
         // Reduce float precision for high cardinality numeric fields
         const rounded = Math.round(value * Math.pow(10, this.FLOAT_PRECISION)) / Math.pow(10, this.FLOAT_PRECISION)
         return rounded.toString()
       }
     }
-    
+
     // Default normalization
     if (typeof value === 'number') return value.toString()
     if (Array.isArray(value)) {
@@ -821,7 +817,7 @@ export class MetadataIndexManager {
         const loadedEntry = await this.loadIndexEntry(key)
         entry = loadedEntry ?? {
           field,
-          value: this.normalizeValue(value),
+          value: this.normalizeValue(value, field),  // Pass field for bucketing!
           ids: new Set<string>(),
           lastUpdated: Date.now()
         }
@@ -906,8 +902,8 @@ export class MetadataIndexManager {
       }
       this.fieldIndexes.set(field, fieldIndex)
     }
-    
-    const normalizedValue = this.normalizeValue(value)
+
+    const normalizedValue = this.normalizeValue(value, field)  // Pass field for bucketing!
     fieldIndex.values[normalizedValue] = (fieldIndex.values[normalizedValue] || 0) + delta
     
     // Remove if count drops to 0
@@ -2176,7 +2172,7 @@ export class MetadataIndexManager {
     
     if (field === 'noun') {
       // This is the type definition itself
-      entityType = this.normalizeValue(value)
+      entityType = this.normalizeValue(value, field)  // Pass field for bucketing!
     } else {
       // Find the noun type for this entity by looking for entries with this entityId
       for (const [key, entry] of this.indexCache.entries()) {
