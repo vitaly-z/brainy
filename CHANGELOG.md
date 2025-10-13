@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.40.3](https://github.com/soulcraftlabs/brainy/compare/v3.40.2...v3.40.3) (2025-10-13)
+
+- fix: prevent metadata index file pollution by excluding high-cardinality fields (0c86c4f)
+
+
 ### [3.40.2](https://github.com/soulcraftlabs/brainy/compare/v3.40.1...v3.40.2) (2025-10-13)
 
 
