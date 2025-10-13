@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.40.0](https://github.com/soulcraftlabs/brainy/compare/v3.39.0...v3.40.0) (2025-10-13)
+
+
+### ✨ Features
+
+* extend batch processing and enhanced progress to CSV and PDF imports ([bb46da2](https://github.com/soulcraftlabs/brainy/commit/bb46da2ee7fc3cd0b5becc7e42afff7d7034ecfe))
+
 ### [3.37.3](https://github.com/soulcraftlabs/brainy/compare/v3.37.2...v3.37.3) (2025-10-10)
 
 - fix: populate totalNodes/totalEdges in ALL storage adapters for HNSW rebuild (a21a845)
