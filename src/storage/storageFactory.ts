@@ -53,6 +53,16 @@ export interface StorageOptions {
   rootDirectory?: string
 
   /**
+   * Nested options object for backward compatibility with BrainyConfig.storage.options
+   * Supports flexible API patterns
+   */
+  options?: {
+    rootDirectory?: string
+    path?: string
+    [key: string]: any
+  }
+
+  /**
    * Configuration for Amazon S3 storage
    */
   s3Storage?: {
@@ -260,6 +270,21 @@ export interface StorageOptions {
 }
 
 /**
+ * Extract filesystem root directory from options
+ * Single source of truth for path resolution - supports all API variants
+ * Zero-config philosophy: flexible input, predictable output
+ */
+function getFileSystemPath(options: StorageOptions): string {
+  return (
+    options.rootDirectory ||         // Official storageFactory API
+    (options as any).path ||         // User-friendly API
+    options.options?.rootDirectory || // Nested options API
+    options.options?.path ||          // Nested path API
+    './brainy-data'                   // Zero-config fallback
+  )
+}
+
+/**
  * Create a storage adapter based on the environment and configuration
  * @param options Options for creating the storage adapter
  * @returns Promise that resolves to a storage adapter
@@ -286,7 +311,7 @@ export async function createStorage(
       const { FileSystemStorage } = await import(
         './adapters/fileSystemStorage.js'
       )
-      return new FileSystemStorage(options.rootDirectory || './brainy-data')
+      return new FileSystemStorage(getFileSystemPath(options))
     } catch (error) {
       console.warn(
         'Failed to load FileSystemStorage, falling back to memory storage:',
@@ -339,7 +364,7 @@ export async function createStorage(
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return new FileSystemStorage(options.rootDirectory || './brainy-data')
+          return new FileSystemStorage(getFileSystemPath(options))
         } catch (error) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',
@@ -518,7 +543,7 @@ export async function createStorage(
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return new FileSystemStorage(options.rootDirectory || './brainy-data')
+          return new FileSystemStorage(getFileSystemPath(options))
         } catch (fsError) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',
