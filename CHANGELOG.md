@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.44.0](https://github.com/soulcraftlabs/brainy/compare/v3.43.3...v3.44.0) (2025-10-14)
+
+- feat: billion-scale graph storage with LSM-tree (e1e1a97)
+- docs: fix S3 examples and improve storage path visibility (e507fcf)
+
+
 ### [3.43.1](https://github.com/soulcraftlabs/brainy/compare/v3.43.0...v3.43.1) (2025-10-14)
 
 
