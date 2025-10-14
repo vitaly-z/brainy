@@ -7,7 +7,7 @@
  * Run with: NODE_OPTIONS='--max-old-space-size=8192' npx tsx tests/performance/roaring-bitmap-benchmark.ts
  */
 
-import { RoaringBitmap32 } from 'roaring'
+import { RoaringBitmap32 } from 'roaring-wasm'
 import { v4 as uuidv4 } from 'uuid'
 
 // Benchmark configuration

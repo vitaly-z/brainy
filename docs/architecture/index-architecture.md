@@ -81,7 +81,7 @@ class ChunkData {
 - Slow intersection: JavaScript array filtering for multi-field queries
 - No hardware acceleration
 
-**Solution**: Replace `Set<string>` with `RoaringBitmap32` for 90% memory savings and hardware-accelerated operations.
+**Solution**: Replace `Set<string>` with `RoaringBitmap32` (WebAssembly implementation) for 90% memory savings and hardware-accelerated operations. Uses `roaring-wasm` package for universal compatibility (Node.js, browsers, serverless) without requiring native compilation.
 
 ```typescript
 // EntityIdMapper: UUID ↔ Integer mapping
@@ -871,6 +871,7 @@ All indexes scale gracefully:
 
 ## Version History
 
+- **v3.43.0** (October 2025): Migrated from `roaring` (native C++) to `roaring-wasm` (WebAssembly) for universal compatibility. No API changes - maintains identical RoaringBitmap32 interface. Benefits: works in all environments (Node.js, browsers, serverless) without build tools, zero compilation errors, simpler developer experience. 90% memory savings and hardware-accelerated operations unchanged.
 - **v3.42.0** (October 2025): Replaced flat file indexing with adaptive chunked sparse indexing. Bloom filters + zone maps for O(1) exact match and O(log n) range queries. 630x file reduction (560k → 89 files). Removed dual code paths.
 - **v3.41.0** (October 2025): Added automatic temporal bucketing to MetadataIndex
 - **v3.40.0** (October 2025): Enhanced batch processing for imports
