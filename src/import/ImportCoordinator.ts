@@ -320,6 +320,16 @@ export class ImportCoordinator {
       )
     }
 
+    // CRITICAL FIX (v3.43.2): Auto-flush all indexes before returning
+    // Ensures imported data survives server restarts
+    // Bug #5: Import data was only in memory, lost on restart
+    options.onProgress?.({
+      stage: 'complete',
+      message: 'Flushing indexes to disk...'
+    })
+
+    await this.brain.flush()
+
     return result
   }
 
@@ -590,10 +600,12 @@ export class ImportCoordinator {
         if (options.createRelationships && row.relationships) {
           for (const rel of row.relationships) {
             try {
-              // Find or create target entity
+              // CRITICAL FIX (v3.43.2): Prevent infinite placeholder creation loop
+              // Find or create target entity using EXACT matching only
               let targetEntityId: string | undefined
 
-              // Check if target already exists in our entities list
+              // STEP 1: Check if target already exists in entities list (includes placeholders)
+              // This prevents creating duplicate placeholders - the root cause of Bug #1
               const existingTarget = entities.find(e =>
                 e.name.toLowerCase() === rel.to.toLowerCase()
               )
@@ -601,17 +613,19 @@ export class ImportCoordinator {
               if (existingTarget) {
                 targetEntityId = existingTarget.id
               } else {
-                // Try to find in other extracted entities
+                // STEP 2: Try to find in extraction results (rows)
+                // FIX: Use EXACT matching instead of fuzzy .includes()
+                // Fuzzy matching caused false matches (e.g., "Entity_29" matching "Entity_297")
                 for (const otherRow of rows) {
                   const otherEntity = otherRow.entity || otherRow
-                  if (rel.to.toLowerCase().includes(otherEntity.name.toLowerCase()) ||
-                      otherEntity.name.toLowerCase().includes(rel.to.toLowerCase())) {
+                  if (otherEntity.name.toLowerCase() === rel.to.toLowerCase()) {
                     targetEntityId = otherEntity.id
                     break
                   }
                 }
 
-                // If still not found, create placeholder entity
+                // STEP 3: If still not found, create placeholder entity ONCE
+                // The placeholder is added to entities array, so future searches will find it
                 if (!targetEntityId) {
                   targetEntityId = await this.brain.add({
                     data: rel.to,
@@ -624,6 +638,7 @@ export class ImportCoordinator {
                     }
                   })
 
+                  // CRITICAL: Add to entities array so future searches find it
                   entities.push({
                     id: targetEntityId,
                     name: rel.to,

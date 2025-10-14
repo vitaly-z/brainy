@@ -737,6 +737,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       throw new Error(`Target entity ${params.to} not found`)
     }
 
+    // CRITICAL FIX (v3.43.2): Check for duplicate relationships
+    // This prevents infinite loops where same relationship is created repeatedly
+    // Bug #1 showed incrementing verb counts (7→8→9...) indicating duplicates
+    const existingVerbs = await this.storage.getVerbsBySource(params.from)
+    const duplicate = existingVerbs.find(v =>
+      v.targetId === params.to &&
+      v.type === params.type
+    )
+
+    if (duplicate) {
+      // Relationship already exists - return existing ID instead of creating duplicate
+      console.log(`[DEBUG] Skipping duplicate relationship: ${params.from} → ${params.to} (${params.type})`)
+      return duplicate.id
+    }
+
     // Generate ID
     const id = uuidv4()
 
@@ -1955,6 +1970,57 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       services,
       density
     }
+  }
+
+  /**
+   * Flush all indexes and caches to persistent storage
+   * CRITICAL FIX (v3.43.2): Ensures data survives server restarts
+   *
+   * Flushes all 4 core indexes:
+   * 1. Storage counts (entity/verb counts by type)
+   * 2. Metadata index (field indexes + EntityIdMapper)
+   * 3. Graph adjacency index (relationship cache)
+   * 4. HNSW vector index (no flush needed - saves directly)
+   *
+   * @example
+   * // Flush after bulk operations
+   * await brain.import('./data.xlsx')
+   * await brain.flush()
+   *
+   * // Flush before shutdown
+   * process.on('SIGTERM', async () => {
+   *   await brain.flush()
+   *   process.exit(0)
+   * })
+   */
+  async flush(): Promise<void> {
+    await this.ensureInitialized()
+
+    console.log('🔄 Flushing Brainy indexes and caches to disk...')
+
+    const startTime = Date.now()
+
+    // Flush all components in parallel for performance
+    await Promise.all([
+      // 1. Flush storage adapter counts (entity/verb counts by type)
+      (async () => {
+        if (this.storage && typeof (this.storage as any).flushCounts === 'function') {
+          await (this.storage as any).flushCounts()
+        }
+      })(),
+
+      // 2. Flush metadata index (field indexes + EntityIdMapper)
+      this.metadataIndex.flush(),
+
+      // 3. Flush graph adjacency index (relationship cache)
+      // Note: Graph structure is already persisted via storage.saveVerb() calls
+      // This just flushes the in-memory cache for performance
+      this.graphIndex.flush()
+    ])
+
+    const elapsed = Date.now() - startTime
+
+    console.log(`✅ All indexes flushed to disk in ${elapsed}ms`)
   }
 
   /**

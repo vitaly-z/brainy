@@ -391,8 +391,9 @@ export class GraphAdjacencyIndex {
 
   /**
    * Flush dirty entries to cache
+   * CRITICAL FIX (v3.43.2): Now public so it can be called from brain.flush()
    */
-  private async flush(): Promise<void> {
+  async flush(): Promise<void> {
     if (this.dirtySourceIds.size === 0 && this.dirtyTargetIds.size === 0) {
       return
     }

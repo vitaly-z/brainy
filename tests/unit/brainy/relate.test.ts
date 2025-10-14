@@ -223,26 +223,29 @@ describe('Brainy.relate()', () => {
   describe('edge cases', () => {
     it('should handle duplicate relationships', async () => {
       // Act - Create same relationship twice
-      await brain.relate({
+      const id1 = await brain.relate({
         from: entity1Id,
         to: entity2Id,
         type: 'worksWith',
         weight: 0.5
       })
-      
-      await brain.relate({
+
+      const id2 = await brain.relate({
         from: entity1Id,
         to: entity2Id,
         type: 'worksWith',
         weight: 0.8
       })
-      
-      // Assert - Both relationships should exist
+
+      // Assert - Should prevent duplicates (v3.43.2 bug fix)
+      // Second call should return existing relationship ID instead of creating duplicate
+      expect(id1).toBe(id2)
+
       const relations = await brain.getRelations({ from: entity1Id })
-      const matches = relations.filter(r => 
+      const matches = relations.filter(r =>
         r.to === entity2Id && r.type === 'worksWith'
       )
-      expect(matches.length).toBe(2)
+      expect(matches.length).toBe(1) // Only one relationship should exist
     })
     
     it('should handle very long metadata', async () => {

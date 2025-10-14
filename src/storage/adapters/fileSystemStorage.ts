@@ -293,34 +293,40 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get all nodes from storage
+   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
+   * Previously only scanned flat directory, causing rebuild to find 0 entities
    */
   protected async getAllNodes(): Promise<HNSWNode[]> {
     await this.ensureInitialized()
 
     const allNodes: HNSWNode[] = []
     try {
-      const files = await fs.promises.readdir(this.nounsDir)
+      // FIX: Use sharded file discovery instead of flat directory read
+      // This scans all 256 shard subdirectories (00-ff) to find actual files
+      const files = await this.getAllShardedFiles(this.nounsDir)
+
       for (const file of files) {
-        if (file.endsWith('.json')) {
-          const filePath = path.join(this.nounsDir, file)
-          const data = await fs.promises.readFile(filePath, 'utf-8')
-          const parsedNode = JSON.parse(data)
+        // Extract ID from filename and use sharded path
+        const id = file.replace('.json', '')
+        const filePath = this.getNodePath(id)
 
-          // Convert serialized connections back to Map<number, Set<string>>
-          const connections = new Map<number, Set<string>>()
-          for (const [level, nodeIds] of Object.entries(
-            parsedNode.connections
-          )) {
-            connections.set(Number(level), new Set(nodeIds as string[]))
-          }
+        const data = await fs.promises.readFile(filePath, 'utf-8')
+        const parsedNode = JSON.parse(data)
 
-          allNodes.push({
-            id: parsedNode.id,
-            vector: parsedNode.vector,
-            connections,
-            level: parsedNode.level || 0
-          })
+        // Convert serialized connections back to Map<number, Set<string>>
+        const connections = new Map<number, Set<string>>()
+        for (const [level, nodeIds] of Object.entries(
+          parsedNode.connections
+        )) {
+          connections.set(Number(level), new Set(nodeIds as string[]))
         }
+
+        allNodes.push({
+          id: parsedNode.id,
+          vector: parsedNode.vector,
+          connections,
+          level: parsedNode.level || 0
+        })
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -332,6 +338,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get nodes by noun type
+   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
    * @param nounType The noun type to filter by
    * @returns Promise that resolves to an array of nodes of the specified noun type
    */
@@ -340,32 +347,34 @@ export class FileSystemStorage extends BaseStorage {
 
     const nouns: HNSWNode[] = []
     try {
-      const files = await fs.promises.readdir(this.nounsDir)
+      // FIX: Use sharded file discovery instead of flat directory read
+      const files = await this.getAllShardedFiles(this.nounsDir)
+
       for (const file of files) {
-        if (file.endsWith('.json')) {
-          const filePath = path.join(this.nounsDir, file)
-          const data = await fs.promises.readFile(filePath, 'utf-8')
-          const parsedNode = JSON.parse(data)
+        // Extract ID from filename and use sharded path
+        const nodeId = file.replace('.json', '')
+        const filePath = this.getNodePath(nodeId)
 
-          // Filter by noun type using metadata
-          const nodeId = parsedNode.id
-          const metadata = await this.getMetadata(nodeId)
-          if (metadata && metadata.noun === nounType) {
-            // Convert serialized connections back to Map<number, Set<string>>
-            const connections = new Map<number, Set<string>>()
-            for (const [level, nodeIds] of Object.entries(
-              parsedNode.connections
-            )) {
-              connections.set(Number(level), new Set(nodeIds as string[]))
-            }
+        const data = await fs.promises.readFile(filePath, 'utf-8')
+        const parsedNode = JSON.parse(data)
 
-            nouns.push({
-              id: parsedNode.id,
-              vector: parsedNode.vector,
-              connections,
-              level: parsedNode.level || 0
-            })
+        // Filter by noun type using metadata
+        const metadata = await this.getMetadata(nodeId)
+        if (metadata && metadata.noun === nounType) {
+          // Convert serialized connections back to Map<number, Set<string>>
+          const connections = new Map<number, Set<string>>()
+          for (const [level, nodeIds] of Object.entries(
+            parsedNode.connections
+          )) {
+            connections.set(Number(level), new Set(nodeIds as string[]))
           }
+
+          nouns.push({
+            id: parsedNode.id,
+            vector: parsedNode.vector,
+            connections,
+            level: parsedNode.level || 0
+          })
         }
       }
     } catch (error: any) {
@@ -482,33 +491,39 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get all edges from storage
+   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
+   * Previously only scanned flat directory, causing rebuild to find 0 relationships
    */
   protected async getAllEdges(): Promise<Edge[]> {
     await this.ensureInitialized()
 
     const allEdges: Edge[] = []
     try {
-      const files = await fs.promises.readdir(this.verbsDir)
+      // FIX: Use sharded file discovery instead of flat directory read
+      // This scans all 256 shard subdirectories (00-ff) to find actual files
+      const files = await this.getAllShardedFiles(this.verbsDir)
+
       for (const file of files) {
-        if (file.endsWith('.json')) {
-          const filePath = path.join(this.verbsDir, file)
-          const data = await fs.promises.readFile(filePath, 'utf-8')
-          const parsedEdge = JSON.parse(data)
+        // Extract ID from filename and use sharded path
+        const id = file.replace('.json', '')
+        const filePath = this.getVerbPath(id)
 
-          // Convert serialized connections back to Map<number, Set<string>>
-          const connections = new Map<number, Set<string>>()
-          for (const [level, nodeIds] of Object.entries(
-            parsedEdge.connections
-          )) {
-            connections.set(Number(level), new Set(nodeIds as string[]))
-          }
+        const data = await fs.promises.readFile(filePath, 'utf-8')
+        const parsedEdge = JSON.parse(data)
 
-          allEdges.push({
-            id: parsedEdge.id,
-            vector: parsedEdge.vector,
-            connections
-          })
+        // Convert serialized connections back to Map<number, Set<string>>
+        const connections = new Map<number, Set<string>>()
+        for (const [level, nodeIds] of Object.entries(
+          parsedEdge.connections
+        )) {
+          connections.set(Number(level), new Set(nodeIds as string[]))
         }
+
+        allEdges.push({
+          id: parsedEdge.id,
+          vector: parsedEdge.vector,
+          connections
+        })
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -974,20 +989,21 @@ export class FileSystemStorage extends BaseStorage {
 
       totalSize = nounsDirSize + verbsDirSize + metadataDirSize + indexDirSize
 
-      // Count files in each directory
-      const nounsCount = (await fs.promises.readdir(this.nounsDir)).filter(
-        (file: string) => file.endsWith('.json')
-      ).length
-      const verbsCount = (await fs.promises.readdir(this.verbsDir)).filter(
-        (file: string) => file.endsWith('.json')
-      ).length
+      // CRITICAL FIX (v3.43.2): Use persisted counts instead of directory reads
+      // This is O(1) instead of O(n), and handles sharded structure correctly
+      const nounsCount = this.totalNounCount
+      const verbsCount = this.totalVerbCount
+
+      // Count metadata files (these are NOT sharded)
       const metadataCount = (
         await fs.promises.readdir(this.metadataDir)
       ).filter((file: string) => file.endsWith('.json')).length
 
-      // Count nouns by type using metadata
-      const nounTypeCounts: Record<string, number> = {}
-      const metadataFiles = await fs.promises.readdir(this.metadataDir)
+      // Use persisted entity counts by type (O(1) instead of scanning all files)
+      const nounTypeCounts: Record<string, number> = Object.fromEntries(this.entityCounts)
+
+      // Skip the expensive metadata file scan since we have counts
+      const metadataFiles: string[] = []  // Empty array to skip the loop below
       for (const file of metadataFiles) {
         if (file.endsWith('.json')) {
           try {
