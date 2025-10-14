@@ -306,12 +306,13 @@ export async function createStorage(
       )
       return new MemoryStorage()
     }
-    console.log('Using file system storage (forced)')
+    const fsPath = getFileSystemPath(options)
+    console.log(`Using file system storage (forced): ${fsPath}`)
     try {
       const { FileSystemStorage } = await import(
         './adapters/fileSystemStorage.js'
       )
-      return new FileSystemStorage(getFileSystemPath(options))
+      return new FileSystemStorage(fsPath)
     } catch (error) {
       console.warn(
         'Failed to load FileSystemStorage, falling back to memory storage:',
@@ -359,12 +360,13 @@ export async function createStorage(
           )
           return new MemoryStorage()
         }
-        console.log('Using file system storage')
+        const fsPath = getFileSystemPath(options)
+        console.log(`Using file system storage: ${fsPath}`)
         try {
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return new FileSystemStorage(getFileSystemPath(options))
+          return new FileSystemStorage(fsPath)
         } catch (error) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',
@@ -538,12 +540,13 @@ export async function createStorage(
         process.versions &&
         process.versions.node
       ) {
-        console.log('Using file system storage (auto-detected)')
+        const fsPath = getFileSystemPath(options)
+        console.log(`Using file system storage (auto-detected): ${fsPath}`)
         try {
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return new FileSystemStorage(getFileSystemPath(options))
+          return new FileSystemStorage(fsPath)
         } catch (fsError) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',

@@ -543,12 +543,28 @@ await brain.import('research.pdf')       // PDF with table extraction
 ```javascript
 // Single node (default)
 const brain = new Brainy({
-    storage: {type: 's3', options: {bucket: 'my-data'}}
+    storage: {
+        type: 's3',
+        s3Storage: {
+            bucketName: 'my-data',
+            region: 'us-east-1',
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
+    }
 })
 
 // Distributed cluster - just add one flag!
 const brain = new Brainy({
-    storage: {type: 's3', options: {bucket: 'my-data'}},
+    storage: {
+        type: 's3',
+        s3Storage: {
+            bucketName: 'my-data',
+            region: 'us-east-1',
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
+    },
     distributed: true  // That's it! Everything else is automatic
 })
 ```
@@ -568,7 +584,15 @@ import { Brainy, NounType } from '@soulcraft/brainy'
 
 // Ingestion nodes (optimized for writes)
 const ingestionNode = new Brainy({
-    storage: {type: 's3', options: {bucket: 'social-data'}},
+    storage: {
+        type: 's3',
+        s3Storage: {
+            bucketName: 'social-data',
+            region: 'us-east-1',
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
+    },
     distributed: true,
     writeOnly: true  // Optimized for high-throughput writes
 })
@@ -585,7 +609,15 @@ blueskyStream.on('post', async (post) => {
 
 // Search nodes (optimized for queries)
 const searchNode = new Brainy({
-    storage: {type: 's3', options: {bucket: 'social-data'}},
+    storage: {
+        type: 's3',
+        s3Storage: {
+            bucketName: 'social-data',
+            region: 'us-east-1',
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
+    },
     distributed: true,
     readOnly: true  // Optimized for fast queries
 })
