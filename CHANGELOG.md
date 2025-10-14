@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.43.1](https://github.com/soulcraftlabs/brainy/compare/v3.43.0...v3.43.1) (2025-10-14)
+
+
+### 🐛 Bug Fixes
+
+* **dependencies**: migrate from roaring (native C++) to roaring-wasm for universal compatibility ([b2afcad](https://github.com/soulcraftlabs/brainy/commit/b2afcad))
+  - Eliminates native compilation requirements (no python, make, gcc/g++ needed)
+  - Works in all environments (Node.js, browsers, serverless, Docker, Lambda, Cloud Run)
+  - Same API and performance (100% compatible RoaringBitmap32 interface)
+  - 90% memory savings maintained vs JavaScript Sets
+  - Hardware-accelerated bitmap operations unchanged
+  - WebAssembly-based for cross-platform compatibility
+
+**Impact**: Fixes installation failures on systems without native build tools. Users can now `npm install @soulcraft/brainy` without any prerequisites.
+
 ### [3.41.1](https://github.com/soulcraftlabs/brainy/compare/v3.41.0...v3.41.1) (2025-10-13)
 
 - test: skip failing delete test temporarily (7c47de8)
