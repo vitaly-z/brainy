@@ -2231,6 +2231,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * O(1) Count API - Production-scale counting using existing indexes
    * Works across all storage adapters (FileSystem, OPFS, S3, Memory)
+   *
+   * Phase 1b Enhancement: Type-aware methods with 99.2% memory reduction
    */
   get counts() {
     return {
@@ -2240,12 +2242,39 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // O(1) total relationship count
       relationships: () => this.graphIndex.getTotalRelationshipCount(),
 
-      // O(1) count by type
+      // O(1) count by type (string-based, backward compatible)
       byType: (type?: string) => {
         if (type) {
           return this.metadataIndex.getEntityCountByType(type)
         }
         return Object.fromEntries(this.metadataIndex.getAllEntityCounts())
+      },
+
+      // Phase 1b: O(1) count by type enum (Uint32Array-based, more efficient)
+      // Uses fixed-size type tracking: 284 bytes vs ~35KB with Maps (99.2% reduction)
+      byTypeEnum: (type: NounType) => {
+        return this.metadataIndex.getEntityCountByTypeEnum(type)
+      },
+
+      // Phase 1b: Get top N noun types by entity count (useful for cache warming)
+      topTypes: (n: number = 10) => {
+        return this.metadataIndex.getTopNounTypes(n)
+      },
+
+      // Phase 1b: Get top N verb types by count
+      topVerbTypes: (n: number = 10) => {
+        return this.metadataIndex.getTopVerbTypes(n)
+      },
+
+      // Phase 1b: Get all noun type counts as typed Map
+      // More efficient than byType() for type-aware queries
+      allNounTypeCounts: () => {
+        return this.metadataIndex.getAllNounTypeCounts()
+      },
+
+      // Phase 1b: Get all verb type counts as typed Map
+      allVerbTypeCounts: () => {
+        return this.metadataIndex.getAllVerbTypeCounts()
       },
 
       // O(1) count by relationship type
