@@ -14,6 +14,8 @@
  */
 
 import { HNSWIndex } from '../hnsw/hnswIndex.js'
+import { HNSWIndexOptimized } from '../hnsw/hnswIndexOptimized.js'
+import { TypeAwareHNSWIndex } from '../hnsw/typeAwareHNSWIndex.js'
 import { MetadataIndexManager } from '../utils/metadataIndex.js'
 import { Vector } from '../coreTypes.js'
 
@@ -226,16 +228,16 @@ class QueryPlanner {
  */
 export class TripleIntelligenceSystem {
   private metadataIndex: MetadataIndexManager
-  private hnswIndex: HNSWIndex
+  private hnswIndex: HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex
   private graphIndex: GraphAdjacencyIndex
   private metrics: PerformanceMetrics
   private planner: QueryPlanner
   private embedder: (text: string) => Promise<Vector>
   private storage: any // Storage adapter for retrieving full entities
-  
+
   constructor(
     metadataIndex: MetadataIndexManager,
-    hnswIndex: HNSWIndex,
+    hnswIndex: HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex,
     graphIndex: GraphAdjacencyIndex,
     embedder: (text: string) => Promise<Vector>,
     storage: any
