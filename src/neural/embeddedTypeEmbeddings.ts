@@ -2,7 +2,7 @@
  * 🧠 BRAINY EMBEDDED TYPE EMBEDDINGS
  *
  * AUTO-GENERATED - DO NOT EDIT
- * Generated: 2025-10-10T01:27:22.642Z
+ * Generated: 2025-10-15T19:24:11.910Z
  * Noun Types: 31
  * Verb Types: 40
  *
@@ -19,7 +19,7 @@ export const TYPE_METADATA = {
   verbTypes: 40,
   totalTypes: 71,
   embeddingDimensions: 384,
-  generatedAt: "2025-10-10T01:27:22.642Z",
+  generatedAt: "2025-10-15T19:24:11.910Z",
   sizeBytes: {
     embeddings: 109056,
     base64: 145408

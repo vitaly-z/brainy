@@ -498,3 +498,189 @@ export const VerbType = {
   Competes: 'competes' // Competition, rivalry, competing relationships
 } as const
 export type VerbType = (typeof VerbType)[keyof typeof VerbType]
+
+/**
+ * Noun type enum for O(1) lookups and type safety
+ * Maps each noun type to a unique index (0-30)
+ * Used for fixed-size array operations and bitmap indices
+ */
+export enum NounTypeEnum {
+  person = 0,
+  organization = 1,
+  location = 2,
+  thing = 3,
+  concept = 4,
+  event = 5,
+  document = 6,
+  media = 7,
+  file = 8,
+  message = 9,
+  content = 10,
+  collection = 11,
+  dataset = 12,
+  product = 13,
+  service = 14,
+  user = 15,
+  task = 16,
+  project = 17,
+  process = 18,
+  state = 19,
+  role = 20,
+  topic = 21,
+  language = 22,
+  currency = 23,
+  measurement = 24,
+  hypothesis = 25,
+  experiment = 26,
+  contract = 27,
+  regulation = 28,
+  interface = 29,
+  resource = 30
+}
+
+/**
+ * Verb type enum for O(1) lookups and type safety
+ * Maps each verb type to a unique index (0-39)
+ * Used for fixed-size array operations and bitmap indices
+ */
+export enum VerbTypeEnum {
+  relatedTo = 0,
+  contains = 1,
+  partOf = 2,
+  locatedAt = 3,
+  references = 4,
+  precedes = 5,
+  succeeds = 6,
+  causes = 7,
+  dependsOn = 8,
+  requires = 9,
+  creates = 10,
+  transforms = 11,
+  becomes = 12,
+  modifies = 13,
+  consumes = 14,
+  owns = 15,
+  attributedTo = 16,
+  createdBy = 17,
+  belongsTo = 18,
+  memberOf = 19,
+  worksWith = 20,
+  friendOf = 21,
+  follows = 22,
+  likes = 23,
+  reportsTo = 24,
+  supervises = 25,
+  mentors = 26,
+  communicates = 27,
+  describes = 28,
+  defines = 29,
+  categorizes = 30,
+  measures = 31,
+  evaluates = 32,
+  uses = 33,
+  implements = 34,
+  extends = 35,
+  inherits = 36,
+  conflicts = 37,
+  synchronizes = 38,
+  competes = 39
+}
+
+/**
+ * Total number of noun types (for array allocations)
+ */
+export const NOUN_TYPE_COUNT = 31
+
+/**
+ * Total number of verb types (for array allocations)
+ */
+export const VERB_TYPE_COUNT = 40
+
+/**
+ * Type utilities for O(1) conversions between string types and numeric indices
+ * Enables efficient fixed-size array operations and bitmap indexing
+ */
+export const TypeUtils = {
+  /**
+   * Get numeric index for a noun type
+   * @param type - NounType string (e.g., 'person')
+   * @returns Numeric index (0-30)
+   */
+  getNounIndex: (type: NounType): number => {
+    return NounTypeEnum[type as keyof typeof NounTypeEnum]
+  },
+
+  /**
+   * Get numeric index for a verb type
+   * @param type - VerbType string (e.g., 'relatedTo')
+   * @returns Numeric index (0-39)
+   */
+  getVerbIndex: (type: VerbType): number => {
+    return VerbTypeEnum[type as keyof typeof VerbTypeEnum]
+  },
+
+  /**
+   * Get noun type string from numeric index
+   * @param index - Numeric index (0-30)
+   * @returns NounType string or 'thing' as default
+   */
+  getNounFromIndex: (index: number): NounType => {
+    const entry = Object.entries(NounTypeEnum).find(([_, idx]) => idx === index)
+    return entry ? (entry[0] as NounType) : NounType.Thing
+  },
+
+  /**
+   * Get verb type string from numeric index
+   * @param index - Numeric index (0-39)
+   * @returns VerbType string or 'relatedTo' as default
+   */
+  getVerbFromIndex: (index: number): VerbType => {
+    const entry = Object.entries(VerbTypeEnum).find(([_, idx]) => idx === index)
+    return entry ? (entry[0] as VerbType) : VerbType.RelatedTo
+  }
+}
+
+/**
+ * Type-specific metadata for optimization hints
+ * Provides per-type configuration for bloom filters, chunking, and indexing
+ */
+export const TypeMetadata: Record<
+  NounType,
+  {
+    expectedFields: number // Average number of metadata fields for this type
+    bloomBits: number // Bloom filter size in bits (128 or 256)
+    avgChunkSize: number // Average entities per index chunk
+  }
+> = {
+  person: { expectedFields: 10, bloomBits: 256, avgChunkSize: 100 },
+  organization: { expectedFields: 12, bloomBits: 256, avgChunkSize: 80 },
+  document: { expectedFields: 8, bloomBits: 256, avgChunkSize: 100 },
+  event: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  location: { expectedFields: 7, bloomBits: 128, avgChunkSize: 60 },
+  thing: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 },
+  concept: { expectedFields: 4, bloomBits: 128, avgChunkSize: 40 },
+  media: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  file: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 },
+  message: { expectedFields: 7, bloomBits: 128, avgChunkSize: 60 },
+  content: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 },
+  collection: { expectedFields: 4, bloomBits: 128, avgChunkSize: 40 },
+  dataset: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  product: { expectedFields: 8, bloomBits: 256, avgChunkSize: 70 },
+  service: { expectedFields: 7, bloomBits: 128, avgChunkSize: 60 },
+  user: { expectedFields: 9, bloomBits: 256, avgChunkSize: 80 },
+  task: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  project: { expectedFields: 8, bloomBits: 256, avgChunkSize: 70 },
+  process: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 },
+  state: { expectedFields: 3, bloomBits: 128, avgChunkSize: 30 },
+  role: { expectedFields: 4, bloomBits: 128, avgChunkSize: 40 },
+  topic: { expectedFields: 4, bloomBits: 128, avgChunkSize: 40 },
+  language: { expectedFields: 3, bloomBits: 128, avgChunkSize: 30 },
+  currency: { expectedFields: 3, bloomBits: 128, avgChunkSize: 30 },
+  measurement: { expectedFields: 4, bloomBits: 128, avgChunkSize: 40 },
+  hypothesis: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  experiment: { expectedFields: 7, bloomBits: 128, avgChunkSize: 60 },
+  contract: { expectedFields: 8, bloomBits: 256, avgChunkSize: 70 },
+  regulation: { expectedFields: 6, bloomBits: 128, avgChunkSize: 50 },
+  interface: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 },
+  resource: { expectedFields: 5, bloomBits: 128, avgChunkSize: 50 }
+}
