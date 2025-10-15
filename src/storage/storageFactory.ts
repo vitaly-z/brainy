@@ -11,6 +11,7 @@ import {
   R2Storage
 } from './adapters/s3CompatibleStorage.js'
 import { GcsStorage } from './adapters/gcsStorage.js'
+import { TypeAwareStorageAdapter } from './adapters/typeAwareStorageAdapter.js'
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
 import { isBrowser } from '../utils/environment.js'
 import { OperationConfig } from '../utils/operationUtils.js'
@@ -29,8 +30,9 @@ export interface StorageOptions {
    * - 'r2': Use Cloudflare R2 storage
    * - 'gcs': Use Google Cloud Storage (S3-compatible with HMAC keys)
    * - 'gcs-native': Use Google Cloud Storage (native SDK with ADC)
+   * - 'type-aware': Use type-first storage adapter (wraps another adapter)
    */
-  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native'
+  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native' | 'type-aware'
 
   /**
    * Force the use of memory storage even if other storage types are available
@@ -175,6 +177,28 @@ export interface StorageOptions {
      * HMAC secret access key (backward compatibility, not recommended)
      */
     secretAccessKey?: string
+  }
+
+  /**
+   * Configuration for Type-Aware Storage (type-first architecture)
+   * Wraps another storage adapter and adds type-first routing
+   */
+  typeAwareStorage?: {
+    /**
+     * Underlying storage adapter to use
+     * Can be any of: 'memory', 'filesystem', 's3', 'r2', 'gcs', 'gcs-native'
+     */
+    underlyingType?: 'memory' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native'
+
+    /**
+     * Options for the underlying storage adapter
+     */
+    underlyingOptions?: StorageOptions
+
+    /**
+     * Enable verbose logging for debugging
+     */
+    verbose?: boolean
   }
 
   /**
@@ -452,6 +476,27 @@ export async function createStorage(
           return new MemoryStorage()
         }
 
+      case 'type-aware': {
+        console.log('Using Type-Aware Storage (type-first architecture)')
+
+        // Create underlying storage adapter
+        const underlyingType = options.typeAwareStorage?.underlyingType || 'auto'
+        const underlyingOptions = options.typeAwareStorage?.underlyingOptions || {}
+
+        // Recursively create the underlying storage
+        const underlying = await createStorage({
+          ...underlyingOptions,
+          type: underlyingType
+        })
+
+        // Wrap with TypeAwareStorageAdapter
+        // Cast to BaseStorage since all concrete storage adapters extend BaseStorage
+        return new TypeAwareStorageAdapter({
+          underlyingStorage: underlying as any,
+          verbose: options.typeAwareStorage?.verbose || false
+        }) as any
+      }
+
       default:
         console.warn(
           `Unknown storage type: ${options.type}, falling back to memory storage`
@@ -590,7 +635,8 @@ export {
   OPFSStorage,
   S3CompatibleStorage,
   R2Storage,
-  GcsStorage
+  GcsStorage,
+  TypeAwareStorageAdapter
 }
 
 // Export FileSystemStorage conditionally
