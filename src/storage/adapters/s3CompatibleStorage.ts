@@ -1515,12 +1515,19 @@ export class S3CompatibleStorage extends BaseStorage {
       // Convert connections Map to a serializable format
       // CRITICAL: Only save lightweight vector data (no metadata)
       // Metadata is saved separately via saveVerbMetadata() (2-file system)
+      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
       const serializableEdge = {
         id: edge.id,
         vector: edge.vector,
         connections: this.mapToObject(edge.connections, (set) =>
           Array.from(set as Set<string>)
-        )
+        ),
+
+        // CORE RELATIONAL DATA (v3.50.1+)
+        verb: edge.verb,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+
         // NO metadata field - saved separately for scalability
       }
 
@@ -1640,10 +1647,19 @@ export class S3CompatibleStorage extends BaseStorage {
           connections.set(Number(level), new Set(nodeIds as string[]))
         }
 
+        // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
         const edge = {
           id: parsedEdge.id,
           vector: parsedEdge.vector,
-          connections
+          connections,
+
+          // CORE RELATIONAL DATA (read from vector file)
+          verb: parsedEdge.verb,
+          sourceId: parsedEdge.sourceId,
+          targetId: parsedEdge.targetId,
+
+          // User metadata (retrieved separately via getVerbMetadata())
+          metadata: parsedEdge.metadata
         }
 
         this.logger.trace(`Successfully retrieved edge ${id}`)

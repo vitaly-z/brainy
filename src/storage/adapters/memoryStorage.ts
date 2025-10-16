@@ -289,10 +289,19 @@ export class MemoryStorage extends BaseStorage {
     const isNew = !this.verbs.has(verb.id)
 
     // Create a deep copy to avoid reference issues
+    // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
     const verbCopy: HNSWVerb = {
       id: verb.id,
       vector: [...verb.vector],
-      connections: new Map()
+      connections: new Map(),
+
+      // CORE RELATIONAL DATA
+      verb: verb.verb,
+      sourceId: verb.sourceId,
+      targetId: verb.targetId,
+
+      // User metadata (if any)
+      metadata: verb.metadata
     }
 
     // Copy connections
@@ -321,10 +330,19 @@ export class MemoryStorage extends BaseStorage {
     }
 
     // Return a deep copy of the HNSWVerb
+    // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
     const verbCopy: HNSWVerb = {
       id: verb.id,
       vector: [...verb.vector],
-      connections: new Map()
+      connections: new Map(),
+
+      // CORE RELATIONAL DATA
+      verb: verb.verb,
+      sourceId: verb.sourceId,
+      targetId: verb.targetId,
+
+      // User metadata
+      metadata: verb.metadata
     }
 
     // Copy connections
@@ -332,14 +350,7 @@ export class MemoryStorage extends BaseStorage {
       verbCopy.connections.set(level, new Set(connections))
     }
 
-    // Get metadata (relationship data in 2-file system)
-    const metadata = await this.getVerbMetadata(id)
-
-    // Combine into complete verb object
-    return {
-      ...verbCopy,
-      metadata: metadata || {}
-    }
+    return verbCopy
   }
 
   /**

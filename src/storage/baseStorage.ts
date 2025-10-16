@@ -242,37 +242,46 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Save a verb to storage
+   *
+   * ARCHITECTURAL FIX (v3.50.1): HNSWVerb now includes verb/sourceId/targetId
+   * These are core relational fields, not metadata. They're stored in the vector
+   * file for fast access and to align with actual usage patterns.
    */
   public async saveVerb(verb: GraphVerb): Promise<void> {
     await this.ensureInitialized()
-    
+
     // Validate verb type before saving - storage boundary protection
     if (verb.verb) {
       validateVerbType(verb.verb)
     }
-    
-    // Extract the lightweight HNSWVerb data
+
+    // Extract HNSWVerb with CORE relational fields included
     const hnswVerb: HNSWVerb = {
       id: verb.id,
       vector: verb.vector,
-      connections: verb.connections || new Map()
+      connections: verb.connections || new Map(),
+
+      // CORE RELATIONAL DATA (v3.50.1+)
+      verb: (verb.verb || verb.type || 'relatedTo') as VerbType,
+      sourceId: verb.sourceId || verb.source || '',
+      targetId: verb.targetId || verb.target || '',
+
+      // User metadata (if any)
+      metadata: verb.metadata
     }
-    
-    // Extract and save the metadata separately
+
+    // Extract lightweight metadata for separate file (optional fields only)
     const metadata = {
-      sourceId: verb.sourceId || verb.source,
-      targetId: verb.targetId || verb.target,
-      source: verb.source || verb.sourceId,
-      target: verb.target || verb.targetId,
-      type: verb.type || verb.verb,
-      verb: verb.verb || verb.type,
       weight: verb.weight,
-      metadata: verb.metadata,
       data: verb.data,
       createdAt: verb.createdAt,
       updatedAt: verb.updatedAt,
       createdBy: verb.createdBy,
-      embedding: verb.embedding
+
+      // Legacy aliases for backward compatibility
+      source: verb.source || verb.sourceId,
+      target: verb.target || verb.targetId,
+      type: verb.type || verb.verb
     }
     
     // Save both the HNSWVerb and metadata atomically
@@ -319,13 +328,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Convert HNSWVerb to GraphVerb by combining with metadata
+   *
+   * ARCHITECTURAL FIX (v3.50.1): Core fields (verb/sourceId/targetId) are now in HNSWVerb
+   * Only optional fields (weight, timestamps, etc.) come from metadata file
    */
   protected async convertHNSWVerbToGraphVerb(hnswVerb: HNSWVerb): Promise<GraphVerb | null> {
     try {
+      // Metadata file is now optional - contains only weight, timestamps, etc.
       const metadata = await this.getVerbMetadata(hnswVerb.id)
-      if (!metadata) {
-        return null
-      }
 
       // Create default timestamp if not present
       const defaultTimestamp = {
@@ -342,18 +352,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return {
         id: hnswVerb.id,
         vector: hnswVerb.vector,
-        sourceId: metadata.sourceId,
-        targetId: metadata.targetId,
-        source: metadata.source,
-        target: metadata.target,
-        verb: metadata.verb,
-        type: metadata.type,
-        weight: metadata.weight || 1.0,
-        metadata: metadata.metadata || {},
-        createdAt: metadata.createdAt || defaultTimestamp,
-        updatedAt: metadata.updatedAt || defaultTimestamp,
-        createdBy: metadata.createdBy || defaultCreatedBy,
-        data: metadata.data,
+
+        // CORE FIELDS from HNSWVerb (v3.50.1+)
+        verb: hnswVerb.verb,
+        sourceId: hnswVerb.sourceId,
+        targetId: hnswVerb.targetId,
+
+        // Aliases for backward compatibility
+        type: hnswVerb.verb,
+        source: hnswVerb.sourceId,
+        target: hnswVerb.targetId,
+
+        // Optional fields from metadata file
+        weight: metadata?.weight || 1.0,
+        metadata: hnswVerb.metadata || {},
+        createdAt: metadata?.createdAt || defaultTimestamp,
+        updatedAt: metadata?.updatedAt || defaultTimestamp,
+        createdBy: metadata?.createdBy || defaultCreatedBy,
+        data: metadata?.data,
         embedding: hnswVerb.vector
       }
     } catch (error) {
@@ -368,23 +384,32 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected async _loadAllVerbsForOptimization(): Promise<HNSWVerb[]> {
     await this.ensureInitialized()
-    
+
     // Only use this for internal optimizations when safe
     const result = await this.getVerbs({
       pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
-    
+
     // Convert GraphVerbs back to HNSWVerbs for internal use
+    // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
     const hnswVerbs: HNSWVerb[] = []
     for (const graphVerb of result.items) {
       const hnswVerb: HNSWVerb = {
         id: graphVerb.id,
         vector: graphVerb.vector,
-        connections: new Map()
+        connections: new Map(),
+
+        // CORE RELATIONAL DATA
+        verb: (graphVerb.verb || graphVerb.type || 'relatedTo') as VerbType,
+        sourceId: graphVerb.sourceId || graphVerb.source || '',
+        targetId: graphVerb.targetId || graphVerb.target || '',
+
+        // User metadata
+        metadata: graphVerb.metadata
       }
       hnswVerbs.push(hnswVerb)
     }
-    
+
     return hnswVerbs
   }
 

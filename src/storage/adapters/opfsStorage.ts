@@ -401,15 +401,22 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // CRITICAL: Only save lightweight vector data (no metadata)
-      // Metadata is saved separately via saveVerbMetadata() (2-file system)
+      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
+      // These fields are essential for 90% of operations - no metadata lookup needed
       const serializableEdge = {
         id: edge.id,
         vector: edge.vector,
         connections: this.mapToObject(edge.connections, (set) =>
           Array.from(set as Set<string>)
-        )
-        // NO metadata field - saved separately for scalability
+        ),
+
+        // CORE RELATIONAL DATA (v3.50.1+)
+        verb: edge.verb,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+
+        // User metadata (if any) - saved separately for scalability
+        // metadata field is saved separately via saveVerbMetadata()
       }
 
       // Use UUID-based sharding for verbs
@@ -495,10 +502,19 @@ export class OPFSStorage extends BaseStorage {
         version: '1.0'
       }
 
+      // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
       return {
         id: data.id,
         vector: data.vector,
-        connections
+        connections,
+
+        // CORE RELATIONAL DATA (read from vector file)
+        verb: data.verb,
+        sourceId: data.sourceId,
+        targetId: data.targetId,
+
+        // User metadata (retrieved separately via getVerbMetadata())
+        metadata: data.metadata
       }
     } catch (error) {
       // Edge not found or other error
@@ -547,10 +563,19 @@ export class OPFSStorage extends BaseStorage {
                   version: '1.0'
                 }
 
+                // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
                 allEdges.push({
                   id: data.id,
                   vector: data.vector,
-                  connections
+                  connections,
+
+                  // CORE RELATIONAL DATA
+                  verb: data.verb,
+                  sourceId: data.sourceId,
+                  targetId: data.targetId,
+
+                  // User metadata
+                  metadata: data.metadata
                 })
               } catch (error) {
                 console.error(`Error reading edge file ${shardName}/${fileName}:`, error)

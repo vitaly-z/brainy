@@ -1081,37 +1081,53 @@ export class MetadataIndexManager {
 
   /**
    * Extract indexable field-value pairs from metadata
+   *
+   * BUG FIX (v3.50.1): Exclude vector embeddings and large arrays from indexing
+   * - Vector fields (384+ dimensions) were creating 825K chunk files for 1,144 entities
+   * - Arrays should not have their indices indexed as separate fields
    */
   private extractIndexableFields(metadata: any): Array<{ field: string, value: any }> {
     const fields: Array<{ field: string, value: any }> = []
-    
+
+    // Fields that should NEVER be indexed (vectors, embeddings, large arrays)
+    const NEVER_INDEX = new Set(['vector', 'embedding', 'embeddings', 'connections'])
+
     const extract = (obj: any, prefix = ''): void => {
       for (const [key, value] of Object.entries(obj)) {
         const fullKey = prefix ? `${prefix}.${key}` : key
-        
+
+        // Skip fields in never-index list (CRITICAL: prevents vector indexing bug)
+        if (NEVER_INDEX.has(key)) continue
+
+        // Skip fields based on user configuration
         if (!this.shouldIndexField(fullKey)) continue
-        
+
+        // Skip large arrays (> 10 elements) - likely vectors or bulk data
+        if (Array.isArray(value) && value.length > 10) continue
+
         if (value && typeof value === 'object' && !Array.isArray(value)) {
-          // Recurse into nested objects
+          // Recurse into nested objects (but not arrays)
           extract(value, fullKey)
-        } else {
-          // Index this field
-          fields.push({ field: fullKey, value })
-          
-          // If it's an array, also index each element
-          if (Array.isArray(value)) {
-            for (const item of value) {
+        } else if (Array.isArray(value) && value.length <= 10) {
+          // Small arrays: index as multi-value field (all with same field name)
+          // Example: tags: ["javascript", "node"] → field="tags", value="javascript" + field="tags", value="node"
+          for (const item of value) {
+            // Only index primitive values (not nested objects/arrays)
+            if (item !== null && typeof item !== 'object') {
               fields.push({ field: fullKey, value: item })
             }
           }
+        } else {
+          // Primitive value: index it
+          fields.push({ field: fullKey, value })
         }
       }
     }
-    
+
     if (metadata && typeof metadata === 'object') {
       extract(metadata)
     }
-    
+
     return fields
   }
 

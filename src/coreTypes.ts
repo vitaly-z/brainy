@@ -2,6 +2,8 @@
  * Type definitions for the Soulcraft Brainy
  */
 
+import type { VerbType } from './types/graphTypes.js'
+
 /**
  * Vector representation - an array of numbers
  */
@@ -88,13 +90,31 @@ export interface HNSWNoun {
 
 /**
  * Lightweight verb for HNSW index storage
- * Contains only essential data needed for vector operations
+ * Contains essential data including core relational fields
+ *
+ * ARCHITECTURAL FIX (v3.50.1): verb/sourceId/targetId are now first-class fields
+ * These are NOT metadata - they're the essence of what a verb IS:
+ * - verb: The relationship type (creates, contains, etc.) - needed for routing & display
+ * - sourceId: What entity this verb connects FROM - needed for graph traversal
+ * - targetId: What entity this verb connects TO - needed for graph traversal
+ *
+ * Benefits:
+ * - ONE file read instead of two for 90% of operations
+ * - No type caching needed (type is always available)
+ * - Faster graph traversal (source/target immediately available)
+ * - Aligns with actual usage patterns
  */
 export interface HNSWVerb {
   id: string
   vector: Vector
   connections: Map<number, Set<string>> // level -> set of connected verb ids
-  metadata?: any // Optional metadata for the verb (2-file system)
+
+  // CORE RELATIONAL DATA (not metadata!)
+  verb: VerbType      // Relationship type - REQUIRED, validated at compile + runtime
+  sourceId: string    // Source entity UUID - REQUIRED for graph traversal
+  targetId: string    // Target entity UUID - REQUIRED for graph traversal
+
+  metadata?: any      // Optional user metadata (lightweight - weight, custom fields)
 }
 
 /**

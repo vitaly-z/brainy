@@ -3,7 +3,7 @@
  * Provides common functionality for all storage adapters, including statistics tracking
  */
 
-import { StatisticsData, StorageAdapter } from '../../coreTypes.js'
+import { StatisticsData, StorageAdapter, HNSWNoun, GraphVerb } from '../../coreTypes.js'
 import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/fieldNameTracking.js'
 import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
@@ -14,23 +14,23 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   // Abstract methods that must be implemented by subclasses
   abstract init(): Promise<void>
 
-  abstract saveNoun(noun: any): Promise<void>
+  abstract saveNoun(noun: HNSWNoun): Promise<void>
 
-  abstract getNoun(id: string): Promise<any | null>
+  abstract getNoun(id: string): Promise<HNSWNoun | null>
 
-  abstract getNounsByNounType(nounType: string): Promise<any[]>
+  abstract getNounsByNounType(nounType: string): Promise<HNSWNoun[]>
 
   abstract deleteNoun(id: string): Promise<void>
 
-  abstract saveVerb(verb: any): Promise<void>
+  abstract saveVerb(verb: GraphVerb): Promise<void>
 
-  abstract getVerb(id: string): Promise<any | null>
+  abstract getVerb(id: string): Promise<GraphVerb | null>
 
-  abstract getVerbsBySource(sourceId: string): Promise<any[]>
+  abstract getVerbsBySource(sourceId: string): Promise<GraphVerb[]>
 
-  abstract getVerbsByTarget(targetId: string): Promise<any[]>
+  abstract getVerbsByTarget(targetId: string): Promise<GraphVerb[]>
 
-  abstract getVerbsByType(type: string): Promise<any[]>
+  abstract getVerbsByType(type: string): Promise<GraphVerb[]>
 
   abstract deleteVerb(id: string): Promise<void>
 
@@ -98,7 +98,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: any[]
+    items: HNSWNoun[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -123,7 +123,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: any[]
+    items: GraphVerb[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -144,7 +144,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: any[]
+    items: HNSWNoun[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -167,7 +167,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: any[]
+    items: GraphVerb[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string

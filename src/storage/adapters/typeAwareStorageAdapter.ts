@@ -206,27 +206,23 @@ export class TypeAwareStorageAdapter extends BaseStorage {
   }
 
   /**
-   * Get verb type from verb object or cache
+   * Get verb type from verb object
+   *
+   * ARCHITECTURAL FIX (v3.50.1): Simplified - verb field is now always present
    */
   private getVerbType(verb: HNSWVerb | GraphVerb): VerbType {
-    // Try verb property first
+    // v3.50.1+: verb is a required field in HNSWVerb
     if ('verb' in verb && verb.verb) {
       return verb.verb as VerbType
     }
 
-    // Try type property
+    // Fallback for GraphVerb (type alias)
     if ('type' in verb && verb.type) {
       return verb.type as VerbType
     }
 
-    // Try cache
-    const cached = this.verbTypeCache.get(verb.id)
-    if (cached) {
-      return cached
-    }
-
-    // Default to 'relatedTo' if unknown
-    console.warn(`[TypeAwareStorage] Unknown verb type for ${verb.id}, defaulting to 'relatedTo'`)
+    // This should never happen with v3.50.1+ data
+    console.warn(`[TypeAwareStorage] Verb missing type field for ${verb.id}, defaulting to 'relatedTo'`)
     return 'relatedTo'
   }
 
@@ -355,9 +351,13 @@ export class TypeAwareStorageAdapter extends BaseStorage {
 
   /**
    * Save verb (type-first path)
+   *
+   * ARCHITECTURAL FIX (v3.50.1): No more caching hack needed!
+   * HNSWVerb now includes verb field, so type is always available
    */
   protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    const type = this.getVerbType(verb)
+    // Type is now a first-class field in HNSWVerb - no caching needed!
+    const type = verb.verb as VerbType
     const path = getVerbVectorPath(type, verb.id)
 
     // Update type tracking
@@ -376,16 +376,20 @@ export class TypeAwareStorageAdapter extends BaseStorage {
 
   /**
    * Get verb (type-first path)
+   *
+   * ARCHITECTURAL FIX (v3.50.1): Cache still useful for performance
+   * Once we know where a verb is, we can retrieve it O(1) instead of searching all types
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Try cache first
+    // Try cache first for O(1) retrieval
     const cachedType = this.verbTypeCache.get(id)
     if (cachedType) {
       const path = getVerbVectorPath(cachedType, id)
-      return await this.u.readObjectFromPath(path)
+      const verb = await this.u.readObjectFromPath(path)
+      return verb
     }
 
-    // Search across all types
+    // Search across all types (only on first access)
     for (let i = 0; i < VERB_TYPE_COUNT; i++) {
       const type = TypeUtils.getVerbFromIndex(i)
       const path = getVerbVectorPath(type, id)
@@ -393,7 +397,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       try {
         const verb = await this.u.readObjectFromPath(path)
         if (verb) {
-          this.verbTypeCache.set(id, type)
+          // Cache the type for next time (read from verb.verb field)
+          this.verbTypeCache.set(id, verb.verb as VerbType)
           return verb
         }
       } catch (error) {
@@ -474,6 +479,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
 
   /**
    * Get verbs by type (O(1) with type-first paths!)
+   *
+   * ARCHITECTURAL FIX (v3.50.1): Type is now in HNSWVerb, cached on read
    */
   protected async getVerbsByType_internal(verbType: string): Promise<GraphVerb[]> {
     const type = verbType as VerbType
@@ -486,11 +493,13 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       try {
         const hnswVerb = await this.u.readObjectFromPath(path)
         if (hnswVerb) {
+          // Cache type from HNSWVerb for future O(1) retrievals
+          this.verbTypeCache.set(hnswVerb.id, hnswVerb.verb as VerbType)
+
           // Convert to GraphVerb
           const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb)
           if (graphVerb) {
             verbs.push(graphVerb)
-            this.verbTypeCache.set(hnswVerb.id, type)
           }
         }
       } catch (error) {
