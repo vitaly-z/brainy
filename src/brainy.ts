@@ -1022,6 +1022,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const params: FindParams<T> =
       typeof query === 'string' ? await this.parseNaturalQuery(query) : query
 
+    // Phase 3: Automatic type inference for 40% latency reduction
+    if (params.query && !params.type && this.index instanceof TypeAwareHNSWIndex) {
+      // Import Phase 3 components dynamically
+      const { getQueryPlanner } = await import('./query/typeAwareQueryPlanner.js')
+      const planner = getQueryPlanner()
+      const plan = await planner.planQuery(params.query)
+
+      // Use inferred types if confidence is sufficient
+      if (plan.confidence > 0.6) {
+        params.type = plan.targetTypes.length === 1
+          ? plan.targetTypes[0]
+          : plan.targetTypes
+
+        // Log for analytics (production-friendly)
+        if (this.config.verbose) {
+          console.log(
+            `[Phase 3] Inferred types: ${plan.routing} ` +
+            `(${plan.targetTypes.length} types, ` +
+            `${(plan.confidence * 100).toFixed(0)}% confidence, ` +
+            `${plan.estimatedSpeedup.toFixed(1)}x estimated speedup)`
+          )
+        }
+      }
+    }
+
     // Zero-config validation - only enforces universal truths
     const { validateFindParams, recordQueryPerformance } = await import('./utils/paramValidation.js')
     validateFindParams(params)

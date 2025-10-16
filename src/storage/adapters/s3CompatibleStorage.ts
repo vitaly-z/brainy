@@ -43,8 +43,8 @@ interface ChangeLogEntry {
   instanceId?: string
 }
 
-// Export R2Storage as an alias for S3CompatibleStorage
-export { S3CompatibleStorage as R2Storage }
+// Legacy: R2Storage alias (use dedicated R2Storage from r2Storage.ts instead)
+// export { S3CompatibleStorage as R2Storage } // Deprecated - use dedicated R2Storage
 
 // S3 client and command types - dynamically imported to avoid issues in browser environments
 type S3Client = any

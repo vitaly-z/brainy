@@ -55,13 +55,16 @@
     "node": "22.x"
   },
   "scripts": {
-    "build": "npm run build:types:if-needed && npm run build:patterns:if-needed && tsc && tsc -p tsconfig.cli.json",
+    "build": "npm run build:types:if-needed && npm run build:patterns:if-needed && npm run build:keywords:if-needed && tsc && tsc -p tsconfig.cli.json",
     "build:types": "tsx scripts/buildTypeEmbeddings.ts",
     "build:types:if-needed": "node scripts/check-type-embeddings.cjs || npm run build:types",
     "build:types:force": "npm run build:types",
     "build:patterns": "tsx scripts/buildEmbeddedPatterns.ts",
     "build:patterns:if-needed": "node scripts/check-patterns.cjs || npm run build:patterns",
     "build:patterns:force": "npm run build:patterns",
+    "build:keywords": "tsx scripts/buildKeywordEmbeddings.ts",
+    "build:keywords:if-needed": "node scripts/check-keyword-embeddings.cjs || npm run build:keywords",
+    "build:keywords:force": "npm run build:keywords",
     "prepare": "npm run build",
     "test": "npm run test:unit",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=8192' vitest --config tests/configs/vitest.unit.config.ts",

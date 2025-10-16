@@ -10,10 +10,8 @@ import { StorageAdapter } from '../coreTypes.js'
 import { AugmentationManifest } from './manifest.js'
 import { MemoryStorage } from '../storage/adapters/memoryStorage.js'
 import { OPFSStorage } from '../storage/adapters/opfsStorage.js'
-import { 
-  S3CompatibleStorage, 
-  R2Storage 
-} from '../storage/adapters/s3CompatibleStorage.js'
+import { S3CompatibleStorage } from '../storage/adapters/s3CompatibleStorage.js'
+import { R2Storage } from '../storage/adapters/r2Storage.js'
 
 /**
  * Memory Storage Augmentation - Fast in-memory storage
@@ -364,8 +362,8 @@ export class R2StorageAugmentation extends StorageAugmentation {
   
   async provideStorage(): Promise<StorageAdapter> {
     const storage = new R2Storage({
-      ...this.config,
-      serviceType: 'r2'
+      ...this.config
+      // serviceType not needed - R2Storage is dedicated
     })
     this.storageAdapter = storage
     return storage

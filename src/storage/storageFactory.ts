@@ -6,10 +6,8 @@
 import { StorageAdapter } from '../coreTypes.js'
 import { MemoryStorage } from './adapters/memoryStorage.js'
 import { OPFSStorage } from './adapters/opfsStorage.js'
-import {
-  S3CompatibleStorage,
-  R2Storage
-} from './adapters/s3CompatibleStorage.js'
+import { S3CompatibleStorage } from './adapters/s3CompatibleStorage.js'
+import { R2Storage } from './adapters/r2Storage.js'
 import { GcsStorage } from './adapters/gcsStorage.js'
 import { TypeAwareStorageAdapter } from './adapters/typeAwareStorageAdapter.js'
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
@@ -422,13 +420,12 @@ export async function createStorage(
 
       case 'r2':
         if (options.r2Storage) {
-          console.log('Using Cloudflare R2 storage')
+          console.log('Using Cloudflare R2 storage (dedicated adapter)')
           return new R2Storage({
             bucketName: options.r2Storage.bucketName,
             accountId: options.r2Storage.accountId,
             accessKeyId: options.r2Storage.accessKeyId,
             secretAccessKey: options.r2Storage.secretAccessKey,
-            serviceType: 'r2',
             cacheConfig: options.cacheConfig
           })
         } else {
@@ -523,13 +520,12 @@ export async function createStorage(
 
   // If R2 storage is specified, use it
   if (options.r2Storage) {
-    console.log('Using Cloudflare R2 storage')
+    console.log('Using Cloudflare R2 storage (dedicated adapter)')
     return new R2Storage({
       bucketName: options.r2Storage.bucketName,
       accountId: options.r2Storage.accountId,
       accessKeyId: options.r2Storage.accessKeyId,
       secretAccessKey: options.r2Storage.secretAccessKey,
-      serviceType: 'r2',
       cacheConfig: options.cacheConfig
     })
   }
