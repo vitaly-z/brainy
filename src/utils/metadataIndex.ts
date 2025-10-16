@@ -2456,26 +2456,26 @@ export class MetadataIndexManager {
   }> {
     const typeBreakdown: Record<string, any> = {}
     let totalFields = 0
-    
+
     for (const [nounType, fieldsMap] of this.typeFieldAffinity.entries()) {
       const totalEntities = this.totalEntitiesByType.get(nounType) || 0
       const fields = Array.from(fieldsMap.entries())
-      
+
       // Get top 5 fields for this type
       const topFields = fields
         .map(([field, count]) => ({ field, affinity: count / totalEntities }))
         .sort((a, b) => b.affinity - a.affinity)
         .slice(0, 5)
-      
+
       typeBreakdown[nounType] = {
         totalEntities,
         uniqueFields: fieldsMap.size,
         topFields
       }
-      
+
       totalFields += fieldsMap.size
     }
-    
+
     return {
       totalTypes: this.typeFieldAffinity.size,
       averageFieldsPerType: totalFields / Math.max(1, this.typeFieldAffinity.size),

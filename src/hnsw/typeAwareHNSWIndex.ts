@@ -387,91 +387,155 @@ export class TypeAwareHNSWIndex {
       return
     }
 
+    const batchSize = options.batchSize || 1000
+
     // Determine which types to rebuild
     const typesToRebuild = options.types || this.getAllNounTypes()
 
     prodLog.info(
-      `Rebuilding ${typesToRebuild.length} type-aware HNSW indexes...`
+      `Rebuilding ${typesToRebuild.length} type-aware HNSW indexes from persisted data...`
     )
 
-    const errors: Array<{ type: NounType; error: Error }> = []
-
-    // Rebuild each type's index with type-filtered pagination
+    // Clear all indexes we're rebuilding
     for (const type of typesToRebuild) {
-      try {
-        prodLog.info(`Rebuilding HNSW index for type: ${type}`)
+      const index = this.getIndexForType(type)
+      ;(index as any).nouns.clear()
+    }
 
-        const index = this.getIndexForType(type)
-        index.clear() // Clear before rebuild
+    // Determine preloading strategy (adaptive caching) for entire dataset
+    const stats = await this.storage.getStatistics()
+    const entityCount = stats?.totalNodes || 0
+    const vectorMemory = entityCount * 1536 // 384 dims × 4 bytes
 
-        // Load ONLY entities of this type from storage using pagination
-        let cursor: string | undefined = undefined
-        let hasMore = true
-        let loaded = 0
+    // Use first index's cache (they all share the same UnifiedCache)
+    const firstIndex = this.getIndexForType(typesToRebuild[0])
+    const cacheStats = (firstIndex as any).unifiedCache.getStats()
+    const availableCache = cacheStats.maxSize * 0.80
+    const shouldPreload = vectorMemory < availableCache
 
-        while (hasMore) {
-          // CRITICAL: Use type filtering to load only this type's entities
-          const result: {
-            items: Array<{ id: string; vector: number[] }>
-            hasMore: boolean
-            nextCursor?: string
-            totalCount?: number
-          } = await (this.storage as any).getNounsWithPagination({
-            limit: options.batchSize || 1000,
-            cursor,
-            filter: { nounType: type } // ← TYPE FILTER!
-          })
+    if (shouldPreload) {
+      prodLog.info(
+        `HNSW: Preloading ${entityCount.toLocaleString()} vectors at init ` +
+        `(${(vectorMemory / 1024 / 1024).toFixed(1)}MB < ${(availableCache / 1024 / 1024).toFixed(1)}MB cache)`
+      )
+    } else {
+      prodLog.info(
+        `HNSW: Adaptive caching for ${entityCount.toLocaleString()} vectors ` +
+        `(${(vectorMemory / 1024 / 1024).toFixed(1)}MB > ${(availableCache / 1024 / 1024).toFixed(1)}MB cache) - loading on-demand`
+      )
+    }
 
-          // Add each entity to this type's index
-          for (const noun of result.items) {
-            try {
-              await index.addItem({
-                id: noun.id,
-                vector: noun.vector
-              })
-              loaded++
+    // Load ALL nouns ONCE and route to correct type indexes
+    // This is O(N) instead of O(31*N) from the previous parallel approach
+    let cursor: string | undefined = undefined
+    let hasMore = true
+    let totalLoaded = 0
+    const loadedByType = new Map<NounType, number>()
 
-              if (options.onProgress) {
-                options.onProgress(type, loaded, result.totalCount || loaded)
-              }
-            } catch (error) {
-              prodLog.error(
-                `Failed to add entity ${noun.id} to ${type} index:`,
-                error
-              )
-              // Continue with other entities
-            }
+    while (hasMore) {
+      const result: {
+        items: Array<{ id: string; vector: number[]; nounType?: NounType; metadata?: any }>
+        hasMore: boolean
+        nextCursor?: string
+        totalCount?: number
+      } = await (this.storage as any).getNounsWithPagination({
+        limit: batchSize,
+        cursor
+      })
+
+      // Route each noun to its type index
+      for (const nounData of result.items) {
+        try {
+          // Determine noun type from multiple possible sources
+          const nounType = nounData.nounType || nounData.metadata?.noun || nounData.metadata?.type
+
+          // Skip if type not in rebuild list
+          if (!nounType || !typesToRebuild.includes(nounType as NounType)) {
+            continue
           }
 
-          hasMore = result.hasMore
-          cursor = result.nextCursor
-        }
+          // Get the index for this type
+          const index = this.getIndexForType(nounType as NounType)
 
-        prodLog.info(
-          `✅ Rebuilt ${type} index: ${index.size().toLocaleString()} entities`
-        )
-      } catch (error) {
-        prodLog.error(`Failed to rebuild ${type} index:`, error)
-        errors.push({ type, error: error as Error })
-        // Continue with other types instead of failing completely
+          // Load HNSW graph data
+          const hnswData = await (this.storage as any).getHNSWData(nounData.id)
+          if (!hnswData) {
+            continue // No HNSW data
+          }
+
+          // Create noun with restored connections
+          const noun = {
+            id: nounData.id,
+            vector: shouldPreload ? nounData.vector : [],
+            connections: new Map(),
+            level: hnswData.level
+          }
+
+          // Restore connections from storage
+          for (const [levelStr, nounIds] of Object.entries(hnswData.connections)) {
+            const level = parseInt(levelStr, 10)
+            noun.connections.set(level, new Set<string>(nounIds as string[]))
+          }
+
+          // Add to type-specific index
+          ;(index as any).nouns.set(nounData.id, noun)
+
+          // Track high-level nodes
+          if (noun.level >= 2 && noun.level <= (index as any).MAX_TRACKED_LEVELS) {
+            if (!(index as any).highLevelNodes.has(noun.level)) {
+              ;(index as any).highLevelNodes.set(noun.level, new Set())
+            }
+            ;(index as any).highLevelNodes.get(noun.level).add(nounData.id)
+          }
+
+          // Track progress
+          loadedByType.set(nounType as NounType, (loadedByType.get(nounType as NounType) || 0) + 1)
+          totalLoaded++
+
+          if (options.onProgress && totalLoaded % 100 === 0) {
+            options.onProgress(nounType as NounType, loadedByType.get(nounType as NounType) || 0, totalLoaded)
+          }
+        } catch (error) {
+          prodLog.error(`Failed to restore HNSW data for ${nounData.id}:`, error)
+        }
+      }
+
+      hasMore = result.hasMore
+      cursor = result.nextCursor
+
+      // Progress logging
+      if (totalLoaded % 1000 === 0) {
+        prodLog.info(`Progress: ${totalLoaded.toLocaleString()} entities loaded...`)
       }
     }
 
-    // Report errors at end
-    if (errors.length > 0) {
-      const failedTypes = errors.map((e) => e.type).join(', ')
-      prodLog.warn(
-        `⚠️ Failed to rebuild ${errors.length} type indexes: ${failedTypes}`
-      )
+    // Restore entry points for each type
+    for (const type of typesToRebuild) {
+      const index = this.getIndexForType(type)
+      let maxLevel = 0
+      let entryPointId: string | null = null
 
-      // Throw if ALL rebuilds failed
-      if (errors.length === typesToRebuild.length) {
-        throw new Error('All type-aware HNSW rebuilds failed')
+      for (const [id, noun] of (index as any).nouns.entries()) {
+        if (noun.level > maxLevel) {
+          maxLevel = noun.level
+          entryPointId = id
+        }
       }
+
+      ;(index as any).entryPointId = entryPointId
+      ;(index as any).maxLevel = maxLevel
+
+      const loaded = loadedByType.get(type) || 0
+      const cacheInfo = shouldPreload ? ' (vectors preloaded)' : ' (adaptive caching)'
+
+      prodLog.info(
+        `✅ Rebuilt ${type} index: ${loaded.toLocaleString()} entities, ` +
+        `${maxLevel + 1} levels, entry point: ${entryPointId || 'none'}${cacheInfo}`
+      )
     }
 
     prodLog.info(
-      `✅ TypeAwareHNSW rebuild complete: ${this.size().toLocaleString()} total entities across ${this.indexes.size} types`
+      `✅ TypeAwareHNSW rebuild complete: ${this.size().toLocaleString()} total entities across ${this.indexes.size} types (loaded from persisted graph structure)`
     )
   }
 

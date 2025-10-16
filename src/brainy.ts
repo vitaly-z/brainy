@@ -2952,6 +2952,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return
       }
 
+      // OPTIMIZATION: Instant check - if index already has data, skip immediately
+      // This gives 0s startup for warm restarts (vs 50-100ms of async checks)
+      if (this.index.size() > 0) {
+        if (!this.config.silent) {
+          console.log(
+            `✅ Index already populated (${this.index.size().toLocaleString()} entities) - 0s startup!`
+          )
+        }
+        return
+      }
+
       // BUG #2 FIX: Don't trust counts - check actual storage instead
       // Counts can be lost/corrupted in container restarts
       const entities = await this.storage.getNouns({ pagination: { limit: 1 } })
@@ -2978,7 +2989,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         this.config.disableAutoRebuild === false // Explicitly enabled
 
       if (!needsRebuild) {
-        // All indexes populated, no rebuild needed
+        // All indexes already populated, no rebuild needed
         return
       }
 
@@ -2987,28 +2998,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (!this.config.silent) {
           console.log(
             this.config.disableAutoRebuild === false
-              ? '🔄 Auto-rebuild explicitly enabled - rebuilding all indexes...'
-              : `🔄 Small dataset (${totalCount} items) - rebuilding all indexes...`
+              ? '🔄 Auto-rebuild explicitly enabled - rebuilding all indexes from persisted data...'
+              : `🔄 Small dataset (${totalCount} items) - rebuilding all indexes from persisted data...`
           )
         }
 
-        // BUG #1 FIX: Actually call graphIndex.rebuild()
-        // BUG #4 FIX: Actually call HNSW index.rebuild()
         // Rebuild all 3 indexes in parallel for performance
-        const startTime = Date.now()
+        // Indexes load their data from storage (no recomputation)
+        const rebuildStartTime = Date.now()
         await Promise.all([
           metadataStats.totalEntries === 0 ? this.metadataIndex.rebuild() : Promise.resolve(),
           hnswIndexSize === 0 ? this.index.rebuild() : Promise.resolve(),
           graphIndexSize === 0 ? this.graphIndex.rebuild() : Promise.resolve()
         ])
 
-        const duration = Date.now() - startTime
+        const rebuildDuration = Date.now() - rebuildStartTime
         if (!this.config.silent) {
           console.log(
-            `✅ All indexes rebuilt in ${duration}ms:\n` +
+            `✅ All indexes rebuilt in ${rebuildDuration}ms:\n` +
             `   - Metadata: ${await this.metadataIndex.getStats().then(s => s.totalEntries)} entries\n` +
             `   - HNSW Vector: ${this.index.size()} nodes\n` +
-            `   - Graph Adjacency: ${await this.graphIndex.size()} relationships`
+            `   - Graph Adjacency: ${await this.graphIndex.size()} relationships\n` +
+            `   💡 Indexes loaded from persisted storage (no recomputation)`
           )
         }
       } else {
