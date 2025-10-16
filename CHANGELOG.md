@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/soulcraftlabs/standard-version) for commit guidelines.
 
+### [3.50.2](https://github.com/soulcraftlabs/brainy/compare/v3.50.1...v3.50.2) (2025-10-16)
+
+### 🐛 Critical Bug Fix - Emergency Hotfix for v3.50.1
+
+**Fixed: v3.50.1 Incomplete Fix - Numeric Field Names Still Being Indexed**
+
+**Issue**: v3.50.1 prevented vector fields by name ('vector', 'embedding') but missed vectors stored as objects with numeric keys:
+- Studio team diagnostic showed **212,531 chunk files** still being created
+- Files had numeric field names: `"field": "54716"`, `"field": "100000"`, `"field": "100001"`
+- Total file count: **424,837 files** (expected ~1,200)
+- Root cause: Vectors stored as objects `{0: 0.1, 1: 0.2, ...}` bypassed v3.50.1's field name check
+
+**Impact**:
+- ✅ File reduction: 424,837 → ~1,200 files (354x reduction)
+- ✅ Prevents 212K+ chunk files from being created
+- ✅ Fixes server hangs during initialization
+- ✅ Completes the metadata explosion fix started in v3.50.1
+
+**Solution**:
+- Added regex check in `extractIndexableFields()`: `if (/^\d+$/.test(key)) continue`
+- Skips ANY purely numeric field name (array indices as object keys)
+- Catches: "0", "1", "2", "100", "54716", "100000", etc.
+- Works in combination with v3.50.1's semantic field name checks
+
+**Test Results**:
+- ✅ Added new test: "should NOT index objects with numeric keys (v3.50.2 fix)"
+- ✅ 8/8 integration tests passing
+- ✅ Verifies NO chunk files have numeric field names
+
+**Files Modified**:
+- `src/utils/metadataIndex.ts` (line 1106) - Added numeric field name check
+- `tests/integration/metadata-vector-exclusion.test.ts` - Added v3.50.2 test case
+
+**For Studio Team**:
+After upgrading to v3.50.2:
+1. Delete `_system/` directory to remove corrupted chunk files
+2. Restart server - metadata index will rebuild correctly
+3. File count should normalize to ~1,200 total (from 424,837)
+
+---
+
 ### [3.50.1](https://github.com/soulcraftlabs/brainy/compare/v3.50.0...v3.50.1) (2025-10-16)
 
 ### 🐛 Critical Bug Fixes
