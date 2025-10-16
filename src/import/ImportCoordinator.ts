@@ -87,9 +87,13 @@ export interface ImportOptions {
 }
 
 export interface ImportProgress {
-  stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'complete'
+  stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'relationships' | 'complete'
+  /** Phase of import - extraction or relationship building (v3.49.0) */
+  phase?: 'extraction' | 'relationships'
   message: string
   processed?: number
+  /** Alias for processed, used in relationship phase (v3.49.0) */
+  current?: number
   total?: number
   entities?: number
   relationships?: number
@@ -685,7 +689,19 @@ export class ImportCoordinator {
           items: relationshipParams,
           parallel: true,
           chunkSize: 100,
-          continueOnError: true
+          continueOnError: true,
+          onProgress: (done, total) => {
+            options.onProgress?.({
+              stage: 'storing-graph',
+              phase: 'relationships',
+              message: `Building relationships: ${done}/${total}`,
+              current: done,
+              processed: done,
+              total: total,
+              entities: entities.length,
+              relationships: done
+            })
+          }
         })
 
         // Update relationship IDs

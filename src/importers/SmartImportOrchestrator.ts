@@ -40,7 +40,7 @@ export interface SmartImportOptions extends SmartExcelOptions {
 }
 
 export interface SmartImportProgress {
-  phase: 'parsing' | 'extracting' | 'creating' | 'organizing' | 'complete'
+  phase: 'parsing' | 'extracting' | 'creating' | 'relationships' | 'organizing' | 'complete'
   message: string
   processed: number
   total: number
@@ -216,7 +216,7 @@ export class SmartImportOrchestrator {
       if (options.createRelationships !== false && options.createEntities !== false) {
         onProgress?.({
           phase: 'creating',
-          message: 'Creating relationships...',
+          message: 'Preparing relationships...',
           processed: 0,
           total: result.extraction.rows.length,
           entities: result.entityIds.length,
@@ -229,7 +229,9 @@ export class SmartImportOrchestrator {
           entityMap.set(extracted.entity.name.toLowerCase(), extracted.entity.id)
         }
 
-        // Create relationships
+        // Collect all relationship parameters
+        const relationshipParams: Array<{from: string; to: string; type: VerbType; metadata?: any}> = []
+
         for (const extracted of result.extraction.rows) {
           for (const rel of extracted.relationships) {
             try {
@@ -259,8 +261,8 @@ export class SmartImportOrchestrator {
                 result.entityIds.push(toEntityId)
               }
 
-              // Create relationship
-              const relId = await this.brain.relate({
+              // Collect relationship parameter
+              relationshipParams.push({
                 from: extracted.entity.id,
                 to: toEntityId,
                 type: rel.type,
@@ -269,13 +271,45 @@ export class SmartImportOrchestrator {
                   evidence: rel.evidence
                 }
               })
-
-              result.relationshipIds.push(relId)
-              result.stats.relationshipsCreated++
-
             } catch (error: any) {
-              result.errors.push(`Failed to create relationship: ${error.message}`)
+              result.errors.push(`Failed to prepare relationship: ${error.message}`)
             }
+          }
+        }
+
+        // Batch create all relationships with progress
+        if (relationshipParams.length > 0) {
+          onProgress?.({
+            phase: 'relationships',
+            message: 'Building relationships...',
+            processed: 0,
+            total: relationshipParams.length,
+            entities: result.entityIds.length,
+            relationships: 0
+          })
+
+          try {
+            const relationshipIds = await this.brain.relateMany({
+              items: relationshipParams,
+              parallel: true,
+              chunkSize: 100,
+              continueOnError: true,
+              onProgress: (done, total) => {
+                onProgress?.({
+                  phase: 'relationships',
+                  message: `Building relationships: ${done}/${total}`,
+                  processed: done,
+                  total: total,
+                  entities: result.entityIds.length,
+                  relationships: done
+                })
+              }
+            })
+
+            result.relationshipIds = relationshipIds
+            result.stats.relationshipsCreated = relationshipIds.length
+          } catch (error: any) {
+            result.errors.push(`Failed to create relationships: ${error.message}`)
           }
         }
       }
@@ -563,7 +597,10 @@ export class SmartImportOrchestrator {
     }
 
     if (options.createRelationships !== false && options.createEntities !== false) {
-      onProgress?.({ phase: 'creating', message: 'Creating relationships...', processed: 0, total: result.extraction.rows.length, entities: result.entityIds.length, relationships: 0 })
+      onProgress?.({ phase: 'creating', message: 'Preparing relationships...', processed: 0, total: result.extraction.rows.length, entities: result.entityIds.length, relationships: 0 })
+
+      // Collect all relationship parameters
+      const relationshipParams: Array<{from: string; to: string; type: VerbType; metadata?: any}> = []
 
       for (const extracted of result.extraction.rows) {
         for (const rel of extracted.relationships) {
@@ -579,12 +616,32 @@ export class SmartImportOrchestrator {
               toEntityId = await this.brain.add({ data: rel.to, type: NounType.Thing, metadata: { name: rel.to, placeholder: true, extractedFrom: extracted.entity.name } })
               result.entityIds.push(toEntityId)
             }
-            const relId = await this.brain.relate({ from: extracted.entity.id, to: toEntityId, type: rel.type, metadata: { confidence: rel.confidence, evidence: rel.evidence } })
-            result.relationshipIds.push(relId)
-            result.stats.relationshipsCreated++
+            relationshipParams.push({ from: extracted.entity.id, to: toEntityId, type: rel.type, metadata: { confidence: rel.confidence, evidence: rel.evidence } })
           } catch (error: any) {
-            result.errors.push(`Failed to create relationship: ${error.message}`)
+            result.errors.push(`Failed to prepare relationship: ${error.message}`)
           }
+        }
+      }
+
+      // Batch create all relationships with progress
+      if (relationshipParams.length > 0) {
+        onProgress?.({ phase: 'relationships', message: 'Building relationships...', processed: 0, total: relationshipParams.length, entities: result.entityIds.length, relationships: 0 })
+
+        try {
+          const relationshipIds = await this.brain.relateMany({
+            items: relationshipParams,
+            parallel: true,
+            chunkSize: 100,
+            continueOnError: true,
+            onProgress: (done, total) => {
+              onProgress?.({ phase: 'relationships', message: `Building relationships: ${done}/${total}`, processed: done, total: total, entities: result.entityIds.length, relationships: done })
+            }
+          })
+
+          result.relationshipIds = relationshipIds
+          result.stats.relationshipsCreated = relationshipIds.length
+        } catch (error: any) {
+          result.errors.push(`Failed to create relationships: ${error.message}`)
         }
       }
     }

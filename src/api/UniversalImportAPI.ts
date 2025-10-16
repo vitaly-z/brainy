@@ -53,6 +53,15 @@ export interface NeuralImportResult {
   }
 }
 
+export interface NeuralImportProgress {
+  phase: 'extracting' | 'storing-entities' | 'storing-relationships' | 'complete'
+  message: string
+  current: number
+  total: number
+  entities?: number
+  relationships?: number
+}
+
 export class UniversalImportAPI {
   private brain: Brainy<any>
   private typeMatcher!: BrainyTypes
@@ -80,23 +89,42 @@ export class UniversalImportAPI {
    * Universal import - handles ANY data source
    * ALWAYS uses neural matching, NEVER falls back
    */
-  async import(source: ImportSource | string | any): Promise<NeuralImportResult> {
+  async import(
+    source: ImportSource | string | any,
+    options?: { onProgress?: (progress: NeuralImportProgress) => void }
+  ): Promise<NeuralImportResult> {
     const startTime = Date.now()
-    
+
     // Normalize source
     const normalizedSource = this.normalizeSource(source)
-    
+
+    options?.onProgress?.({
+      phase: 'extracting',
+      message: 'Extracting data from source...',
+      current: 0,
+      total: 0
+    })
+
     // Extract data based on source type
     const extractedData = await this.extractData(normalizedSource)
-    
+
     // Neural processing - MANDATORY
     const neuralResults = await this.neuralProcess(extractedData)
-    
+
     // Store in brain
-    const result = await this.storeInBrain(neuralResults)
-    
+    const result = await this.storeInBrain(neuralResults, options?.onProgress)
+
     result.stats.processingTimeMs = Date.now() - startTime
-    
+
+    options?.onProgress?.({
+      phase: 'complete',
+      message: 'Import complete',
+      current: result.stats.entitiesCreated + result.stats.relationshipsCreated,
+      total: result.stats.totalProcessed,
+      entities: result.stats.entitiesCreated,
+      relationships: result.stats.relationshipsCreated
+    })
+
     return result
   }
   
@@ -521,10 +549,13 @@ export class UniversalImportAPI {
   /**
    * Store processed data in brain
    */
-  private async storeInBrain(neuralResults: {
-    entities: Map<string, any>
-    relationships: Map<string, any>
-  }): Promise<NeuralImportResult> {
+  private async storeInBrain(
+    neuralResults: {
+      entities: Map<string, any>
+      relationships: Map<string, any>
+    },
+    onProgress?: (progress: NeuralImportProgress) => void
+  ): Promise<NeuralImportResult> {
     const result: NeuralImportResult = {
       entities: [],
       relationships: [],
@@ -536,10 +567,18 @@ export class UniversalImportAPI {
         processingTimeMs: 0
       }
     }
-    
+
     let totalConfidence = 0
-    
+
     // Store entities
+    onProgress?.({
+      phase: 'storing-entities',
+      message: 'Storing entities...',
+      current: 0,
+      total: neuralResults.entities.size
+    })
+
+    let entitiesProcessed = 0
     for (const entity of neuralResults.entities.values()) {
       const id = await this.brain.add({
         data: entity.data,
@@ -547,52 +586,104 @@ export class UniversalImportAPI {
         metadata: entity.metadata,
         vector: entity.vector
       })
-      
+
       // Update entity ID for relationship mapping
       entity.id = id
-      
+
       result.entities.push({
         ...entity,
         id
       })
-      
+
       result.stats.entitiesCreated++
       totalConfidence += entity.confidence
-    }
-    
-    // Store relationships
-    for (const relation of neuralResults.relationships.values()) {
-      // Map to actual entity IDs
-      const sourceEntity = Array.from(neuralResults.entities.values())
-        .find(e => e.id === relation.from)
-      const targetEntity = Array.from(neuralResults.entities.values())
-        .find(e => e.id === relation.to)
-      
-      if (sourceEntity && targetEntity) {
-        const id = await this.brain.relate({
-          from: sourceEntity.id,
-          to: targetEntity.id,
-          type: relation.type,
-          weight: relation.weight,
-          metadata: relation.metadata
+      entitiesProcessed++
+
+      // Report progress periodically
+      if (entitiesProcessed % 10 === 0 || entitiesProcessed === neuralResults.entities.size) {
+        onProgress?.({
+          phase: 'storing-entities',
+          message: `Storing entities: ${entitiesProcessed}/${neuralResults.entities.size}`,
+          current: entitiesProcessed,
+          total: neuralResults.entities.size,
+          entities: entitiesProcessed
         })
-        
-        result.relationships.push({
-          ...relation,
-          id,
-          from: sourceEntity.id,
-          to: targetEntity.id
-        })
-        
-        result.stats.relationshipsCreated++
-        totalConfidence += relation.confidence
       }
     }
-    
+
+    // Store relationships using batch processing
+    if (neuralResults.relationships.size > 0) {
+      onProgress?.({
+        phase: 'storing-relationships',
+        message: 'Preparing relationships...',
+        current: 0,
+        total: neuralResults.relationships.size
+      })
+
+      // Collect all relationship parameters
+      const relationshipParams: Array<{from: string; to: string; type: VerbType; weight?: number; metadata?: any}> = []
+
+      for (const relation of neuralResults.relationships.values()) {
+        // Map to actual entity IDs
+        const sourceEntity = Array.from(neuralResults.entities.values())
+          .find(e => e.id === relation.from)
+        const targetEntity = Array.from(neuralResults.entities.values())
+          .find(e => e.id === relation.to)
+
+        if (sourceEntity && targetEntity) {
+          relationshipParams.push({
+            from: sourceEntity.id,
+            to: targetEntity.id,
+            type: relation.type,
+            weight: relation.weight,
+            metadata: relation.metadata
+          })
+          totalConfidence += relation.confidence
+        }
+      }
+
+      // Batch create relationships with progress
+      if (relationshipParams.length > 0) {
+        const relationshipIds = await this.brain.relateMany({
+          items: relationshipParams,
+          parallel: true,
+          chunkSize: 100,
+          continueOnError: true,
+          onProgress: (done, total) => {
+            onProgress?.({
+              phase: 'storing-relationships',
+              message: `Building relationships: ${done}/${total}`,
+              current: done,
+              total: total,
+              entities: result.stats.entitiesCreated,
+              relationships: done
+            })
+          }
+        })
+
+        // Map results back
+        relationshipIds.forEach((id, index) => {
+          if (id && relationshipParams[index]) {
+            result.relationships.push({
+              id,
+              from: relationshipParams[index].from,
+              to: relationshipParams[index].to,
+              type: relationshipParams[index].type,
+              weight: relationshipParams[index].weight || 1,
+              confidence: 0.5, // Default confidence
+              metadata: relationshipParams[index].metadata
+            })
+          }
+        })
+
+        result.stats.relationshipsCreated = relationshipIds.length
+      }
+    }
+
     // Calculate average confidence
     const totalItems = result.stats.entitiesCreated + result.stats.relationshipsCreated
     result.stats.averageConfidence = totalItems > 0 ? totalConfidence / totalItems : 0
-    
+
     return result
   }
   

@@ -37,7 +37,13 @@ async function main() {
   const import1 = await brain.import(dataset1, {
     vfsPath: '/imports/ai-tech',
     onProgress: (p) => {
-      if (p.stage === 'complete') console.log(`  ✅ ${p.message}`)
+      if (p.phase === 'extraction' && p.current && p.total) {
+        process.stdout.write(`\r  Extracting: ${p.current}/${p.total}`)
+      } else if (p.phase === 'relationships' && p.current && p.total) {
+        process.stdout.write(`\r  Building relationships: ${p.current}/${p.total}`)
+      } else if (p.stage === 'complete') {
+        console.log(`\n  ✅ ${p.message}`)
+      }
     }
   })
 
@@ -65,7 +71,13 @@ async function main() {
     enableDeduplication: true,  // Default: true
     deduplicationThreshold: 0.85,
     onProgress: (p) => {
-      if (p.stage === 'complete') console.log(`  ✅ ${p.message}`)
+      if (p.phase === 'extraction' && p.current && p.total) {
+        process.stdout.write(`\r  Extracting: ${p.current}/${p.total}`)
+      } else if (p.phase === 'relationships' && p.current && p.total) {
+        process.stdout.write(`\r  Building relationships: ${p.current}/${p.total}`)
+      } else if (p.stage === 'complete') {
+        console.log(`\n  ✅ ${p.message}`)
+      }
     }
   })
 
@@ -109,9 +121,13 @@ async function main() {
     vfsPath: '/imports/large-dataset',
     chunkSize: 10,  // Process in chunks of 10
     onProgress: (p) => {
-      if (p.stage === 'extracting' && p.processed && p.total) {
+      if (p.phase === 'extraction' && p.processed && p.total) {
         if (p.processed % 10 === 0 || p.processed === p.total) {
-          process.stdout.write(`\r  Progress: ${p.processed}/${p.total}`)
+          process.stdout.write(`\r  Extracting: ${p.processed}/${p.total} entities`)
+        }
+      } else if (p.phase === 'relationships' && p.current && p.total) {
+        if (p.current % 10 === 0 || p.current === p.total) {
+          process.stdout.write(`\r  Building: ${p.current}/${p.total} relationships`)
         }
       } else if (p.stage === 'complete') {
         console.log(`\n  ✅ ${p.message}`)

@@ -1827,12 +1827,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       enableConceptExtraction?: boolean
       confidenceThreshold?: number
       onProgress?: (progress: {
-        stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'complete'
+        stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'relationships' | 'complete'
+        phase?: 'extraction' | 'relationships'
         message: string
         processed?: number
+        current?: number
         total?: number
         entities?: number
         relationships?: number
+        throughput?: number
+        eta?: number
       }) => void
     }
   ) {
