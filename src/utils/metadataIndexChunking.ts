@@ -831,6 +831,21 @@ export class ChunkManager {
   }
 
   /**
+   * Initialize nextChunkId counter from existing sparse index
+   * CRITICAL: Must be called when loading sparse index to prevent ID conflicts
+   * @param field Field name
+   * @param sparseIndex Loaded sparse index containing existing chunk descriptors
+   */
+  initializeNextChunkId(field: string, sparseIndex: SparseIndex): void {
+    const existingChunkIds = sparseIndex.getAllChunkIds()
+    if (existingChunkIds.length > 0) {
+      // Find maximum chunk ID and set next to max + 1
+      const maxChunkId = Math.max(...existingChunkIds)
+      this.nextChunkId.set(field, maxChunkId + 1)
+    }
+  }
+
+  /**
    * Get next available chunk ID for a field
    */
   private getNextChunkId(field: string): number {

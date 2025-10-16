@@ -25,6 +25,7 @@ import {
 } from './metadataIndexChunking.js'
 import { EntityIdMapper } from './entityIdMapper.js'
 import { RoaringBitmap32 } from 'roaring-wasm'
+import { FieldTypeInference, FieldType } from './fieldTypeInference.js'
 
 export interface MetadataIndexEntry {
   field: string
@@ -131,6 +132,10 @@ export class MetadataIndexManager {
   // EntityIdMapper for UUID ↔ integer conversion
   private idMapper: EntityIdMapper
 
+  // Field Type Inference (v3.48.0 - Production-ready value-based type detection)
+  // Replaces unreliable pattern matching with DuckDB-inspired value analysis
+  private fieldTypeInference: FieldTypeInference
+
   constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}) {
     this.storage = storage
     this.config = {
@@ -182,6 +187,9 @@ export class MetadataIndexManager {
     // Initialize chunking system (v3.42.0) with roaring bitmap support
     this.chunkManager = new ChunkManager(storage, this.idMapper)
     this.chunkingStrategy = new AdaptiveChunkingStrategy()
+
+    // Initialize Field Type Inference (v3.48.0)
+    this.fieldTypeInference = new FieldTypeInference(storage)
 
     // Lazy load counts from storage statistics on first access
     this.lazyLoadCounts()
@@ -546,6 +554,9 @@ export class MetadataIndexManager {
         const data = await this.storage.getMetadata(indexPath)
         if (data) {
           const sparseIndex = SparseIndex.fromJSON(data)
+
+          // CRITICAL: Initialize chunk ID counter from existing chunks to prevent ID conflicts
+          this.chunkManager.initializeNextChunkId(field, sparseIndex)
 
           // Add to unified cache (sparse indices are expensive to rebuild)
           const size = JSON.stringify(data).length
@@ -963,25 +974,53 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Normalize value for consistent indexing with smart optimization
+   * Normalize value for consistent indexing with VALUE-BASED temporal detection
+   *
+   * v3.48.0: Replaced unreliable field name pattern matching with production-ready
+   * value-based detection (DuckDB-inspired). Analyzes actual data values, not names.
+   *
+   * NO FALLBACKS - Pure value-based detection only.
    */
   private normalizeValue(value: any, field?: string): string {
     if (value === null || value === undefined) return '__NULL__'
     if (typeof value === 'boolean') return value ? '__TRUE__' : '__FALSE__'
 
-    // ALWAYS apply bucketing to temporal fields (prevents pollution from the start!)
-    // This is the key fix: don't wait for cardinality stats, just bucket immediately
-    if (field && typeof value === 'number') {
-      const fieldLower = field.toLowerCase()
-      const isTemporal = fieldLower.includes('time') || fieldLower.includes('date') ||
-                        fieldLower.includes('accessed') || fieldLower.includes('modified') ||
-                        fieldLower.includes('created') || fieldLower.includes('updated')
+    // VALUE-BASED temporal detection (no pattern matching!)
+    // Analyze the VALUE itself to determine if it's a timestamp
+    if (typeof value === 'number') {
+      // Check if value looks like a Unix timestamp (2000-01-01 to 2100-01-01)
+      const MIN_TIMESTAMP_S = 946684800      // 2000-01-01 in seconds
+      const MAX_TIMESTAMP_S = 4102444800     // 2100-01-01 in seconds
+      const MIN_TIMESTAMP_MS = MIN_TIMESTAMP_S * 1000
+      const MAX_TIMESTAMP_MS = MAX_TIMESTAMP_S * 1000
 
-      if (isTemporal) {
-        // Apply time bucketing immediately (no need to wait for stats)
-        const bucketSize = this.TIMESTAMP_PRECISION_MS  // 1 minute buckets
+      const isTimestampSeconds = value >= MIN_TIMESTAMP_S && value <= MAX_TIMESTAMP_S
+      const isTimestampMilliseconds = value >= MIN_TIMESTAMP_MS && value <= MAX_TIMESTAMP_MS
+
+      if (isTimestampSeconds || isTimestampMilliseconds) {
+        // VALUE is a timestamp! Apply 1-minute bucketing
+        const bucketSize = this.TIMESTAMP_PRECISION_MS  // 60000ms = 1 minute
         const bucketed = Math.floor(value / bucketSize) * bucketSize
         return bucketed.toString()
+      }
+    }
+
+    // Check if string value is ISO 8601 datetime
+    if (typeof value === 'string') {
+      // ISO 8601 pattern: YYYY-MM-DDTHH:MM:SS...
+      const iso8601Pattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+      if (iso8601Pattern.test(value)) {
+        // VALUE is an ISO 8601 datetime! Convert to timestamp and bucket
+        try {
+          const timestamp = new Date(value).getTime()
+          if (!isNaN(timestamp)) {
+            const bucketSize = this.TIMESTAMP_PRECISION_MS
+            const bucketed = Math.floor(timestamp / bucketSize) * bucketSize
+            return bucketed.toString()
+          }
+        } catch {
+          // Not a valid date, treat as string
+        }
       }
     }
 

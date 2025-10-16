@@ -93,7 +93,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       id.startsWith('__index_') ||
       id.startsWith('__system_') ||
       id.startsWith('statistics_') ||
-      id === 'statistics'
+      id === 'statistics' ||
+      id.startsWith('__chunk__') ||      // Metadata index chunks (roaring bitmap data)
+      id.startsWith('__sparse_index__')  // Metadata sparse indices (zone maps + bloom filters)
 
     if (isSystemKey) {
       return {
