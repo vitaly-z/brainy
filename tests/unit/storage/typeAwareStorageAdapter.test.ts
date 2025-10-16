@@ -43,7 +43,7 @@ describe('TypeAwareStorageAdapter', () => {
   describe('Noun Storage', () => {
     it('should save and retrieve a noun with type-first path', async () => {
       const noun: HNSWNoun = {
-        id: 'test-person-1',
+        id: '00000000-0000-0000-0000-000000000001', // test-person-1
         vector: [1, 2, 3],
         metadata: {
           noun: 'person',
@@ -52,20 +52,20 @@ describe('TypeAwareStorageAdapter', () => {
       }
 
       await adapter.saveNoun(noun)
-      const retrieved = await adapter.getNoun('test-person-1')
+      const retrieved = await adapter.getNoun('00000000-0000-0000-0000-000000000001')
 
       expect(retrieved).toEqual(noun)
     })
 
     it('should track noun counts by type', async () => {
       const person: HNSWNoun = {
-        id: 'person-1',
+        id: '00000000-0000-0000-0000-000000000010', // person-1
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'Bob' }
       }
 
       const document: HNSWNoun = {
-        id: 'doc-1',
+        id: '00000000-0000-0000-0000-000000000020', // doc-1
         vector: [4, 5, 6],
         metadata: { noun: 'document', title: 'Test Doc' }
       }
@@ -86,12 +86,12 @@ describe('TypeAwareStorageAdapter', () => {
     it('should retrieve nouns by noun type (O(1) with type-first paths)', async () => {
       const people: HNSWNoun[] = [
         {
-          id: 'person-1',
+          id: '00000000-0000-0000-0000-000000000010', // person-1
           vector: [1, 2, 3],
           metadata: { noun: 'person', name: 'Alice' }
         },
         {
-          id: 'person-2',
+          id: '00000000-0000-0000-0000-000000000011', // person-2
           vector: [4, 5, 6],
           metadata: { noun: 'person', name: 'Bob' }
         }
@@ -99,7 +99,7 @@ describe('TypeAwareStorageAdapter', () => {
 
       const docs: HNSWNoun[] = [
         {
-          id: 'doc-1',
+          id: '00000000-0000-0000-0000-000000000020', // doc-1
           vector: [7, 8, 9],
           metadata: { noun: 'document', title: 'Doc 1' }
         }
@@ -114,16 +114,16 @@ describe('TypeAwareStorageAdapter', () => {
 
       const retrievedPeople = await adapter.getNounsByNounType('person')
       expect(retrievedPeople).toHaveLength(2)
-      expect(retrievedPeople.map(p => p.id).sort()).toEqual(['person-1', 'person-2'])
+      expect(retrievedPeople.map(p => p.id).sort()).toEqual(['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000011'])
 
       const retrievedDocs = await adapter.getNounsByNounType('document')
       expect(retrievedDocs).toHaveLength(1)
-      expect(retrievedDocs[0].id).toBe('doc-1')
+      expect(retrievedDocs[0].id).toBe('00000000-0000-0000-0000-000000000020')
     })
 
     it('should delete nouns and update counts', async () => {
       const noun: HNSWNoun = {
-        id: 'person-to-delete',
+        id: '00000000-0000-0000-0000-000000000030', // person-to-delete
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'ToDelete' }
       }
@@ -133,9 +133,9 @@ describe('TypeAwareStorageAdapter', () => {
       let stats = adapter.getTypeStatistics()
       expect(stats.nouns.find(s => s.type === 'person')?.count).toBe(1)
 
-      await adapter.deleteNoun('person-to-delete')
+      await adapter.deleteNoun('00000000-0000-0000-0000-000000000030')
 
-      const retrieved = await adapter.getNoun('person-to-delete')
+      const retrieved = await adapter.getNoun('00000000-0000-0000-0000-000000000030')
       expect(retrieved).toBeNull()
 
       stats = adapter.getTypeStatistics()
@@ -146,36 +146,36 @@ describe('TypeAwareStorageAdapter', () => {
   describe('Verb Storage', () => {
     it('should save and retrieve a verb with type-first path', async () => {
       const verb: HNSWVerb = {
-        id: 'verb-1',
+        id: '00000000-0000-0000-0000-000000000040', // verb-1
         verb: 'creates',
         vector: [1, 2, 3],
-        sourceId: 'person-1',
-        targetId: 'doc-1',
+        sourceId: '00000000-0000-0000-0000-000000000010',
+        targetId: '00000000-0000-0000-0000-000000000020',
         timestamp: Date.now()
       }
 
       await adapter.saveVerb(verb)
-      const retrieved = await adapter.getVerb('verb-1')
+      const retrieved = await adapter.getVerb('00000000-0000-0000-0000-000000000040')
 
       expect(retrieved).toEqual(verb)
     })
 
     it('should track verb counts by type', async () => {
       const creates: HNSWVerb = {
-        id: 'creates-1',
+        id: '00000000-0000-0000-0000-000000000050', // creates-1
         verb: 'creates',
         vector: [1, 2, 3],
-        sourceId: 'p1',
-        targetId: 'd1',
+        sourceId: '00000000-0000-0000-0000-0000000000a1',
+        targetId: '00000000-0000-0000-0000-0000000000b1',
         timestamp: Date.now()
       }
 
       const contains: HNSWVerb = {
-        id: 'contains-1',
+        id: '00000000-0000-0000-0000-000000000060', // contains-1
         verb: 'contains',
         vector: [4, 5, 6],
-        sourceId: 'p1',
-        targetId: 'd2',
+        sourceId: '00000000-0000-0000-0000-0000000000a1',
+        targetId: '00000000-0000-0000-0000-0000000000b2',
         timestamp: Date.now()
       }
 
@@ -195,19 +195,19 @@ describe('TypeAwareStorageAdapter', () => {
     it('should retrieve verbs by type (O(1) with type-first paths)', async () => {
       const createsVerbs: HNSWVerb[] = [
         {
-          id: 'creates-1',
+          id: '00000000-0000-0000-0000-000000000050', // creates-1
           verb: 'creates',
           vector: [1, 2, 3],
-          sourceId: 'p1',
-          targetId: 'd1',
+          sourceId: '00000000-0000-0000-0000-0000000000a1',
+          targetId: '00000000-0000-0000-0000-0000000000b1',
           timestamp: Date.now()
         },
         {
-          id: 'creates-2',
+          id: '00000000-0000-0000-0000-000000000051', // creates-2
           verb: 'creates',
           vector: [4, 5, 6],
-          sourceId: 'p2',
-          targetId: 'd2',
+          sourceId: '00000000-0000-0000-0000-0000000000a2',
+          targetId: '00000000-0000-0000-0000-0000000000b2',
           timestamp: Date.now()
         }
       ]
@@ -218,16 +218,16 @@ describe('TypeAwareStorageAdapter', () => {
 
       const retrieved = await adapter.getVerbsByType('creates')
       expect(retrieved).toHaveLength(2)
-      expect(retrieved.map(v => v.id).sort()).toEqual(['creates-1', 'creates-2'])
+      expect(retrieved.map(v => v.id).sort()).toEqual(['00000000-0000-0000-0000-000000000050', '00000000-0000-0000-0000-000000000051'])
     })
 
     it('should delete verbs and update counts', async () => {
       const verb: HNSWVerb = {
-        id: 'verb-to-delete',
+        id: '00000000-0000-0000-0000-000000000070', // verb-to-delete
         verb: 'creates',
         vector: [1, 2, 3],
-        sourceId: 'p1',
-        targetId: 'd1',
+        sourceId: '00000000-0000-0000-0000-0000000000a1',
+        targetId: '00000000-0000-0000-0000-0000000000b1',
         timestamp: Date.now()
       }
 
@@ -236,9 +236,9 @@ describe('TypeAwareStorageAdapter', () => {
       let stats = adapter.getTypeStatistics()
       expect(stats.verbs.find(s => s.type === 'creates')?.count).toBe(1)
 
-      await adapter.deleteVerb('verb-to-delete')
+      await adapter.deleteVerb('00000000-0000-0000-0000-000000000070')
 
-      const retrieved = await adapter.getVerb('verb-to-delete')
+      const retrieved = await adapter.getVerb('00000000-0000-0000-0000-000000000070')
       expect(retrieved).toBeNull()
 
       stats = adapter.getTypeStatistics()
@@ -249,7 +249,7 @@ describe('TypeAwareStorageAdapter', () => {
   describe('Type Caching', () => {
     it('should cache type lookups for performance', async () => {
       const noun: HNSWNoun = {
-        id: 'cached-person',
+        id: '00000000-0000-0000-0000-000000000080', // cached-person
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'Cached' }
       }
@@ -257,11 +257,11 @@ describe('TypeAwareStorageAdapter', () => {
       await adapter.saveNoun(noun)
 
       // First retrieval populates cache
-      const first = await adapter.getNoun('cached-person')
+      const first = await adapter.getNoun('00000000-0000-0000-0000-000000000080')
       expect(first).toBeDefined()
 
       // Second retrieval should use cache (faster path)
-      const second = await adapter.getNoun('cached-person')
+      const second = await adapter.getNoun('00000000-0000-0000-0000-000000000080')
       expect(second).toEqual(first)
     })
   })
@@ -283,7 +283,7 @@ describe('TypeAwareStorageAdapter', () => {
   describe('HNSW Data', () => {
     it('should save and retrieve HNSW data', async () => {
       const noun: HNSWNoun = {
-        id: 'hnsw-person',
+        id: '00000000-0000-0000-0000-000000000090', // hnsw-person
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'HNSW Test' }
       }
@@ -299,15 +299,15 @@ describe('TypeAwareStorageAdapter', () => {
         }
       }
 
-      await adapter.saveHNSWData('hnsw-person', hnswData)
-      const retrieved = await adapter.getHNSWData('hnsw-person')
+      await adapter.saveHNSWData('00000000-0000-0000-0000-000000000090', hnswData)
+      const retrieved = await adapter.getHNSWData('00000000-0000-0000-0000-000000000090')
 
       expect(retrieved).toEqual(hnswData)
     })
 
     it('should save and retrieve HNSW system data', async () => {
       const systemData = {
-        entryPointId: 'person-1',
+        entryPointId: '00000000-0000-0000-0000-000000000010',
         maxLevel: 5
       }
 
@@ -333,7 +333,7 @@ describe('TypeAwareStorageAdapter', () => {
   describe('Clear', () => {
     it('should clear all data and reset counts', async () => {
       const noun: HNSWNoun = {
-        id: 'person-1',
+        id: '00000000-0000-0000-0000-0000000000c1', // person-1
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'Test' }
       }
@@ -345,7 +345,7 @@ describe('TypeAwareStorageAdapter', () => {
 
       await adapter.clear()
 
-      const retrieved = await adapter.getNoun('person-1')
+      const retrieved = await adapter.getNoun('00000000-0000-0000-0000-0000000000c1')
       expect(retrieved).toBeNull()
 
       stats = adapter.getTypeStatistics()
@@ -363,13 +363,13 @@ describe('TypeAwareStorageAdapter', () => {
       await memAdapter.init()
 
       const noun: HNSWNoun = {
-        id: 'test-1',
+        id: '00000000-0000-0000-0000-0000000000ff', // test-1
         vector: [1, 2, 3],
         metadata: { noun: 'person', name: 'Test' }
       }
 
       await memAdapter.saveNoun(noun)
-      const retrieved = await memAdapter.getNoun('test-1')
+      const retrieved = await memAdapter.getNoun('00000000-0000-0000-0000-0000000000ff')
 
       expect(retrieved).toEqual(noun)
     })
