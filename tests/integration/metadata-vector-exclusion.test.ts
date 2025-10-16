@@ -75,7 +75,8 @@ describe('Metadata Vector Exclusion Fix', () => {
       const content = JSON.parse(readFileSync(join(systemDir, file), 'utf-8'))
       const fieldName = content.field
 
-      // Field should be a semantic name, NOT a number
+      // CRITICAL: Field should be a semantic name, NOT a number
+      // This catches both "vector" fields AND numeric keys like "0", "1", "54716"
       expect(fieldName).not.toMatch(/^\d+$/)
 
       // Field should NOT be 'vector', 'embedding', 'embeddings'
@@ -83,6 +84,47 @@ describe('Metadata Vector Exclusion Fix', () => {
       expect(fieldName).not.toBe('embedding')
       expect(fieldName).not.toBe('embeddings')
     }
+  })
+
+  it('should NOT index objects with numeric keys (v3.50.2 fix)', async () => {
+    // Add entity with object that has numeric keys (simulates vector-as-object)
+    await brainy.add({
+      type: 'person' as any,
+      data: {
+        name: 'NumericTest',
+        numericObject: {
+          '0': 0.1,
+          '1': 0.2,
+          '2': 0.3,
+          '100': 1.0
+        }
+      }
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    const systemDir = join(testDir, '_system')
+
+    if (!existsSync(systemDir)) {
+      expect(true).toBe(true)
+      return
+    }
+
+    const chunkFiles = readdirSync(systemDir).filter(f => f.startsWith('__chunk__'))
+
+    // CRITICAL: Check that NO chunk files have numeric field names
+    // This is the v3.50.2 fix - prevents vectors-as-objects from being indexed
+    for (const file of chunkFiles) {
+      const content = JSON.parse(readFileSync(join(systemDir, file), 'utf-8'))
+      const fieldName = content.field
+
+      // Should NOT index purely numeric field names (array indices as object keys)
+      // This catches: "0", "1", "2", "100", "54716", "100000", etc.
+      expect(fieldName).not.toMatch(/^\d+$/)
+    }
+
+    // Verify we DID create chunk files for legitimate fields
+    expect(chunkFiles.length).toBeGreaterThan(0)
   })
 
   it('should still index small arrays (tags, categories)', async () => {

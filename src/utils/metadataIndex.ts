@@ -1083,8 +1083,9 @@ export class MetadataIndexManager {
    * Extract indexable field-value pairs from metadata
    *
    * BUG FIX (v3.50.1): Exclude vector embeddings and large arrays from indexing
+   * BUG FIX (v3.50.2): Also exclude purely numeric field names (array indices)
    * - Vector fields (384+ dimensions) were creating 825K chunk files for 1,144 entities
-   * - Arrays should not have their indices indexed as separate fields
+   * - Arrays converted to objects with numeric keys were still being indexed
    */
   private extractIndexableFields(metadata: any): Array<{ field: string, value: any }> {
     const fields: Array<{ field: string, value: any }> = []
@@ -1098,6 +1099,11 @@ export class MetadataIndexManager {
 
         // Skip fields in never-index list (CRITICAL: prevents vector indexing bug)
         if (NEVER_INDEX.has(key)) continue
+
+        // Skip purely numeric field names (array indices converted to object keys)
+        // Legitimate field names should never be purely numeric
+        // This catches vectors stored as objects: {0: 0.1, 1: 0.2, ...}
+        if (/^\d+$/.test(key)) continue
 
         // Skip fields based on user configuration
         if (!this.shouldIndexField(fullKey)) continue
