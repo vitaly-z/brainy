@@ -1159,9 +1159,9 @@ We intentionally keep the type system minimal because:
 
 ## Industry-Specific Coverage Analysis
 
-### Why 24 Nouns + 40 Verbs = Universal Coverage
+### Why 31 Nouns + 40 Verbs = Universal Coverage
 
-The combination of **24 noun types** and **40 verb types** creates **960 basic combinations**, but with metadata and multi-hop relationships, this expands to **infinite expressiveness**. Here's how it covers every industry:
+The combination of **31 noun types** and **40 verb types** creates **1,240 basic combinations**, but with metadata and multi-hop relationships, this expands to **infinite expressiveness**. Here's how it covers every industry:
 
 ### Healthcare & Medical
 ```typescript
@@ -1498,8 +1498,8 @@ The noun-verb taxonomy achieves **Turing completeness** for knowledge representa
 #### The Infinity Formula
 
 ```
-Expressiveness = (24 nouns × 40 verbs) × ∞ metadata × ∞ graph depth
-              = 960 × ∞ × ∞
+Expressiveness = (31 nouns × 40 verbs) × ∞ metadata × ∞ graph depth
+              = 1,240 × ∞ × ∞
               = ∞ (Infinite Expressiveness)
 ```
 

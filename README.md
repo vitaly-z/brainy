@@ -94,6 +94,44 @@ Model **ANY domain** with 1,240 base type combinations + unlimited metadata:
 
 ---
 
+## 💡 What Can You Build?
+
+**Brainy unlocks entirely new categories of applications.** Here's what developers are building:
+
+### 📚 **Intelligent Documentation Systems**
+- **Living knowledge bases** where docs understand each other and evolve
+- **Smart wikis** that auto-link related concepts and detect outdated information
+- **Research assistants** that remember every paper you've read and find connections
+
+### 🤖 **AI Agents with Perfect Memory**
+- **Conversational AI** that remembers context across months, not just messages
+- **Code assistants** that understand your entire codebase as a knowledge graph
+- **Personal assistants** with unlimited memory that never forgets important details
+
+### 🎮 **Rich Interactive Experiences**
+- **Game worlds** where NPCs remember every interaction and relationships evolve
+- **Story engines** where characters persist across multiple narratives
+- **Educational platforms** that build personalized knowledge graphs as you learn
+
+### 🔍 **Next-Gen Search & Discovery**
+- **Semantic code search** across millions of repositories
+- **Smart file explorers** that understand code relationships, not just folders
+- **Research platforms** that find papers by meaning, not keywords
+
+### 🏢 **Enterprise Knowledge Management**
+- **Corporate memory systems** where institutional knowledge never gets lost
+- **Customer intelligence** platforms that understand every interaction
+- **Product catalogs** with semantic search and relationship-based recommendations
+
+### 🎨 **Creative Tools & Content Platforms**
+- **Writing assistants** that track characters, plotlines, and themes across stories
+- **Content management** where every asset knows its relationships and history
+- **Media libraries** with intelligent tagging and similarity-based discovery
+
+**The Pattern**: If your app needs to **remember**, **understand**, or **connect** information, Brainy makes it trivial.
+
+---
+
 ## ⚡ Quick Start - Zero Configuration
 
 ```bash
