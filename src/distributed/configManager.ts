@@ -109,9 +109,10 @@ export class DistributedConfigManager {
       const configData = await this.storage.getMetadata(LEGACY_CONFIG_KEY)
       if (configData) {
         // Migrate to new location
-        await this.migrateConfig(configData as SharedConfig)
-        this.lastConfigVersion = configData.version
-        return configData as SharedConfig
+        const config = configData as unknown as SharedConfig
+        await this.migrateConfig(config)
+        this.lastConfigVersion = config.version
+        return config
       }
     } catch (error) {
       // Config doesn't exist yet
@@ -214,21 +215,22 @@ export class DistributedConfigManager {
       const legacyConfig = await this.storage.getMetadata(LEGACY_CONFIG_KEY)
       if (legacyConfig) {
         console.log('Migrating distributed config from legacy location to index folder...')
-        
+
+        const config = legacyConfig as unknown as SharedConfig
         // Save to new location
-        await this.migrateConfig(legacyConfig as SharedConfig)
-        
+        await this.migrateConfig(config)
+
         // Delete from old location (optional - we can keep it for rollback)
         // await this.storage.deleteMetadata(LEGACY_CONFIG_KEY)
-        
+
         this.hasMigrated = true
-        this.lastConfigVersion = legacyConfig.version
-        return legacyConfig as SharedConfig
+        this.lastConfigVersion = config.version
+        return config
       }
     } catch (error) {
       console.error('Error during config migration:', error)
     }
-    
+
     this.hasMigrated = true
     return null
   }
@@ -405,13 +407,13 @@ export class DistributedConfigManager {
       if (stats && stats.distributedConfig) {
         return stats.distributedConfig as SharedConfig
       }
-      
+
       // Fallback to legacy location if not migrated yet
       if (!this.hasMigrated) {
         const configData = await this.storage.getMetadata(LEGACY_CONFIG_KEY)
         if (configData) {
           // Trigger migration on next save
-          return configData as SharedConfig
+          return configData as unknown as SharedConfig
         }
       }
     } catch (error) {

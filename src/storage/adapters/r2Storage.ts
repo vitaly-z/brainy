@@ -12,7 +12,16 @@
  * Based on latest GCS and S3 implementations with R2-specific enhancements
  */
 
-import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../../coreTypes.js'
+import {
+  GraphVerb,
+  HNSWNoun,
+  HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  StatisticsData
+} from '../../coreTypes.js'
 import {
   BaseStorage,
   NOUNS_DIR,
@@ -426,7 +435,7 @@ export class R2Storage extends BaseStorage {
       // Increment noun count
       const metadata = await this.getNounMetadata(node.id)
       if (metadata && metadata.type) {
-        await this.incrementEntityCountSafe(metadata.type)
+        await this.incrementEntityCountSafe(metadata.type as string)
       }
 
       this.logger.trace(`Node ${node.id} saved successfully`)
@@ -446,19 +455,18 @@ export class R2Storage extends BaseStorage {
 
   /**
    * Get a noun from storage (internal implementation)
+   * v4.0.0: Returns ONLY vector data (no metadata field)
+   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
+    // v4.0.0: Return ONLY vector data (no metadata field)
     const node = await this.getNode(id)
     if (!node) {
       return null
     }
 
-    const metadata = await this.getNounMetadata(id)
-
-    return {
-      ...node,
-      metadata: metadata || {}
-    }
+    // Return pure vector structure
+    return node
   }
 
   /**
@@ -565,7 +573,7 @@ export class R2Storage extends BaseStorage {
       // Decrement noun count
       const metadata = await this.getNounMetadata(id)
       if (metadata && metadata.type) {
-        await this.decrementEntityCountSafe(metadata.type)
+        await this.decrementEntityCountSafe(metadata.type as string)
       }
 
       this.logger.trace(`Noun ${id} deleted successfully`)
@@ -765,7 +773,7 @@ export class R2Storage extends BaseStorage {
 
       const metadata = await this.getVerbMetadata(edge.id)
       if (metadata && metadata.type) {
-        await this.incrementVerbCount(metadata.type)
+        await this.incrementVerbCount(metadata.type as string)
       }
 
       this.releaseBackpressure(true, requestId)
@@ -781,18 +789,20 @@ export class R2Storage extends BaseStorage {
     }
   }
 
+  /**
+   * Get a verb from storage (internal implementation)
+   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
+   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
+   */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
+    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
     const edge = await this.getEdge(id)
     if (!edge) {
       return null
     }
 
-    const metadata = await this.getVerbMetadata(id)
-
-    return {
-      ...edge,
-      metadata: metadata || {}
-    }
+    // Return pure vector + core fields structure
+    return edge
   }
 
   protected async getEdge(id: string): Promise<Edge | null> {
@@ -824,7 +834,7 @@ export class R2Storage extends BaseStorage {
         connections.set(Number(level), new Set(verbIds as string[]))
       }
 
-      // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
+      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
       const edge: Edge = {
         id: data.id,
         vector: data.vector,
@@ -833,10 +843,10 @@ export class R2Storage extends BaseStorage {
         // CORE RELATIONAL DATA (read from vector file)
         verb: data.verb,
         sourceId: data.sourceId,
-        targetId: data.targetId,
+        targetId: data.targetId
 
-        // User metadata (retrieved separately via getVerbMetadata())
-        metadata: data.metadata
+        // ✅ NO metadata field in v4.0.0
+        // User metadata retrieved separately via getVerbMetadata()
       }
 
       this.verbCacheManager.set(id, edge)
@@ -878,7 +888,7 @@ export class R2Storage extends BaseStorage {
 
       const metadata = await this.getVerbMetadata(id)
       if (metadata && metadata.type) {
-        await this.decrementVerbCount(metadata.type)
+        await this.decrementVerbCount(metadata.type as string)
       }
 
       this.releaseBackpressure(true, requestId)
@@ -1130,7 +1140,7 @@ export class R2Storage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1150,7 +1160,7 @@ export class R2Storage extends BaseStorage {
       })
     )
 
-    const items: HNSWNoun[] = []
+    const items: HNSWNounWithMetadata[] = []
     const contents = response.Contents || []
 
     for (const obj of contents) {
@@ -1161,7 +1171,55 @@ export class R2Storage extends BaseStorage {
 
       const noun = await this.getNoun_internal(id)
       if (noun) {
-        items.push(noun)
+        // v4.0.0: Load metadata and combine with noun to create HNSWNounWithMetadata
+        const metadata = await this.getNounMetadata(id)
+        if (!metadata) continue
+
+        // Apply filters if provided
+        if (options.filter) {
+          // Filter by noun type
+          if (options.filter.nounType) {
+            const nounTypes = Array.isArray(options.filter.nounType)
+              ? options.filter.nounType
+              : [options.filter.nounType]
+            if (!nounTypes.includes((metadata.type || metadata.noun) as string)) {
+              continue
+            }
+          }
+
+          // Filter by service
+          if (options.filter.service) {
+            const services = Array.isArray(options.filter.service)
+              ? options.filter.service
+              : [options.filter.service]
+            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
+              continue
+            }
+          }
+
+          // Filter by metadata
+          if (options.filter.metadata) {
+            let matches = true
+            for (const [key, value] of Object.entries(options.filter.metadata)) {
+              if (metadata[key] !== value) {
+                matches = false
+                break
+              }
+            }
+            if (!matches) continue
+          }
+        }
+
+        // v4.0.0: Create HNSWNounWithMetadata by combining noun with metadata
+        const nounWithMetadata: HNSWNounWithMetadata = {
+          id: noun.id,
+          vector: [...noun.vector],
+          connections: new Map(noun.connections),
+          level: noun.level || 0,
+          metadata: metadata
+        }
+
+        items.push(nounWithMetadata)
       }
     }
 
@@ -1182,16 +1240,16 @@ export class R2Storage extends BaseStorage {
     return result.items
   }
 
-  protected async getVerbsBySource_internal(sourceId: string): Promise<GraphVerb[]> {
+  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     // Simplified - full implementation would include proper filtering
     return []
   }
 
-  protected async getVerbsByTarget_internal(targetId: string): Promise<GraphVerb[]> {
+  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     return []
   }
 
-  protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
     return []
   }
 }

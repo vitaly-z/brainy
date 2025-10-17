@@ -215,12 +215,13 @@ export class PeriodicCleanup {
       
       for (const noun of nounsResult.items) {
         try {
-          if (!noun.metadata || !isDeleted(noun.metadata)) {
+          // v4.0.0: Cast NounMetadata to NamespacedMetadata for isDeleted check
+          if (!noun.metadata || !isDeleted(noun.metadata as any)) {
             continue // Not deleted, skip
           }
 
           // Check if old enough for cleanup
-          const deletedTime = noun.metadata._brainy?.updated || 0
+          const deletedTime = (noun.metadata as any)._brainy?.updated || 0
           if (deletedTime && (currentTime - deletedTime) > this.config.maxAge) {
             eligibleItems.push(noun.id)
           }

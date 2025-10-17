@@ -380,14 +380,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         createdAt: Date.now()
       }
 
-      // Save to storage
+      // v4.0.0: Save vector and metadata separately
       await this.storage.saveNoun({
         id,
         vector,
         connections: new Map(),
-        level: 0,
-        metadata
+        level: 0
       })
+
+      await this.storage.saveNounMetadata(id, metadata)
 
       // Add to metadata index for fast filtering
       await this.metadataIndex.addToIndex(id, metadata)
@@ -560,13 +561,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         updatedAt: Date.now()
       }
 
+      // v4.0.0: Save vector and metadata separately
       await this.storage.saveNoun({
         id: params.id,
         vector,
         connections: new Map(),
-        level: 0,
-        metadata: updatedMetadata
+        level: 0
       })
+
+      await this.storage.saveNounMetadata(params.id, updatedMetadata)
 
       // Update metadata index - remove old entry and add new one
       await this.metadataIndex.removeFromIndex(params.id, existing.metadata)
@@ -762,7 +765,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const existingVerbs = await this.storage.getVerbsBySource(params.from)
     const duplicate = existingVerbs.find(v =>
       v.targetId === params.to &&
-      v.type === params.type
+      v.verb === params.type
     )
 
     if (duplicate) {
@@ -780,7 +783,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     )
 
     return this.augmentationRegistry.execute('relate', params, async () => {
-      // Save to storage
+      // v4.0.0: Prepare verb metadata
+      const verbMetadata = {
+        weight: params.weight ?? 1.0,
+        ...(params.metadata || {}),
+        createdAt: Date.now()
+      }
+
+      // Save to storage (v4.0.0: vector and metadata separately)
       const verb: GraphVerb = {
         id,
         vector: relationVector,
@@ -795,7 +805,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         createdAt: Date.now()
       } as any
 
-      await this.storage.saveVerb(verb)
+      await this.storage.saveVerb({
+        id,
+        vector: relationVector,
+        connections: new Map(),
+        verb: params.type,
+        sourceId: params.from,
+        targetId: params.to
+      })
+
+      await this.storage.saveVerbMetadata(id, verbMetadata)
 
       // Add to graph index for O(1) lookups
       await this.graphIndex.addVerb(verb)
@@ -811,8 +830,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           source: toEntity.type,
           target: fromEntity.type
         } as any
-        
-        await this.storage.saveVerb(reverseVerb)
+
+        await this.storage.saveVerb({
+          id: reverseId,
+          vector: relationVector,
+          connections: new Map(),
+          verb: params.type,
+          sourceId: params.to,
+          targetId: params.from
+        })
+
+        await this.storage.saveVerbMetadata(reverseId, verbMetadata)
+
         // Add reverse relationship to graph index too
         await this.graphIndex.addVerb(reverseVerb)
       }

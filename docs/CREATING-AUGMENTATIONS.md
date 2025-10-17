@@ -1,5 +1,7 @@
 # Creating Augmentations for Brainy
 
+> **Updated for v4.0.0** - Includes metadata structure changes and type system improvements
+
 ## The BrainyAugmentation Interface
 
 Every augmentation implements this simple yet powerful interface:
@@ -8,12 +10,12 @@ Every augmentation implements this simple yet powerful interface:
 interface BrainyAugmentation {
   // Identification
   name: string                    // Unique name for your augmentation
-  
+
   // Execution control
   timing: 'before' | 'after' | 'around' | 'replace'  // When to execute
   operations: string[]            // Which operations to intercept
   priority: number                 // Execution order (higher = first)
-  
+
   // Lifecycle methods
   initialize(context: AugmentationContext): Promise<void>
   execute<T>(operation: string, params: any, next: () => Promise<T>): Promise<T>
@@ -21,30 +23,120 @@ interface BrainyAugmentation {
 }
 ```
 
+## v4.0.0 Breaking Changes for Augmentation Developers
+
+### 1. Metadata Structure Separation
+v4.0.0 introduces strict metadata/vector separation for billion-scale performance:
+
+```typescript
+// ✅ v4.0.0: Metadata has required type field
+interface NounMetadata {
+  noun: NounType               // Required! Must be a valid noun type
+  [key: string]: any          // Your custom metadata
+}
+
+interface VerbMetadata {
+  verb: VerbType               // Required! Must be a valid verb type
+  sourceId: string
+  targetId: string
+  [key: string]: any
+}
+```
+
+### 2. Storage Adapter Return Types
+Storage adapters now return different types at different boundaries:
+
+```typescript
+// Internal methods: Pure structures (no metadata)
+abstract _getNoun(id: string): Promise<HNSWNoun | null>
+
+// Public API: WithMetadata structures
+abstract getNoun(id: string): Promise<HNSWNounWithMetadata | null>
+```
+
+### 3. Verb Property Renamed
+The verb relationship field changed from `type` to `verb`:
+
+```typescript
+// ❌ v3.x
+verb.type === 'relatedTo'
+
+// ✅ v4.0.0
+verb.verb === 'relatedTo'
+```
+
 ## Creating a Storage Augmentation
 
-Storage augmentations are special - they provide the storage backend for Brainy:
+Storage augmentations are special - they provide the storage backend for Brainy.
+
+### Important: v4.0.0 Storage Requirements
+
+Your storage adapter MUST:
+1. **Wrap metadata** with required `noun`/`verb` fields
+2. **Return pure structures** from internal `_methods`
+3. **Return WithMetadata types** from public methods
 
 ```typescript
 import { StorageAugmentation } from 'brainy/augmentations'
-import { MyCustomStorage } from './my-storage'
+import { BaseStorageAdapter, HNSWNoun, HNSWNounWithMetadata, NounMetadata } from 'brainy'
+
+export class MyCustomStorage extends BaseStorageAdapter {
+  // Internal method: Returns pure structure
+  async _getNoun(id: string): Promise<HNSWNoun | null> {
+    const data = await this.fetchFromDatabase(id)
+    return data ? {
+      id: data.id,
+      vector: data.vector,
+      nounType: data.type
+    } : null
+  }
+
+  // Public method: Returns WithMetadata structure
+  async getNoun(id: string): Promise<HNSWNounWithMetadata | null> {
+    const noun = await this._getNoun(id)
+    if (!noun) return null
+
+    // Fetch metadata separately (v4.0.0 pattern)
+    const metadata = await this.getNounMetadata(id)
+
+    return {
+      ...noun,
+      metadata: metadata || { noun: noun.nounType || 'thing' }
+    }
+  }
+
+  // CRITICAL: Always save with proper metadata structure
+  async saveNoun(noun: HNSWNoun, metadata?: NounMetadata): Promise<void> {
+    // Validate metadata has required 'noun' field
+    if (!metadata?.noun) {
+      throw new Error('v4.0.0: NounMetadata requires "noun" field')
+    }
+
+    await this.database.save({
+      id: noun.id,
+      vector: noun.vector,
+      nounType: noun.nounType,
+      metadata: metadata  // Stored separately in v4.0.0
+    })
+  }
+}
 
 export class MyStorageAugmentation extends StorageAugmentation {
   private config: MyStorageConfig
-  
+
   constructor(config: MyStorageConfig) {
     super()
     this.name = 'my-custom-storage'
     this.config = config
   }
-  
+
   // Called during storage resolution phase
   async provideStorage(): Promise<StorageAdapter> {
     const storage = new MyCustomStorage(this.config)
     this.storageAdapter = storage
     return storage
   }
-  
+
   // Called during augmentation initialization
   protected async onInitialize(): Promise<void> {
     await this.storageAdapter!.init()
@@ -254,6 +346,8 @@ Future capability for premium augmentations:
 
 ## Best Practices
 
+### General Practices
+
 1. **Use BaseAugmentation** - Provides common functionality
 2. **Set appropriate priority** - Storage (100), System (80-99), Features (10-50)
 3. **Be selective with operations** - Don't use 'all' unless necessary
@@ -261,6 +355,44 @@ Future capability for premium augmentations:
 5. **Clean up in shutdown()** - Release resources
 6. **Log appropriately** - Use context.log() for consistent output
 7. **Document your augmentation** - Include examples
+
+### v4.0.0 Specific Best Practices
+
+8. **Always include `noun` field** when creating/modifying NounMetadata:
+   ```typescript
+   const metadata: NounMetadata = {
+     noun: 'thing',  // REQUIRED!
+     yourField: 'value'
+   }
+   ```
+
+9. **Use `verb` property** not `type` when working with relationships:
+   ```typescript
+   // ✅ Correct
+   if (verb.verb === 'relatedTo') { ... }
+
+   // ❌ Wrong (v3.x pattern)
+   if (verb.type === 'relatedTo') { ... }
+   ```
+
+10. **Access metadata correctly** from storage:
+    ```typescript
+    // ✅ Correct - metadata is already structured
+    const nounType = noun.metadata.noun
+
+    // ⚠️ Fallback pattern for robustness
+    const nounType = noun.metadata?.noun || 'thing'
+    ```
+
+11. **Respect the two-file storage pattern** - Don't mix vector and metadata operations:
+    ```typescript
+    // ✅ Good - Separate concerns
+    await storage.saveNoun(noun)
+    await storage.saveMetadata(noun.id, metadata)
+
+    // ❌ Bad - Mixing concerns
+    await storage.saveNounWithEverything(combinedData)
+    ```
 
 ## Testing Your Augmentation
 

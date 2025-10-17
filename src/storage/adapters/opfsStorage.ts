@@ -7,6 +7,10 @@ import {
   GraphVerb,
   HNSWNoun,
   HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
   StatisticsData
 } from '../../coreTypes.js'
 import {
@@ -266,21 +270,16 @@ export class OPFSStorage extends BaseStorage {
         connections.set(Number(level), new Set(nounIds as string[]))
       }
 
-      const node = {
+      // v4.0.0: Return ONLY vector data (no metadata field)
+      const node: HNSWNode = {
         id: data.id,
         vector: data.vector,
         connections,
         level: data.level || 0
       }
 
-      // Get metadata (entity data in 2-file system)
-      const metadata = await this.getNounMetadata(id)
-
-      // Combine into complete noun object
-      return {
-        ...node,
-        metadata: metadata || {}
-      }
+      // Return pure vector structure
+      return node
     } catch (error) {
       // Noun not found or other error
       return null
@@ -444,23 +443,18 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
-   * Combines vector data from getEdge() with metadata from getVerbMetadata()
+   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
+   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
     const edge = await this.getEdge(id)
     if (!edge) {
       return null
     }
 
-    // Get metadata (relationship data in 2-file system)
-    const metadata = await this.getVerbMetadata(id)
-
-    // Combine into complete verb object
-    return {
-      ...edge,
-      metadata: metadata || {}
-    }
+    // Return pure vector + core fields structure
+    return edge
   }
 
   /**
@@ -502,7 +496,7 @@ export class OPFSStorage extends BaseStorage {
         version: '1.0'
       }
 
-      // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
+      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
       return {
         id: data.id,
         vector: data.vector,
@@ -511,10 +505,10 @@ export class OPFSStorage extends BaseStorage {
         // CORE RELATIONAL DATA (read from vector file)
         verb: data.verb,
         sourceId: data.sourceId,
-        targetId: data.targetId,
+        targetId: data.targetId
 
-        // User metadata (retrieved separately via getVerbMetadata())
-        metadata: data.metadata
+        // ✅ NO metadata field in v4.0.0
+        // User metadata retrieved separately via getVerbMetadata()
       }
     } catch (error) {
       // Edge not found or other error
@@ -563,7 +557,7 @@ export class OPFSStorage extends BaseStorage {
                   version: '1.0'
                 }
 
-                // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
+                // v4.0.0: Include core relational fields (NO metadata field)
                 allEdges.push({
                   id: data.id,
                   vector: data.vector,
@@ -572,10 +566,10 @@ export class OPFSStorage extends BaseStorage {
                   // CORE RELATIONAL DATA
                   verb: data.verb,
                   sourceId: data.sourceId,
-                  targetId: data.targetId,
+                  targetId: data.targetId
 
-                  // User metadata
-                  metadata: data.metadata
+                  // ✅ NO metadata field in v4.0.0
+                  // User metadata retrieved separately via getVerbMetadata()
                 })
               } catch (error) {
                 console.error(`Error reading edge file ${shardName}/${fileName}:`, error)
@@ -596,7 +590,7 @@ export class OPFSStorage extends BaseStorage {
    */
   protected async getVerbsBySource_internal(
     sourceId: string
-  ): Promise<GraphVerb[]> {
+  ): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { sourceId: [sourceId] },
@@ -608,7 +602,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Get edges by source
    */
-  protected async getEdgesBySource(sourceId: string): Promise<GraphVerb[]> {
+  protected async getEdgesBySource(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     // This method is deprecated and would require loading metadata for each edge
     // For now, return empty array since this is not efficiently implementable with new storage pattern
     console.warn(
@@ -622,7 +616,7 @@ export class OPFSStorage extends BaseStorage {
    */
   protected async getVerbsByTarget_internal(
     targetId: string
-  ): Promise<GraphVerb[]> {
+  ): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { targetId: [targetId] },
@@ -634,7 +628,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Get edges by target
    */
-  protected async getEdgesByTarget(targetId: string): Promise<GraphVerb[]> {
+  protected async getEdgesByTarget(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     // This method is deprecated and would require loading metadata for each edge
     // For now, return empty array since this is not efficiently implementable with new storage pattern
     console.warn(
@@ -646,7 +640,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Get verbs by type (internal implementation)
    */
-  protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { verbType: [type] },
@@ -658,7 +652,7 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Get edges by type
    */
-  protected async getEdgesByType(type: string): Promise<GraphVerb[]> {
+  protected async getEdgesByType(type: string): Promise<HNSWVerbWithMetadata[]> {
     // This method is deprecated and would require loading metadata for each edge
     // For now, return empty array since this is not efficiently implementable with new storage pattern
     console.warn(
@@ -931,6 +925,12 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
+  // Quota monitoring configuration (v4.0.0)
+  private quotaWarningThreshold = 0.8  // Warn at 80% usage
+  private quotaCriticalThreshold = 0.95  // Critical at 95% usage
+  private lastQuotaCheck: number = 0
+  private quotaCheckInterval = 60000  // Check every 60 seconds
+
   /**
    * Get information about storage usage and capacity
    */
@@ -1070,6 +1070,127 @@ export class OPFSStorage extends BaseStorage {
         quota: null,
         details: { error: String(error) }
       }
+    }
+  }
+
+  /**
+   * Get detailed quota status with warnings (v4.0.0)
+   * Monitors storage usage and warns when approaching quota limits
+   *
+   * @returns Promise that resolves to quota status with warning levels
+   *
+   * @example
+   * const status = await storage.getQuotaStatus()
+   * if (status.warning) {
+   *   console.warn(`Storage ${status.usagePercent}% full: ${status.warningMessage}`)
+   * }
+   */
+  public async getQuotaStatus(): Promise<{
+    usage: number
+    quota: number | null
+    usagePercent: number
+    remaining: number | null
+    status: 'ok' | 'warning' | 'critical'
+    warning: boolean
+    warningMessage?: string
+  }> {
+    this.lastQuotaCheck = Date.now()
+
+    try {
+      if (!navigator.storage || !navigator.storage.estimate) {
+        return {
+          usage: 0,
+          quota: null,
+          usagePercent: 0,
+          remaining: null,
+          status: 'ok',
+          warning: false
+        }
+      }
+
+      const estimate = await navigator.storage.estimate()
+      const usage = estimate.usage || 0
+      const quota = estimate.quota || null
+
+      if (!quota) {
+        return {
+          usage,
+          quota: null,
+          usagePercent: 0,
+          remaining: null,
+          status: 'ok',
+          warning: false
+        }
+      }
+
+      const usagePercent = (usage / quota) * 100
+      const remaining = quota - usage
+
+      // Determine status
+      let status: 'ok' | 'warning' | 'critical' = 'ok'
+      let warning = false
+      let warningMessage: string | undefined
+
+      if (usagePercent >= this.quotaCriticalThreshold * 100) {
+        status = 'critical'
+        warning = true
+        warningMessage = `Critical: Storage ${usagePercent.toFixed(1)}% full. Only ${(remaining / 1024 / 1024).toFixed(1)}MB remaining. Please delete old data.`
+      } else if (usagePercent >= this.quotaWarningThreshold * 100) {
+        status = 'warning'
+        warning = true
+        warningMessage = `Warning: Storage ${usagePercent.toFixed(1)}% full. ${(remaining / 1024 / 1024).toFixed(1)}MB remaining.`
+      }
+
+      if (warning) {
+        console.warn(`[OPFS Quota] ${warningMessage}`)
+      }
+
+      return {
+        usage,
+        quota,
+        usagePercent,
+        remaining,
+        status,
+        warning,
+        warningMessage
+      }
+    } catch (error) {
+      console.error('Failed to get quota status:', error)
+      return {
+        usage: 0,
+        quota: null,
+        usagePercent: 0,
+        remaining: null,
+        status: 'ok',
+        warning: false
+      }
+    }
+  }
+
+  /**
+   * Monitor quota during operations (v4.0.0)
+   * Automatically checks quota at regular intervals and warns if approaching limits
+   * Call this before write operations to ensure quota is available
+   *
+   * @returns Promise that resolves when quota check is complete
+   *
+   * @example
+   * await storage.monitorQuota()  // Checks quota if interval has passed
+   * await storage.saveNoun(noun)  // Proceed with write operation
+   */
+  public async monitorQuota(): Promise<void> {
+    const now = Date.now()
+
+    // Only check if interval has passed
+    if (now - this.lastQuotaCheck < this.quotaCheckInterval) {
+      return
+    }
+
+    const status = await this.getQuotaStatus()
+
+    // If critical, throw error to prevent data loss
+    if (status.status === 'critical' && status.warningMessage) {
+      throw new Error(`Storage quota critical: ${status.warningMessage}`)
     }
   }
 
@@ -1515,7 +1636,7 @@ export class OPFSStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1557,40 +1678,41 @@ export class OPFSStorage extends BaseStorage {
     // Get the subset of files for this page
     const pageFiles = nounFiles.slice(startIndex, startIndex + limit)
     
-    // Load nouns from files
-    const items: HNSWNoun[] = []
+    // v4.0.0: Load nouns from files and combine with metadata
+    const items: HNSWNounWithMetadata[] = []
     for (const fileName of pageFiles) {
       // fileName is in format "shard/uuid.json", extract just the UUID
       const id = fileName.split('/')[1].replace('.json', '')
       const noun = await this.getNoun_internal(id)
       if (noun) {
+        // Load metadata for filtering and combining
+        const metadata = await this.getNounMetadata(id)
+        if (!metadata) continue
+
         // Apply filters if provided
         if (options.filter) {
-          const metadata = await this.getNounMetadata(id)
-          
           // Filter by noun type
           if (options.filter.nounType) {
             const nounTypes = Array.isArray(options.filter.nounType)
               ? options.filter.nounType
               : [options.filter.nounType]
-            if (metadata && !nounTypes.includes(metadata.type || metadata.noun)) {
+            if (!nounTypes.includes((metadata.type || metadata.noun) as string)) {
               continue
             }
           }
-          
+
           // Filter by service
           if (options.filter.service) {
             const services = Array.isArray(options.filter.service)
               ? options.filter.service
               : [options.filter.service]
-            if (metadata && !services.includes(metadata.createdBy?.augmentation)) {
+            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
               continue
             }
           }
-          
+
           // Filter by metadata
           if (options.filter.metadata) {
-            if (!metadata) continue
             let matches = true
             for (const [key, value] of Object.entries(options.filter.metadata)) {
               if (metadata[key] !== value) {
@@ -1601,8 +1723,17 @@ export class OPFSStorage extends BaseStorage {
             if (!matches) continue
           }
         }
-        
-        items.push(noun)
+
+        // v4.0.0: Create HNSWNounWithMetadata by combining noun with metadata
+        const nounWithMetadata: HNSWNounWithMetadata = {
+          id: noun.id,
+          vector: [...noun.vector],
+          connections: new Map(noun.connections),
+          level: noun.level || 0,
+          metadata: metadata
+        }
+
+        items.push(nounWithMetadata)
       }
     }
     
@@ -1638,7 +1769,7 @@ export class OPFSStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1680,73 +1811,87 @@ export class OPFSStorage extends BaseStorage {
     // Get the subset of files for this page
     const pageFiles = verbFiles.slice(startIndex, startIndex + limit)
 
-    // Load verbs from files and convert to GraphVerb
-    const items: GraphVerb[] = []
+    // v4.0.0: Load verbs from files and combine with metadata
+    const items: HNSWVerbWithMetadata[] = []
     for (const fileName of pageFiles) {
       // fileName is in format "shard/uuid.json", extract just the UUID
       const id = fileName.split('/')[1].replace('.json', '')
       const hnswVerb = await this.getVerb_internal(id)
       if (hnswVerb) {
-        // Convert HNSWVerb to GraphVerb
-        const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb)
-        if (graphVerb) {
-          // Apply filters if provided
-          if (options.filter) {
-            // Filter by verb type
-            if (options.filter.verbType) {
-              const verbTypes = Array.isArray(options.filter.verbType)
-                ? options.filter.verbType
-                : [options.filter.verbType]
-              if (graphVerb.verb && !verbTypes.includes(graphVerb.verb)) {
-                continue
-              }
-            }
-            
-            // Filter by source ID
-            if (options.filter.sourceId) {
-              const sourceIds = Array.isArray(options.filter.sourceId)
-                ? options.filter.sourceId
-                : [options.filter.sourceId]
-              if (graphVerb.source && !sourceIds.includes(graphVerb.source)) {
-                continue
-              }
-            }
-            
-            // Filter by target ID
-            if (options.filter.targetId) {
-              const targetIds = Array.isArray(options.filter.targetId)
-                ? options.filter.targetId
-                : [options.filter.targetId]
-              if (graphVerb.target && !targetIds.includes(graphVerb.target)) {
-                continue
-              }
-            }
-            
-            // Filter by service
-            if (options.filter.service) {
-              const services = Array.isArray(options.filter.service)
-                ? options.filter.service
-                : [options.filter.service]
-              if (graphVerb.createdBy?.augmentation && !services.includes(graphVerb.createdBy.augmentation)) {
-                continue
-              }
-            }
-            
-            // Filter by metadata
-            if (options.filter.metadata && graphVerb.metadata) {
-              let matches = true
-              for (const [key, value] of Object.entries(options.filter.metadata)) {
-                if (graphVerb.metadata[key] !== value) {
-                  matches = false
-                  break
-                }
-              }
-              if (!matches) continue
+        // Load metadata for filtering and combining
+        const metadata = await this.getVerbMetadata(id)
+        if (!metadata) continue
+
+        // Apply filters if provided
+        if (options.filter) {
+          // Filter by verb type
+          // v4.0.0: verb field is in HNSWVerb structure (NOT in metadata)
+          if (options.filter.verbType) {
+            const verbTypes = Array.isArray(options.filter.verbType)
+              ? options.filter.verbType
+              : [options.filter.verbType]
+            if (!hnswVerb.verb || !verbTypes.includes(hnswVerb.verb)) {
+              continue
             }
           }
-          
-          items.push(graphVerb)
+
+          // Filter by source ID
+          // v4.0.0: sourceId field is in HNSWVerb structure (NOT in metadata)
+          if (options.filter.sourceId) {
+            const sourceIds = Array.isArray(options.filter.sourceId)
+              ? options.filter.sourceId
+              : [options.filter.sourceId]
+            if (!hnswVerb.sourceId || !sourceIds.includes(hnswVerb.sourceId)) {
+              continue
+            }
+          }
+
+          // Filter by target ID
+          // v4.0.0: targetId field is in HNSWVerb structure (NOT in metadata)
+          if (options.filter.targetId) {
+            const targetIds = Array.isArray(options.filter.targetId)
+              ? options.filter.targetId
+              : [options.filter.targetId]
+            if (!hnswVerb.targetId || !targetIds.includes(hnswVerb.targetId)) {
+              continue
+            }
+          }
+
+          // Filter by service
+          if (options.filter.service) {
+            const services = Array.isArray(options.filter.service)
+              ? options.filter.service
+              : [options.filter.service]
+            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
+              continue
+            }
+          }
+
+          // Filter by metadata
+          if (options.filter.metadata) {
+            let matches = true
+            for (const [key, value] of Object.entries(options.filter.metadata)) {
+              if (metadata[key] !== value) {
+                matches = false
+                break
+              }
+            }
+            if (!matches) continue
+          }
         }
+
+        // v4.0.0: Create HNSWVerbWithMetadata by combining verb with metadata
+        const verbWithMetadata: HNSWVerbWithMetadata = {
+          id: hnswVerb.id,
+          vector: [...hnswVerb.vector],
+          connections: new Map(hnswVerb.connections),
+          verb: hnswVerb.verb,
+          sourceId: hnswVerb.sourceId,
+          targetId: hnswVerb.targetId,
+          metadata: metadata
+        }
+
+        items.push(verbWithMetadata)
       }
     }
     

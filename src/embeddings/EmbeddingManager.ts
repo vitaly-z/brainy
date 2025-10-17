@@ -184,7 +184,7 @@ export class EmbeddingManager {
   /**
    * Generate embeddings
    */
-  async embed(text: string | string[]): Promise<Vector> {
+  async embed(text: string | string[] | Record<string, unknown>): Promise<Vector> {
     // Check for unit test environment - use mocks to prevent ONNX conflicts
     const isTestMode = process.env.BRAINY_UNIT_TEST === 'true' || (globalThis as any).__BRAINY_UNIT_TEST__
 
@@ -210,9 +210,12 @@ export class EmbeddingManager {
       input = text.map(t => typeof t === 'string' ? t : String(t)).join(' ')
     } else if (typeof text === 'string') {
       input = text
+    } else if (typeof text === 'object') {
+      // Convert object to string representation
+      input = JSON.stringify(text)
     } else {
       // This shouldn't happen but let's be defensive
-      console.warn('EmbeddingManager.embed received non-string input:', typeof text)
+      console.warn('EmbeddingManager.embed received unexpected input type:', typeof text)
       input = String(text)
     }
     
@@ -243,22 +246,22 @@ export class EmbeddingManager {
   /**
    * Generate mock embeddings for unit tests
    */
-  private getMockEmbedding(text: string | string[]): Vector {
+  private getMockEmbedding(text: string | string[] | Record<string, unknown>): Vector {
     // Use the same mock logic as setup-unit.ts for consistency
     const input = Array.isArray(text) ? text.join(' ') : text
     const str = typeof input === 'string' ? input : JSON.stringify(input)
     const vector = new Array(384).fill(0)
-    
+
     // Create semi-realistic embeddings based on text content
     for (let i = 0; i < Math.min(str.length, 384); i++) {
       vector[i] = (str.charCodeAt(i % str.length) % 256) / 256
     }
-    
+
     // Add position-based variation
     for (let i = 0; i < 384; i++) {
       vector[i] += Math.sin(i * 0.1 + str.length) * 0.1
     }
-    
+
     // Track mock embedding count
     this.embedCount++
     return vector
@@ -268,7 +271,7 @@ export class EmbeddingManager {
    * Get embedding function for compatibility
    */
   getEmbeddingFunction(): EmbeddingFunction {
-    return async (data: string | string[]): Promise<Vector> => {
+    return async (data: string | string[] | Record<string, unknown>): Promise<Vector> => {
       return await this.embed(data)
     }
   }
@@ -390,7 +393,7 @@ export const embeddingManager = EmbeddingManager.getInstance()
 /**
  * Direct embed function
  */
-export async function embed(text: string | string[]): Promise<Vector> {
+export async function embed(text: string | string[] | Record<string, unknown>): Promise<Vector> {
   return await embeddingManager.embed(text)
 }
 

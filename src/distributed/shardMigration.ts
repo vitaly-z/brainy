@@ -304,6 +304,7 @@ export class ShardMigrationManager extends EventEmitter {
     // Don't delete immediately in case of rollback
     const cleanupKey = `cleanup:${shardId}:${Date.now()}`
     await this.storage.saveMetadata(cleanupKey, {
+      noun: 'Document',
       shardId,
       scheduledFor: Date.now() + 3600000 // Delete after 1 hour
     })
@@ -330,12 +331,13 @@ export class ShardMigrationManager extends EventEmitter {
     
     // Track progress
     const progress = {
+      noun: 'Document',
       migrationId: data.migrationId,
       shardId: data.shardId,
       received: data.offset + data.items.length,
       total: data.total
     }
-    
+
     await this.storage.saveMetadata(`migration:${data.migrationId}:progress`, progress)
   }
   

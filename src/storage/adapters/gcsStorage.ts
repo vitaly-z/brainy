@@ -9,7 +9,16 @@
  * 4. HMAC Keys (fallback for backward compatibility)
  */
 
-import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../../coreTypes.js'
+import {
+  GraphVerb,
+  HNSWNoun,
+  HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  StatisticsData
+} from '../../coreTypes.js'
 import {
   BaseStorage,
   NOUNS_DIR,
@@ -472,7 +481,7 @@ export class GcsStorage extends BaseStorage {
       // Increment noun count
       const metadata = await this.getNounMetadata(node.id)
       if (metadata && metadata.type) {
-        await this.incrementEntityCountSafe(metadata.type)
+        await this.incrementEntityCountSafe(metadata.type as string)
       }
 
       this.logger.trace(`Node ${node.id} saved successfully`)
@@ -493,23 +502,18 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get a noun from storage (internal implementation)
-   * Combines vector data from getNode() with metadata from getNounMetadata()
+   * v4.0.0: Returns ONLY vector data (no metadata field)
+   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector data (no metadata field)
     const node = await this.getNode(id)
     if (!node) {
       return null
     }
 
-    // Get metadata (entity data in 2-file system)
-    const metadata = await this.getNounMetadata(id)
-
-    // Combine into complete noun object
-    return {
-      ...node,
-      metadata: metadata || {}
-    }
+    // Return pure vector structure
+    return node
   }
 
   /**
@@ -644,7 +648,7 @@ export class GcsStorage extends BaseStorage {
       // Decrement noun count
       const metadata = await this.getNounMetadata(id)
       if (metadata && metadata.type) {
-        await this.decrementEntityCountSafe(metadata.type)
+        await this.decrementEntityCountSafe(metadata.type as string)
       }
 
       this.logger.trace(`Noun ${id} deleted successfully`)
@@ -847,7 +851,7 @@ export class GcsStorage extends BaseStorage {
       // Increment verb count
       const metadata = await this.getVerbMetadata(edge.id)
       if (metadata && metadata.type) {
-        await this.incrementVerbCount(metadata.type)
+        await this.incrementVerbCount(metadata.type as string)
       }
 
       this.logger.trace(`Edge ${edge.id} saved successfully`)
@@ -867,23 +871,18 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
-   * Combines vector data from getEdge() with metadata from getVerbMetadata()
+   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
+   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
     const edge = await this.getEdge(id)
     if (!edge) {
       return null
     }
 
-    // Get metadata (relationship data in 2-file system)
-    const metadata = await this.getVerbMetadata(id)
-
-    // Combine into complete verb object
-    return {
-      ...edge,
-      metadata: metadata || {}
-    }
+    // Return pure vector + core fields structure
+    return edge
   }
 
   /**
@@ -920,7 +919,7 @@ export class GcsStorage extends BaseStorage {
         connections.set(Number(level), new Set(verbIds as string[]))
       }
 
-      // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
+      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
       const edge: Edge = {
         id: data.id,
         vector: data.vector,
@@ -929,10 +928,10 @@ export class GcsStorage extends BaseStorage {
         // CORE RELATIONAL DATA (read from vector file)
         verb: data.verb,
         sourceId: data.sourceId,
-        targetId: data.targetId,
+        targetId: data.targetId
 
-        // User metadata (retrieved separately via getVerbMetadata())
-        metadata: data.metadata
+        // ✅ NO metadata field in v4.0.0
+        // User metadata retrieved separately via getVerbMetadata()
       }
 
       // Update cache
@@ -984,7 +983,7 @@ export class GcsStorage extends BaseStorage {
       // Decrement verb count
       const metadata = await this.getVerbMetadata(id)
       if (metadata && metadata.type) {
-        await this.decrementVerbCount(metadata.type)
+        await this.decrementVerbCount(metadata.type as string)
       }
 
       this.logger.trace(`Verb ${id} deleted successfully`)
@@ -1010,6 +1009,7 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get nouns with pagination
+   * v4.0.0: Returns HNSWNounWithMetadata[] (includes metadata field)
    * Iterates through all UUID-based shards (00-ff) for consistent pagination
    */
   public async getNounsWithPagination(options: {
@@ -1021,7 +1021,7 @@ export class GcsStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1038,31 +1038,54 @@ export class GcsStorage extends BaseStorage {
       useCache: true
     })
 
-    // Apply filters if provided
-    let filteredNodes = result.nodes
+    // v4.0.0: Combine nodes with metadata to create HNSWNounWithMetadata[]
+    const items: HNSWNounWithMetadata[] = []
 
-    if (options.filter) {
-      // Filter by noun type
-      if (options.filter.nounType) {
-        const nounTypes = Array.isArray(options.filter.nounType)
-          ? options.filter.nounType
-          : [options.filter.nounType]
+    for (const node of result.nodes) {
+      const metadata = await this.getNounMetadata(node.id)
+      if (!metadata) continue
 
-        const filteredByType: HNSWNoun[] = []
-        for (const node of filteredNodes) {
-          const metadata = await this.getNounMetadata(node.id)
-          if (metadata && nounTypes.includes(metadata.type || metadata.noun)) {
-            filteredByType.push(node)
+      // Apply filters if provided
+      if (options.filter) {
+        // Filter by noun type
+        if (options.filter.nounType) {
+          const nounTypes = Array.isArray(options.filter.nounType)
+            ? options.filter.nounType
+            : [options.filter.nounType]
+
+          const nounType = (metadata as any).type || (metadata as any).noun
+          if (!nounType || !nounTypes.includes(nounType)) {
+            continue
           }
         }
-        filteredNodes = filteredByType
+
+        // Filter by metadata fields if specified
+        if (options.filter.metadata) {
+          let metadataMatch = true
+          for (const [key, value] of Object.entries(options.filter.metadata)) {
+            const metadataValue = (metadata as any)[key]
+            if (metadataValue !== value) {
+              metadataMatch = false
+              break
+            }
+          }
+          if (!metadataMatch) continue
+        }
       }
 
-      // Additional filter logic can be added here
+      // Combine node with metadata
+      const nounWithMetadata: HNSWNounWithMetadata = {
+        id: node.id,
+        vector: [...node.vector],
+        connections: new Map(node.connections),
+        level: node.level || 0,
+        metadata: metadata
+      }
+      items.push(nounWithMetadata)
     }
 
     return {
-      items: filteredNodes,
+      items,
       totalCount: result.totalCount,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
@@ -1203,7 +1226,7 @@ export class GcsStorage extends BaseStorage {
   /**
    * Get verbs by source ID (internal implementation)
    */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<GraphVerb[]> {
+  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       limit: Number.MAX_SAFE_INTEGER,
@@ -1216,7 +1239,7 @@ export class GcsStorage extends BaseStorage {
   /**
    * Get verbs by target ID (internal implementation)
    */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<GraphVerb[]> {
+  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       limit: Number.MAX_SAFE_INTEGER,
@@ -1229,7 +1252,7 @@ export class GcsStorage extends BaseStorage {
   /**
    * Get verbs by type (internal implementation)
    */
-  protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       limit: Number.MAX_SAFE_INTEGER,
@@ -1241,6 +1264,7 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get verbs with pagination
+   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
    */
   public async getVerbsWithPagination(options: {
     limit?: number
@@ -1253,7 +1277,7 @@ export class GcsStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1303,56 +1327,70 @@ export class GcsStorage extends BaseStorage {
         }
       }
 
-      // Convert HNSWVerbs to GraphVerbs by combining with metadata
-      const graphVerbs: GraphVerb[] = []
+      // v4.0.0: Combine HNSWVerbs with metadata to create HNSWVerbWithMetadata[]
+      const items: HNSWVerbWithMetadata[] = []
       for (const hnswVerb of hnswVerbs) {
-        const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb)
-        if (graphVerb) {
-          graphVerbs.push(graphVerb)
+        const metadata = await this.getVerbMetadata(hnswVerb.id)
+
+        // Apply filters
+        if (options.filter) {
+          // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb structure
+          if (options.filter.sourceId) {
+            const sourceIds = Array.isArray(options.filter.sourceId)
+              ? options.filter.sourceId
+              : [options.filter.sourceId]
+            if (!hnswVerb.sourceId || !sourceIds.includes(hnswVerb.sourceId)) {
+              continue
+            }
+          }
+
+          if (options.filter.targetId) {
+            const targetIds = Array.isArray(options.filter.targetId)
+              ? options.filter.targetId
+              : [options.filter.targetId]
+            if (!hnswVerb.targetId || !targetIds.includes(hnswVerb.targetId)) {
+              continue
+            }
+          }
+
+          if (options.filter.verbType) {
+            const verbTypes = Array.isArray(options.filter.verbType)
+              ? options.filter.verbType
+              : [options.filter.verbType]
+            if (!hnswVerb.verb || !verbTypes.includes(hnswVerb.verb)) {
+              continue
+            }
+          }
+
+          // Filter by metadata fields if specified
+          if (options.filter.metadata && metadata) {
+            let metadataMatch = true
+            for (const [key, value] of Object.entries(options.filter.metadata)) {
+              const metadataValue = (metadata as any)[key]
+              if (metadataValue !== value) {
+                metadataMatch = false
+                break
+              }
+            }
+            if (!metadataMatch) continue
+          }
         }
-      }
 
-      // Apply filters
-      let filteredVerbs = graphVerbs
-      if (options.filter) {
-        filteredVerbs = graphVerbs.filter((graphVerb) => {
-          // Filter by sourceId
-          if (options.filter!.sourceId) {
-            const sourceIds = Array.isArray(options.filter!.sourceId)
-              ? options.filter!.sourceId
-              : [options.filter!.sourceId]
-            if (!sourceIds.includes(graphVerb.sourceId)) {
-              return false
-            }
-          }
-
-          // Filter by targetId
-          if (options.filter!.targetId) {
-            const targetIds = Array.isArray(options.filter!.targetId)
-              ? options.filter!.targetId
-              : [options.filter!.targetId]
-            if (!targetIds.includes(graphVerb.targetId)) {
-              return false
-            }
-          }
-
-          // Filter by verbType
-          if (options.filter!.verbType) {
-            const verbTypes = Array.isArray(options.filter!.verbType)
-              ? options.filter!.verbType
-              : [options.filter!.verbType]
-            const verbType = graphVerb.verb || graphVerb.type || ''
-            if (!verbTypes.includes(verbType)) {
-              return false
-            }
-          }
-
-          return true
-        })
+        // Combine verb with metadata
+        const verbWithMetadata: HNSWVerbWithMetadata = {
+          id: hnswVerb.id,
+          vector: [...hnswVerb.vector],
+          connections: new Map(hnswVerb.connections),
+          verb: hnswVerb.verb,
+          sourceId: hnswVerb.sourceId,
+          targetId: hnswVerb.targetId,
+          metadata: metadata || {}
+        }
+        items.push(verbWithMetadata)
       }
 
       return {
-        items: filteredVerbs,
+        items,
         totalCount: this.totalVerbCount,
         hasMore: !!response?.nextPageToken,
         nextCursor: response?.nextPageToken
@@ -1395,6 +1433,7 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get verbs with filtering and pagination (public API)
+   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
    */
   public async getVerbs(options?: {
     pagination?: {
@@ -1410,7 +1449,7 @@ export class GcsStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1846,6 +1885,292 @@ export class GcsStorage extends BaseStorage {
 
       this.logger.error('Failed to get HNSW system data:', error)
       throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
+
+  // ============================================================================
+  // GCS Lifecycle Management & Autoclass (v4.0.0)
+  // Cost optimization through automatic tier transitions and Autoclass
+  // ============================================================================
+
+  /**
+   * Set lifecycle policy for automatic tier transitions and deletions
+   *
+   * GCS Storage Classes:
+   * - STANDARD: Hot data, most expensive (~$0.020/GB/month)
+   * - NEARLINE: <1 access/month (~$0.010/GB/month, 50% cheaper)
+   * - COLDLINE: <1 access/quarter (~$0.004/GB/month, 80% cheaper)
+   * - ARCHIVE: <1 access/year (~$0.0012/GB/month, 94% cheaper!)
+   *
+   * Example usage:
+   * ```typescript
+   * await storage.setLifecyclePolicy({
+   *   rules: [
+   *     {
+   *       action: { type: 'SetStorageClass', storageClass: 'NEARLINE' },
+   *       condition: { age: 30 }
+   *     },
+   *     {
+   *       action: { type: 'SetStorageClass', storageClass: 'COLDLINE' },
+   *       condition: { age: 90 }
+   *     },
+   *     {
+   *       action: { type: 'Delete' },
+   *       condition: { age: 365 }
+   *     }
+   *   ]
+   * })
+   * ```
+   *
+   * @param options Lifecycle configuration with rules for transitions and deletions
+   */
+  public async setLifecyclePolicy(options: {
+    rules: Array<{
+      action: {
+        type: 'Delete' | 'SetStorageClass'
+        storageClass?: 'STANDARD' | 'NEARLINE' | 'COLDLINE' | 'ARCHIVE'
+      }
+      condition: {
+        age?: number // Days since object creation
+        createdBefore?: string // ISO 8601 date
+        matchesPrefix?: string[]
+        matchesSuffix?: string[]
+      }
+    }>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Setting GCS lifecycle policy with ${options.rules.length} rules`)
+
+      // GCS lifecycle rules format
+      const lifecycleRules = options.rules.map(rule => {
+        const gcsRule: any = {
+          action: {
+            type: rule.action.type
+          },
+          condition: {}
+        }
+
+        // Add storage class for SetStorageClass action
+        if (rule.action.type === 'SetStorageClass' && rule.action.storageClass) {
+          gcsRule.action.storageClass = rule.action.storageClass
+        }
+
+        // Add conditions
+        if (rule.condition.age !== undefined) {
+          gcsRule.condition.age = rule.condition.age
+        }
+        if (rule.condition.createdBefore) {
+          gcsRule.condition.createdBefore = rule.condition.createdBefore
+        }
+        if (rule.condition.matchesPrefix) {
+          gcsRule.condition.matchesPrefix = rule.condition.matchesPrefix
+        }
+        if (rule.condition.matchesSuffix) {
+          gcsRule.condition.matchesSuffix = rule.condition.matchesSuffix
+        }
+
+        return gcsRule
+      })
+
+      // Update bucket lifecycle configuration
+      await this.bucket!.setMetadata({
+        lifecycle: {
+          rule: lifecycleRules
+        }
+      })
+
+      this.logger.info(`Successfully set lifecycle policy with ${options.rules.length} rules`)
+    } catch (error: any) {
+      this.logger.error('Failed to set lifecycle policy:', error)
+      throw new Error(`Failed to set GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get current lifecycle policy configuration
+   *
+   * @returns Lifecycle configuration with all rules, or null if no policy is set
+   */
+  public async getLifecyclePolicy(): Promise<{
+    rules: Array<{
+      action: {
+        type: string
+        storageClass?: string
+      }
+      condition: {
+        age?: number
+        createdBefore?: string
+        matchesPrefix?: string[]
+        matchesSuffix?: string[]
+      }
+    }>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting GCS lifecycle policy')
+
+      const [metadata] = await this.bucket!.getMetadata()
+
+      if (!metadata.lifecycle || !metadata.lifecycle.rule || metadata.lifecycle.rule.length === 0) {
+        this.logger.info('No lifecycle policy configured')
+        return null
+      }
+
+      // Convert GCS format to our format
+      const rules = metadata.lifecycle.rule.map((rule: any) => ({
+        action: {
+          type: rule.action.type,
+          ...(rule.action.storageClass && { storageClass: rule.action.storageClass })
+        },
+        condition: {
+          ...(rule.condition.age !== undefined && { age: rule.condition.age }),
+          ...(rule.condition.createdBefore && { createdBefore: rule.condition.createdBefore }),
+          ...(rule.condition.matchesPrefix && { matchesPrefix: rule.condition.matchesPrefix }),
+          ...(rule.condition.matchesSuffix && { matchesSuffix: rule.condition.matchesSuffix })
+        }
+      }))
+
+      this.logger.info(`Found lifecycle policy with ${rules.length} rules`)
+
+      return { rules }
+    } catch (error: any) {
+      this.logger.error('Failed to get lifecycle policy:', error)
+      throw new Error(`Failed to get GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Remove lifecycle policy from bucket
+   */
+  public async removeLifecyclePolicy(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Removing GCS lifecycle policy')
+
+      // Remove lifecycle configuration
+      await this.bucket!.setMetadata({
+        lifecycle: null
+      })
+
+      this.logger.info('Successfully removed lifecycle policy')
+    } catch (error: any) {
+      this.logger.error('Failed to remove lifecycle policy:', error)
+      throw new Error(`Failed to remove GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Enable Autoclass for automatic storage class optimization
+   *
+   * GCS Autoclass automatically moves objects between storage classes based on access patterns:
+   * - Frequent Access → STANDARD
+   * - Infrequent Access (30 days) → NEARLINE
+   * - Rarely Accessed (90 days) → COLDLINE
+   * - Archive Access (365 days) → ARCHIVE
+   *
+   * Benefits:
+   * - Automatic optimization based on access patterns (no manual rules needed)
+   * - No early deletion fees
+   * - No retrieval fees for NEARLINE/COLDLINE (only ARCHIVE has retrieval fees)
+   * - Up to 94% cost savings automatically
+   *
+   * Note: Autoclass is a bucket-level feature that requires bucket.update permission.
+   * It cannot be enabled per-object or per-prefix.
+   *
+   * @param options Autoclass configuration
+   */
+  public async enableAutoclass(options: {
+    terminalStorageClass?: 'NEARLINE' | 'ARCHIVE' // Coldest storage class to use
+  } = {}): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Enabling GCS Autoclass')
+
+      const autoclassConfig: any = {
+        enabled: true
+      }
+
+      // Set terminal storage class if specified
+      if (options.terminalStorageClass) {
+        autoclassConfig.terminalStorageClass = options.terminalStorageClass
+      }
+
+      await this.bucket!.setMetadata({
+        autoclass: autoclassConfig
+      })
+
+      this.logger.info(`Successfully enabled Autoclass${options.terminalStorageClass ? ` with terminal class ${options.terminalStorageClass}` : ''}`)
+    } catch (error: any) {
+      this.logger.error('Failed to enable Autoclass:', error)
+      throw new Error(`Failed to enable GCS Autoclass: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get Autoclass configuration and status
+   *
+   * @returns Autoclass status, or null if not configured
+   */
+  public async getAutoclassStatus(): Promise<{
+    enabled: boolean
+    terminalStorageClass?: string
+    toggleTime?: string
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting GCS Autoclass status')
+
+      const [metadata] = await this.bucket!.getMetadata()
+
+      if (!metadata.autoclass) {
+        this.logger.info('Autoclass not configured')
+        return null
+      }
+
+      const status = {
+        enabled: metadata.autoclass.enabled || false,
+        ...(metadata.autoclass.terminalStorageClass && {
+          terminalStorageClass: metadata.autoclass.terminalStorageClass
+        }),
+        ...(metadata.autoclass.toggleTime && {
+          toggleTime: metadata.autoclass.toggleTime
+        })
+      }
+
+      this.logger.info(`Autoclass status: ${status.enabled ? 'enabled' : 'disabled'}`)
+
+      return status
+    } catch (error: any) {
+      this.logger.error('Failed to get Autoclass status:', error)
+      throw new Error(`Failed to get GCS Autoclass status: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Disable Autoclass for the bucket
+   */
+  public async disableAutoclass(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Disabling GCS Autoclass')
+
+      await this.bucket!.setMetadata({
+        autoclass: {
+          enabled: false
+        }
+      })
+
+      this.logger.info('Successfully disabled Autoclass')
+    } catch (error: any) {
+      this.logger.error('Failed to disable Autoclass:', error)
+      throw new Error(`Failed to disable GCS Autoclass: ${error.message || error}`)
     }
   }
 }

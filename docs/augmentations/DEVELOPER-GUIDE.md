@@ -1,6 +1,49 @@
 # 🛠️ Brainy Augmentation Developer Guide
 
-> **How to create, test, and use augmentations in Brainy 2.0**
+> **How to create, test, and use augmentations in Brainy v4.0.0**
+>
+> **⚠️ v4.0.0 Update**: This guide has been updated with breaking changes for metadata structure and type system improvements.
+
+## v4.0.0 Migration Guide
+
+### What Changed?
+
+1. **Metadata Structure**: All metadata now requires type fields (`noun` or `verb`)
+2. **Property Rename**: `verb.type` → `verb.verb` for relationships
+3. **Two-File Storage**: Vectors and metadata stored separately for performance
+4. **Return Types**: Storage methods distinguish between internal (pure) and public (WithMetadata) returns
+
+### Migration Checklist
+
+- [ ] Update metadata creation to include required `noun` field
+- [ ] Change `verb.type` to `verb.verb` in all relationship code
+- [ ] Update storage adapter methods to follow internal/public pattern
+- [ ] Ensure metadata access uses correct structure
+
+### Quick Migration Example
+
+```typescript
+// ❌ v3.x
+const verb = {
+  type: 'relatedTo',
+  sourceId: 'a',
+  targetId: 'b'
+}
+if (verb.type === 'relatedTo') { ... }
+
+// ✅ v4.0.0
+const verb = {
+  verb: 'relatedTo',
+  sourceId: 'a',
+  targetId: 'b'
+}
+const metadata: VerbMetadata = {
+  verb: 'relatedTo',
+  sourceId: 'a',
+  targetId: 'b'
+}
+if (verb.verb === 'relatedTo') { ... }
+```
 
 ## Quick Start: Your First Augmentation
 
@@ -12,12 +55,12 @@ export class MyFirstAugmentation extends BaseAugmentation {
   readonly timing = 'after' as const       // When to run: before | after | both
   readonly operations = ['add'] as const  // Which operations to hook
   readonly priority = 10                    // Execution order (lower = first)
-  
+
   protected async onInit(): Promise<void> {
     // Initialize your augmentation
     console.log('MyFirstAugmentation initialized!')
   }
-  
+
   async execute<T = any>(
     operation: string,
     params: any,
@@ -26,12 +69,18 @@ export class MyFirstAugmentation extends BaseAugmentation {
     // Your augmentation logic
     if (operation === 'add') {
       console.log('Noun added:', params.noun)
+
+      // v4.0.0: Access metadata correctly
+      if (params.noun?.metadata) {
+        console.log('Noun type:', params.noun.metadata.noun)  // Required field
+      }
+
       // You can access the brain instance
       const stats = await context?.brain.getStats()
       console.log('Total nouns:', stats.totalNouns)
     }
   }
-  
+
   protected async onShutdown(): Promise<void> {
     // Cleanup
     console.log('MyFirstAugmentation shutting down')

@@ -388,7 +388,8 @@ export class FieldTypeInference {
       const data = await this.storage.getMetadata(cacheKey)
 
       if (data) {
-        return data as FieldTypeInfo
+        // v4.0.0: Double cast for type boundary crossing
+        return data as unknown as FieldTypeInfo
       }
     } catch (error) {
       prodLog.debug(`Failed to load field type cache for '${field}':`, error)
@@ -405,8 +406,13 @@ export class FieldTypeInference {
     this.typeCache.set(field, typeInfo)
 
     // Save to persistent storage (async, non-blocking)
+    // v4.0.0: Add required 'noun' property for NounMetadata
     const cacheKey = `${this.CACHE_STORAGE_PREFIX}${field}`
-    await this.storage.saveMetadata(cacheKey, typeInfo).catch(error => {
+    const metadataObj = {
+      noun: 'FieldTypeCache',
+      ...typeInfo
+    }
+    await this.storage.saveMetadata(cacheKey, metadataObj as any).catch(error => {
       prodLog.warn(`Failed to save field type cache for '${field}':`, error)
     })
   }
@@ -481,7 +487,8 @@ export class FieldTypeInference {
     if (field) {
       this.typeCache.delete(field)
       const cacheKey = `${this.CACHE_STORAGE_PREFIX}${field}`
-      await this.storage.saveMetadata(cacheKey, null)
+      // v4.0.0: null signals deletion to storage adapter
+      await this.storage.saveMetadata(cacheKey, null as any)
     } else {
       this.typeCache.clear()
     }

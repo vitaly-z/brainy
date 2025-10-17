@@ -362,8 +362,11 @@ export class LSMTree {
       const storageKey = `${this.config.storagePrefix}-${sstable.metadata.id}`
 
       await this.storage.saveMetadata(storageKey, {
-        type: 'lsm-sstable',
-        data: Array.from(data) // Convert Uint8Array to number[] for JSON storage
+        noun: 'thing', // Required for NounMetadata
+        data: {
+          type: 'lsm-sstable',
+          data: Array.from(data) // Convert Uint8Array to number[] for JSON storage
+        }
       })
 
       // Add to L0 SSTables
@@ -424,8 +427,11 @@ export class LSMTree {
       const storageKey = `${this.config.storagePrefix}-${merged.metadata.id}`
 
       await this.storage.saveMetadata(storageKey, {
-        type: 'lsm-sstable',
-        data: Array.from(data)
+        noun: 'thing', // Required for NounMetadata
+        data: {
+          type: 'lsm-sstable',
+          data: Array.from(data)
+        }
       })
 
       // Delete old SSTables from storage
@@ -500,12 +506,13 @@ export class LSMTree {
    */
   private async loadManifest(): Promise<void> {
     try {
-      const data = await this.storage.getMetadata(`${this.config.storagePrefix}-manifest`)
+      const metadata = await this.storage.getMetadata(`${this.config.storagePrefix}-manifest`)
 
-      if (data) {
+      if (metadata && metadata.data) {
+        const data = metadata.data as any
         this.manifest.sstables = new Map(Object.entries(data.sstables || {}))
-        this.manifest.lastCompaction = data.lastCompaction || Date.now()
-        this.manifest.totalRelationships = data.totalRelationships || 0
+        this.manifest.lastCompaction = (data.lastCompaction as number) || Date.now()
+        this.manifest.totalRelationships = (data.totalRelationships as number) || 0
 
         // Load SSTables from storage
         await this.loadSSTables()
@@ -525,17 +532,20 @@ export class LSMTree {
       const loadPromise = (async () => {
         try {
           const storageKey = `${this.config.storagePrefix}-${sstableId}`
-          const data = await this.storage.getMetadata(storageKey)
+          const metadata = await this.storage.getMetadata(storageKey)
 
-          if (data && data.type === 'lsm-sstable') {
-            // Convert number[] back to Uint8Array
-            const uint8Data = new Uint8Array(data.data)
-            const sstable = SSTable.deserialize(uint8Data)
+          if (metadata && metadata.data) {
+            const data = metadata.data as any
+            if (data.type === 'lsm-sstable') {
+              // Convert number[] back to Uint8Array
+              const uint8Data = new Uint8Array(data.data)
+              const sstable = SSTable.deserialize(uint8Data)
 
-            if (!this.sstablesByLevel.has(level)) {
-              this.sstablesByLevel.set(level, [])
+              if (!this.sstablesByLevel.has(level)) {
+                this.sstablesByLevel.set(level, [])
+              }
+              this.sstablesByLevel.get(level)!.push(sstable)
             }
-            this.sstablesByLevel.get(level)!.push(sstable)
           }
         } catch (error) {
           prodLog.warn(`LSMTree: Failed to load SSTable ${sstableId}`, error)
@@ -554,15 +564,16 @@ export class LSMTree {
    */
   private async saveManifest(): Promise<void> {
     try {
-      const manifestData = {
-        sstables: Object.fromEntries(this.manifest.sstables),
-        lastCompaction: this.manifest.lastCompaction,
-        totalRelationships: this.manifest.totalRelationships
-      }
-
       await this.storage.saveMetadata(
         `${this.config.storagePrefix}-manifest`,
-        manifestData
+        {
+          noun: 'thing', // Required for NounMetadata
+          data: {
+            sstables: Object.fromEntries(this.manifest.sstables),
+            lastCompaction: this.manifest.lastCompaction,
+            totalRelationships: this.manifest.totalRelationships
+          }
+        }
       )
     } catch (error) {
       prodLog.error('LSMTree: Failed to save manifest', error)

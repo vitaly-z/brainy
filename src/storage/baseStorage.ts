@@ -5,7 +5,16 @@
 
 import { GraphAdjacencyIndex } from '../graph/graphAdjacencyIndex.js'
 
-import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../coreTypes.js'
+import {
+  GraphVerb,
+  HNSWNoun,
+  HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  StatisticsData
+} from '../coreTypes.js'
 import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
 import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
@@ -167,49 +176,46 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save a noun to storage
+   * Save a noun to storage (v4.0.0: vector only, metadata saved separately)
+   * @param noun Pure HNSW vector data (no metadata)
    */
   public async saveNoun(noun: HNSWNoun): Promise<void> {
     await this.ensureInitialized()
 
-    // Validate noun type before saving - storage boundary protection
-    if (noun.metadata?.noun) {
-      validateNounType(noun.metadata.noun)
-    }
-
-    // Save both the HNSWNoun vector data and metadata separately (2-file system)
-    try {
-      // Save the lightweight HNSWNoun vector file first
-      await this.saveNoun_internal(noun)
-
-      // Then save the metadata to separate file (if present)
-      if (noun.metadata) {
-        await this.saveNounMetadata(noun.id, noun.metadata)
-      }
-    } catch (error) {
-      console.error(`[ERROR] Failed to save noun ${noun.id}:`, error)
-
-      // Attempt cleanup - remove noun file if metadata failed
-      try {
-        const nounExists = await this.getNoun_internal(noun.id)
-        if (nounExists) {
-          console.log(`[CLEANUP] Attempting to remove orphaned noun file ${noun.id}`)
-          await this.deleteNoun_internal(noun.id)
-        }
-      } catch (cleanupError) {
-        console.error(`[ERROR] Failed to cleanup orphaned noun ${noun.id}:`, cleanupError)
-      }
-
-      throw new Error(`Failed to save noun ${noun.id}: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    // Save the HNSWNoun vector data only
+    // Metadata must be saved separately via saveNounMetadata()
+    await this.saveNoun_internal(noun)
   }
 
   /**
-   * Get a noun from storage
+   * Get a noun from storage (v4.0.0: returns combined HNSWNounWithMetadata)
+   * @param id Entity ID
+   * @returns Combined vector + metadata or null
    */
-  public async getNoun(id: string): Promise<HNSWNoun | null> {
+  public async getNoun(id: string): Promise<HNSWNounWithMetadata | null> {
     await this.ensureInitialized()
-    return this.getNoun_internal(id)
+
+    // Load vector and metadata separately
+    const vector = await this.getNoun_internal(id)
+    if (!vector) {
+      return null
+    }
+
+    // Load metadata
+    const metadata = await this.getNounMetadata(id)
+    if (!metadata) {
+      console.warn(`[Storage] Noun ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      return null
+    }
+
+    // Combine into HNSWNounWithMetadata
+    return {
+      id: vector.id,
+      vector: vector.vector,
+      connections: vector.connections,
+      level: vector.level,
+      metadata
+    }
   }
 
   /**
@@ -217,9 +223,25 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @param nounType The noun type to filter by
    * @returns Promise that resolves to an array of nouns of the specified noun type
    */
-  public async getNounsByNounType(nounType: string): Promise<HNSWNoun[]> {
+  public async getNounsByNounType(nounType: string): Promise<HNSWNounWithMetadata[]> {
     await this.ensureInitialized()
-    return this.getNounsByNounType_internal(nounType)
+
+    // Internal method returns HNSWNoun[], need to combine with metadata
+    const nouns = await this.getNounsByNounType_internal(nounType)
+
+    // Combine each noun with its metadata
+    const nounsWithMetadata: HNSWNounWithMetadata[] = []
+    for (const noun of nouns) {
+      const metadata = await this.getNounMetadata(noun.id)
+      if (metadata) {
+        nounsWithMetadata.push({
+          ...noun,
+          metadata
+        })
+      }
+    }
+
+    return nounsWithMetadata
   }
 
   /**
@@ -241,103 +263,66 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save a verb to storage
+   * Save a verb to storage (v4.0.0: verb only, metadata saved separately)
    *
-   * ARCHITECTURAL FIX (v3.50.1): HNSWVerb now includes verb/sourceId/targetId
-   * These are core relational fields, not metadata. They're stored in the vector
-   * file for fast access and to align with actual usage patterns.
+   * @param verb Pure HNSW verb with core relational fields (verb, sourceId, targetId)
    */
-  public async saveVerb(verb: GraphVerb): Promise<void> {
+  public async saveVerb(verb: HNSWVerb): Promise<void> {
     await this.ensureInitialized()
 
     // Validate verb type before saving - storage boundary protection
-    if (verb.verb) {
-      validateVerbType(verb.verb)
-    }
+    validateVerbType(verb.verb)
 
-    // Extract HNSWVerb with CORE relational fields included
-    const hnswVerb: HNSWVerb = {
-      id: verb.id,
-      vector: verb.vector,
-      connections: verb.connections || new Map(),
-
-      // CORE RELATIONAL DATA (v3.50.1+)
-      verb: (verb.verb || verb.type || 'relatedTo') as VerbType,
-      sourceId: verb.sourceId || verb.source || '',
-      targetId: verb.targetId || verb.target || '',
-
-      // User metadata (if any)
-      metadata: verb.metadata
-    }
-
-    // Extract lightweight metadata for separate file (optional fields only)
-    const metadata = {
-      weight: verb.weight,
-      data: verb.data,
-      createdAt: verb.createdAt,
-      updatedAt: verb.updatedAt,
-      createdBy: verb.createdBy,
-
-      // Legacy aliases for backward compatibility
-      source: verb.source || verb.sourceId,
-      target: verb.target || verb.targetId,
-      type: verb.type || verb.verb
-    }
-    
-    // Save both the HNSWVerb and metadata atomically
-    try {
-      console.log(`[DEBUG] Saving verb ${verb.id}: sourceId=${verb.sourceId}, targetId=${verb.targetId}`)
-      
-      // Save the HNSWVerb first
-      await this.saveVerb_internal(hnswVerb)
-      console.log(`[DEBUG] Successfully saved HNSWVerb file for ${verb.id}`)
-      
-      // Then save the metadata
-      await this.saveVerbMetadata(verb.id, metadata)
-      console.log(`[DEBUG] Successfully saved metadata file for ${verb.id}`)
-      
-    } catch (error) {
-      console.error(`[ERROR] Failed to save verb ${verb.id}:`, error)
-      
-      // Attempt cleanup - remove verb file if metadata failed
-      try {
-        const verbExists = await this.getVerb_internal(verb.id)
-        if (verbExists) {
-          console.log(`[CLEANUP] Attempting to remove orphaned verb file ${verb.id}`)
-          await this.deleteVerb_internal(verb.id)
-        }
-      } catch (cleanupError) {
-        console.error(`[ERROR] Failed to cleanup orphaned verb ${verb.id}:`, cleanupError)
-      }
-      
-      throw new Error(`Failed to save verb ${verb.id}: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    // Save the HNSWVerb vector and core fields only
+    // Metadata must be saved separately via saveVerbMetadata()
+    await this.saveVerb_internal(verb)
   }
 
   /**
-   * Get a verb from storage
+   * Get a verb from storage (v4.0.0: returns combined HNSWVerbWithMetadata)
+   * @param id Entity ID
+   * @returns Combined verb + metadata or null
    */
-  public async getVerb(id: string): Promise<GraphVerb | null> {
+  public async getVerb(id: string): Promise<HNSWVerbWithMetadata | null> {
     await this.ensureInitialized()
-    const hnswVerb = await this.getVerb_internal(id)
-    if (!hnswVerb) {
+
+    // Load verb vector and core fields
+    const verb = await this.getVerb_internal(id)
+    if (!verb) {
       return null
     }
-    return this.convertHNSWVerbToGraphVerb(hnswVerb)
+
+    // Load metadata
+    const metadata = await this.getVerbMetadata(id)
+    if (!metadata) {
+      console.warn(`[Storage] Verb ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      return null
+    }
+
+    // Combine into HNSWVerbWithMetadata
+    return {
+      id: verb.id,
+      vector: verb.vector,
+      connections: verb.connections,
+      verb: verb.verb,
+      sourceId: verb.sourceId,
+      targetId: verb.targetId,
+      metadata
+    }
   }
 
   /**
    * Convert HNSWVerb to GraphVerb by combining with metadata
+   * DEPRECATED: For backward compatibility only. Use getVerb() which returns HNSWVerbWithMetadata.
    *
-   * ARCHITECTURAL FIX (v3.50.1): Core fields (verb/sourceId/targetId) are now in HNSWVerb
-   * Only optional fields (weight, timestamps, etc.) come from metadata file
+   * @deprecated Use getVerb() instead which returns HNSWVerbWithMetadata
    */
   protected async convertHNSWVerbToGraphVerb(hnswVerb: HNSWVerb): Promise<GraphVerb | null> {
     try {
-      // Metadata file is now optional - contains only weight, timestamps, etc.
+      // Load metadata
       const metadata = await this.getVerbMetadata(hnswVerb.id)
 
-      // Create default timestamp if not present
+      // Create default timestamp in Firestore format
       const defaultTimestamp = {
         seconds: Math.floor(Date.now() / 1000),
         nanoseconds: (Date.now() % 1000) * 1000000
@@ -349,11 +334,23 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         version: '1.0'
       }
 
+      // Convert flexible timestamp to Firestore format for GraphVerb
+      const normalizeTimestamp = (ts: any) => {
+        if (!ts) return defaultTimestamp
+        if (typeof ts === 'number') {
+          return {
+            seconds: Math.floor(ts / 1000),
+            nanoseconds: (ts % 1000) * 1000000
+          }
+        }
+        return ts
+      }
+
       return {
         id: hnswVerb.id,
         vector: hnswVerb.vector,
 
-        // CORE FIELDS from HNSWVerb (v3.50.1+)
+        // CORE FIELDS from HNSWVerb
         verb: hnswVerb.verb,
         sourceId: hnswVerb.sourceId,
         targetId: hnswVerb.targetId,
@@ -365,11 +362,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
         // Optional fields from metadata file
         weight: metadata?.weight || 1.0,
-        metadata: hnswVerb.metadata || {},
-        createdAt: metadata?.createdAt || defaultTimestamp,
-        updatedAt: metadata?.updatedAt || defaultTimestamp,
+        metadata: metadata as any || {},
+        createdAt: normalizeTimestamp(metadata?.createdAt),
+        updatedAt: normalizeTimestamp(metadata?.updatedAt),
         createdBy: metadata?.createdBy || defaultCreatedBy,
-        data: metadata?.data,
+        data: metadata?.data as Record<string, any> | undefined,
         embedding: hnswVerb.vector
       }
     } catch (error) {
@@ -390,25 +387,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
 
-    // Convert GraphVerbs back to HNSWVerbs for internal use
-    // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
-    const hnswVerbs: HNSWVerb[] = []
-    for (const graphVerb of result.items) {
-      const hnswVerb: HNSWVerb = {
-        id: graphVerb.id,
-        vector: graphVerb.vector,
-        connections: new Map(),
-
-        // CORE RELATIONAL DATA
-        verb: (graphVerb.verb || graphVerb.type || 'relatedTo') as VerbType,
-        sourceId: graphVerb.sourceId || graphVerb.source || '',
-        targetId: graphVerb.targetId || graphVerb.target || '',
-
-        // User metadata
-        metadata: graphVerb.metadata
-      }
-      hnswVerbs.push(hnswVerb)
-    }
+    // v4.0.0: Convert HNSWVerbWithMetadata to HNSWVerb (strip metadata)
+    const hnswVerbs: HNSWVerb[] = result.items.map(verbWithMetadata => ({
+      id: verbWithMetadata.id,
+      vector: verbWithMetadata.vector,
+      connections: verbWithMetadata.connections,
+      verb: verbWithMetadata.verb,
+      sourceId: verbWithMetadata.sourceId,
+      targetId: verbWithMetadata.targetId
+    }))
 
     return hnswVerbs
   }
@@ -416,7 +403,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Get verbs by source
    */
-  public async getVerbsBySource(sourceId: string): Promise<GraphVerb[]> {
+  public async getVerbsBySource(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     await this.ensureInitialized()
 
     // CRITICAL: Fetch ALL verbs for this source, not just first page
@@ -431,7 +418,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Get verbs by target
    */
-  public async getVerbsByTarget(targetId: string): Promise<GraphVerb[]> {
+  public async getVerbsByTarget(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     await this.ensureInitialized()
 
     // CRITICAL: Fetch ALL verbs for this target, not just first page
@@ -446,7 +433,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Get verbs by type
    */
-  public async getVerbsByType(type: string): Promise<GraphVerb[]> {
+  public async getVerbsByType(type: string): Promise<HNSWVerbWithMetadata[]> {
     await this.ensureInitialized()
 
     // Fetch ALL verbs of this type (no pagination limit)
@@ -489,7 +476,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -514,8 +501,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           ? options.filter.nounType[0]
           : options.filter.nounType
 
-        // Get nouns by type directly
-        const nounsByType = await this.getNounsByNounType_internal(nounType)
+        // Get nouns by type directly (already combines with metadata)
+        const nounsByType = await this.getNounsByNounType(nounType)
 
         // Apply pagination
         const paginatedNouns = nounsByType.slice(offset, offset + limit)
@@ -629,7 +616,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -906,53 +893,51 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected abstract listObjectsUnderPath(prefix: string): Promise<string[]>
 
   /**
-   * Save metadata to storage
+   * Save metadata to storage (v4.0.0: now typed)
    * Routes to correct location (system or entity) based on key format
    */
-  public async saveMetadata(id: string, metadata: any): Promise<void> {
+  public async saveMetadata(id: string, metadata: NounMetadata): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'system')
     return this.writeObjectToPath(keyInfo.fullPath, metadata)
   }
 
   /**
-   * Get metadata from storage
+   * Get metadata from storage (v4.0.0: now typed)
    * Routes to correct location (system or entity) based on key format
    */
-  public async getMetadata(id: string): Promise<any | null> {
+  public async getMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'system')
     return this.readObjectFromPath(keyInfo.fullPath)
   }
 
   /**
-   * Save noun metadata to storage
+   * Save noun metadata to storage (v4.0.0: now typed)
    * Routes to correct sharded location based on UUID
    */
-  public async saveNounMetadata(id: string, metadata: any): Promise<void> {
+  public async saveNounMetadata(id: string, metadata: NounMetadata): Promise<void> {
     // Validate noun type in metadata - storage boundary protection
-    if (metadata?.noun) {
-      validateNounType(metadata.noun)
-    }
+    validateNounType(metadata.noun)
     return this.saveNounMetadata_internal(id, metadata)
   }
 
   /**
-   * Internal method for saving noun metadata
+   * Internal method for saving noun metadata (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    * @protected
    */
-  protected async saveNounMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async saveNounMetadata_internal(id: string, metadata: NounMetadata): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
     return this.writeObjectToPath(keyInfo.fullPath, metadata)
   }
 
   /**
-   * Get noun metadata from storage
+   * Get noun metadata from storage (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    */
-  public async getNounMetadata(id: string): Promise<any | null> {
+  public async getNounMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
     return this.readObjectFromPath(keyInfo.fullPath)
@@ -969,33 +954,30 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save verb metadata to storage
+   * Save verb metadata to storage (v4.0.0: now typed)
    * Routes to correct sharded location based on UUID
    */
-  public async saveVerbMetadata(id: string, metadata: any): Promise<void> {
-    // Validate verb type in metadata - storage boundary protection
-    if (metadata?.verb) {
-      validateVerbType(metadata.verb)
-    }
+  public async saveVerbMetadata(id: string, metadata: VerbMetadata): Promise<void> {
+    // Note: verb type is in HNSWVerb, not metadata
     return this.saveVerbMetadata_internal(id, metadata)
   }
 
   /**
-   * Internal method for saving verb metadata
+   * Internal method for saving verb metadata (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    * @protected
    */
-  protected async saveVerbMetadata_internal(id: string, metadata: any): Promise<void> {
+  protected async saveVerbMetadata_internal(id: string, metadata: VerbMetadata): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
     return this.writeObjectToPath(keyInfo.fullPath, metadata)
   }
 
   /**
-   * Get verb metadata from storage
+   * Get verb metadata from storage (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    */
-  public async getVerbMetadata(id: string): Promise<any | null> {
+  public async getVerbMetadata(id: string): Promise<VerbMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
     return this.readObjectFromPath(keyInfo.fullPath)
@@ -1055,7 +1037,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected abstract getVerbsBySource_internal(
     sourceId: string
-  ): Promise<GraphVerb[]>
+  ): Promise<HNSWVerbWithMetadata[]>
 
   /**
    * Get verbs by target
@@ -1063,13 +1045,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected abstract getVerbsByTarget_internal(
     targetId: string
-  ): Promise<GraphVerb[]>
+  ): Promise<HNSWVerbWithMetadata[]>
 
   /**
    * Get verbs by type
    * This method should be implemented by each specific adapter
    */
-  protected abstract getVerbsByType_internal(type: string): Promise<GraphVerb[]>
+  protected abstract getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]>
 
   /**
    * Delete a verb from storage
