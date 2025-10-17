@@ -1789,10 +1789,12 @@ export class MetadataIndexManager {
       const indexId = `__metadata_field_index__${filename}`
       const unifiedKey = `metadata:field:${filename}`
 
+      // v4.0.0: Add required 'noun' property for NounMetadata
       await this.storage.saveMetadata(indexId, {
+        noun: 'MetadataFieldIndex',
         values: fieldIndex.values,
         lastUpdated: fieldIndex.lastUpdated
-      })
+      } as any)
 
       // Update unified cache
       const size = JSON.stringify(fieldIndex).length

@@ -1,12 +1,15 @@
 /**
- * Google Cloud Storage Adapter (Native)
- * Uses the native @google-cloud/storage library for optimal performance and authentication
+ * Azure Blob Storage Adapter (Native)
+ * Uses the native @azure/storage-blob library for optimal performance and authentication
  *
  * Supports multiple authentication methods:
- * 1. Application Default Credentials (ADC) - Automatic in Cloud Run/GCE
- * 2. Service Account Key File
- * 3. Service Account Credentials Object
- * 4. HMAC Keys (fallback for backward compatibility)
+ * 1. DefaultAzureCredential (Managed Identity) - Automatic in Azure environments
+ * 2. Connection String
+ * 3. Storage Account Key
+ * 4. SAS Token
+ * 5. Azure AD (OAuth2) via DefaultAzureCredential
+ *
+ * v4.0.0: Fully compatible with metadata/vector separation architecture
  */
 
 import {
@@ -32,7 +35,6 @@ import {
 import { BrainyError } from '../../errors/brainyError.js'
 import { CacheManager } from '../cacheManager.js'
 import { createModuleLogger, prodLog } from '../../utils/logger.js'
-import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
@@ -42,34 +44,32 @@ import { getShardIdFromUuid, getAllShardIds, getShardIdByIndex, TOTAL_SHARDS } f
 type HNSWNode = HNSWNoun
 type Edge = HNSWVerb
 
-// GCS client types - dynamically imported to avoid issues in browser environments
-type Storage = any
-type Bucket = any
-type File = any
+// Azure SDK types - dynamically imported to avoid issues in browser environments
+type BlobServiceClient = any
+type ContainerClient = any
+type BlockBlobClient = any
 
-// GCS API limits
-// Maximum value for maxResults parameter in GCS API calls
-// Values above this cause "Invalid unsigned integer" errors
-const MAX_GCS_PAGE_SIZE = 5000
+// Azure Blob Storage API limits
+const MAX_AZURE_PAGE_SIZE = 5000
 
 /**
- * Native Google Cloud Storage adapter for server environments
- * Uses the @google-cloud/storage library with Application Default Credentials
+ * Native Azure Blob Storage adapter for server environments
+ * Uses the @azure/storage-blob library with DefaultAzureCredential
  *
  * Authentication priority:
- * 1. Application Default Credentials (if no credentials provided)
- * 2. Service Account Key File (if keyFilename provided)
- * 3. Service Account Credentials Object (if credentials provided)
- * 4. HMAC Keys (if accessKeyId/secretAccessKey provided)
+ * 1. DefaultAzureCredential (Managed Identity) - if no credentials provided
+ * 2. Connection String - if connectionString provided
+ * 3. Storage Account Key - if accountName + accountKey provided
+ * 4. SAS Token - if accountName + sasToken provided
  */
-export class GcsStorage extends BaseStorage {
-  private storage: Storage | null = null
-  private bucket: Bucket | null = null
-  private bucketName: string
-  private keyFilename?: string
-  private credentials?: object
-  private accessKeyId?: string
-  private secretAccessKey?: string
+export class AzureBlobStorage extends BaseStorage {
+  private blobServiceClient: BlobServiceClient | null = null
+  private containerClient: ContainerClient | null = null
+  private containerName: string
+  private accountName?: string
+  private accountKey?: string
+  private connectionString?: string
+  private sasToken?: string
 
   // Prefixes for different types of data
   private nounPrefix: string
@@ -83,11 +83,6 @@ export class GcsStorage extends BaseStorage {
 
   // Backpressure and performance management
   private pendingOperations: number = 0
-  private maxConcurrentOperations: number = 100
-  private baseBatchSize: number = 10
-  private currentBatchSize: number = 10
-  private lastMemoryCheck: number = 0
-  private memoryCheckInterval: number = 5000 // Check every 5 seconds
   private consecutiveErrors: number = 0
   private lastErrorReset: number = Date.now()
 
@@ -101,10 +96,10 @@ export class GcsStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
 
-  // High-volume mode detection - MUCH more aggressive
+  // High-volume mode detection
   private highVolumeMode = false
   private lastVolumeCheck = 0
-  private volumeCheckInterval = 1000  // Check every second, not 5
+  private volumeCheckInterval = 1000  // Check every second
   private forceHighVolumeMode = false  // Environment variable override
 
   // Multi-level cache manager for efficient data access
@@ -112,22 +107,24 @@ export class GcsStorage extends BaseStorage {
   private verbCacheManager: CacheManager<Edge>
 
   // Module logger
-  private logger = createModuleLogger('GcsStorage')
+  private logger = createModuleLogger('AzureBlobStorage')
 
   /**
    * Initialize the storage adapter
-   * @param options Configuration options for Google Cloud Storage
+   * @param options Configuration options for Azure Blob Storage
    */
   constructor(options: {
-    bucketName: string
+    containerName: string
 
-    // Service account authentication
-    keyFilename?: string
-    credentials?: object
+    // Connection String authentication (highest priority)
+    connectionString?: string
 
-    // HMAC authentication (backward compatibility)
-    accessKeyId?: string
-    secretAccessKey?: string
+    // Account + Key authentication
+    accountName?: string
+    accountKey?: string
+
+    // SAS Token authentication
+    sasToken?: string
 
     // Cache and operation configuration
     cacheConfig?: {
@@ -138,11 +135,11 @@ export class GcsStorage extends BaseStorage {
     readOnly?: boolean
   }) {
     super()
-    this.bucketName = options.bucketName
-    this.keyFilename = options.keyFilename
-    this.credentials = options.credentials
-    this.accessKeyId = options.accessKeyId
-    this.secretAccessKey = options.secretAccessKey
+    this.containerName = options.containerName
+    this.connectionString = options.connectionString
+    this.accountName = options.accountName
+    this.accountKey = options.accountKey
+    this.sasToken = options.sasToken
     this.readOnly = options.readOnly || false
 
     // Set up prefixes for different types of data using entity-based structure
@@ -173,52 +170,63 @@ export class GcsStorage extends BaseStorage {
     }
 
     try {
-      // Import Google Cloud Storage SDK only when needed
-      const { Storage } = await import('@google-cloud/storage')
+      // Import Azure Storage SDK only when needed
+      const { BlobServiceClient } = await import('@azure/storage-blob')
 
-      // Configure the GCS client based on available credentials
-      const clientConfig: any = {}
-
-      // Priority 1: Service Account Key File
-      if (this.keyFilename) {
-        clientConfig.keyFilename = this.keyFilename
-        prodLog.info('🔐 GCS: Using Service Account Key File')
+      // Configure the Azure Blob Storage client based on available credentials
+      // Priority 1: Connection String
+      if (this.connectionString) {
+        this.blobServiceClient = BlobServiceClient.fromConnectionString(this.connectionString)
+        prodLog.info('🔐 Azure: Using Connection String')
       }
-      // Priority 2: Service Account Credentials Object
-      else if (this.credentials) {
-        clientConfig.credentials = this.credentials
-        prodLog.info('🔐 GCS: Using Service Account Credentials')
+      // Priority 2: Account Name + Key
+      else if (this.accountName && this.accountKey) {
+        const { StorageSharedKeyCredential } = await import('@azure/storage-blob')
+        const sharedKeyCredential = new StorageSharedKeyCredential(
+          this.accountName,
+          this.accountKey
+        )
+        this.blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          sharedKeyCredential
+        )
+        prodLog.info('🔐 Azure: Using Account Key')
       }
-      // Priority 3: HMAC Keys (S3 compatibility)
-      else if (this.accessKeyId && this.secretAccessKey) {
-        clientConfig.credentials = {
-          client_email: 'hmac-user@example.com',
-          private_key: this.secretAccessKey
-        }
-        prodLog.warn('⚠️  GCS: Using HMAC keys (consider migrating to ADC)')
+      // Priority 3: SAS Token
+      else if (this.accountName && this.sasToken) {
+        this.blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net${this.sasToken}`
+        )
+        prodLog.info('🔐 Azure: Using SAS Token')
       }
-      // Priority 4: Application Default Credentials (default)
+      // Priority 4: DefaultAzureCredential (Managed Identity)
+      else if (this.accountName) {
+        const { DefaultAzureCredential } = await import('@azure/identity')
+        const credential = new DefaultAzureCredential()
+        this.blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+        prodLog.info('🔐 Azure: Using DefaultAzureCredential (Managed Identity)')
+      }
       else {
-        // No credentials needed - ADC will be used automatically
-        prodLog.info('🔐 GCS: Using Application Default Credentials (ADC)')
+        throw new Error('Azure Blob Storage requires either connectionString, accountName+accountKey, accountName+sasToken, or accountName (for Managed Identity)')
       }
 
-      // Create the GCS client
-      this.storage = new Storage(clientConfig)
+      // Get reference to the container
+      this.containerClient = this.blobServiceClient.getContainerClient(this.containerName)
 
-      // Get reference to the bucket
-      this.bucket = this.storage.bucket(this.bucketName)
-
-      // Verify bucket exists and is accessible
-      const [exists] = await this.bucket.exists()
+      // Create container if it doesn't exist
+      const exists = await this.containerClient.exists()
       if (!exists) {
-        throw new Error(`Bucket ${this.bucketName} does not exist or is not accessible`)
+        await this.containerClient.create()
+        prodLog.info(`✅ Created Azure container: ${this.containerName}`)
+      } else {
+        prodLog.info(`✅ Connected to Azure container: ${this.containerName}`)
       }
-
-      prodLog.info(`✅ Connected to GCS bucket: ${this.bucketName}`)
 
       // Initialize write buffers for high-volume mode
-      const storageId = `gcs-${this.bucketName}`
+      const storageId = `azure-${this.containerName}`
       this.nounWriteBuffer = getWriteBuffer<HNSWNode>(
         `${storageId}-nouns`,
         'noun',
@@ -247,8 +255,7 @@ export class GcsStorage extends BaseStorage {
       // Initialize counts from storage
       await this.initializeCounts()
 
-      // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
-      // This prevents cache poisoning from causing silent failures on container restart
+      // Clear any stale cache entries from previous runs
       prodLog.info('🧹 Clearing cache from previous run to prevent cache poisoning')
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
@@ -256,13 +263,13 @@ export class GcsStorage extends BaseStorage {
 
       this.isInitialized = true
     } catch (error) {
-      this.logger.error('Failed to initialize GCS storage:', error)
-      throw new Error(`Failed to initialize GCS storage: ${error}`)
+      this.logger.error('Failed to initialize Azure Blob Storage:', error)
+      throw new Error(`Failed to initialize Azure Blob Storage: ${error}`)
     }
   }
 
   /**
-   * Get the GCS object key for a noun using UUID-based sharding
+   * Get the Azure blob name for a noun using UUID-based sharding
    *
    * Uses first 2 hex characters of UUID for consistent sharding.
    * Path format: entities/nouns/vectors/{shardId}/{uuid}.json
@@ -277,7 +284,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Get the GCS object key for a verb using UUID-based sharding
+   * Get the Azure blob name for a verb using UUID-based sharding
    *
    * Uses first 2 hex characters of UUID for consistent sharding.
    * Path format: entities/verbs/vectors/{shardId}/{uuid}.json
@@ -292,7 +299,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Override base class method to detect GCS-specific throttling errors
+   * Override base class method to detect Azure-specific throttling errors
    */
   protected isThrottlingError(error: any): boolean {
     // First check base class detection
@@ -300,30 +307,32 @@ export class GcsStorage extends BaseStorage {
       return true
     }
 
-    // GCS-specific throttling detection
-    const statusCode = error.code
+    // Azure-specific throttling detection
+    const statusCode = error.statusCode || error.code
     const message = error.message?.toLowerCase() || ''
 
     return (
       statusCode === 429 || // Too Many Requests
       statusCode === 503 || // Service Unavailable
-      statusCode === 'RATE_LIMIT_EXCEEDED' ||
-      message.includes('quota') ||
+      statusCode === 'ServerBusy' ||
+      statusCode === 'IngressOverLimit' ||
+      statusCode === 'EgressOverLimit' ||
+      message.includes('throttl') ||
       message.includes('rate limit') ||
       message.includes('too many requests')
     )
   }
 
   /**
-   * Override base class to enable smart batching for cloud storage (v3.32.3+)
+   * Override base class to enable smart batching for cloud storage
    *
-   * GCS is cloud storage with network latency (~50ms per write).
+   * Azure Blob Storage is cloud storage with network latency (~50ms per write).
    * Smart batching reduces writes from 1000 ops → 100 batches.
    *
-   * @returns true (GCS is cloud storage)
+   * @returns true (Azure is cloud storage)
    */
   protected isCloudStorage(): boolean {
-    return true  // GCS benefits from batching
+    return true  // Azure benefits from batching
   }
 
   /**
@@ -377,7 +386,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Flush noun buffer to GCS
+   * Flush noun buffer to Azure
    */
   private async flushNounBuffer(items: Map<string, HNSWNode>): Promise<void> {
     const writes = Array.from(items.values()).map(async (noun) => {
@@ -392,7 +401,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Flush verb buffer to GCS
+   * Flush verb buffer to Azure
    */
   private async flushVerbBuffer(items: Map<string, Edge>): Promise<void> {
     const writes = Array.from(items.values()).map(async (verb) => {
@@ -436,7 +445,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Save a node directly to GCS (bypass buffer)
+   * Save a node directly to Azure (bypass buffer)
    */
   private async saveNodeDirect(node: HNSWNode): Promise<void> {
     // Apply backpressure before starting operation
@@ -461,17 +470,20 @@ export class GcsStorage extends BaseStorage {
         // NO metadata field - saved separately for scalability
       }
 
-      // Get the GCS key with UUID-based sharding
-      const key = this.getNounKey(node.id)
+      // Get the Azure blob name with UUID-based sharding
+      const blobName = this.getNounKey(node.id)
 
-      // Save to GCS
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(serializableNode, null, 2), {
-        contentType: 'application/json',
-        resumable: false // For small objects, non-resumable is faster
-      })
+      // Save to Azure Blob Storage
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      await blockBlobClient.upload(
+        JSON.stringify(serializableNode, null, 2),
+        JSON.stringify(serializableNode).length,
+        {
+          blobHTTPHeaders: { blobContentType: 'application/json' }
+        }
+      )
 
-      // CRITICAL FIX (v3.37.8): Only cache nodes with non-empty vectors
+      // CRITICAL FIX: Only cache nodes with non-empty vectors
       // This prevents cache pollution from HNSW's lazy-loading nodes (vector: [])
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
@@ -525,26 +537,26 @@ export class GcsStorage extends BaseStorage {
     // Check cache first
     const cached: HNSWNode | null = await this.nounCacheManager.get(id)
 
-    // Validate cached object before returning (v3.37.8+)
+    // Validate cached object before returning
     if (cached !== undefined && cached !== null) {
       // Validate cached object has required fields (including non-empty vector!)
       if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
         // Invalid cache detected - log and auto-recover
-        prodLog.warn(`[GCS] Invalid cached object for ${id.substring(0, 8)} (${
+        prodLog.warn(`[Azure] Invalid cached object for ${id.substring(0, 8)} (${
           !cached.id ? 'missing id' :
           !cached.vector ? 'missing vector' :
           !Array.isArray(cached.vector) ? 'vector not array' :
           'empty vector'
         }) - removing from cache and reloading`)
         this.nounCacheManager.delete(id)
-        // Fall through to load from GCS
+        // Fall through to load from Azure
       } else {
         // Valid cache hit
         this.logger.trace(`Cache hit for noun ${id}`)
         return cached
       }
     } else if (cached === null) {
-      prodLog.warn(`[GCS] Cache contains null for ${id.substring(0, 8)} - reloading from storage`)
+      prodLog.warn(`[Azure] Cache contains null for ${id.substring(0, 8)} - reloading from storage`)
     }
 
     // Apply backpressure
@@ -553,15 +565,16 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Getting node ${id}`)
 
-      // Get the GCS key with UUID-based sharding
-      const key = this.getNounKey(id)
+      // Get the Azure blob name with UUID-based sharding
+      const blobName = this.getNounKey(id)
 
-      // Download from GCS
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      // Download from Azure Blob Storage
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
       // Parse JSON
-      const data = JSON.parse(contents.toString())
+      const data = JSON.parse(downloaded.toString())
 
       // Convert serialized connections back to Map<number, Set<string>>
       const connections = new Map<number, Set<string>>()
@@ -583,7 +596,7 @@ export class GcsStorage extends BaseStorage {
       if (node && node.id && node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(id, node)
       } else {
-        prodLog.warn(`[GCS] Not caching invalid node ${id.substring(0, 8)} (missing id/vector or empty vector)`)
+        prodLog.warn(`[Azure] Not caching invalid node ${id.substring(0, 8)} (missing id/vector or empty vector)`)
       }
 
       this.logger.trace(`Successfully retrieved node ${id}`)
@@ -592,33 +605,20 @@ export class GcsStorage extends BaseStorage {
     } catch (error: any) {
       this.releaseBackpressure(false, requestId)
 
-      // DIAGNOSTIC LOGGING: Log EVERY error before any conditional checks
-      const key = this.getNounKey(id)
-      prodLog.error(`[getNode] ❌ EXCEPTION CAUGHT:`)
-      prodLog.error(`[getNode]   UUID: ${id}`)
-      prodLog.error(`[getNode]   Path: ${key}`)
-      prodLog.error(`[getNode]   Bucket: ${this.bucketName}`)
-      prodLog.error(`[getNode]   Error type: ${error?.constructor?.name || typeof error}`)
-      prodLog.error(`[getNode]   Error code: ${JSON.stringify(error?.code)}`)
-      prodLog.error(`[getNode]   Error message: ${error?.message || String(error)}`)
-      prodLog.error(`[getNode]   Error object:`, JSON.stringify(error, null, 2))
-
       // Check if this is a "not found" error
-      if (error.code === 404) {
-        prodLog.warn(`[getNode] Identified as 404 error - returning null WITHOUT caching`)
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        this.logger.trace(`Node not found: ${id}`)
         // CRITICAL FIX: Do NOT cache null values
         return null
       }
 
       // Handle throttling
       if (this.isThrottlingError(error)) {
-        prodLog.warn(`[getNode] Identified as throttling error - rethrowing`)
         await this.handleThrottling(error)
         throw error
       }
 
       // All other errors should throw, not return null
-      prodLog.error(`[getNode] Unhandled error - rethrowing`)
       this.logger.error(`Failed to get node ${id}:`, error)
       throw BrainyError.fromError(error, `getNoun(${id})`)
     }
@@ -635,12 +635,12 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Deleting noun ${id}`)
 
-      // Get the GCS key
-      const key = this.getNounKey(id)
+      // Get the Azure blob name
+      const blobName = this.getNounKey(id)
 
-      // Delete from GCS
-      const file = this.bucket!.file(key)
-      await file.delete()
+      // Delete from Azure
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      await blockBlobClient.delete()
 
       // Remove from cache
       this.nounCacheManager.delete(id)
@@ -656,7 +656,7 @@ export class GcsStorage extends BaseStorage {
     } catch (error: any) {
       this.releaseBackpressure(false, requestId)
 
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         // Already deleted
         this.logger.trace(`Noun ${id} not found (already deleted)`)
         return
@@ -674,7 +674,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Write an object to a specific path in GCS
+   * Write an object to a specific path in Azure
    * Primitive operation required by base class
    * @protected
    */
@@ -684,10 +684,10 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Writing object to path: ${path}`)
 
-      const file = this.bucket!.file(path)
-      await file.save(JSON.stringify(data, null, 2), {
-        contentType: 'application/json',
-        resumable: false
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(path)
+      const content = JSON.stringify(data, null, 2)
+      await blockBlobClient.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' }
       })
 
       this.logger.trace(`Object written successfully to ${path}`)
@@ -698,7 +698,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Read an object from a specific path in GCS
+   * Read an object from a specific path in Azure
    * Primitive operation required by base class
    * @protected
    */
@@ -708,16 +708,17 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Reading object from path: ${path}`)
 
-      const file = this.bucket!.file(path)
-      const [contents] = await file.download()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(path)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
-      const data = JSON.parse(contents.toString())
+      const data = JSON.parse(downloaded.toString())
 
       this.logger.trace(`Object read successfully from ${path}`)
       return data
     } catch (error: any) {
       // Check if this is a "not found" error
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         this.logger.trace(`Object not found at ${path}`)
         return null
       }
@@ -728,7 +729,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Delete an object from a specific path in GCS
+   * Delete an object from a specific path in Azure
    * Primitive operation required by base class
    * @protected
    */
@@ -738,13 +739,13 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Deleting object at path: ${path}`)
 
-      const file = this.bucket!.file(path)
-      await file.delete()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(path)
+      await blockBlobClient.delete()
 
       this.logger.trace(`Object deleted successfully from ${path}`)
     } catch (error: any) {
       // If already deleted (404), treat as success
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         this.logger.trace(`Object at ${path} not found (already deleted)`)
         return
       }
@@ -755,7 +756,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * List all objects under a specific prefix in GCS
+   * List all objects under a specific prefix in Azure
    * Primitive operation required by base class
    * @protected
    */
@@ -765,9 +766,12 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Listing objects under prefix: ${prefix}`)
 
-      const [files] = await this.bucket!.getFiles({ prefix })
-
-      const paths = files.map((file: any) => file.name).filter((name: string) => name && name.length > 0)
+      const paths: string[] = []
+      for await (const blob of this.containerClient!.listBlobsFlat({ prefix })) {
+        if (blob.name) {
+          paths.push(blob.name)
+        }
+      }
 
       this.logger.trace(`Found ${paths.length} objects under ${prefix}`)
       return paths
@@ -775,6 +779,22 @@ export class GcsStorage extends BaseStorage {
       this.logger.error(`Failed to list objects under ${prefix}:`, error)
       throw new Error(`Failed to list objects under ${prefix}: ${error}`)
     }
+  }
+
+  /**
+   * Helper: Convert Azure stream to buffer
+   */
+  private async streamToBuffer(readableStream: NodeJS.ReadableStream): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      readableStream.on('data', (data) => {
+        chunks.push(data instanceof Buffer ? data : Buffer.from(data))
+      })
+      readableStream.on('end', () => {
+        resolve(Buffer.concat(chunks))
+      })
+      readableStream.on('error', reject)
+    })
   }
 
   /**
@@ -805,7 +825,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Save an edge directly to GCS (bypass buffer)
+   * Save an edge directly to Azure (bypass buffer)
    */
   private async saveEdgeDirect(edge: Edge): Promise<void> {
     const requestId = await this.applyBackpressure()
@@ -814,7 +834,7 @@ export class GcsStorage extends BaseStorage {
       this.logger.trace(`Saving edge ${edge.id}`)
 
       // Convert connections Map to serializable format
-      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
+      // ARCHITECTURAL FIX: Include core relational fields in verb vector file
       // These fields are essential for 90% of operations - no metadata lookup needed
       const serializableEdge = {
         id: edge.id,
@@ -826,7 +846,7 @@ export class GcsStorage extends BaseStorage {
           ])
         ),
 
-        // CORE RELATIONAL DATA (v3.50.1+)
+        // CORE RELATIONAL DATA (v4.0.0)
         verb: edge.verb,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
@@ -835,15 +855,18 @@ export class GcsStorage extends BaseStorage {
         // metadata field is saved separately via saveVerbMetadata()
       }
 
-      // Get the GCS key with UUID-based sharding
-      const key = this.getVerbKey(edge.id)
+      // Get the Azure blob name with UUID-based sharding
+      const blobName = this.getVerbKey(edge.id)
 
-      // Save to GCS
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(serializableEdge, null, 2), {
-        contentType: 'application/json',
-        resumable: false
-      })
+      // Save to Azure
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      await blockBlobClient.upload(
+        JSON.stringify(serializableEdge, null, 2),
+        JSON.stringify(serializableEdge).length,
+        {
+          blobHTTPHeaders: { blobContentType: 'application/json' }
+        }
+      )
 
       // Update cache
       this.verbCacheManager.set(edge.id, edge)
@@ -903,15 +926,16 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Getting edge ${id}`)
 
-      // Get the GCS key with UUID-based sharding
-      const key = this.getVerbKey(id)
+      // Get the Azure blob name with UUID-based sharding
+      const blobName = this.getVerbKey(id)
 
-      // Download from GCS
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      // Download from Azure
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
       // Parse JSON
-      const data = JSON.parse(contents.toString())
+      const data = JSON.parse(downloaded.toString())
 
       // Convert serialized connections back to Map
       const connections = new Map<number, Set<string>>()
@@ -944,7 +968,7 @@ export class GcsStorage extends BaseStorage {
       this.releaseBackpressure(false, requestId)
 
       // Check if this is a "not found" error
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         this.logger.trace(`Edge not found: ${id}`)
         return null
       }
@@ -970,12 +994,12 @@ export class GcsStorage extends BaseStorage {
     try {
       this.logger.trace(`Deleting verb ${id}`)
 
-      // Get the GCS key
-      const key = this.getVerbKey(id)
+      // Get the Azure blob name
+      const blobName = this.getVerbKey(id)
 
-      // Delete from GCS
-      const file = this.bucket!.file(key)
-      await file.delete()
+      // Delete from Azure
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      await blockBlobClient.delete()
 
       // Remove from cache
       this.verbCacheManager.delete(id)
@@ -991,7 +1015,7 @@ export class GcsStorage extends BaseStorage {
     } catch (error: any) {
       this.releaseBackpressure(false, requestId)
 
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         // Already deleted
         this.logger.trace(`Verb ${id} not found (already deleted)`)
         return
@@ -1029,25 +1053,29 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     const limit = options.limit || 100
-    const cursor = options.cursor
 
-    // Get paginated nodes
-    const result = await this.getNodesWithPagination({
-      limit,
-      cursor,
-      useCache: true
-    })
-
-    // v4.0.0: Combine nodes with metadata to create HNSWNounWithMetadata[]
+    // Simplified implementation for Azure (can be optimized similar to GCS)
     const items: HNSWNounWithMetadata[] = []
+    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.nounPrefix })
 
-    for (const node of result.nodes) {
-      const metadata = await this.getNounMetadata(node.id)
+    let count = 0
+    for await (const blob of iterator) {
+      if (count >= limit) break
+      if (!blob.name || !blob.name.endsWith('.json')) continue
+
+      // Extract UUID from blob name
+      const parts = blob.name.split('/')
+      const fileName = parts[parts.length - 1]
+      const id = fileName.replace('.json', '')
+
+      const node = await this.getNode(id)
+      if (!node) continue
+
+      const metadata = await this.getNounMetadata(id)
       if (!metadata) continue
 
       // Apply filters if provided
       if (options.filter) {
-        // Filter by noun type
         if (options.filter.nounType) {
           const nounTypes = Array.isArray(options.filter.nounType)
             ? options.filter.nounType
@@ -1058,156 +1086,22 @@ export class GcsStorage extends BaseStorage {
             continue
           }
         }
-
-        // Filter by metadata fields if specified
-        if (options.filter.metadata) {
-          let metadataMatch = true
-          for (const [key, value] of Object.entries(options.filter.metadata)) {
-            const metadataValue = (metadata as any)[key]
-            if (metadataValue !== value) {
-              metadataMatch = false
-              break
-            }
-          }
-          if (!metadataMatch) continue
-        }
       }
 
       // Combine node with metadata
-      const nounWithMetadata: HNSWNounWithMetadata = {
-        id: node.id,
-        vector: [...node.vector],
-        connections: new Map(node.connections),
-        level: node.level || 0,
-        metadata: metadata
-      }
-      items.push(nounWithMetadata)
+      items.push({
+        ...node,
+        metadata
+      })
+
+      count++
     }
 
     return {
       items,
-      totalCount: result.totalCount,
-      hasMore: result.hasMore,
-      nextCursor: result.nextCursor
-    }
-  }
-
-  /**
-   * Get nodes with pagination (internal implementation)
-   * Iterates through UUID-based shards for consistent pagination
-   */
-  private async getNodesWithPagination(options: {
-    limit: number
-    cursor?: string
-    useCache?: boolean
-  }): Promise<{
-    nodes: HNSWNode[]
-    totalCount: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()  // CRITICAL: Must initialize before using this.bucket
-
-    const limit = options.limit || 100
-    const useCache = options.useCache !== false
-
-    try {
-      const nodes: HNSWNode[] = []
-
-      // Parse cursor (format: "shardIndex:gcsPageToken")
-      let startShardIndex = 0
-      let gcsPageToken: string | undefined
-      if (options.cursor) {
-        const parts = options.cursor.split(':', 2)
-        startShardIndex = parseInt(parts[0]) || 0
-        gcsPageToken = parts[1] || undefined
-      }
-
-      // Iterate through shards starting from cursor position
-      for (let shardIndex = startShardIndex; shardIndex < TOTAL_SHARDS; shardIndex++) {
-        const shardId = getShardIdByIndex(shardIndex)
-        const shardPrefix = `${this.nounPrefix}${shardId}/`
-
-        // List objects in this shard
-        // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
-        const requestedPageSize = limit - nodes.length
-        const cappedPageSize = Math.min(requestedPageSize, MAX_GCS_PAGE_SIZE)
-
-        const [files, , response] = await this.bucket!.getFiles({
-          prefix: shardPrefix,
-          maxResults: cappedPageSize,
-          pageToken: shardIndex === startShardIndex ? gcsPageToken : undefined
-        })
-
-        // Extract node IDs from file names
-        if (files && files.length > 0) {
-          const nodeIds = files
-            .filter((file: any) => file && file.name)
-            .map((file: any) => {
-              // Extract UUID from: entities/nouns/vectors/ab/ab123456-uuid.json
-              let name = file.name!
-              if (name.startsWith(shardPrefix)) {
-                name = name.substring(shardPrefix.length)
-              }
-              if (name.endsWith('.json')) {
-                name = name.substring(0, name.length - 5)
-              }
-              return name
-            })
-            .filter((id: string) => id && id.length > 0)
-
-          // Load nodes
-          for (const id of nodeIds) {
-            const node = await this.getNode(id)
-            if (node) {
-              nodes.push(node)
-            }
-
-            if (nodes.length >= limit) {
-              break
-            }
-          }
-        }
-
-        // Check if we have enough nodes or if there are more files in current shard
-        if (nodes.length >= limit) {
-          const nextCursor = response?.nextPageToken
-            ? `${shardIndex}:${response.nextPageToken}`
-            : shardIndex + 1 < TOTAL_SHARDS
-            ? `${shardIndex + 1}:`
-            : undefined
-
-          return {
-            nodes,
-            totalCount: this.totalNounCount,
-            hasMore: !!nextCursor,
-            nextCursor
-          }
-        }
-
-        // If this shard has more pages, create cursor for next page
-        if (response?.nextPageToken) {
-          return {
-            nodes,
-            totalCount: this.totalNounCount,
-            hasMore: true,
-            nextCursor: `${shardIndex}:${response.nextPageToken}`
-          }
-        }
-
-        // Continue to next shard
-      }
-
-      // No more shards or nodes
-      return {
-        nodes,
-        totalCount: this.totalNounCount,
-        hasMore: false,
-        nextCursor: undefined
-      }
-    } catch (error) {
-      this.logger.error('Error in getNodesWithPagination:', error)
-      throw new Error(`Failed to get nodes with pagination: ${error}`)
+      totalCount: this.totalNounCount,
+      hasMore: false,
+      nextCursor: undefined
     }
   }
 
@@ -1227,288 +1121,84 @@ export class GcsStorage extends BaseStorage {
    * Get verbs by source ID (internal implementation)
    */
   protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { sourceId: [sourceId] }
-    })
+    // Simplified: scan all verbs and filter
+    const items: HNSWVerbWithMetadata[] = []
+    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
 
-    return result.items
+    for await (const blob of iterator) {
+      if (!blob.name || !blob.name.endsWith('.json')) continue
+
+      const parts = blob.name.split('/')
+      const fileName = parts[parts.length - 1]
+      const id = fileName.replace('.json', '')
+
+      const verb = await this.getEdge(id)
+      if (!verb || verb.sourceId !== sourceId) continue
+
+      const metadata = await this.getVerbMetadata(id)
+      items.push({
+        ...verb,
+        metadata: metadata || {}
+      })
+    }
+
+    return items
   }
 
   /**
    * Get verbs by target ID (internal implementation)
    */
   protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { targetId: [targetId] }
-    })
+    // Simplified: scan all verbs and filter
+    const items: HNSWVerbWithMetadata[] = []
+    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
 
-    return result.items
+    for await (const blob of iterator) {
+      if (!blob.name || !blob.name.endsWith('.json')) continue
+
+      const parts = blob.name.split('/')
+      const fileName = parts[parts.length - 1]
+      const id = fileName.replace('.json', '')
+
+      const verb = await this.getEdge(id)
+      if (!verb || verb.targetId !== targetId) continue
+
+      const metadata = await this.getVerbMetadata(id)
+      items.push({
+        ...verb,
+        metadata: metadata || {}
+      })
+    }
+
+    return items
   }
 
   /**
    * Get verbs by type (internal implementation)
    */
   protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { verbType: type }
-    })
+    // Simplified: scan all verbs and filter
+    const items: HNSWVerbWithMetadata[] = []
+    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
 
-    return result.items
-  }
+    for await (const blob of iterator) {
+      if (!blob.name || !blob.name.endsWith('.json')) continue
 
-  /**
-   * Get verbs with pagination
-   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
-   */
-  public async getVerbsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
+      const parts = blob.name.split('/')
+      const fileName = parts[parts.length - 1]
+      const id = fileName.replace('.json', '')
 
-    const limit = options.limit || 100
+      const verb = await this.getEdge(id)
+      if (!verb || verb.verb !== type) continue
 
-    try {
-      // List verbs (simplified - not sharded yet in original implementation)
-      // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
-      const cappedLimit = Math.min(limit, MAX_GCS_PAGE_SIZE)
-
-      const [files, , response] = await this.bucket!.getFiles({
-        prefix: this.verbPrefix,
-        maxResults: cappedLimit,
-        pageToken: options.cursor
+      const metadata = await this.getVerbMetadata(id)
+      items.push({
+        ...verb,
+        metadata: metadata || {}
       })
-
-      // If no files, return empty result
-      if (!files || files.length === 0) {
-        return {
-          items: [],
-          totalCount: 0,
-          hasMore: false,
-          nextCursor: undefined
-        }
-      }
-
-      // Extract verb IDs and load verbs as HNSW verbs
-      const hnswVerbs: HNSWVerb[] = []
-      for (const file of files) {
-        if (!file.name) continue
-
-        // Extract UUID from path
-        let name = file.name
-        if (name.startsWith(this.verbPrefix)) {
-          name = name.substring(this.verbPrefix.length)
-        }
-        if (name.endsWith('.json')) {
-          name = name.substring(0, name.length - 5)
-        }
-
-        const verb = await this.getEdge(name)
-        if (verb) {
-          hnswVerbs.push(verb)
-        }
-      }
-
-      // v4.0.0: Combine HNSWVerbs with metadata to create HNSWVerbWithMetadata[]
-      const items: HNSWVerbWithMetadata[] = []
-      for (const hnswVerb of hnswVerbs) {
-        const metadata = await this.getVerbMetadata(hnswVerb.id)
-
-        // Apply filters
-        if (options.filter) {
-          // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb structure
-          if (options.filter.sourceId) {
-            const sourceIds = Array.isArray(options.filter.sourceId)
-              ? options.filter.sourceId
-              : [options.filter.sourceId]
-            if (!hnswVerb.sourceId || !sourceIds.includes(hnswVerb.sourceId)) {
-              continue
-            }
-          }
-
-          if (options.filter.targetId) {
-            const targetIds = Array.isArray(options.filter.targetId)
-              ? options.filter.targetId
-              : [options.filter.targetId]
-            if (!hnswVerb.targetId || !targetIds.includes(hnswVerb.targetId)) {
-              continue
-            }
-          }
-
-          if (options.filter.verbType) {
-            const verbTypes = Array.isArray(options.filter.verbType)
-              ? options.filter.verbType
-              : [options.filter.verbType]
-            if (!hnswVerb.verb || !verbTypes.includes(hnswVerb.verb)) {
-              continue
-            }
-          }
-
-          // Filter by metadata fields if specified
-          if (options.filter.metadata && metadata) {
-            let metadataMatch = true
-            for (const [key, value] of Object.entries(options.filter.metadata)) {
-              const metadataValue = (metadata as any)[key]
-              if (metadataValue !== value) {
-                metadataMatch = false
-                break
-              }
-            }
-            if (!metadataMatch) continue
-          }
-        }
-
-        // Combine verb with metadata
-        const verbWithMetadata: HNSWVerbWithMetadata = {
-          id: hnswVerb.id,
-          vector: [...hnswVerb.vector],
-          connections: new Map(hnswVerb.connections),
-          verb: hnswVerb.verb,
-          sourceId: hnswVerb.sourceId,
-          targetId: hnswVerb.targetId,
-          metadata: metadata || {}
-        }
-        items.push(verbWithMetadata)
-      }
-
-      return {
-        items,
-        totalCount: this.totalVerbCount,
-        hasMore: !!response?.nextPageToken,
-        nextCursor: response?.nextPageToken
-      }
-    } catch (error) {
-      this.logger.error('Error in getVerbsWithPagination:', error)
-      throw new Error(`Failed to get verbs with pagination: ${error}`)
-    }
-  }
-
-  /**
-   * Get nouns with filtering and pagination (public API)
-   */
-  public async getNouns(options?: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  }): Promise<{
-    items: any[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    const limit = options?.pagination?.limit || 100
-    const cursor = options?.pagination?.cursor
-
-    return this.getNounsWithPagination({
-      limit,
-      cursor,
-      filter: options?.filter
-    })
-  }
-
-  /**
-   * Get verbs with filtering and pagination (public API)
-   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
-   */
-  public async getVerbs(options?: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  }): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    const limit = options?.pagination?.limit || 100
-    const cursor = options?.pagination?.cursor
-
-    return this.getVerbsWithPagination({
-      limit,
-      cursor,
-      filter: options?.filter
-    })
-  }
-
-  /**
-   * Batch fetch metadata for multiple noun IDs (efficient for large queries)
-   * Uses smaller batches to prevent GCS socket exhaustion
-   * @param ids Array of noun IDs to fetch metadata for
-   * @returns Map of ID to metadata
-   */
-  public async getMetadataBatch(ids: string[]): Promise<Map<string, any>> {
-    await this.ensureInitialized()
-
-    const results = new Map<string, any>()
-    const batchSize = 10 // Smaller batches for metadata to prevent socket exhaustion
-
-    // Process in smaller batches
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize)
-
-      const batchPromises = batch.map(async (id) => {
-        try {
-          // CRITICAL: Use getNounMetadata() instead of deprecated getMetadata()
-          // This ensures we fetch from the correct noun metadata store (2-file system)
-          const metadata = await this.getNounMetadata(id)
-          return { id, metadata }
-        } catch (error: any) {
-          // Handle GCS-specific errors
-          if (this.isThrottlingError(error)) {
-            await this.handleThrottling(error)
-          }
-          this.logger.debug(`Failed to read metadata for ${id}:`, error)
-          return { id, metadata: null }
-        }
-      })
-
-      const batchResults = await Promise.all(batchPromises)
-
-      for (const { id, metadata } of batchResults) {
-        if (metadata !== null) {
-          results.set(id, metadata)
-        }
-      }
-
-      // Small yield between batches to prevent overwhelming GCS
-      await new Promise(resolve => setImmediate(resolve))
     }
 
-    return results
+    return items
   }
 
   /**
@@ -1518,28 +1208,15 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      this.logger.info('🧹 Clearing all data from GCS bucket...')
+      this.logger.info('🧹 Clearing all data from Azure container...')
 
-      // Helper function to delete all objects with a given prefix
-      const deleteObjectsWithPrefix = async (prefix: string): Promise<void> => {
-        const [files] = await this.bucket!.getFiles({ prefix })
-
-        if (!files || files.length === 0) {
-          return
-        }
-
-        // Delete each file
-        for (const file of files) {
-          await file.delete()
+      // Delete all blobs in container
+      for await (const blob of this.containerClient!.listBlobsFlat()) {
+        if (blob.name) {
+          const blockBlobClient = this.containerClient!.getBlockBlobClient(blob.name)
+          await blockBlobClient.delete()
         }
       }
-
-      // Clear all data directories
-      await deleteObjectsWithPrefix(this.nounPrefix)
-      await deleteObjectsWithPrefix(this.verbPrefix)
-      await deleteObjectsWithPrefix(this.metadataPrefix)
-      await deleteObjectsWithPrefix(this.verbMetadataPrefix)
-      await deleteObjectsWithPrefix(this.systemPrefix)
 
       // Clear caches
       this.nounCacheManager.clear()
@@ -1551,10 +1228,10 @@ export class GcsStorage extends BaseStorage {
       this.entityCounts.clear()
       this.verbCounts.clear()
 
-      this.logger.info('✅ All data cleared from GCS')
+      this.logger.info('✅ All data cleared from Azure')
     } catch (error) {
-      this.logger.error('Failed to clear GCS storage:', error)
-      throw new Error(`Failed to clear GCS storage: ${error}`)
+      this.logger.error('Failed to clear Azure storage:', error)
+      throw new Error(`Failed to clear Azure storage: ${error}`)
     }
   }
 
@@ -1570,24 +1247,22 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Get bucket metadata
-      const [metadata] = await this.bucket!.getMetadata()
+      const properties = await this.containerClient!.getProperties()
 
       return {
-        type: 'gcs',
-        used: 0, // GCS doesn't provide usage info easily
-        quota: null, // No quota in GCS
+        type: 'azure',
+        used: 0, // Azure doesn't provide usage info easily
+        quota: null, // No quota in Azure Blob Storage
         details: {
-          bucket: this.bucketName,
-          location: metadata.location,
-          storageClass: metadata.storageClass,
-          created: metadata.timeCreated
+          container: this.containerName,
+          lastModified: properties.lastModified,
+          etag: properties.etag
         }
       }
     } catch (error) {
       this.logger.error('Failed to get storage status:', error)
       return {
-        type: 'gcs',
+        type: 'azure',
         used: 0,
         quota: null
       }
@@ -1605,10 +1280,10 @@ export class GcsStorage extends BaseStorage {
 
       this.logger.trace(`Saving statistics to ${key}`)
 
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(statistics, null, 2), {
-        contentType: 'application/json',
-        resumable: false
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const content = JSON.stringify(statistics, null, 2)
+      await blockBlobClient.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' }
       })
 
       this.logger.trace('Statistics saved successfully')
@@ -1629,15 +1304,15 @@ export class GcsStorage extends BaseStorage {
 
       this.logger.trace(`Getting statistics from ${key}`)
 
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
-      const statistics = JSON.parse(contents.toString())
+      const statistics = JSON.parse(downloaded.toString())
 
       this.logger.trace('Statistics retrieved successfully')
 
       // CRITICAL FIX: Populate totalNodes and totalEdges from in-memory counts
-      // HNSW rebuild depends on these fields to determine entity count
       return {
         ...statistics,
         totalNodes: this.totalNounCount,
@@ -1645,10 +1320,8 @@ export class GcsStorage extends BaseStorage {
         lastUpdated: new Date().toISOString()
       }
     } catch (error: any) {
-      if (error.code === 404) {
-        // CRITICAL FIX (v3.37.4): Statistics file doesn't exist yet (first restart)
-        // Return minimal stats with counts instead of null
-        // This prevents HNSW from seeing entityCount=0 during index rebuild
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        // Statistics file doesn't exist yet (first restart)
         this.logger.trace('Statistics file not found - returning minimal stats with counts')
         return {
           nounCount: {},
@@ -1674,10 +1347,11 @@ export class GcsStorage extends BaseStorage {
     const key = `${this.systemPrefix}counts.json`
 
     try {
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
-      const counts = JSON.parse(contents.toString())
+      const counts = JSON.parse(downloaded.toString())
 
       this.totalNounCount = counts.totalNounCount || 0
       this.totalVerbCount = counts.totalVerbCount || 0
@@ -1686,17 +1360,17 @@ export class GcsStorage extends BaseStorage {
 
       prodLog.info(`📊 Loaded counts from storage: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
     } catch (error: any) {
-      if (error.code === 404) {
-        // No counts file yet - initialize from scan (first-time setup or counts not persisted)
-        prodLog.info('📊 No counts file found - this is normal for first init or if <10 entities were added')
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        // No counts file yet - initialize from scan (first-time setup)
+        prodLog.info('📊 No counts file found - this is normal for first init')
         await this.initializeCountsFromScan()
       } else {
         // CRITICAL FIX: Don't silently fail on network/permission errors
-        this.logger.error('❌ CRITICAL: Failed to load counts from GCS:', error)
+        this.logger.error('❌ CRITICAL: Failed to load counts from Azure:', error)
         prodLog.error(`❌ Error loading ${key}: ${error.message}`)
 
-        // Try to recover by scanning the bucket
-        prodLog.warn('⚠️  Attempting recovery by scanning GCS bucket...')
+        // Try to recover by scanning the container
+        prodLog.warn('⚠️  Attempting recovery by scanning Azure container...')
         await this.initializeCountsFromScan()
       }
     }
@@ -1707,43 +1381,37 @@ export class GcsStorage extends BaseStorage {
    */
   private async initializeCountsFromScan(): Promise<void> {
     try {
-      prodLog.info('📊 Scanning GCS bucket to initialize counts...')
-      prodLog.info(`🔍 Noun prefix: ${this.nounPrefix}`)
-      prodLog.info(`🔍 Verb prefix: ${this.verbPrefix}`)
+      prodLog.info('📊 Scanning Azure container to initialize counts...')
 
       // Count nouns
-      const [nounFiles] = await this.bucket!.getFiles({ prefix: this.nounPrefix })
-      prodLog.info(`🔍 Found ${nounFiles?.length || 0} total files under noun prefix`)
-
-      const jsonNounFiles = nounFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
-      this.totalNounCount = jsonNounFiles.length
-
-      if (jsonNounFiles.length > 0 && jsonNounFiles.length <= 5) {
-        prodLog.info(`📄 Sample noun files: ${jsonNounFiles.slice(0, 5).map((f: any) => f.name).join(', ')}`)
+      let nounCount = 0
+      for await (const blob of this.containerClient!.listBlobsFlat({ prefix: this.nounPrefix })) {
+        if (blob.name && blob.name.endsWith('.json')) {
+          nounCount++
+        }
       }
+      this.totalNounCount = nounCount
 
       // Count verbs
-      const [verbFiles] = await this.bucket!.getFiles({ prefix: this.verbPrefix })
-      prodLog.info(`🔍 Found ${verbFiles?.length || 0} total files under verb prefix`)
-
-      const jsonVerbFiles = verbFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
-      this.totalVerbCount = jsonVerbFiles.length
-
-      if (jsonVerbFiles.length > 0 && jsonVerbFiles.length <= 5) {
-        prodLog.info(`📄 Sample verb files: ${jsonVerbFiles.slice(0, 5).map((f: any) => f.name).join(', ')}`)
+      let verbCount = 0
+      for await (const blob of this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })) {
+        if (blob.name && blob.name.endsWith('.json')) {
+          verbCount++
+        }
       }
+      this.totalVerbCount = verbCount
 
       // Save initial counts
       if (this.totalNounCount > 0 || this.totalVerbCount > 0) {
         await this.persistCounts()
         prodLog.info(`✅ Initialized counts from scan: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
       } else {
-        prodLog.warn(`⚠️  No entities found during bucket scan. Check that entities exist and prefixes are correct.`)
+        prodLog.warn(`⚠️  No entities found during container scan. Check that entities exist and prefixes are correct.`)
       }
     } catch (error) {
       // CRITICAL FIX: Don't silently fail - this prevents data loss scenarios
-      this.logger.error('❌ CRITICAL: Failed to initialize counts from GCS bucket scan:', error)
-      throw new Error(`Failed to initialize GCS storage counts: ${error}. This prevents container restarts from working correctly.`)
+      this.logger.error('❌ CRITICAL: Failed to initialize counts from Azure container scan:', error)
+      throw new Error(`Failed to initialize Azure storage counts: ${error}. This prevents container restarts from working correctly.`)
     }
   }
 
@@ -1762,17 +1430,15 @@ export class GcsStorage extends BaseStorage {
         lastUpdated: new Date().toISOString()
       }
 
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(counts, null, 2), {
-        contentType: 'application/json',
-        resumable: false
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const content = JSON.stringify(counts, null, 2)
+      await blockBlobClient.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' }
       })
     } catch (error) {
       this.logger.error('Error persisting counts:', error)
     }
   }
-
-  // HNSW Index Persistence (v3.35.0+)
 
   /**
    * Get a noun's vector for HNSW rebuild
@@ -1785,7 +1451,6 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
@@ -1794,14 +1459,13 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Use sharded path for HNSW data
       const shard = getShardIdFromUuid(nounId)
       const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
 
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(hnswData, null, 2), {
-        contentType: 'application/json',
-        resumable: false
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const content = JSON.stringify(hnswData, null, 2)
+      await blockBlobClient.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' }
       })
     } catch (error) {
       this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
@@ -1811,7 +1475,6 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -1823,12 +1486,13 @@ export class GcsStorage extends BaseStorage {
       const shard = getShardIdFromUuid(nounId)
       const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
 
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
-      return JSON.parse(contents.toString())
+      return JSON.parse(downloaded.toString())
     } catch (error: any) {
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         return null
       }
 
@@ -1839,7 +1503,6 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save HNSW system data (entry point, max level)
-   * Storage path: system/hnsw-system.json
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -1850,10 +1513,10 @@ export class GcsStorage extends BaseStorage {
     try {
       const key = `${this.systemPrefix}hnsw-system.json`
 
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(systemData, null, 2), {
-        contentType: 'application/json',
-        resumable: false
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const content = JSON.stringify(systemData, null, 2)
+      await blockBlobClient.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' }
       })
     } catch (error) {
       this.logger.error('Failed to save HNSW system data:', error)
@@ -1863,7 +1526,6 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get HNSW system data (entry point, max level)
-   * Storage path: system/hnsw-system.json
    */
   public async getHNSWSystem(): Promise<{
     entryPointId: string | null
@@ -1874,12 +1536,13 @@ export class GcsStorage extends BaseStorage {
     try {
       const key = `${this.systemPrefix}hnsw-system.json`
 
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+      const downloadResponse = await blockBlobClient.download(0)
+      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
 
-      return JSON.parse(contents.toString())
+      return JSON.parse(downloaded.toString())
     } catch (error: any) {
-      if (error.code === 404) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
         return null
       }
 

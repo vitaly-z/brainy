@@ -592,12 +592,15 @@ export class ChunkManager {
       const data = await this.storage.getMetadata(chunkPath)
 
       if (data) {
+        // v4.0.0: Cast NounMetadata to chunk data structure
+        const chunkData = data as unknown as any
+
         // Deserialize: convert serialized roaring bitmaps back to RoaringBitmap32 objects
         const chunk: ChunkData = {
-          chunkId: data.chunkId,
-          field: data.field,
+          chunkId: chunkData.chunkId as number,
+          field: chunkData.field as string,
           entries: new Map(
-            Object.entries(data.entries).map(([value, serializedBitmap]) => {
+            Object.entries(chunkData.entries).map(([value, serializedBitmap]) => {
               // Deserialize roaring bitmap from portable format
               const bitmap = new RoaringBitmap32()
               if (serializedBitmap && typeof serializedBitmap === 'object' && (serializedBitmap as any).buffer) {
@@ -607,7 +610,7 @@ export class ChunkManager {
               return [value, bitmap]
             })
           ),
-          lastUpdated: data.lastUpdated
+          lastUpdated: chunkData.lastUpdated as number
         }
 
         this.chunkCache.set(cacheKey, chunk)
@@ -630,7 +633,9 @@ export class ChunkManager {
     this.chunkCache.set(cacheKey, chunk)
 
     // Serialize: convert RoaringBitmap32 to portable format (Buffer)
+    // v4.0.0: Add required 'noun' property for NounMetadata
     const serializable = {
+      noun: 'IndexChunk', // Required by NounMetadata interface
       chunkId: chunk.chunkId,
       field: chunk.field,
       entries: Object.fromEntries(
@@ -646,7 +651,7 @@ export class ChunkManager {
     }
 
     const chunkPath = this.getChunkPath(chunk.field, chunk.chunkId)
-    await this.storage.saveMetadata(chunkPath, serializable)
+    await this.storage.saveMetadata(chunkPath, serializable as any)
   }
 
   /**
@@ -820,7 +825,8 @@ export class ChunkManager {
     this.chunkCache.delete(cacheKey)
 
     const chunkPath = this.getChunkPath(field, chunkId)
-    await this.storage.saveMetadata(chunkPath, null)
+    // v4.0.0: null signals deletion to storage adapter
+    await this.storage.saveMetadata(chunkPath, null as any)
   }
 
   /**

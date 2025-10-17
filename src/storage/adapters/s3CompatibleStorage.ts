@@ -4,7 +4,17 @@
  * including Amazon S3, Cloudflare R2, and Google Cloud Storage
  */
 
-import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../../coreTypes.js'
+import {
+  Change,
+  GraphVerb,
+  HNSWNoun,
+  HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  StatisticsData
+} from '../../coreTypes.js'
 import {
   BaseStorage,
   NOUNS_DIR,
@@ -1002,15 +1012,15 @@ export class S3CompatibleStorage extends BaseStorage {
 
       this.logger.debug(`Node ${node.id} saved successfully`)
 
-      // Log the change for efficient synchronization
+      // Log the change for efficient synchronization (v4.0.0: no metadata on node)
       await this.appendToChangeLog({
         timestamp: Date.now(),
         operation: 'add', // Could be 'update' if we track existing nodes
         entityType: 'noun',
         entityId: node.id,
         data: {
-          vector: node.vector,
-          metadata: node.metadata
+          vector: node.vector
+          // ✅ NO metadata field in v4.0.0 - stored separately
         }
       })
 
@@ -1042,8 +1052,8 @@ export class S3CompatibleStorage extends BaseStorage {
       this.totalNounCount++
       const metadata = await this.getNounMetadata(node.id)
       if (metadata && metadata.type) {
-        const currentCount = this.entityCounts.get(metadata.type) || 0
-        this.entityCounts.set(metadata.type, currentCount + 1)
+        const currentCount = this.entityCounts.get(metadata.type as string) || 0
+        this.entityCounts.set(metadata.type as string, currentCount + 1)
       }
 
       // Release backpressure on success
@@ -1058,23 +1068,18 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get a noun from storage (internal implementation)
-   * Combines vector data from getNode() with metadata from getNounMetadata()
+   * v4.0.0: Returns ONLY vector data (no metadata field)
+   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector data (no metadata field)
     const node = await this.getNode(id)
     if (!node) {
       return null
     }
 
-    // Get metadata (entity data in 2-file system)
-    const metadata = await this.getNounMetadata(id)
-
-    // Combine into complete noun object
-    return {
-      ...node,
-      metadata: metadata || {}
-    }
+    // Return pure vector structure
+    return node
   }
 
   /**
@@ -1559,8 +1564,8 @@ export class S3CompatibleStorage extends BaseStorage {
       this.totalVerbCount++
       const metadata = await this.getVerbMetadata(edge.id)
       if (metadata && metadata.type) {
-        const currentCount = this.verbCounts.get(metadata.type) || 0
-        this.verbCounts.set(metadata.type, currentCount + 1)
+        const currentCount = this.verbCounts.get(metadata.type as string) || 0
+        this.verbCounts.set(metadata.type as string, currentCount + 1)
       }
 
       // Release backpressure on success
@@ -1575,23 +1580,18 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
-   * Combines vector data from getEdge() with metadata from getVerbMetadata()
+   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
+   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
     const edge = await this.getEdge(id)
     if (!edge) {
       return null
     }
 
-    // Get metadata (relationship data in 2-file system)
-    const metadata = await this.getVerbMetadata(id)
-
-    // Combine into complete verb object
-    return {
-      ...edge,
-      metadata: metadata || {}
-    }
+    // Return pure vector + core fields structure
+    return edge
   }
 
   /**
@@ -1647,7 +1647,7 @@ export class S3CompatibleStorage extends BaseStorage {
           connections.set(Number(level), new Set(nodeIds as string[]))
         }
 
-        // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
+        // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
         const edge = {
           id: parsedEdge.id,
           vector: parsedEdge.vector,
@@ -1656,10 +1656,10 @@ export class S3CompatibleStorage extends BaseStorage {
           // CORE RELATIONAL DATA (read from vector file)
           verb: parsedEdge.verb,
           sourceId: parsedEdge.sourceId,
-          targetId: parsedEdge.targetId,
+          targetId: parsedEdge.targetId
 
-          // User metadata (retrieved separately via getVerbMetadata())
-          metadata: parsedEdge.metadata
+          // ✅ NO metadata field in v4.0.0
+          // User metadata retrieved separately via getVerbMetadata()
         }
 
         this.logger.trace(`Successfully retrieved edge ${id}`)
@@ -1869,7 +1869,7 @@ export class S3CompatibleStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1914,55 +1914,63 @@ export class S3CompatibleStorage extends BaseStorage {
       filter: edgeFilter
     })
     
-    // Convert HNSWVerbs to GraphVerbs by combining with metadata
-    const graphVerbs: GraphVerb[] = []
+    // v4.0.0: Convert HNSWVerbs to HNSWVerbWithMetadata by combining with metadata
+    const verbsWithMetadata: HNSWVerbWithMetadata[] = []
     for (const hnswVerb of result.edges) {
-      const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb)
-      if (graphVerb) {
-        graphVerbs.push(graphVerb)
+      const metadata = await this.getVerbMetadata(hnswVerb.id)
+      const verbWithMetadata: HNSWVerbWithMetadata = {
+        id: hnswVerb.id,
+        vector: [...hnswVerb.vector],
+        connections: new Map(hnswVerb.connections),
+        verb: hnswVerb.verb,
+        sourceId: hnswVerb.sourceId,
+        targetId: hnswVerb.targetId,
+        metadata: metadata || {}
       }
+      verbsWithMetadata.push(verbWithMetadata)
     }
-    
-    // Apply filtering at GraphVerb level since HNSWVerb filtering is not supported
-    let filteredGraphVerbs = graphVerbs
+
+    // Apply filtering at HNSWVerbWithMetadata level
+    // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb, not metadata
+    let filteredVerbs = verbsWithMetadata
     if (options.filter) {
-      filteredGraphVerbs = graphVerbs.filter((graphVerb) => {
+      filteredVerbs = verbsWithMetadata.filter((verbWithMetadata) => {
         // Filter by sourceId
         if (options.filter!.sourceId) {
           const sourceIds = Array.isArray(options.filter!.sourceId)
             ? options.filter!.sourceId
             : [options.filter!.sourceId]
-          if (!sourceIds.includes(graphVerb.sourceId)) {
+          if (!verbWithMetadata.sourceId || !sourceIds.includes(verbWithMetadata.sourceId)) {
             return false
           }
         }
-        
+
         // Filter by targetId
         if (options.filter!.targetId) {
           const targetIds = Array.isArray(options.filter!.targetId)
             ? options.filter!.targetId
             : [options.filter!.targetId]
-          if (!targetIds.includes(graphVerb.targetId)) {
+          if (!verbWithMetadata.targetId || !targetIds.includes(verbWithMetadata.targetId)) {
             return false
           }
         }
-        
-        // Filter by verbType (maps to type field)
+
+        // Filter by verbType
         if (options.filter!.verbType) {
           const verbTypes = Array.isArray(options.filter!.verbType)
             ? options.filter!.verbType
             : [options.filter!.verbType]
-          if (graphVerb.type && !verbTypes.includes(graphVerb.type)) {
+          if (!verbWithMetadata.verb || !verbTypes.includes(verbWithMetadata.verb)) {
             return false
           }
         }
-        
+
         return true
       })
     }
-    
+
     return {
-      items: filteredGraphVerbs,
+      items: filteredVerbs,
       totalCount: this.totalVerbCount,  // Use pre-calculated count from init()
       hasMore: result.hasMore,
       nextCursor: result.nextCursor
@@ -1975,7 +1983,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Get verbs by source (internal implementation)
    */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<GraphVerb[]> {
+  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { sourceId: [sourceId] },
@@ -1987,7 +1995,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Get verbs by target (internal implementation)
    */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<GraphVerb[]> {
+  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { targetId: [targetId] },
@@ -1999,7 +2007,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Get verbs by type (internal implementation)
    */
-  protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
     // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
     const result = await this.getVerbsWithPagination({
       filter: { verbType: [type] },
@@ -3025,7 +3033,7 @@ export class S3CompatibleStorage extends BaseStorage {
   public async getChangesSince(
     sinceTimestamp: number,
     maxEntries: number = 1000
-  ): Promise<ChangeLogEntry[]> {
+  ): Promise<Change[]> {
     await this.ensureInitialized()
 
     try {
@@ -3047,7 +3055,7 @@ export class S3CompatibleStorage extends BaseStorage {
         return []
       }
 
-      const changes: ChangeLogEntry[] = []
+      const changes: Change[] = []
 
       // Process each change log entry
       for (const object of response.Contents) {
@@ -3068,7 +3076,15 @@ export class S3CompatibleStorage extends BaseStorage {
 
             // Only include entries newer than the specified timestamp
             if (entry.timestamp > sinceTimestamp) {
-              changes.push(entry)
+              // Convert ChangeLogEntry to Change
+              const change: Change = {
+                id: entry.entityId,
+                type: entry.entityType === 'metadata' ? 'noun' : (entry.entityType as 'noun' | 'verb'),
+                operation: entry.operation === 'add' ? 'create' : entry.operation as 'create' | 'update' | 'delete',
+                timestamp: entry.timestamp,
+                data: entry.data
+              }
+              changes.push(change)
             }
           }
         } catch (error) {
@@ -3464,7 +3480,7 @@ export class S3CompatibleStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -3480,64 +3496,64 @@ export class S3CompatibleStorage extends BaseStorage {
       cursor,
       useCache: true
     })
-    
-    // Apply filters if provided
-    let filteredNodes = result.nodes
-    
-    if (options.filter) {
-      // Filter by noun type
-      if (options.filter.nounType) {
-        const nounTypes = Array.isArray(options.filter.nounType)
-          ? options.filter.nounType
-          : [options.filter.nounType]
-        
-        const filteredByType: HNSWNoun[] = []
-        for (const node of filteredNodes) {
-          const metadata = await this.getNounMetadata(node.id)
-          if (metadata && nounTypes.includes(metadata.type || metadata.noun)) {
-            filteredByType.push(node)
+
+    // v4.0.0: Combine nodes with metadata to create HNSWNounWithMetadata[]
+    const nounsWithMetadata: HNSWNounWithMetadata[] = []
+
+    for (const node of result.nodes) {
+      const metadata = await this.getNounMetadata(node.id)
+      if (!metadata) continue
+
+      // Apply filters if provided
+      if (options.filter) {
+        // Filter by noun type
+        if (options.filter.nounType) {
+          const nounTypes = Array.isArray(options.filter.nounType)
+            ? options.filter.nounType
+            : [options.filter.nounType]
+
+          const nounType = (metadata.type || metadata.noun) as string
+          if (!nounType || !nounTypes.includes(nounType)) {
+            continue
           }
         }
-        filteredNodes = filteredByType
-      }
-      
-      // Filter by service
-      if (options.filter.service) {
-        const services = Array.isArray(options.filter.service)
-          ? options.filter.service
-          : [options.filter.service]
-        
-        const filteredByService: HNSWNoun[] = []
-        for (const node of filteredNodes) {
-          const metadata = await this.getNounMetadata(node.id)
-          if (metadata && services.includes(metadata.service)) {
-            filteredByService.push(node)
+
+        // Filter by service
+        if (options.filter.service) {
+          const services = Array.isArray(options.filter.service)
+            ? options.filter.service
+            : [options.filter.service]
+
+          if (!metadata.service || !services.includes(metadata.service as string)) {
+            continue
           }
         }
-        filteredNodes = filteredByService
-      }
-      
-      // Filter by metadata
-      if (options.filter.metadata) {
-        const metadataFilter = options.filter.metadata
-        const filteredByMetadata: HNSWNoun[] = []
-        for (const node of filteredNodes) {
-          const metadata = await this.getNounMetadata(node.id)
-          if (metadata) {
-            const matches = Object.entries(metadataFilter).every(
-              ([key, value]) => metadata[key] === value
-            )
-            if (matches) {
-              filteredByMetadata.push(node)
-            }
+
+        // Filter by metadata fields
+        if (options.filter.metadata) {
+          const metadataFilter = options.filter.metadata
+          const matches = Object.entries(metadataFilter).every(
+            ([key, value]) => metadata[key] === value
+          )
+          if (!matches) {
+            continue
           }
         }
-        filteredNodes = filteredByMetadata
       }
+
+      // Create HNSWNounWithMetadata
+      const nounWithMetadata: HNSWNounWithMetadata = {
+        id: node.id,
+        vector: [...node.vector],
+        connections: new Map(node.connections),
+        level: node.level || 0,
+        metadata: metadata
+      }
+      nounsWithMetadata.push(nounWithMetadata)
     }
-    
+
     return {
-      items: filteredNodes,
+      items: nounsWithMetadata,
       totalCount: this.totalNounCount,  // Use pre-calculated count from init()
       hasMore: result.hasMore,
       nextCursor: result.nextCursor

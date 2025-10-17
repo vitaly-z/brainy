@@ -121,8 +121,8 @@ export class DataAPI {
         id: verb.id,
         from: verb.sourceId,
         to: verb.targetId,
-        type: (verb.verb || verb.type) as string,
-        weight: verb.weight || 1.0,
+        type: verb.verb as string,
+        weight: verb.metadata?.weight || 1.0,
         metadata: verb.metadata
       })
     }
@@ -184,16 +184,19 @@ export class DataAPI {
     // Restore entities
     for (const entity of backup.entities) {
       try {
+        // v4.0.0: Prepare noun and metadata separately
         const noun: HNSWNoun = {
           id: entity.id,
           vector: entity.vector || new Array(384).fill(0), // Default vector if missing
           connections: new Map(),
-          level: 0,
-          metadata: {
-            ...entity.metadata,
-            noun: entity.type,
-            service: entity.service
-          }
+          level: 0
+        }
+
+        const metadata = {
+          ...entity.metadata,
+          noun: entity.type,
+          service: entity.service,
+          createdAt: Date.now()
         }
 
         // Check if entity exists when merging
@@ -205,6 +208,7 @@ export class DataAPI {
         }
 
         await this.storage.saveNoun(noun)
+        await this.storage.saveNounMetadata(entity.id, metadata)
       } catch (error) {
         console.error(`Failed to restore entity ${entity.id}:`, error)
       }
@@ -227,19 +231,21 @@ export class DataAPI {
           (v, i) => (v + targetNoun.vector[i]) / 2
         )
         
-        const verb: GraphVerb = {
+        // v4.0.0: Prepare verb and metadata separately
+        const verb = {
           id: relation.id,
           vector: relationVector,
-          sourceId: relation.from,
-          targetId: relation.to,
-          source: sourceNoun.metadata?.noun || NounType.Thing,
-          target: targetNoun.metadata?.noun || NounType.Thing,
+          connections: new Map(),
           verb: relation.type as VerbType,
-          type: relation.type as VerbType,
+          sourceId: relation.from,
+          targetId: relation.to
+        }
+
+        const verbMetadata = {
           weight: relation.weight,
-          metadata: relation.metadata,
+          ...relation.metadata,
           createdAt: Date.now()
-        } as any
+        }
 
         // Check if relation exists when merging
         if (merge) {
@@ -250,6 +256,7 @@ export class DataAPI {
         }
 
         await this.storage.saveVerb(verb)
+        await this.storage.saveVerbMetadata(relation.id, verbMetadata)
       } catch (error) {
         console.error(`Failed to restore relation ${relation.id}:`, error)
       }
@@ -388,16 +395,17 @@ export class DataAPI {
               this.validateImportItem(mapped)
             }
 
-            // Save as entity
+            // v4.0.0: Save entity - separate vector and metadata
+            const id = mapped.id || this.generateId()
             const noun: HNSWNoun = {
-              id: mapped.id || this.generateId(),
+              id,
               vector: mapped.vector || new Array(384).fill(0),
               connections: new Map(),
-              level: 0,
-              metadata: mapped
+              level: 0
             }
 
             await this.storage.saveNoun(noun)
+            await this.storage.saveNounMetadata(id, { ...mapped, createdAt: Date.now() })
             result.successful++
           } catch (error) {
             result.failed++
@@ -528,9 +536,9 @@ export class DataAPI {
     return true
   }
 
-  private convertToCSV(entities: HNSWNoun[]): string {
+  private convertToCSV(entities: Array<{ id: string; metadata?: any }>): string {
     if (entities.length === 0) return ''
-    
+
     // Get all unique keys from metadata
     const keys = new Set<string>()
     for (const entity of entities) {
@@ -538,25 +546,25 @@ export class DataAPI {
         Object.keys(entity.metadata).forEach(k => keys.add(k))
       }
     }
-    
+
     // Create CSV header
     const headers = ['id', ...Array.from(keys)]
     const rows = [headers.join(',')]
-    
+
     // Add data rows
     for (const entity of entities) {
       const row = [entity.id]
       for (const key of keys) {
         const value = entity.metadata?.[key] || ''
         // Escape values that contain commas
-        const escaped = String(value).includes(',') 
-          ? `"${String(value).replace(/"/g, '""')}"` 
+        const escaped = String(value).includes(',')
+          ? `"${String(value).replace(/"/g, '""')}"`
           : String(value)
         row.push(escaped)
       }
       rows.push(row.join(','))
     }
-    
+
     return rows.join('\n')
   }
 

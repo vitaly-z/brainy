@@ -23,6 +23,9 @@ import {
   GraphVerb,
   HNSWNoun,
   HNSWVerb,
+  HNSWVerbWithMetadata,
+  NounMetadata,
+  VerbMetadata,
   StatisticsData
 } from '../../coreTypes.js'
 import {
@@ -186,21 +189,20 @@ export class TypeAwareStorageAdapter extends BaseStorage {
   }
 
   /**
-   * Get noun type from noun object or cache
+   * Get noun type from cache
+   *
+   * v4.0.0: Metadata is stored separately, so we rely on the cache
+   * which is populated when saveNounMetadata is called
    */
   private getNounType(noun: HNSWNoun): NounType {
-    // Try metadata first (most reliable)
-    if (noun.metadata?.noun) {
-      return noun.metadata.noun as NounType
-    }
-
-    // Try cache
+    // Check cache (populated when metadata is saved)
     const cached = this.nounTypeCache.get(noun.id)
     if (cached) {
       return cached
     }
 
     // Default to 'thing' if unknown
+    // This should only happen if saveNoun_internal is called before saveNounMetadata
     console.warn(`[TypeAwareStorage] Unknown noun type for ${noun.id}, defaulting to 'thing'`)
     return 'thing'
   }
@@ -412,29 +414,44 @@ export class TypeAwareStorageAdapter extends BaseStorage {
   /**
    * Get verbs by source
    */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<GraphVerb[]> {
+  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
     // Need to search across all verb types
     // TODO: Optimize with metadata index in Phase 1b
-    const verbs: GraphVerb[] = []
+    const verbs: HNSWVerbWithMetadata[] = []
 
     for (let i = 0; i < VERB_TYPE_COUNT; i++) {
       const type = TypeUtils.getVerbFromIndex(i)
-      const prefix = `entities/verbs/${type}/metadata/`
+      const prefix = `entities/verbs/${type}/vectors/`
       const paths = await this.u.listObjectsUnderPath(prefix)
 
       for (const path of paths) {
         try {
-          const metadata = await this.u.readObjectFromPath(path)
-          if (metadata && metadata.sourceId === sourceId) {
-            // Load the full GraphVerb
-            const id = path.split('/').pop()?.replace('.json', '')
-            if (id) {
-              const verb = await this.getVerb(id)
-              if (verb) {
-                verbs.push(verb)
-              }
-            }
+          const id = path.split('/').pop()?.replace('.json', '')
+          if (!id) continue
+
+          // Load the HNSWVerb
+          const hnswVerb = await this.u.readObjectFromPath(path)
+          if (!hnswVerb) continue
+
+          // Check sourceId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
+          if (hnswVerb.sourceId !== sourceId) continue
+
+          // Load metadata separately
+          const metadata = await this.getVerbMetadata(id)
+          if (!metadata) continue
+
+          // Create HNSWVerbWithMetadata (verbs don't have level field)
+          const verbWithMetadata: HNSWVerbWithMetadata = {
+            id: hnswVerb.id,
+            vector: [...hnswVerb.vector],
+            connections: new Map(hnswVerb.connections),
+            verb: hnswVerb.verb,
+            sourceId: hnswVerb.sourceId,
+            targetId: hnswVerb.targetId,
+            metadata: metadata
           }
+
+          verbs.push(verbWithMetadata)
         } catch (error) {
           // Continue searching
         }
@@ -447,27 +464,43 @@ export class TypeAwareStorageAdapter extends BaseStorage {
   /**
    * Get verbs by target
    */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<GraphVerb[]> {
+  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
     // Similar to getVerbsBySource_internal
-    const verbs: GraphVerb[] = []
+    const verbs: HNSWVerbWithMetadata[] = []
 
     for (let i = 0; i < VERB_TYPE_COUNT; i++) {
       const type = TypeUtils.getVerbFromIndex(i)
-      const prefix = `entities/verbs/${type}/metadata/`
+      const prefix = `entities/verbs/${type}/vectors/`
       const paths = await this.u.listObjectsUnderPath(prefix)
 
       for (const path of paths) {
         try {
-          const metadata = await this.u.readObjectFromPath(path)
-          if (metadata && metadata.targetId === targetId) {
-            const id = path.split('/').pop()?.replace('.json', '')
-            if (id) {
-              const verb = await this.getVerb(id)
-              if (verb) {
-                verbs.push(verb)
-              }
-            }
+          const id = path.split('/').pop()?.replace('.json', '')
+          if (!id) continue
+
+          // Load the HNSWVerb
+          const hnswVerb = await this.u.readObjectFromPath(path)
+          if (!hnswVerb) continue
+
+          // Check targetId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
+          if (hnswVerb.targetId !== targetId) continue
+
+          // Load metadata separately
+          const metadata = await this.getVerbMetadata(id)
+          if (!metadata) continue
+
+          // Create HNSWVerbWithMetadata (verbs don't have level field)
+          const verbWithMetadata: HNSWVerbWithMetadata = {
+            id: hnswVerb.id,
+            vector: [...hnswVerb.vector],
+            connections: new Map(hnswVerb.connections),
+            verb: hnswVerb.verb,
+            sourceId: hnswVerb.sourceId,
+            targetId: hnswVerb.targetId,
+            metadata: metadata
           }
+
+          verbs.push(verbWithMetadata)
         } catch (error) {
           // Continue
         }
@@ -480,28 +513,39 @@ export class TypeAwareStorageAdapter extends BaseStorage {
   /**
    * Get verbs by type (O(1) with type-first paths!)
    *
-   * ARCHITECTURAL FIX (v3.50.1): Type is now in HNSWVerb, cached on read
+   * v4.0.0: Load verbs and combine with metadata
    */
-  protected async getVerbsByType_internal(verbType: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(verbType: string): Promise<HNSWVerbWithMetadata[]> {
     const type = verbType as VerbType
     const prefix = `entities/verbs/${type}/vectors/`
 
     const paths = await this.u.listObjectsUnderPath(prefix)
-    const verbs: GraphVerb[] = []
+    const verbs: HNSWVerbWithMetadata[] = []
 
     for (const path of paths) {
       try {
         const hnswVerb = await this.u.readObjectFromPath(path)
-        if (hnswVerb) {
-          // Cache type from HNSWVerb for future O(1) retrievals
-          this.verbTypeCache.set(hnswVerb.id, hnswVerb.verb as VerbType)
+        if (!hnswVerb) continue
 
-          // Convert to GraphVerb
-          const graphVerb = await this.convertHNSWVerbToGraphVerb(hnswVerb)
-          if (graphVerb) {
-            verbs.push(graphVerb)
-          }
+        // Cache type from HNSWVerb for future O(1) retrievals
+        this.verbTypeCache.set(hnswVerb.id, hnswVerb.verb as VerbType)
+
+        // Load metadata separately
+        const metadata = await this.getVerbMetadata(hnswVerb.id)
+        if (!metadata) continue
+
+        // Create HNSWVerbWithMetadata (verbs don't have level field)
+        const verbWithMetadata: HNSWVerbWithMetadata = {
+          id: hnswVerb.id,
+          vector: [...hnswVerb.vector],
+          connections: new Map(hnswVerb.connections),
+          verb: hnswVerb.verb,
+          sourceId: hnswVerb.sourceId,
+          targetId: hnswVerb.targetId,
+          metadata: metadata
         }
+
+        verbs.push(verbWithMetadata)
       } catch (error) {
         console.warn(`[TypeAwareStorage] Failed to load verb from ${path}:`, error)
       }
@@ -543,6 +587,160 @@ export class TypeAwareStorageAdapter extends BaseStorage {
         return
       } catch (error) {
         // Continue
+      }
+    }
+  }
+
+  /**
+   * Save noun metadata (override to cache type for type-aware routing)
+   *
+   * v4.0.0: Extract and cache noun type when metadata is saved
+   */
+  async saveNounMetadata(id: string, metadata: NounMetadata): Promise<void> {
+    // Extract and cache the type
+    const type = (metadata.noun || 'thing') as NounType
+    this.nounTypeCache.set(id, type)
+
+    // Save to type-aware path
+    const path = getNounMetadataPath(type, id)
+    await this.u.writeObjectToPath(path, metadata)
+  }
+
+  /**
+   * Get noun metadata (override to use type-aware paths)
+   */
+  async getNounMetadata(id: string): Promise<NounMetadata | null> {
+    // Try cache first
+    const cachedType = this.nounTypeCache.get(id)
+    if (cachedType) {
+      const path = getNounMetadataPath(cachedType, id)
+      return await this.u.readObjectFromPath(path)
+    }
+
+    // Search across all types
+    for (let i = 0; i < NOUN_TYPE_COUNT; i++) {
+      const type = TypeUtils.getNounFromIndex(i)
+      const path = getNounMetadataPath(type, id)
+
+      try {
+        const metadata = await this.u.readObjectFromPath(path)
+        if (metadata) {
+          // Cache the type for next time
+          const metadataType = (metadata.noun || 'thing') as NounType
+          this.nounTypeCache.set(id, metadataType)
+          return metadata
+        }
+      } catch (error) {
+        // Not in this type, continue searching
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Delete noun metadata (override to use type-aware paths)
+   */
+  async deleteNounMetadata(id: string): Promise<void> {
+    const cachedType = this.nounTypeCache.get(id)
+    if (cachedType) {
+      const path = getNounMetadataPath(cachedType, id)
+      await this.u.deleteObjectFromPath(path)
+      return
+    }
+
+    // Search across all types
+    for (let i = 0; i < NOUN_TYPE_COUNT; i++) {
+      const type = TypeUtils.getNounFromIndex(i)
+      const path = getNounMetadataPath(type, id)
+
+      try {
+        await this.u.deleteObjectFromPath(path)
+        return
+      } catch (error) {
+        // Not in this type, continue
+      }
+    }
+  }
+
+  /**
+   * Save verb metadata (override to use type-aware paths)
+   *
+   * Note: Verb type comes from HNSWVerb.verb field, not metadata
+   * We need to read the verb to get the type for path routing
+   */
+  async saveVerbMetadata(id: string, metadata: VerbMetadata): Promise<void> {
+    // Get verb type from cache or by reading the verb
+    let type = this.verbTypeCache.get(id)
+
+    if (!type) {
+      // Need to read the verb to get its type
+      const verb = await this.getVerb_internal(id)
+      if (verb) {
+        type = verb.verb as VerbType
+        this.verbTypeCache.set(id, type)
+      } else {
+        type = 'relatedTo' as VerbType
+      }
+    }
+
+    // Save to type-aware path
+    const path = getVerbMetadataPath(type, id)
+    await this.u.writeObjectToPath(path, metadata)
+  }
+
+  /**
+   * Get verb metadata (override to use type-aware paths)
+   */
+  async getVerbMetadata(id: string): Promise<VerbMetadata | null> {
+    // Try cache first
+    const cachedType = this.verbTypeCache.get(id)
+    if (cachedType) {
+      const path = getVerbMetadataPath(cachedType, id)
+      return await this.u.readObjectFromPath(path)
+    }
+
+    // Search across all types
+    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+      const type = TypeUtils.getVerbFromIndex(i)
+      const path = getVerbMetadataPath(type, id)
+
+      try {
+        const metadata = await this.u.readObjectFromPath(path)
+        if (metadata) {
+          // Cache the type for next time
+          this.verbTypeCache.set(id, type)
+          return metadata
+        }
+      } catch (error) {
+        // Not in this type, continue
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Delete verb metadata (override to use type-aware paths)
+   */
+  async deleteVerbMetadata(id: string): Promise<void> {
+    const cachedType = this.verbTypeCache.get(id)
+    if (cachedType) {
+      const path = getVerbMetadataPath(cachedType, id)
+      await this.u.deleteObjectFromPath(path)
+      return
+    }
+
+    // Search across all types
+    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+      const type = TypeUtils.getVerbFromIndex(i)
+      const path = getVerbMetadataPath(type, id)
+
+      try {
+        await this.u.deleteObjectFromPath(path)
+        return
+      } catch (error) {
+        // Not in this type, continue
       }
     }
   }

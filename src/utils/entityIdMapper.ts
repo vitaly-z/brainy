@@ -53,8 +53,9 @@ export class EntityIdMapper {
    */
   async init(): Promise<void> {
     try {
-      const data = await this.storage.getMetadata(this.storageKey) as EntityIdMapperData | null
-      if (data) {
+      const metadata = await this.storage.getMetadata(this.storageKey)
+      if (metadata && metadata.data) {
+        const data = metadata.data as EntityIdMapperData
         this.nextId = data.nextId
 
         // Rebuild maps from serialized data
@@ -172,13 +173,15 @@ export class EntityIdMapper {
     }
 
     // Convert maps to plain objects for serialization
-    const data: EntityIdMapperData = {
+    // v4.0.0: Add required 'noun' property for NounMetadata
+    const data = {
+      noun: 'EntityIdMapper',
       nextId: this.nextId,
       uuidToInt: Object.fromEntries(this.uuidToInt),
       intToUuid: Object.fromEntries(this.intToUuid)
     }
 
-    await this.storage.saveMetadata(this.storageKey, data)
+    await this.storage.saveMetadata(this.storageKey, data as any)
     this.dirty = false
   }
 

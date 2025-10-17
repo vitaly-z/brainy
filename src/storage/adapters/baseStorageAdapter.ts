@@ -3,7 +3,17 @@
  * Provides common functionality for all storage adapters, including statistics tracking
  */
 
-import { StatisticsData, StorageAdapter, HNSWNoun, GraphVerb } from '../../coreTypes.js'
+import {
+  StatisticsData,
+  StorageAdapter,
+  HNSWNoun,
+  HNSWVerb,
+  GraphVerb,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  NounMetadata,
+  VerbMetadata
+} from '../../coreTypes.js'
 import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/fieldNameTracking.js'
 import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
@@ -15,22 +25,26 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   abstract init(): Promise<void>
 
   abstract saveNoun(noun: HNSWNoun): Promise<void>
+  abstract saveNounMetadata(id: string, metadata: NounMetadata): Promise<void>
+  abstract deleteNounMetadata(id: string): Promise<void>
 
-  abstract getNoun(id: string): Promise<HNSWNoun | null>
+  abstract getNoun(id: string): Promise<HNSWNounWithMetadata | null>
 
-  abstract getNounsByNounType(nounType: string): Promise<HNSWNoun[]>
+  abstract getNounsByNounType(nounType: string): Promise<HNSWNounWithMetadata[]>
 
   abstract deleteNoun(id: string): Promise<void>
 
-  abstract saveVerb(verb: GraphVerb): Promise<void>
+  abstract saveVerb(verb: HNSWVerb): Promise<void>
+  abstract saveVerbMetadata(id: string, metadata: VerbMetadata): Promise<void>
+  abstract deleteVerbMetadata(id: string): Promise<void>
 
-  abstract getVerb(id: string): Promise<GraphVerb | null>
+  abstract getVerb(id: string): Promise<HNSWVerbWithMetadata | null>
 
-  abstract getVerbsBySource(sourceId: string): Promise<GraphVerb[]>
+  abstract getVerbsBySource(sourceId: string): Promise<HNSWVerbWithMetadata[]>
 
-  abstract getVerbsByTarget(targetId: string): Promise<GraphVerb[]>
+  abstract getVerbsByTarget(targetId: string): Promise<HNSWVerbWithMetadata[]>
 
-  abstract getVerbsByType(type: string): Promise<GraphVerb[]>
+  abstract getVerbsByType(type: string): Promise<HNSWVerbWithMetadata[]>
 
   abstract deleteVerb(id: string): Promise<void>
 
@@ -39,8 +53,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   abstract getMetadata(id: string): Promise<any | null>
 
   abstract getNounMetadata(id: string): Promise<any | null>
-
-  abstract saveVerbMetadata(id: string, metadata: any): Promise<void>
 
   abstract getVerbMetadata(id: string): Promise<any | null>
 
@@ -98,7 +110,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -123,7 +135,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -144,7 +156,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -167,7 +179,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
       metadata?: Record<string, any>
     }
   }): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string

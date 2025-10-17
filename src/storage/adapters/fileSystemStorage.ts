@@ -3,7 +3,16 @@
  * File system storage adapter for Node.js environments
  */
 
-import { GraphVerb, HNSWNoun, HNSWVerb, StatisticsData } from '../../coreTypes.js'
+import {
+  GraphVerb,
+  HNSWNoun,
+  HNSWVerb,
+  NounMetadata,
+  VerbMetadata,
+  HNSWNounWithMetadata,
+  HNSWVerbWithMetadata,
+  StatisticsData
+} from '../../coreTypes.js'
 import {
   BaseStorage,
   NOUNS_DIR,
@@ -244,9 +253,11 @@ export class FileSystemStorage extends BaseStorage {
       JSON.stringify(serializableNode, null, 2)
     )
 
-    // Update counts for new nodes (intelligent type detection)
+    // Update counts for new nodes (v4.0.0: load metadata separately)
     if (isNew) {
-      const type = node.metadata?.type || node.metadata?.nounType || 'default'
+      // v4.0.0: Get type from separate metadata storage
+      const metadata = await this.getNounMetadata(node.id)
+      const type = metadata?.noun || 'default'
       this.incrementEntityCount(type)
 
       // Persist counts periodically (every 10 operations for efficiency)
@@ -394,15 +405,15 @@ export class FileSystemStorage extends BaseStorage {
 
     const filePath = this.getNodePath(id)
 
-    // Load node to get type for count update
+    // Load metadata to get type for count update (v4.0.0: separate storage)
     try {
-      const node = await this.getNode(id)
-      if (node) {
-        const type = node.metadata?.type || node.metadata?.nounType || 'default'
+      const metadata = await this.getNounMetadata(id)
+      if (metadata) {
+        const type = metadata.noun || 'default'
         this.decrementEntityCount(type)
       }
     } catch {
-      // Node might not exist, that's ok
+      // Metadata might not exist, that's ok
     }
 
     try {
@@ -483,7 +494,7 @@ export class FileSystemStorage extends BaseStorage {
         connections.set(Number(level), new Set(nodeIds as string[]))
       }
 
-      // ARCHITECTURAL FIX (v3.50.1): Return HNSWVerb with core relational fields
+      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
       return {
         id: parsedEdge.id,
         vector: parsedEdge.vector,
@@ -492,10 +503,10 @@ export class FileSystemStorage extends BaseStorage {
         // CORE RELATIONAL DATA (read from vector file)
         verb: parsedEdge.verb,
         sourceId: parsedEdge.sourceId,
-        targetId: parsedEdge.targetId,
+        targetId: parsedEdge.targetId
 
-        // User metadata (retrieved separately via getVerbMetadata())
-        metadata: parsedEdge.metadata
+        // ✅ NO metadata field in v4.0.0
+        // User metadata retrieved separately via getVerbMetadata()
       }
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -535,7 +546,7 @@ export class FileSystemStorage extends BaseStorage {
           connections.set(Number(level), new Set(nodeIds as string[]))
         }
 
-        // ARCHITECTURAL FIX (v3.50.1): Include core relational fields
+        // v4.0.0: Include core relational fields (NO metadata field)
         allEdges.push({
           id: parsedEdge.id,
           vector: parsedEdge.vector,
@@ -544,10 +555,10 @@ export class FileSystemStorage extends BaseStorage {
           // CORE RELATIONAL DATA
           verb: parsedEdge.verb,
           sourceId: parsedEdge.sourceId,
-          targetId: parsedEdge.targetId,
+          targetId: parsedEdge.targetId
 
-          // User metadata
-          metadata: parsedEdge.metadata
+          // ✅ NO metadata field in v4.0.0
+          // User metadata retrieved separately via getVerbMetadata()
         })
       }
     } catch (error: any) {
@@ -610,7 +621,7 @@ export class FileSystemStorage extends BaseStorage {
     try {
       const metadata = await this.getVerbMetadata(id)
       if (metadata) {
-        const verbType = metadata.verb || metadata.type || 'default'
+        const verbType = (metadata.verb || metadata.type || 'default') as string
         this.decrementVerbCount(verbType)
         await this.deleteVerbMetadata(id)
       }
@@ -763,7 +774,7 @@ export class FileSystemStorage extends BaseStorage {
     cursor?: string
     filter?: any
   } = {}): Promise<{
-    items: HNSWNoun[]
+    items: HNSWNounWithMetadata[]
     totalCount: number
     hasMore: boolean
     nextCursor?: string
@@ -795,8 +806,8 @@ export class FileSystemStorage extends BaseStorage {
       // Get page of files
       const pageFiles = nounFiles.slice(startIndex, startIndex + limit)
 
-      // Load nouns - count actual successfully loaded items
-      const items: HNSWNoun[] = []
+      // v4.0.0: Load nouns and combine with metadata
+      const items: HNSWNounWithMetadata[] = []
       let successfullyLoaded = 0
       let totalValidFiles = 0
 
@@ -806,7 +817,7 @@ export class FileSystemStorage extends BaseStorage {
       // No need to count files anymore - we maintain accurate counts
       // This eliminates the O(n) operation completely
 
-      // Second pass: load the current page
+      // Second pass: load the current page with metadata
       for (const file of pageFiles) {
         try {
           const id = file.replace('.json', '')
@@ -814,14 +825,17 @@ export class FileSystemStorage extends BaseStorage {
             this.getNodePath(id),
             'utf-8'
           )
-          const noun = JSON.parse(data)
+          const parsedNoun = JSON.parse(data)
+
+          // v4.0.0: Load metadata from separate storage
+          const metadata = await this.getNounMetadata(id)
+          if (!metadata) continue
 
           // Apply filter if provided
           if (options.filter) {
-            // Simple filter implementation
             let matches = true
             for (const [key, value] of Object.entries(options.filter)) {
-              if (noun.metadata && noun.metadata[key] !== value) {
+              if (metadata[key] !== value) {
                 matches = false
                 break
               }
@@ -829,7 +843,26 @@ export class FileSystemStorage extends BaseStorage {
             if (!matches) continue
           }
 
-          items.push(noun)
+          // Convert connections if needed
+          let connections = parsedNoun.connections
+          if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
+            const connectionsMap = new Map<number, Set<string>>()
+            for (const [level, nodeIds] of Object.entries(connections)) {
+              connectionsMap.set(Number(level), new Set(nodeIds as string[]))
+            }
+            connections = connectionsMap
+          }
+
+          // v4.0.0: Create HNSWNounWithMetadata by combining noun with metadata
+          const nounWithMetadata: HNSWNounWithMetadata = {
+            id: parsedNoun.id,
+            vector: parsedNoun.vector,
+            connections: connections,
+            level: parsedNoun.level || 0,
+            metadata: metadata
+          }
+
+          items.push(nounWithMetadata)
           successfullyLoaded++
         } catch (error) {
           console.warn(`Failed to read noun file ${file}:`, error)
@@ -1085,23 +1118,18 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get a noun from storage (internal implementation)
-   * Combines vector data from getNode() with metadata from getNounMetadata()
+   * v4.0.0: Returns ONLY vector data (no metadata field)
+   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector data (no metadata field)
     const node = await this.getNode(id)
     if (!node) {
       return null
     }
 
-    // Get metadata (entity data in 2-file system)
-    const metadata = await this.getNounMetadata(id)
-
-    // Combine into complete noun object
-    return {
-      ...node,
-      metadata: metadata || {}
-    }
+    // Return pure vector structure
+    return node
   }
 
 
@@ -1130,23 +1158,18 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get a verb from storage (internal implementation)
-   * Combines vector data from getEdge() with metadata from getVerbMetadata()
+   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
+   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Get vector data (lightweight)
+    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
     const edge = await this.getEdge(id)
     if (!edge) {
       return null
     }
 
-    // Get metadata (relationship data in 2-file system)
-    const metadata = await this.getVerbMetadata(id)
-
-    // Combine into complete verb object
-    return {
-      ...edge,
-      metadata: metadata || {}
-    }
+    // Return pure vector + core fields structure
+    return edge
   }
 
 
@@ -1155,15 +1178,15 @@ export class FileSystemStorage extends BaseStorage {
    */
   protected async getVerbsBySource_internal(
     sourceId: string
-  ): Promise<GraphVerb[]> {
+  ): Promise<HNSWVerbWithMetadata[]> {
     console.log(`[DEBUG] getVerbsBySource_internal called for sourceId: ${sourceId}`)
-    
+
     // Use the working pagination method with source filter
     const result = await this.getVerbsWithPagination({
       limit: 10000,
       filter: { sourceId: [sourceId] }
     })
-    
+
     console.log(`[DEBUG] Found ${result.items.length} verbs for source ${sourceId}`)
     return result.items
   }
@@ -1173,7 +1196,7 @@ export class FileSystemStorage extends BaseStorage {
    */
   protected async getVerbsByTarget_internal(
     targetId: string
-  ): Promise<GraphVerb[]> {
+  ): Promise<HNSWVerbWithMetadata[]> {
     console.log(`[DEBUG] getVerbsByTarget_internal called for targetId: ${targetId}`)
     
     // Use the working pagination method with target filter
@@ -1189,15 +1212,15 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Get verbs by type
    */
-  protected async getVerbsByType_internal(type: string): Promise<GraphVerb[]> {
+  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
     console.log(`[DEBUG] getVerbsByType_internal called for type: ${type}`)
-    
+
     // Use the working pagination method with type filter
     const result = await this.getVerbsWithPagination({
       limit: 10000,
       filter: { verbType: [type] }
     })
-    
+
     console.log(`[DEBUG] Found ${result.items.length} verbs for type ${type}`)
     return result.items
   }
@@ -1217,7 +1240,7 @@ export class FileSystemStorage extends BaseStorage {
       metadata?: Record<string, any>
     }
   } = {}): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
@@ -1250,7 +1273,7 @@ export class FileSystemStorage extends BaseStorage {
       const endIndex = Math.min(startIndex + limit, actualFileCount)
 
       // Load the requested page of verbs
-      const verbs: GraphVerb[] = []
+      const verbs: HNSWVerbWithMetadata[] = []
       let successfullyLoaded = 0
 
       for (let i = startIndex; i < endIndex; i++) {
@@ -1272,28 +1295,13 @@ export class FileSystemStorage extends BaseStorage {
           
           // Get metadata which contains the actual verb information
           const metadata = await this.getVerbMetadata(id)
-          
-          // If no metadata exists, try to reconstruct basic metadata from filename
+
+          // v4.0.0: No fallbacks - skip verbs without metadata
           if (!metadata) {
-            console.warn(`Verb ${id} has no metadata, trying to create minimal verb`)
-            
-            // Create minimal GraphVerb without full metadata
-            const minimalVerb: GraphVerb = {
-              id: edge.id,
-              vector: edge.vector,
-              connections: edge.connections || new Map(),
-              sourceId: 'unknown',
-              targetId: 'unknown', 
-              source: 'unknown',
-              target: 'unknown',
-              type: 'relationship',
-              verb: 'relatedTo'
-            }
-            
-            verbs.push(minimalVerb)
+            console.warn(`Verb ${id} has no metadata, skipping`)
             continue
           }
-          
+
           // Convert connections Map to proper format if needed
           let connections = edge.connections
           if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
@@ -1303,25 +1311,16 @@ export class FileSystemStorage extends BaseStorage {
             }
             connections = connectionsMap
           }
-          
-          // Properly reconstruct GraphVerb from HNSWVerb + metadata
-          const verb: GraphVerb = {
+
+          // v4.0.0: Clean HNSWVerbWithMetadata construction
+          const verbWithMetadata: HNSWVerbWithMetadata = {
             id: edge.id,
-            vector: edge.vector,  // Include the vector field!
+            vector: edge.vector,
             connections: connections,
-            sourceId: metadata.sourceId || metadata.source,
-            targetId: metadata.targetId || metadata.target,
-            source: metadata.source || metadata.sourceId,
-            target: metadata.target || metadata.targetId,
-            verb: metadata.verb || metadata.type,
-            type: metadata.type || metadata.verb,
-            weight: metadata.weight,
-            metadata: metadata.metadata || metadata,
-            data: metadata.data,
-            createdAt: metadata.createdAt,
-            updatedAt: metadata.updatedAt,
-            createdBy: metadata.createdBy,
-            embedding: metadata.embedding || edge.vector
+            verb: edge.verb,
+            sourceId: edge.sourceId,
+            targetId: edge.targetId,
+            metadata: metadata
           }
           
           // Apply filters if provided
@@ -1331,22 +1330,19 @@ export class FileSystemStorage extends BaseStorage {
             // Check verbType filter
             if (filter.verbType) {
               const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
-              const verbType = verb.type || verb.verb
-              if (verbType && !types.includes(verbType)) continue
+              if (!types.includes(verbWithMetadata.verb)) continue
             }
 
             // Check sourceId filter
             if (filter.sourceId) {
               const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-              const sourceId = verb.sourceId || verb.source
-              if (!sourceId || !sources.includes(sourceId)) continue
+              if (!sources.includes(verbWithMetadata.sourceId)) continue
             }
 
             // Check targetId filter
             if (filter.targetId) {
               const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
-              const targetId = verb.targetId || verb.target
-              if (!targetId || !targets.includes(targetId)) continue
+              if (!targets.includes(verbWithMetadata.targetId)) continue
             }
 
             // Check service filter
@@ -1356,7 +1352,7 @@ export class FileSystemStorage extends BaseStorage {
             }
           }
 
-          verbs.push(verb)
+          verbs.push(verbWithMetadata)
           successfullyLoaded++
         } catch (error) {
           console.warn(`Failed to read verb ${id}:`, error)
@@ -1798,34 +1794,21 @@ export class FileSystemStorage extends BaseStorage {
       this.totalVerbCount = validVerbFiles.length
 
       // Sample some files to get type distribution (don't read all)
+      // v4.0.0: Load metadata separately for type information
       const sampleSize = Math.min(100, validNounFiles.length)
       for (let i = 0; i < sampleSize; i++) {
         try {
           const file = validNounFiles[i]
           const id = file.replace('.json', '')
 
-          // Construct path using detected depth (not cached depth which may be wrong)
-          let filePath: string
-          switch (depthToUse) {
-            case 0:
-              filePath = path.join(this.nounsDir, `${id}.json`)
-              break
-            case 1:
-              filePath = path.join(this.nounsDir, id.substring(0, 2), `${id}.json`)
-              break
-            case 2:
-              filePath = path.join(this.nounsDir, id.substring(0, 2), id.substring(2, 4), `${id}.json`)
-              break
-            default:
-              throw new Error(`Unsupported depth: ${depthToUse}`)
+          // v4.0.0: Load metadata from separate storage for type info
+          const metadata = await this.getNounMetadata(id)
+          if (metadata) {
+            const type = metadata.noun || 'default'
+            this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
           }
-
-          const data = await fs.promises.readFile(filePath, 'utf-8')
-          const noun = JSON.parse(data)
-          const type = noun.metadata?.type || noun.metadata?.nounType || 'default'
-          this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
         } catch {
-          // Skip invalid files
+          // Skip invalid files or missing metadata
         }
       }
 
@@ -2418,12 +2401,12 @@ export class FileSystemStorage extends BaseStorage {
     startIndex: number,
     limit: number
   ): Promise<{
-    items: GraphVerb[]
+    items: HNSWVerbWithMetadata[]
     totalCount?: number
     hasMore: boolean
     nextCursor?: string
   }> {
-    const verbs: GraphVerb[] = []
+    const verbs: HNSWVerbWithMetadata[] = []
     let processedCount = 0
     let skippedCount = 0
     let resultCount = 0
@@ -2456,29 +2439,31 @@ export class FileSystemStorage extends BaseStorage {
             const edge = JSON.parse(data)
             const metadata = await this.getVerbMetadata(id)
 
+            // v4.0.0: No fallbacks - skip verbs without metadata
             if (!metadata) {
               processedCount++
               return true // continue, skip this verb
             }
 
-            // Reconstruct GraphVerb
-            const verb: GraphVerb = {
+            // Convert connections if needed
+            let connections = edge.connections
+            if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
+              const connectionsMap = new Map<number, Set<string>>()
+              for (const [level, nodeIds] of Object.entries(connections)) {
+                connectionsMap.set(Number(level), new Set(nodeIds as string[]))
+              }
+              connections = connectionsMap
+            }
+
+            // v4.0.0: Clean HNSWVerbWithMetadata construction
+            const verbWithMetadata: HNSWVerbWithMetadata = {
               id: edge.id,
               vector: edge.vector,
-              connections: edge.connections || new Map(),
-              sourceId: metadata.sourceId || metadata.source,
-              targetId: metadata.targetId || metadata.target,
-              source: metadata.source || metadata.sourceId,
-              target: metadata.target || metadata.targetId,
-              verb: metadata.verb || metadata.type,
-              type: metadata.type || metadata.verb,
-              weight: metadata.weight,
-              metadata: metadata.metadata || metadata,
-              data: metadata.data,
-              createdAt: metadata.createdAt,
-              updatedAt: metadata.updatedAt,
-              createdBy: metadata.createdBy,
-              embedding: metadata.embedding || edge.vector
+              connections: connections || new Map(),
+              verb: edge.verb,
+              sourceId: edge.sourceId,
+              targetId: edge.targetId,
+              metadata: metadata
             }
 
             // Apply filters
@@ -2487,24 +2472,21 @@ export class FileSystemStorage extends BaseStorage {
 
               if (filter.verbType) {
                 const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
-                const verbType = verb.type || verb.verb
-                if (verbType && !types.includes(verbType)) return true // continue
+                if (!types.includes(verbWithMetadata.verb)) return true // continue
               }
 
               if (filter.sourceId) {
                 const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-                const sourceId = verb.sourceId || verb.source
-                if (!sourceId || !sources.includes(sourceId)) return true // continue
+                if (!sources.includes(verbWithMetadata.sourceId)) return true // continue
               }
 
               if (filter.targetId) {
                 const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
-                const targetId = verb.targetId || verb.target
-                if (!targetId || !targets.includes(targetId)) return true // continue
+                if (!targets.includes(verbWithMetadata.targetId)) return true // continue
               }
             }
 
-            verbs.push(verb)
+            verbs.push(verbWithMetadata)
             resultCount++
             processedCount++
             return true // continue

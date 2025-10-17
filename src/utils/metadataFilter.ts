@@ -4,7 +4,7 @@
  * Simple API that just works without configuration
  */
 
-import { SearchResult, HNSWNoun } from '../coreTypes.js'
+import { SearchResult, HNSWNoun, HNSWNounWithMetadata } from '../coreTypes.js'
 
 /**
  * Brainy Field Operators (BFO) - Our own field query system
@@ -323,16 +323,17 @@ export function filterSearchResultsByMetadata<T>(
 
 /**
  * Filter nouns by metadata before search
+ * v4.0.0: Takes HNSWNounWithMetadata which includes metadata field
  */
 export function filterNounsByMetadata(
-  nouns: HNSWNoun[],
+  nouns: HNSWNounWithMetadata[],
   filter: MetadataFilter
-): HNSWNoun[] {
+): HNSWNounWithMetadata[] {
   if (!filter || Object.keys(filter).length === 0) {
     return nouns
   }
 
-  return nouns.filter(noun => 
+  return nouns.filter(noun =>
     matchesMetadataFilter(noun.metadata, filter)
   )
 }

@@ -12,6 +12,7 @@ import { MemoryStorage } from '../storage/adapters/memoryStorage.js'
 import { OPFSStorage } from '../storage/adapters/opfsStorage.js'
 import { S3CompatibleStorage } from '../storage/adapters/s3CompatibleStorage.js'
 import { R2Storage } from '../storage/adapters/r2Storage.js'
+import { AzureBlobStorage } from '../storage/adapters/azureBlobStorage.js'
 
 /**
  * Memory Storage Augmentation - Fast in-memory storage
@@ -388,7 +389,7 @@ export class GCSStorageAugmentation extends StorageAugmentation {
     endpoint?: string
     cacheConfig?: any
   }
-  
+
   constructor(config: {
     bucketName: string
     region?: string
@@ -400,7 +401,7 @@ export class GCSStorageAugmentation extends StorageAugmentation {
     super()
     this.config = config
   }
-  
+
   async provideStorage(): Promise<StorageAdapter> {
     const storage = new S3CompatibleStorage({
       ...this.config,
@@ -410,10 +411,50 @@ export class GCSStorageAugmentation extends StorageAugmentation {
     this.storageAdapter = storage
     return storage
   }
-  
+
   protected async onInitialize(): Promise<void> {
     await this.storageAdapter!.init()
     this.log(`GCS storage initialized with bucket ${this.config.bucketName}`)
+  }
+}
+
+/**
+ * Azure Blob Storage Augmentation - Microsoft Azure
+ */
+export class AzureStorageAugmentation extends StorageAugmentation {
+  readonly name = 'azure-storage'
+  protected config: {
+    containerName: string
+    accountName?: string
+    accountKey?: string
+    connectionString?: string
+    sasToken?: string
+    cacheConfig?: any
+  }
+
+  constructor(config: {
+    containerName: string
+    accountName?: string
+    accountKey?: string
+    connectionString?: string
+    sasToken?: string
+    cacheConfig?: any
+  }) {
+    super()
+    this.config = config
+  }
+
+  async provideStorage(): Promise<StorageAdapter> {
+    const storage = new AzureBlobStorage({
+      ...this.config
+    })
+    this.storageAdapter = storage
+    return storage
+  }
+
+  protected async onInitialize(): Promise<void> {
+    await this.storageAdapter!.init()
+    this.log(`Azure Blob Storage initialized with container ${this.config.containerName}`)
   }
 }
 

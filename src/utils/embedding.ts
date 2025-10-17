@@ -518,7 +518,7 @@ export function createEmbeddingModel(options?: TransformerEmbeddingOptions): Emb
  * Default embedding function using the unified EmbeddingManager
  * Simple, clean, reliable - no more layers of indirection
  */
-export const defaultEmbeddingFunction: EmbeddingFunction = async (data: string | string[]): Promise<Vector> => {
+export const defaultEmbeddingFunction: EmbeddingFunction = async (data: string | string[] | Record<string, unknown>): Promise<Vector> => {
   const { embed } = await import('../embeddings/EmbeddingManager.js')
   return await embed(data)
 }
@@ -528,12 +528,12 @@ export const defaultEmbeddingFunction: EmbeddingFunction = async (data: string |
  * NOTE: Options are validated but the singleton EmbeddingManager is always used
  */
 export function createEmbeddingFunction(options: TransformerEmbeddingOptions = {}): EmbeddingFunction {
-  return async (data: string | string[]): Promise<Vector> => {
+  return async (data: string | string[] | Record<string, unknown>): Promise<Vector> => {
     const { embeddingManager } = await import('../embeddings/EmbeddingManager.js')
-    
+
     // Validate precision if specified
     // Precision is always Q8 now
-    
+
     return await embeddingManager.embed(data)
   }
 }

@@ -238,7 +238,7 @@ export class StorageDiscovery extends EventEmitter {
     // Remove ourselves from node registry
     try {
       // Mark as deleted rather than actually deleting
-      const deadNode = { ...this.nodeInfo, lastSeen: 0, status: 'inactive' as const }
+      const deadNode = { noun: 'Document', ...this.nodeInfo, lastSeen: 0, status: 'inactive' as const }
       await this.storage.saveMetadata(`${this.CLUSTER_PATH}/nodes/${this.nodeId}.json`, deadNode)
     } catch (err) {
       // Ignore errors during shutdown
@@ -258,8 +258,8 @@ export class StorageDiscovery extends EventEmitter {
    */
   private async registerNode(): Promise<void> {
     const path = `${this.CLUSTER_PATH}/nodes/${this.nodeId}.json`
-    await this.storage.saveMetadata(path, this.nodeInfo)
-    
+    await this.storage.saveMetadata(path, { noun: 'Document', ...this.nodeInfo })
+
     // Also update registry
     await this.updateNodeRegistry(this.nodeId)
   }
@@ -318,10 +318,11 @@ export class StorageDiscovery extends EventEmitter {
         if (nodeId === this.nodeId) continue
         
         try {
-          const nodeInfo = await this.storage.getMetadata(
+          const nodeInfoData = await this.storage.getMetadata(
             `${this.CLUSTER_PATH}/nodes/${nodeId}.json`
-          ) as NodeInfo
-          
+          )
+          const nodeInfo = nodeInfoData as unknown as NodeInfo
+
           // Check if node is alive
           if (now - nodeInfo.lastSeen < this.NODE_TIMEOUT) {
             if (!this.clusterConfig!.nodes[nodeId]) {
@@ -369,16 +370,17 @@ export class StorageDiscovery extends EventEmitter {
   private async updateNodeRegistry(add?: string, remove?: string): Promise<void> {
     try {
       let registry = await this.loadNodeRegistry()
-      
+
       if (add && !registry.includes(add)) {
         registry.push(add)
       }
-      
+
       if (remove) {
         registry = registry.filter(id => id !== remove)
       }
-      
+
       await this.storage.saveMetadata(`${this.CLUSTER_PATH}/registry.json`, {
+        noun: 'Document',
         nodes: registry,
         updated: Date.now()
       })
@@ -428,7 +430,7 @@ export class StorageDiscovery extends EventEmitter {
   private async loadClusterConfig(): Promise<ClusterConfig | null> {
     try {
       const config = await this.storage.getMetadata(`${this.CLUSTER_PATH}/config.json`)
-      return config as ClusterConfig
+      return config as unknown as ClusterConfig
     } catch (err) {
       // No cluster config exists yet
       return null
@@ -440,10 +442,10 @@ export class StorageDiscovery extends EventEmitter {
    */
   private async saveClusterConfig(): Promise<void> {
     if (!this.clusterConfig) return
-    
+
     await this.storage.saveMetadata(
       `${this.CLUSTER_PATH}/config.json`,
-      this.clusterConfig
+      { noun: 'Document', ...this.clusterConfig }
     )
   }
 

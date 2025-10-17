@@ -60,9 +60,16 @@ export class ConfigAPI {
     // Store in cache
     this.configCache.set(key, entry)
 
-    // Persist to storage
+    // v4.0.0: Persist to storage as NounMetadata
     const configId = this.CONFIG_NOUN_PREFIX + key
-    await this.storage.saveMetadata(configId, entry)
+    const nounMetadata = {
+      noun: 'config' as any,
+      ...entry,
+      service: 'config',
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt
+    }
+    await this.storage.saveNounMetadata(configId, nounMetadata)
   }
 
   /**
@@ -81,13 +88,28 @@ export class ConfigAPI {
     // If not in cache, load from storage
     if (!entry) {
       const configId = this.CONFIG_NOUN_PREFIX + key
-      const metadata = await this.storage.getMetadata(configId)
-      
+      const metadata = await this.storage.getNounMetadata(configId)
+
       if (!metadata) {
         return defaultValue
       }
 
-      entry = metadata as ConfigEntry
+      // v4.0.0: Extract ConfigEntry from NounMetadata
+      const createdAtVal = typeof metadata.createdAt === 'object' && metadata.createdAt !== null && 'seconds' in metadata.createdAt
+        ? metadata.createdAt.seconds * 1000 + Math.floor((metadata.createdAt.nanoseconds || 0) / 1000000)
+        : ((metadata.createdAt as unknown as number) || Date.now())
+
+      const updatedAtVal = typeof metadata.updatedAt === 'object' && metadata.updatedAt !== null && 'seconds' in metadata.updatedAt
+        ? metadata.updatedAt.seconds * 1000 + Math.floor((metadata.updatedAt.nanoseconds || 0) / 1000000)
+        : ((metadata.updatedAt as unknown as number) || createdAtVal)
+
+      entry = {
+        key: metadata.key as string,
+        value: metadata.value,
+        encrypted: metadata.encrypted as boolean,
+        createdAt: createdAtVal,
+        updatedAt: updatedAtVal
+      }
       this.configCache.set(key, entry)
     }
 
@@ -118,27 +140,22 @@ export class ConfigAPI {
     // Remove from cache
     this.configCache.delete(key)
 
-    // Remove from storage
+    // v4.0.0: Remove from storage
     const configId = this.CONFIG_NOUN_PREFIX + key
-    await this.storage.saveMetadata(configId, null as any)
+    await this.storage.deleteNounMetadata(configId)
   }
 
   /**
    * List all configuration keys
    */
   async list(): Promise<string[]> {
-    // Get all metadata keys from storage
-    const allMetadata = await this.storage.getMetadata('')
-    
-    if (!allMetadata || typeof allMetadata !== 'object') {
-      return []
-    }
+    // v4.0.0: Get all nouns and filter for config entries
+    const result = await this.storage.getNouns({ pagination: { limit: 10000 } })
 
-    // Filter for config keys
     const configKeys: string[] = []
-    for (const key of Object.keys(allMetadata)) {
-      if (key.startsWith(this.CONFIG_NOUN_PREFIX)) {
-        configKeys.push(key.substring(this.CONFIG_NOUN_PREFIX.length))
+    for (const noun of result.items) {
+      if (noun.id.startsWith(this.CONFIG_NOUN_PREFIX)) {
+        configKeys.push(noun.id.substring(this.CONFIG_NOUN_PREFIX.length))
       }
     }
 
@@ -154,7 +171,7 @@ export class ConfigAPI {
     }
 
     const configId = this.CONFIG_NOUN_PREFIX + key
-    const metadata = await this.storage.getMetadata(configId)
+    const metadata = await this.storage.getNounMetadata(configId)
     return metadata !== null && metadata !== undefined
   }
 
@@ -196,7 +213,15 @@ export class ConfigAPI {
     for (const [key, entry] of Object.entries(config)) {
       this.configCache.set(key, entry)
       const configId = this.CONFIG_NOUN_PREFIX + key
-      await this.storage.saveMetadata(configId, entry)
+      // v4.0.0: Convert ConfigEntry to NounMetadata
+      const nounMetadata = {
+        noun: 'config' as any,
+        ...entry,
+        service: 'config',
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt
+      }
+      await this.storage.saveNounMetadata(configId, nounMetadata)
     }
   }
 
@@ -209,13 +234,28 @@ export class ConfigAPI {
     }
 
     const configId = this.CONFIG_NOUN_PREFIX + key
-    const metadata = await this.storage.getMetadata(configId)
-    
+    const metadata = await this.storage.getNounMetadata(configId)
+
     if (!metadata) {
       return null
     }
 
-    const entry = metadata as ConfigEntry
+    // v4.0.0: Extract ConfigEntry from NounMetadata
+    const createdAtVal = typeof metadata.createdAt === 'object' && metadata.createdAt !== null && 'seconds' in metadata.createdAt
+      ? metadata.createdAt.seconds * 1000 + Math.floor((metadata.createdAt.nanoseconds || 0) / 1000000)
+      : ((metadata.createdAt as unknown as number) || Date.now())
+
+    const updatedAtVal = typeof metadata.updatedAt === 'object' && metadata.updatedAt !== null && 'seconds' in metadata.updatedAt
+      ? metadata.updatedAt.seconds * 1000 + Math.floor((metadata.updatedAt.nanoseconds || 0) / 1000000)
+      : ((metadata.updatedAt as unknown as number) || createdAtVal)
+
+    const entry: ConfigEntry = {
+      key: metadata.key as string,
+      value: metadata.value,
+      encrypted: metadata.encrypted as boolean,
+      createdAt: createdAtVal,
+      updatedAt: updatedAtVal
+    }
     this.configCache.set(key, entry)
     return entry
   }

@@ -9,6 +9,7 @@ import { OPFSStorage } from './adapters/opfsStorage.js'
 import { S3CompatibleStorage } from './adapters/s3CompatibleStorage.js'
 import { R2Storage } from './adapters/r2Storage.js'
 import { GcsStorage } from './adapters/gcsStorage.js'
+import { AzureBlobStorage } from './adapters/azureBlobStorage.js'
 import { TypeAwareStorageAdapter } from './adapters/typeAwareStorageAdapter.js'
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
 import { isBrowser } from '../utils/environment.js'
@@ -28,9 +29,10 @@ export interface StorageOptions {
    * - 'r2': Use Cloudflare R2 storage
    * - 'gcs': Use Google Cloud Storage (S3-compatible with HMAC keys)
    * - 'gcs-native': Use Google Cloud Storage (native SDK with ADC)
+   * - 'azure': Use Azure Blob Storage (native SDK with Managed Identity)
    * - 'type-aware': Use type-first storage adapter (wraps another adapter)
    */
-  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native' | 'type-aware'
+  type?: 'auto' | 'memory' | 'opfs' | 'filesystem' | 's3' | 'r2' | 'gcs' | 'gcs-native' | 'azure' | 'type-aware'
 
   /**
    * Force the use of memory storage even if other storage types are available
@@ -175,6 +177,36 @@ export interface StorageOptions {
      * HMAC secret access key (backward compatibility, not recommended)
      */
     secretAccessKey?: string
+  }
+
+  /**
+   * Configuration for Azure Blob Storage (native SDK with Managed Identity)
+   */
+  azureStorage?: {
+    /**
+     * Azure container name
+     */
+    containerName: string
+
+    /**
+     * Azure Storage account name (for Managed Identity or SAS)
+     */
+    accountName?: string
+
+    /**
+     * Azure Storage account key (optional, uses Managed Identity if not provided)
+     */
+    accountKey?: string
+
+    /**
+     * Azure connection string (highest priority if provided)
+     */
+    connectionString?: string
+
+    /**
+     * SAS token (optional, alternative to account key)
+     */
+    sasToken?: string
   }
 
   /**
@@ -473,6 +505,24 @@ export async function createStorage(
           return new MemoryStorage()
         }
 
+      case 'azure':
+        if (options.azureStorage) {
+          console.log('Using Azure Blob Storage (native SDK)')
+          return new AzureBlobStorage({
+            containerName: options.azureStorage.containerName,
+            accountName: options.azureStorage.accountName,
+            accountKey: options.azureStorage.accountKey,
+            connectionString: options.azureStorage.connectionString,
+            sasToken: options.azureStorage.sasToken,
+            cacheConfig: options.cacheConfig
+          })
+        } else {
+          console.warn(
+            'Azure storage configuration is missing, falling back to memory storage'
+          )
+          return new MemoryStorage()
+        }
+
       case 'type-aware': {
         console.log('Using Type-Aware Storage (type-first architecture)')
 
@@ -571,6 +621,19 @@ export async function createStorage(
     })
   }
 
+  // If Azure storage is specified, use it
+  if (options.azureStorage) {
+    console.log('Using Azure Blob Storage (native SDK)')
+    return new AzureBlobStorage({
+      containerName: options.azureStorage.containerName,
+      accountName: options.azureStorage.accountName,
+      accountKey: options.azureStorage.accountKey,
+      connectionString: options.azureStorage.connectionString,
+      sasToken: options.azureStorage.sasToken,
+      cacheConfig: options.cacheConfig
+    })
+  }
+
   // Auto-detect the best storage adapter based on the environment
   // First, check if we're in Node.js (prioritize for test environments)
   if (!isBrowser()) {
@@ -632,6 +695,7 @@ export {
   S3CompatibleStorage,
   R2Storage,
   GcsStorage,
+  AzureBlobStorage,
   TypeAwareStorageAdapter
 }
 
