@@ -2186,6 +2186,188 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
+   * Batch delete multiple objects from S3-compatible storage
+   * Deletes up to 1000 objects per batch (S3 limit)
+   * Handles throttling, retries, and partial failures
+   *
+   * @param keys - Array of object keys (paths) to delete
+   * @param options - Configuration options for batch deletion
+   * @returns Statistics about successful and failed deletions
+   */
+  public async batchDelete(
+    keys: string[],
+    options: {
+      maxRetries?: number
+      retryDelayMs?: number
+      continueOnError?: boolean
+    } = {}
+  ): Promise<{
+    totalRequested: number
+    successfulDeletes: number
+    failedDeletes: number
+    errors: Array<{ key: string; error: string }>
+  }> {
+    await this.ensureInitialized()
+
+    const {
+      maxRetries = 3,
+      retryDelayMs = 1000,
+      continueOnError = true
+    } = options
+
+    if (!keys || keys.length === 0) {
+      return {
+        totalRequested: 0,
+        successfulDeletes: 0,
+        failedDeletes: 0,
+        errors: []
+      }
+    }
+
+    this.logger.info(`Starting batch delete of ${keys.length} objects`)
+
+    const stats = {
+      totalRequested: keys.length,
+      successfulDeletes: 0,
+      failedDeletes: 0,
+      errors: [] as Array<{ key: string; error: string }>
+    }
+
+    // Chunk keys into batches of max 1000 (S3 limit)
+    const MAX_BATCH_SIZE = 1000
+    const batches: string[][] = []
+    for (let i = 0; i < keys.length; i += MAX_BATCH_SIZE) {
+      batches.push(keys.slice(i, i + MAX_BATCH_SIZE))
+    }
+
+    this.logger.debug(`Split ${keys.length} keys into ${batches.length} batches`)
+
+    // Process each batch
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
+      let retryCount = 0
+      let batchSuccess = false
+
+      while (retryCount <= maxRetries && !batchSuccess) {
+        try {
+          const { DeleteObjectsCommand } = await import('@aws-sdk/client-s3')
+
+          this.logger.debug(
+            `Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} keys (attempt ${retryCount + 1}/${maxRetries + 1})`
+          )
+
+          // Execute batch delete
+          const response = await this.s3Client!.send(
+            new DeleteObjectsCommand({
+              Bucket: this.bucketName,
+              Delete: {
+                Objects: batch.map((key) => ({ Key: key })),
+                Quiet: false // Get detailed response about each deletion
+              }
+            })
+          )
+
+          // Count successful deletions
+          const deleted = response.Deleted || []
+          stats.successfulDeletes += deleted.length
+
+          this.logger.debug(
+            `Batch ${batchIndex + 1} completed: ${deleted.length} deleted`
+          )
+
+          // Handle errors from S3 (partial failures)
+          if (response.Errors && response.Errors.length > 0) {
+            this.logger.warn(
+              `Batch ${batchIndex + 1} had ${response.Errors.length} partial failures`
+            )
+
+            for (const error of response.Errors) {
+              const errorKey = error.Key || 'unknown'
+              const errorCode = error.Code || 'UnknownError'
+              const errorMessage = error.Message || 'No error message'
+
+              // Skip NoSuchKey errors (already deleted)
+              if (errorCode === 'NoSuchKey') {
+                this.logger.trace(`Object ${errorKey} already deleted (NoSuchKey)`)
+                stats.successfulDeletes++
+                continue
+              }
+
+              stats.failedDeletes++
+              stats.errors.push({
+                key: errorKey,
+                error: `${errorCode}: ${errorMessage}`
+              })
+
+              this.logger.error(
+                `Failed to delete ${errorKey}: ${errorCode} - ${errorMessage}`
+              )
+            }
+          }
+
+          batchSuccess = true
+        } catch (error: any) {
+          // Handle throttling
+          if (this.isThrottlingError(error)) {
+            this.logger.warn(
+              `Batch ${batchIndex + 1} throttled, waiting before retry...`
+            )
+            await this.handleThrottling(error)
+            retryCount++
+
+            if (retryCount <= maxRetries) {
+              const delay = retryDelayMs * Math.pow(2, retryCount - 1) // Exponential backoff
+              await new Promise((resolve) => setTimeout(resolve, delay))
+            }
+            continue
+          }
+
+          // Handle other errors
+          this.logger.error(
+            `Batch ${batchIndex + 1} failed (attempt ${retryCount + 1}/${maxRetries + 1}):`,
+            error
+          )
+
+          if (retryCount < maxRetries) {
+            retryCount++
+            const delay = retryDelayMs * Math.pow(2, retryCount - 1)
+            await new Promise((resolve) => setTimeout(resolve, delay))
+            continue
+          }
+
+          // Max retries exceeded
+          if (continueOnError) {
+            // Mark all keys in this batch as failed and continue to next batch
+            for (const key of batch) {
+              stats.failedDeletes++
+              stats.errors.push({
+                key,
+                error: error.message || String(error)
+              })
+            }
+            this.logger.error(
+              `Batch ${batchIndex + 1} failed after ${maxRetries} retries, continuing to next batch`
+            )
+            batchSuccess = true // Mark as "handled" to move to next batch
+          } else {
+            // Stop processing and throw error
+            throw BrainyError.storage(
+              `Batch delete failed at batch ${batchIndex + 1}/${batches.length} after ${maxRetries} retries. Total: ${stats.successfulDeletes} deleted, ${stats.failedDeletes} failed`,
+              error instanceof Error ? error : undefined
+            )
+          }
+        }
+      }
+    }
+
+    this.logger.info(
+      `Batch delete completed: ${stats.successfulDeletes}/${stats.totalRequested} successful, ${stats.failedDeletes} failed`
+    )
+
+    return stats
+  }
+
+  /**
    * Primitive operation: List objects under path prefix
    * All metadata operations use this internally via base class routing
    */
@@ -3856,6 +4038,349 @@ export class S3CompatibleStorage extends BaseStorage {
 
       this.logger.error('Failed to get HNSW system data:', error)
       throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
+
+  /**
+   * Set S3 lifecycle policy for automatic tier transitions and deletions (v4.0.0)
+   * Automates cost optimization by moving old data to cheaper storage classes
+   *
+   * S3 Storage Classes:
+   * - Standard: $0.023/GB/month - Frequent access
+   * - Standard-IA: $0.0125/GB/month - Infrequent access (46% cheaper)
+   * - Glacier Instant: $0.004/GB/month - Archive with instant retrieval (83% cheaper)
+   * - Glacier Flexible: $0.0036/GB/month - Archive with 1-5 min retrieval (84% cheaper)
+   * - Glacier Deep Archive: $0.00099/GB/month - Long-term archive (96% cheaper!)
+   *
+   * @param options - Lifecycle policy configuration
+   * @returns Promise that resolves when policy is set
+   *
+   * @example
+   * // Auto-archive old vectors for 96% cost savings
+   * await storage.setLifecyclePolicy({
+   *   rules: [
+   *     {
+   *       id: 'archive-old-vectors',
+   *       prefix: 'entities/nouns/vectors/',
+   *       status: 'Enabled',
+   *       transitions: [
+   *         { days: 30, storageClass: 'STANDARD_IA' },
+   *         { days: 90, storageClass: 'GLACIER' },
+   *         { days: 365, storageClass: 'DEEP_ARCHIVE' }
+   *       ],
+   *       expiration: { days: 730 }
+   *     }
+   *   ]
+   * })
+   */
+  public async setLifecyclePolicy(options: {
+    rules: Array<{
+      id: string
+      prefix: string
+      status: 'Enabled' | 'Disabled'
+      transitions?: Array<{
+        days: number
+        storageClass: 'STANDARD_IA' | 'ONEZONE_IA' | 'INTELLIGENT_TIERING' | 'GLACIER' | 'DEEP_ARCHIVE' | 'GLACIER_IR'
+      }>
+      expiration?: {
+        days: number
+      }
+    }>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Setting S3 lifecycle policy with ${options.rules.length} rules`)
+
+      const { PutBucketLifecycleConfigurationCommand } = await import('@aws-sdk/client-s3')
+
+      // Format rules according to S3's expected structure
+      const lifecycleRules = options.rules.map(rule => ({
+        ID: rule.id,
+        Status: rule.status,
+        Filter: {
+          Prefix: rule.prefix
+        },
+        ...(rule.transitions && rule.transitions.length > 0 && {
+          Transitions: rule.transitions.map(t => ({
+            Days: t.days,
+            StorageClass: t.storageClass
+          }))
+        }),
+        ...(rule.expiration && {
+          Expiration: {
+            Days: rule.expiration.days
+          }
+        })
+      }))
+
+      await this.s3Client!.send(
+        new PutBucketLifecycleConfigurationCommand({
+          Bucket: this.bucketName,
+          LifecycleConfiguration: {
+            Rules: lifecycleRules
+          }
+        })
+      )
+
+      this.logger.info(`Successfully set lifecycle policy with ${options.rules.length} rules`)
+    } catch (error: any) {
+      this.logger.error('Failed to set lifecycle policy:', error)
+      throw new Error(`Failed to set S3 lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get the current S3 lifecycle policy
+   *
+   * @returns Promise that resolves to the current policy or null if not set
+   *
+   * @example
+   * const policy = await storage.getLifecyclePolicy()
+   * if (policy) {
+   *   console.log(`Found ${policy.rules.length} lifecycle rules`)
+   * }
+   */
+  public async getLifecyclePolicy(): Promise<{
+    rules: Array<{
+      id: string
+      prefix: string
+      status: string
+      transitions?: Array<{
+        days: number
+        storageClass: string
+      }>
+      expiration?: {
+        days: number
+      }
+    }>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting S3 lifecycle policy')
+
+      const { GetBucketLifecycleConfigurationCommand } = await import('@aws-sdk/client-s3')
+
+      const response = await this.s3Client!.send(
+        new GetBucketLifecycleConfigurationCommand({
+          Bucket: this.bucketName
+        })
+      )
+
+      if (!response.Rules || response.Rules.length === 0) {
+        this.logger.info('No lifecycle policy configured')
+        return null
+      }
+
+      const rules = response.Rules.map((rule: any) => ({
+        id: rule.ID || 'unnamed',
+        prefix: rule.Filter?.Prefix || '',
+        status: rule.Status || 'Disabled',
+        ...(rule.Transitions && rule.Transitions.length > 0 && {
+          transitions: rule.Transitions.map((t: any) => ({
+            days: t.Days || 0,
+            storageClass: t.StorageClass || 'STANDARD'
+          }))
+        }),
+        ...(rule.Expiration && rule.Expiration.Days && {
+          expiration: {
+            days: rule.Expiration.Days
+          }
+        })
+      }))
+
+      this.logger.info(`Found lifecycle policy with ${rules.length} rules`)
+
+      return { rules }
+    } catch (error: any) {
+      // NoSuchLifecycleConfiguration means no policy is set
+      if (error.name === 'NoSuchLifecycleConfiguration' || error.message?.includes('NoSuchLifecycleConfiguration')) {
+        this.logger.info('No lifecycle policy configured')
+        return null
+      }
+
+      this.logger.error('Failed to get lifecycle policy:', error)
+      throw new Error(`Failed to get S3 lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Remove the S3 lifecycle policy
+   * All automatic tier transitions and deletions will stop
+   *
+   * @returns Promise that resolves when policy is removed
+   *
+   * @example
+   * await storage.removeLifecyclePolicy()
+   * console.log('Lifecycle policy removed - auto-archival disabled')
+   */
+  public async removeLifecyclePolicy(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Removing S3 lifecycle policy')
+
+      const { DeleteBucketLifecycleCommand } = await import('@aws-sdk/client-s3')
+
+      await this.s3Client!.send(
+        new DeleteBucketLifecycleCommand({
+          Bucket: this.bucketName
+        })
+      )
+
+      this.logger.info('Successfully removed lifecycle policy')
+    } catch (error: any) {
+      this.logger.error('Failed to remove lifecycle policy:', error)
+      throw new Error(`Failed to remove S3 lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Enable S3 Intelligent-Tiering for automatic cost optimization (v4.0.0)
+   * Automatically moves objects between access tiers based on usage patterns
+   *
+   * Intelligent-Tiering automatically saves up to 95% on storage costs:
+   * - Frequent Access: $0.023/GB (same as Standard)
+   * - Infrequent Access: $0.0125/GB (after 30 days no access)
+   * - Archive Instant Access: $0.004/GB (after 90 days no access)
+   * - Archive Access: $0.0036/GB (after 180 days no access, optional)
+   * - Deep Archive Access: $0.00099/GB (after 180 days no access, optional)
+   *
+   * No retrieval fees, no operational overhead, automatic optimization!
+   *
+   * @param prefix - Object prefix to apply Intelligent-Tiering (e.g., 'entities/nouns/vectors/')
+   * @param configId - Configuration ID (default: 'brainy-intelligent-tiering')
+   * @returns Promise that resolves when configuration is set
+   *
+   * @example
+   * // Enable Intelligent-Tiering for all vectors
+   * await storage.enableIntelligentTiering('entities/')
+   */
+  public async enableIntelligentTiering(
+    prefix: string = '',
+    configId: string = 'brainy-intelligent-tiering'
+  ): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Enabling S3 Intelligent-Tiering for prefix: ${prefix}`)
+
+      const { PutBucketIntelligentTieringConfigurationCommand } = await import('@aws-sdk/client-s3')
+
+      await this.s3Client!.send(
+        new PutBucketIntelligentTieringConfigurationCommand({
+          Bucket: this.bucketName,
+          Id: configId,
+          IntelligentTieringConfiguration: {
+            Id: configId,
+            Status: 'Enabled',
+            Filter: prefix ? {
+              Prefix: prefix
+            } : undefined,
+            Tierings: [
+              // Move to Archive Instant Access tier after 90 days
+              {
+                Days: 90,
+                AccessTier: 'ARCHIVE_ACCESS'
+              },
+              // Move to Deep Archive Access tier after 180 days (optional, 96% savings!)
+              {
+                Days: 180,
+                AccessTier: 'DEEP_ARCHIVE_ACCESS'
+              }
+            ]
+          }
+        })
+      )
+
+      this.logger.info(`Successfully enabled Intelligent-Tiering for prefix: ${prefix}`)
+    } catch (error: any) {
+      this.logger.error('Failed to enable Intelligent-Tiering:', error)
+      throw new Error(`Failed to enable S3 Intelligent-Tiering: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get S3 Intelligent-Tiering configurations
+   *
+   * @returns Promise that resolves to array of configurations
+   *
+   * @example
+   * const configs = await storage.getIntelligentTieringConfigs()
+   * for (const config of configs) {
+   *   console.log(`Config: ${config.id}, Status: ${config.status}`)
+   * }
+   */
+  public async getIntelligentTieringConfigs(): Promise<Array<{
+    id: string
+    status: string
+    prefix?: string
+  }>> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting S3 Intelligent-Tiering configurations')
+
+      const { ListBucketIntelligentTieringConfigurationsCommand } = await import('@aws-sdk/client-s3')
+
+      const response = await this.s3Client!.send(
+        new ListBucketIntelligentTieringConfigurationsCommand({
+          Bucket: this.bucketName
+        })
+      )
+
+      if (!response.IntelligentTieringConfigurationList || response.IntelligentTieringConfigurationList.length === 0) {
+        this.logger.info('No Intelligent-Tiering configurations found')
+        return []
+      }
+
+      const configs = response.IntelligentTieringConfigurationList.map((config: any) => ({
+        id: config.Id || 'unnamed',
+        status: config.Status || 'Disabled',
+        ...(config.Filter?.Prefix && { prefix: config.Filter.Prefix })
+      }))
+
+      this.logger.info(`Found ${configs.length} Intelligent-Tiering configurations`)
+
+      return configs
+    } catch (error: any) {
+      this.logger.error('Failed to get Intelligent-Tiering configurations:', error)
+      throw new Error(`Failed to get S3 Intelligent-Tiering configurations: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Disable S3 Intelligent-Tiering
+   *
+   * @param configId - Configuration ID to remove (default: 'brainy-intelligent-tiering')
+   * @returns Promise that resolves when configuration is removed
+   *
+   * @example
+   * await storage.disableIntelligentTiering()
+   * console.log('Intelligent-Tiering disabled')
+   */
+  public async disableIntelligentTiering(
+    configId: string = 'brainy-intelligent-tiering'
+  ): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Disabling S3 Intelligent-Tiering config: ${configId}`)
+
+      const { DeleteBucketIntelligentTieringConfigurationCommand } = await import('@aws-sdk/client-s3')
+
+      await this.s3Client!.send(
+        new DeleteBucketIntelligentTieringConfigurationCommand({
+          Bucket: this.bucketName,
+          Id: configId
+        })
+      )
+
+      this.logger.info(`Successfully disabled Intelligent-Tiering config: ${configId}`)
+    } catch (error: any) {
+      this.logger.error('Failed to disable Intelligent-Tiering:', error)
+      throw new Error(`Failed to disable S3 Intelligent-Tiering: ${error.message || error}`)
     }
   }
 }

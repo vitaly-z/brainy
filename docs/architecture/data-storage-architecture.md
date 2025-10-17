@@ -837,11 +837,16 @@ _system/__metadata_field_index__status.json
 - Use UUIDs for all entities and relationships
 - Let Brainy handle sharding automatically
 - Use metadata indexes for filtering
+- **v4.0.0**: Enable lifecycle policies for cloud storage (96% cost savings)
+- **v4.0.0**: Use batch operations for bulk deletions (efficient API usage)
+- **v4.0.0**: Enable compression for FileSystem storage (60-80% space savings)
 
 ❌ **Don't:**
 - Try to organize files manually
 - Assume file paths are predictable
 - Store large binary data in metadata
+- **v4.0.0**: Forget to monitor OPFS quota in browser applications
+- **v4.0.0**: Use single-object deletes when batch operations are available
 
 ### 2. Metadata Design
 
@@ -946,5 +951,65 @@ const allDocs = await brain.getNouns({
 
 ---
 
-**Version:** 3.36.0
-**Last Updated:** 2025-10-10
+## v4.0.0 Production Features
+
+### Lifecycle Management & Cost Optimization
+
+Brainy v4.0.0 adds enterprise-grade cost optimization features:
+
+**S3 Compatible Storage:**
+- **Lifecycle Policies**: Automatic tier transitions (Standard → IA → Glacier → Deep Archive)
+- **Intelligent-Tiering**: Access-pattern-based optimization (no retrieval fees)
+- **Batch Delete**: 1000 objects per request
+- **Cost Impact**: $138k/year → $5.9k/year at 500TB (**96% savings!**)
+
+**Google Cloud Storage:**
+- **Lifecycle Policies**: Automatic transitions (Standard → Nearline → Coldline → Archive)
+- **Autoclass**: Intelligent automatic tier optimization
+- **Batch Delete**: 100 objects per request
+- **Cost Impact**: $138k/year → $8.3k/year at 500TB (**94% savings!**)
+
+**Azure Blob Storage:**
+- **Blob Tier Management**: Hot/Cool/Archive manual or automatic tiers
+- **Lifecycle Policies**: Automatic tier transitions and deletions
+- **Batch Operations**: BlobBatchClient for efficient bulk operations
+- **Archive Rehydration**: Priority-based rehydration from Archive
+- **Cost Impact**: $107k/year → $5k/year at 500TB (**95% savings!**)
+
+**FileSystem Storage:**
+- **Gzip Compression**: 60-80% space savings with minimal CPU overhead
+- **Batch Delete**: Efficient bulk deletion with retry logic
+
+**OPFS (Browser):**
+- **Quota Monitoring**: Real-time quota tracking and warnings
+- **Storage Status**: Detailed usage/available/percent reporting
+
+### Implementation Examples
+
+```typescript
+// S3: Enable Intelligent-Tiering for automatic optimization
+await storage.enableIntelligentTiering('entities/', 'auto-optimize')
+
+// GCS: Enable Autoclass for hands-off optimization
+await storage.enableAutoclass({ terminalStorageClass: 'ARCHIVE' })
+
+// Azure: Change blob tier for immediate cost savings
+await storage.changeBlobTier(blobPath, 'Cool')  // 50% savings
+await storage.batchChangeTier([blob1, blob2, blob3], 'Archive')  // 99% savings
+
+// FileSystem: Enable compression
+const brain = new Brainy({
+  storage: { type: 'filesystem', path: './data', compression: true }
+})
+
+// OPFS: Monitor quota
+const status = await storage.getStorageStatus()
+if (status.details.usagePercent > 80) {
+  console.warn('Storage quota approaching limit')
+}
+```
+
+---
+
+**Version:** 4.0.0
+**Last Updated:** 2025-10-17

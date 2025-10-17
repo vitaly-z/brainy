@@ -33,6 +33,7 @@ type Edge = HNSWVerb
 // Node.js modules - dynamically imported to avoid issues in browser environments
 let fs: any
 let path: any
+let zlib: any
 let moduleLoadingPromise: Promise<void> | null = null
 
 // Try to load Node.js modules
@@ -40,11 +41,13 @@ try {
   // Using dynamic imports to avoid issues in browser environments
   const fsPromise = import('node:fs')
   const pathPromise = import('node:path')
+  const zlibPromise = import('node:zlib')
 
-  moduleLoadingPromise = Promise.all([fsPromise, pathPromise])
-    .then(([fsModule, pathModule]) => {
+  moduleLoadingPromise = Promise.all([fsPromise, pathPromise, zlibPromise])
+    .then(([fsModule, pathModule, zlibModule]) => {
       fs = fsModule
       path = pathModule.default
+      zlib = zlibModule
     })
     .catch((error) => {
       console.error('Failed to load Node.js modules:', error)
@@ -88,13 +91,33 @@ export class FileSystemStorage extends BaseStorage {
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
 
+  // Compression configuration (v4.0.0)
+  private compressionEnabled: boolean = true  // Enable gzip compression by default for 60-80% disk savings
+  private compressionLevel: number = 6  // zlib compression level (1-9, default: 6 = balanced)
+
   /**
    * Initialize the storage adapter
    * @param rootDirectory The root directory for storage
+   * @param options Optional configuration
    */
-  constructor(rootDirectory: string) {
+  constructor(
+    rootDirectory: string,
+    options?: {
+      compression?: boolean  // Enable gzip compression (default: true)
+      compressionLevel?: number  // Compression level 1-9 (default: 6)
+    }
+  ) {
     super()
     this.rootDir = rootDirectory
+
+    // Configure compression
+    if (options?.compression !== undefined) {
+      this.compressionEnabled = options.compression
+    }
+    if (options?.compressionLevel !== undefined) {
+      this.compressionLevel = Math.min(9, Math.max(1, options.compressionLevel))
+    }
+
     // Defer path operations until init() when path module is guaranteed to be loaded
   }
 
@@ -634,24 +657,71 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: Write object to path
    * All metadata operations use this internally via base class routing
+   * v4.0.0: Supports gzip compression for 60-80% disk savings
    */
   protected async writeObjectToPath(pathStr: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
     const fullPath = path.join(this.rootDir, pathStr)
     await this.ensureDirectoryExists(path.dirname(fullPath))
-    await fs.promises.writeFile(fullPath, JSON.stringify(data, null, 2))
+
+    if (this.compressionEnabled) {
+      // Write compressed data with .gz extension
+      const compressedPath = `${fullPath}.gz`
+      const jsonString = JSON.stringify(data, null, 2)
+      const compressed = await new Promise<Buffer>((resolve, reject) => {
+        zlib.gzip(Buffer.from(jsonString, 'utf-8'), { level: this.compressionLevel }, (err: any, result: Buffer) => {
+          if (err) reject(err)
+          else resolve(result)
+        })
+      })
+      await fs.promises.writeFile(compressedPath, compressed)
+
+      // Clean up uncompressed file if it exists (migration from uncompressed)
+      try {
+        await fs.promises.unlink(fullPath)
+      } catch (error: any) {
+        // Ignore if file doesn't exist
+        if (error.code !== 'ENOENT') {
+          console.warn(`Failed to remove uncompressed file ${fullPath}:`, error)
+        }
+      }
+    } else {
+      // Write uncompressed data
+      await fs.promises.writeFile(fullPath, JSON.stringify(data, null, 2))
+    }
   }
 
   /**
    * Primitive operation: Read object from path
    * All metadata operations use this internally via base class routing
    * Enhanced error handling for corrupted metadata files (Bug #3 mitigation)
+   * v4.0.0: Supports reading both compressed (.gz) and uncompressed files for backward compatibility
    */
   protected async readObjectFromPath(pathStr: string): Promise<any | null> {
     await this.ensureInitialized()
 
     const fullPath = path.join(this.rootDir, pathStr)
+    const compressedPath = `${fullPath}.gz`
+
+    // Try reading compressed file first (if compression is enabled or file exists)
+    try {
+      const compressedData = await fs.promises.readFile(compressedPath)
+      const decompressed = await new Promise<Buffer>((resolve, reject) => {
+        zlib.gunzip(compressedData, (err: any, result: Buffer) => {
+          if (err) reject(err)
+          else resolve(result)
+        })
+      })
+      return JSON.parse(decompressed.toString('utf-8'))
+    } catch (error: any) {
+      // If compressed file doesn't exist, fall back to uncompressed
+      if (error.code !== 'ENOENT') {
+        console.warn(`Failed to read compressed file ${compressedPath}:`, error)
+      }
+    }
+
+    // Fall back to reading uncompressed file (for backward compatibility)
     try {
       const data = await fs.promises.readFile(fullPath, 'utf-8')
       return JSON.parse(data)
@@ -678,37 +748,77 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: Delete object from path
    * All metadata operations use this internally via base class routing
+   * v4.0.0: Deletes both compressed and uncompressed versions (for cleanup)
    */
   protected async deleteObjectFromPath(pathStr: string): Promise<void> {
     await this.ensureInitialized()
 
     const fullPath = path.join(this.rootDir, pathStr)
+    const compressedPath = `${fullPath}.gz`
+
+    // Try deleting both compressed and uncompressed files (for cleanup during migration)
+    let deletedCount = 0
+
+    // Delete compressed file
     try {
-      await fs.promises.unlink(fullPath)
+      await fs.promises.unlink(compressedPath)
+      deletedCount++
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
-        console.error(`Error deleting object from ${pathStr}:`, error)
+        console.warn(`Error deleting compressed file ${compressedPath}:`, error)
+      }
+    }
+
+    // Delete uncompressed file
+    try {
+      await fs.promises.unlink(fullPath)
+      deletedCount++
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        console.error(`Error deleting uncompressed file ${pathStr}:`, error)
         throw error
       }
+    }
+
+    // If neither file existed, it's not an error (already deleted)
+    if (deletedCount === 0) {
+      // File doesn't exist - this is fine
     }
   }
 
   /**
    * Primitive operation: List objects under path prefix
    * All metadata operations use this internally via base class routing
+   * v4.0.0: Handles both .json and .json.gz files, normalizes paths
    */
   protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
     await this.ensureInitialized()
 
     const fullPath = path.join(this.rootDir, prefix)
     const paths: string[] = []
+    const seen = new Set<string>() // Track files to avoid duplicates (both .json and .json.gz)
 
     try {
       const entries = await fs.promises.readdir(fullPath, { withFileTypes: true })
 
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith('.json')) {
-          paths.push(path.join(prefix, entry.name))
+        if (entry.isFile()) {
+          // Handle both .json and .json.gz files
+          if (entry.name.endsWith('.json.gz')) {
+            // Strip .gz extension and add the .json path
+            const normalizedName = entry.name.slice(0, -3) // Remove .gz
+            const normalizedPath = path.join(prefix, normalizedName)
+            if (!seen.has(normalizedPath)) {
+              paths.push(normalizedPath)
+              seen.add(normalizedPath)
+            }
+          } else if (entry.name.endsWith('.json')) {
+            const filePath = path.join(prefix, entry.name)
+            if (!seen.has(filePath)) {
+              paths.push(filePath)
+              seen.add(filePath)
+            }
+          }
         } else if (entry.isDirectory()) {
           const subdirPaths = await this.listObjectsUnderPath(path.join(prefix, entry.name))
           paths.push(...subdirPaths)

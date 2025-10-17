@@ -925,6 +925,12 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
+  // Quota monitoring configuration (v4.0.0)
+  private quotaWarningThreshold = 0.8  // Warn at 80% usage
+  private quotaCriticalThreshold = 0.95  // Critical at 95% usage
+  private lastQuotaCheck: number = 0
+  private quotaCheckInterval = 60000  // Check every 60 seconds
+
   /**
    * Get information about storage usage and capacity
    */
@@ -1064,6 +1070,127 @@ export class OPFSStorage extends BaseStorage {
         quota: null,
         details: { error: String(error) }
       }
+    }
+  }
+
+  /**
+   * Get detailed quota status with warnings (v4.0.0)
+   * Monitors storage usage and warns when approaching quota limits
+   *
+   * @returns Promise that resolves to quota status with warning levels
+   *
+   * @example
+   * const status = await storage.getQuotaStatus()
+   * if (status.warning) {
+   *   console.warn(`Storage ${status.usagePercent}% full: ${status.warningMessage}`)
+   * }
+   */
+  public async getQuotaStatus(): Promise<{
+    usage: number
+    quota: number | null
+    usagePercent: number
+    remaining: number | null
+    status: 'ok' | 'warning' | 'critical'
+    warning: boolean
+    warningMessage?: string
+  }> {
+    this.lastQuotaCheck = Date.now()
+
+    try {
+      if (!navigator.storage || !navigator.storage.estimate) {
+        return {
+          usage: 0,
+          quota: null,
+          usagePercent: 0,
+          remaining: null,
+          status: 'ok',
+          warning: false
+        }
+      }
+
+      const estimate = await navigator.storage.estimate()
+      const usage = estimate.usage || 0
+      const quota = estimate.quota || null
+
+      if (!quota) {
+        return {
+          usage,
+          quota: null,
+          usagePercent: 0,
+          remaining: null,
+          status: 'ok',
+          warning: false
+        }
+      }
+
+      const usagePercent = (usage / quota) * 100
+      const remaining = quota - usage
+
+      // Determine status
+      let status: 'ok' | 'warning' | 'critical' = 'ok'
+      let warning = false
+      let warningMessage: string | undefined
+
+      if (usagePercent >= this.quotaCriticalThreshold * 100) {
+        status = 'critical'
+        warning = true
+        warningMessage = `Critical: Storage ${usagePercent.toFixed(1)}% full. Only ${(remaining / 1024 / 1024).toFixed(1)}MB remaining. Please delete old data.`
+      } else if (usagePercent >= this.quotaWarningThreshold * 100) {
+        status = 'warning'
+        warning = true
+        warningMessage = `Warning: Storage ${usagePercent.toFixed(1)}% full. ${(remaining / 1024 / 1024).toFixed(1)}MB remaining.`
+      }
+
+      if (warning) {
+        console.warn(`[OPFS Quota] ${warningMessage}`)
+      }
+
+      return {
+        usage,
+        quota,
+        usagePercent,
+        remaining,
+        status,
+        warning,
+        warningMessage
+      }
+    } catch (error) {
+      console.error('Failed to get quota status:', error)
+      return {
+        usage: 0,
+        quota: null,
+        usagePercent: 0,
+        remaining: null,
+        status: 'ok',
+        warning: false
+      }
+    }
+  }
+
+  /**
+   * Monitor quota during operations (v4.0.0)
+   * Automatically checks quota at regular intervals and warns if approaching limits
+   * Call this before write operations to ensure quota is available
+   *
+   * @returns Promise that resolves when quota check is complete
+   *
+   * @example
+   * await storage.monitorQuota()  // Checks quota if interval has passed
+   * await storage.saveNoun(noun)  // Proceed with write operation
+   */
+  public async monitorQuota(): Promise<void> {
+    const now = Date.now()
+
+    // Only check if interval has passed
+    if (now - this.lastQuotaCheck < this.quotaCheckInterval) {
+      return
+    }
+
+    const status = await this.getQuotaStatus()
+
+    // If critical, throw error to prevent data loss
+    if (status.status === 'critical' && status.warningMessage) {
+      throw new Error(`Storage quota critical: ${status.warningMessage}`)
     }
   }
 

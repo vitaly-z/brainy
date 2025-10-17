@@ -6,6 +6,7 @@
 
 import chalk from 'chalk'
 import ora from 'ora'
+import inquirer from 'inquirer'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { Brainy } from '../../brainy.js'
 import { BrainyTypes, NounType, VerbType } from '../../index.js'
@@ -49,11 +50,6 @@ interface RelateOptions extends CoreOptions {
   metadata?: string
 }
 
-interface ImportOptions extends CoreOptions {
-  format?: 'json' | 'csv' | 'jsonl'
-  batchSize?: string
-}
-
 interface ExportOptions extends CoreOptions {
   format?: 'json' | 'csv' | 'jsonl'
 }
@@ -77,12 +73,53 @@ export const coreCommands = {
   /**
    * Add data to the neural database
    */
-  async add(text: string, options: AddOptions) {
-    const spinner = ora('Adding to neural database...').start()
-    
+  async add(text: string | undefined, options: AddOptions) {
+    let spinner: any = null
     try {
+      // Interactive mode if no text provided
+      if (!text) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'content',
+            message: 'Enter content:',
+            validate: (input: string) => input.trim().length > 0 || 'Content cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'nounType',
+            message: 'Noun type (optional, press Enter to auto-detect):',
+            default: ''
+          },
+          {
+            type: 'input',
+            name: 'metadata',
+            message: 'Metadata (JSON, optional):',
+            default: '',
+            validate: (input: string) => {
+              if (!input.trim()) return true
+              try {
+                JSON.parse(input)
+                return true
+              } catch {
+                return 'Invalid JSON format'
+              }
+            }
+          }
+        ])
+
+        text = answers.content
+        if (answers.nounType) {
+          options.type = answers.nounType
+        }
+        if (answers.metadata) {
+          options.metadata = answers.metadata
+        }
+      }
+
+      const spinner = ora('Adding to neural database...').start()
       const brain = getBrainy()
-      
+
       let metadata: any = {}
       if (options.metadata) {
         try {
@@ -92,7 +129,7 @@ export const coreCommands = {
           process.exit(1)
         }
       }
-      
+
       if (options.id) {
         metadata.id = options.id
       }
@@ -146,8 +183,8 @@ export const coreCommands = {
         formatOutput({ id: result, metadata }, options)
       }
     } catch (error: any) {
-      spinner.fail('Failed to add data')
-      console.error(chalk.red(error.message))
+      if (spinner) spinner.fail('Failed to add data')
+      console.error(chalk.red('Failed to add data:', error.message))
       process.exit(1)
     }
   },
@@ -155,10 +192,71 @@ export const coreCommands = {
   /**
    * Search the neural database with Triple Intelligence™
    */
-  async search(query: string, options: SearchOptions) {
-    const spinner = ora('Searching with Triple Intelligence™...').start()
-
+  async search(query: string | undefined, options: SearchOptions) {
+    let spinner: any = null
     try {
+      // Interactive mode if no query provided
+      if (!query) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'query',
+            message: 'What are you looking for?',
+            validate: (input: string) => input.trim().length > 0 || 'Query cannot be empty'
+          },
+          {
+            type: 'number',
+            name: 'limit',
+            message: 'Number of results:',
+            default: 10
+          },
+          {
+            type: 'confirm',
+            name: 'useAdvanced',
+            message: 'Use advanced filters?',
+            default: false
+          }
+        ])
+
+        query = answers.query
+        if (!options.limit) {
+          options.limit = answers.limit.toString()
+        }
+
+        // Advanced filters
+        if (answers.useAdvanced) {
+          const advancedAnswers = await inquirer.prompt([
+            {
+              type: 'input',
+              name: 'type',
+              message: 'Filter by type (optional):',
+              default: ''
+            },
+            {
+              type: 'input',
+              name: 'threshold',
+              message: 'Similarity threshold (0-1, default 0.7):',
+              default: '0.7',
+              validate: (input: string) => {
+                const num = parseFloat(input)
+                return (num >= 0 && num <= 1) || 'Must be between 0 and 1'
+              }
+            },
+            {
+              type: 'confirm',
+              name: 'explain',
+              message: 'Show scoring breakdown?',
+              default: false
+            }
+          ])
+
+          if (advancedAnswers.type) options.type = advancedAnswers.type
+          if (advancedAnswers.threshold) options.threshold = advancedAnswers.threshold
+          options.explain = advancedAnswers.explain
+        }
+      }
+
+      const spinner = ora('Searching with Triple Intelligence™...').start()
       const brain = getBrainy()
 
       // Build comprehensive search params
@@ -335,8 +433,8 @@ export const coreCommands = {
         formatOutput(results, options)
       }
     } catch (error: any) {
-      spinner.fail('Search failed')
-      console.error(chalk.red(error.message))
+      if (spinner) spinner.fail('Search failed')
+      console.error(chalk.red('Search failed:', error.message))
       if (options.verbose) {
         console.error(chalk.dim(error.stack))
       }
@@ -347,12 +445,33 @@ export const coreCommands = {
   /**
    * Get item by ID
    */
-  async get(id: string, options: GetOptions) {
-    const spinner = ora('Fetching item...').start()
-    
+  async get(id: string | undefined, options: GetOptions) {
+    let spinner: any = null
     try {
+      // Interactive mode if no ID provided
+      if (!id) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'id',
+            message: 'Enter item ID:',
+            validate: (input: string) => input.trim().length > 0 || 'ID cannot be empty'
+          },
+          {
+            type: 'confirm',
+            name: 'withConnections',
+            message: 'Include connections?',
+            default: false
+          }
+        ])
+
+        id = answers.id
+        options.withConnections = answers.withConnections
+      }
+
+      const spinner = ora('Fetching item...').start()
       const brain = getBrainy()
-      
+
       // Try to get the item
       const item = await brain.get(id)
 
@@ -386,8 +505,8 @@ export const coreCommands = {
         formatOutput(item, options)
       }
     } catch (error: any) {
-      spinner.fail('Failed to get item')
-      console.error(chalk.red(error.message))
+      if (spinner) spinner.fail('Failed to get item')
+      console.error(chalk.red('Failed to get item:', error.message))
       process.exit(1)
     }
   },
@@ -395,12 +514,57 @@ export const coreCommands = {
   /**
    * Create relationship between items
    */
-  async relate(source: string, verb: string, target: string, options: RelateOptions) {
-    const spinner = ora('Creating relationship...').start()
-    
+  async relate(source: string | undefined, verb: string | undefined, target: string | undefined, options: RelateOptions) {
+    let spinner: any = null
     try {
+      // Interactive mode if parameters missing
+      if (!source || !verb || !target) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'source',
+            message: 'Source entity ID:',
+            default: source || '',
+            validate: (input: string) => input.trim().length > 0 || 'Source ID cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'verb',
+            message: 'Relationship type (verb):',
+            default: verb || '',
+            validate: (input: string) => input.trim().length > 0 || 'Verb cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'target',
+            message: 'Target entity ID:',
+            default: target || '',
+            validate: (input: string) => input.trim().length > 0 || 'Target ID cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'weight',
+            message: 'Relationship weight (0-1, optional):',
+            default: '',
+            validate: (input: string) => {
+              if (!input.trim()) return true
+              const num = parseFloat(input)
+              return (num >= 0 && num <= 1) || 'Must be between 0 and 1'
+            }
+          }
+        ])
+
+        source = answers.source
+        verb = answers.verb
+        target = answers.target
+        if (answers.weight) {
+          options.weight = answers.weight
+        }
+      }
+
+      const spinner = ora('Creating relationship...').start()
       const brain = getBrainy()
-      
+
       let metadata: any = {}
       if (options.metadata) {
         try {
@@ -435,108 +599,237 @@ export const coreCommands = {
         formatOutput({ id: result, source, verb, target, metadata }, options)
       }
     } catch (error: any) {
-      spinner.fail('Failed to create relationship')
-      console.error(chalk.red(error.message))
+      if (spinner) spinner.fail('Failed to create relationship')
+      console.error(chalk.red('Failed to create relationship:', error.message))
       process.exit(1)
     }
   },
 
   /**
-   * Import data from file
+   * Update an existing entity
    */
-  async import(file: string, options: ImportOptions) {
-    const spinner = ora('Importing data...').start()
-    
+  async update(id: string | undefined, options: AddOptions & { content?: string }) {
+    let spinner: any = null
     try {
-      const brain = getBrainy()
-      const format = options.format || 'json'
-      const batchSize = options.batchSize ? parseInt(options.batchSize) : 100
-      
-      // Read file content
-      const content = readFileSync(file, 'utf-8')
-      let items: any[] = []
-      
-      switch (format) {
-        case 'json':
-          items = JSON.parse(content)
-          if (!Array.isArray(items)) {
-            items = [items]
+      // Interactive mode if no ID provided
+      if (!id) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'id',
+            message: 'Entity ID to update:',
+            validate: (input: string) => input.trim().length > 0 || 'ID cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'content',
+            message: 'New content (optional, press Enter to skip):',
+            default: ''
+          },
+          {
+            type: 'input',
+            name: 'metadata',
+            message: 'Metadata to merge (JSON, optional):',
+            default: '',
+            validate: (input: string) => {
+              if (!input.trim()) return true
+              try {
+                JSON.parse(input)
+                return true
+              } catch {
+                return 'Invalid JSON format'
+              }
+            }
           }
-          break
-          
-        case 'jsonl':
-          items = content.split('\n')
-            .filter(line => line.trim())
-            .map(line => JSON.parse(line))
-          break
-          
-        case 'csv':
-          // Simple CSV parsing (first line is headers)
-          const lines = content.split('\n').filter(line => line.trim())
-          const headers = lines[0].split(',').map(h => h.trim())
-          items = lines.slice(1).map(line => {
-            const values = line.split(',').map(v => v.trim())
-            const obj: any = {}
-            headers.forEach((h, i) => {
-              obj[h] = values[i]
-            })
-            return obj
-          })
-          break
-      }
-      
-      spinner.text = `Importing ${items.length} items...`
-      
-      // Process in batches
-      let imported = 0
-      for (let i = 0; i < items.length; i += batchSize) {
-        const batch = items.slice(i, i + batchSize)
-        
-        for (const item of batch) {
-          let content: string
-          let metadata: any = {}
-          
-          if (typeof item === 'string') {
-            content = item
-          } else if (item.content || item.text) {
-            content = item.content || item.text
-            metadata = item.metadata || item
-          } else {
-            content = JSON.stringify(item)
-            metadata = { originalData: item }
-          }
-          
-          // Use AI to detect type for each item
-          const suggestion = await BrainyTypes.suggestNoun(
-            typeof content === 'string' ? { content, ...metadata } : content
-          )
-          
-          // Use suggested type or default to Content if low confidence
-          const nounType = suggestion.confidence >= 0.5 ? suggestion.type : NounType.Content
-          
-          await brain.add({
-            data: content,
-            type: nounType as NounType,
-            metadata
-          })
-          imported++
+        ])
+
+        id = answers.id
+        if (answers.content) {
+          options.content = answers.content
         }
-        
-        spinner.text = `Imported ${imported}/${items.length} items...`
+        if (answers.metadata) {
+          options.metadata = answers.metadata
+        }
       }
-      
-      spinner.succeed(`Imported ${imported} items`)
-      
+
+      spinner = ora('Updating entity...').start()
+      const brain = getBrainy()
+
+      // Get existing entity first
+      const existing = await brain.get(id)
+      if (!existing) {
+        spinner.fail('Entity not found')
+        console.log(chalk.yellow(`No entity found with ID: ${id}`))
+        process.exit(1)
+      }
+
+      // Build update params
+      const updateParams: any = { id }
+
+      if (options.content) {
+        updateParams.data = options.content
+      }
+
+      if (options.metadata) {
+        try {
+          const newMetadata = JSON.parse(options.metadata)
+          updateParams.metadata = {
+            ...existing.metadata,
+            ...newMetadata
+          }
+        } catch {
+          spinner.fail('Invalid metadata JSON')
+          process.exit(1)
+        }
+      }
+
+      if (options.type) {
+        updateParams.type = options.type
+      }
+
+      await brain.update(updateParams)
+
+      spinner.succeed('Entity updated successfully')
+
       if (!options.json) {
-        console.log(chalk.green(`✓ Successfully imported ${imported} items from ${file}`))
-        console.log(chalk.dim(`  Format: ${format}`))
-        console.log(chalk.dim(`  Batch size: ${batchSize}`))
+        console.log(chalk.green(`✓ Updated entity: ${id}`))
+        if (options.content) {
+          console.log(chalk.dim(`  New content: ${options.content.substring(0, 80)}...`))
+        }
+        if (updateParams.metadata) {
+          console.log(chalk.dim(`  Metadata: ${JSON.stringify(updateParams.metadata)}`))
+        }
       } else {
-        formatOutput({ imported, file, format, batchSize }, options)
+        formatOutput({ id, updated: true }, options)
       }
     } catch (error: any) {
-      spinner.fail('Import failed')
-      console.error(chalk.red(error.message))
+      if (spinner) spinner.fail('Failed to update entity')
+      console.error(chalk.red('Update failed:', error.message))
+      process.exit(1)
+    }
+  },
+
+  /**
+   * Delete an entity
+   */
+  async deleteEntity(id: string | undefined, options: CoreOptions & { force?: boolean }) {
+    let spinner: any = null
+    try {
+      // Interactive mode if no ID provided
+      if (!id) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'id',
+            message: 'Entity ID to delete:',
+            validate: (input: string) => input.trim().length > 0 || 'ID cannot be empty'
+          },
+          {
+            type: 'confirm',
+            name: 'confirm',
+            message: 'Are you sure? This cannot be undone.',
+            default: false
+          }
+        ])
+
+        if (!answers.confirm) {
+          console.log(chalk.yellow('Delete cancelled'))
+          return
+        }
+
+        id = answers.id
+      } else if (!options.force) {
+        // Confirmation for non-interactive mode
+        const answer = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'confirm',
+          message: `Delete entity ${id}? This cannot be undone.`,
+          default: false
+        }])
+
+        if (!answer.confirm) {
+          console.log(chalk.yellow('Delete cancelled'))
+          return
+        }
+      }
+
+      spinner = ora('Deleting entity...').start()
+      const brain = getBrainy()
+
+      await brain.delete(id)
+
+      spinner.succeed('Entity deleted successfully')
+
+      if (!options.json) {
+        console.log(chalk.green(`✓ Deleted entity: ${id}`))
+      } else {
+        formatOutput({ id, deleted: true }, options)
+      }
+    } catch (error: any) {
+      if (spinner) spinner.fail('Failed to delete entity')
+      console.error(chalk.red('Delete failed:', error.message))
+      process.exit(1)
+    }
+  },
+
+  /**
+   * Remove a relationship
+   */
+  async unrelate(id: string | undefined, options: CoreOptions & { force?: boolean }) {
+    let spinner: any = null
+    try {
+      // Interactive mode if no ID provided
+      if (!id) {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'id',
+            message: 'Relationship ID to remove:',
+            validate: (input: string) => input.trim().length > 0 || 'ID cannot be empty'
+          },
+          {
+            type: 'confirm',
+            name: 'confirm',
+            message: 'Remove this relationship?',
+            default: false
+          }
+        ])
+
+        if (!answers.confirm) {
+          console.log(chalk.yellow('Operation cancelled'))
+          return
+        }
+
+        id = answers.id
+      } else if (!options.force) {
+        const answer = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'confirm',
+          message: `Remove relationship ${id}?`,
+          default: false
+        }])
+
+        if (!answer.confirm) {
+          console.log(chalk.yellow('Operation cancelled'))
+          return
+        }
+      }
+
+      spinner = ora('Removing relationship...').start()
+      const brain = getBrainy()
+
+      await brain.unrelate(id)
+
+      spinner.succeed('Relationship removed successfully')
+
+      if (!options.json) {
+        console.log(chalk.green(`✓ Removed relationship: ${id}`))
+      } else {
+        formatOutput({ id, removed: true }, options)
+      }
+    } catch (error: any) {
+      if (spinner) spinner.fail('Failed to remove relationship')
+      console.error(chalk.red('Unrelate failed:', error.message))
       process.exit(1)
     }
   },

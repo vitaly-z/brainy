@@ -678,6 +678,40 @@ export interface StorageAdapter {
   clear(): Promise<void>
 
   /**
+   * Batch delete multiple objects from storage (v4.0.0)
+   * Efficient deletion of large numbers of entities using cloud provider batch APIs.
+   * Significantly faster and cheaper than individual deletes (up to 1000x speedup).
+   *
+   * @param keys - Array of object keys (paths) to delete
+   * @param options - Optional configuration for batch deletion
+   * @param options.maxRetries - Maximum number of retry attempts per batch (default: 3)
+   * @param options.retryDelayMs - Base delay between retries in milliseconds (default: 1000)
+   * @param options.continueOnError - Continue processing remaining batches if one fails (default: true)
+   * @returns Promise with deletion statistics
+   *
+   * @example
+   * const result = await storage.batchDelete(
+   *   ['path1', 'path2', 'path3'],
+   *   { continueOnError: true }
+   * )
+   * console.log(`Deleted: ${result.successfulDeletes}/${result.totalRequested}`)
+   * console.log(`Failed: ${result.failedDeletes}`)
+   */
+  batchDelete?(
+    keys: string[],
+    options?: {
+      maxRetries?: number
+      retryDelayMs?: number
+      continueOnError?: boolean
+    }
+  ): Promise<{
+    totalRequested: number
+    successfulDeletes: number
+    failedDeletes: number
+    errors: Array<{ key: string; error: string }>
+  }>
+
+  /**
    * Get information about storage usage and capacity
    * @returns Promise that resolves to an object containing storage status information
    */

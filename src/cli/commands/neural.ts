@@ -232,15 +232,52 @@ async function handleSimilarCommand(neural: any, argv: CommandArguments): Promis
 }
 
 async function handleClustersCommand(neural: any, argv: CommandArguments): Promise<void> {
-  const spinner = ora('🎯 Finding semantic clusters...').start()
-  
+  let spinner: any = null
   try {
-    const options = {
+    let options: any = {
       algorithm: argv.algorithm as any,
       threshold: argv.threshold,
       maxClusters: argv.limit
     }
-    
+
+    // Interactive mode if no algorithm specified or using defaults
+    if (!argv.algorithm || argv.algorithm === 'hierarchical') {
+      const answers = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'algorithm',
+          message: 'Choose clustering algorithm:',
+          default: argv.algorithm || 'hierarchical',
+          choices: [
+            { name: '🌳 Hierarchical (Tree-based, best for natural grouping)', value: 'hierarchical' },
+            { name: '📊 K-Means (Fixed number of clusters)', value: 'kmeans' },
+            { name: '🎯 DBSCAN (Density-based, finds arbitrary shapes)', value: 'dbscan' }
+          ]
+        },
+        {
+          type: 'number',
+          name: 'maxClusters',
+          message: 'Maximum number of clusters:',
+          default: argv.limit || 5,
+          when: (answers: any) => answers.algorithm === 'kmeans'
+        },
+        {
+          type: 'number',
+          name: 'threshold',
+          message: 'Similarity threshold (0-1):',
+          default: argv.threshold || 0.7,
+          validate: (input: number) => (input >= 0 && input <= 1) || 'Must be between 0 and 1'
+        }
+      ])
+
+      options = {
+        algorithm: answers.algorithm,
+        threshold: answers.threshold,
+        maxClusters: answers.maxClusters || options.maxClusters
+      }
+    }
+
+    const spinner = ora('🎯 Finding semantic clusters...').start()
     const clusters = await neural.clusters(argv.query || options)
     
     spinner.succeed(`✅ Found ${clusters.length} clusters`)
@@ -271,9 +308,9 @@ async function handleClustersCommand(neural: any, argv: CommandArguments): Promi
     if (argv.output) {
       await saveToFile(argv.output, clusters, argv.format!)
     }
-    
+
   } catch (error) {
-    spinner.fail('💥 Failed to find clusters')
+    if (spinner) spinner.fail('💥 Failed to find clusters')
     throw error
   }
 }
@@ -575,14 +612,97 @@ function showHelp(): void {
   console.log('')
 }
 
+// Commander-compatible wrappers
 export const neuralCommands = {
-  similar: handleSimilarCommand,
-  cluster: handleClustersCommand,
-  hierarchy: handleHierarchyCommand,
-  related: handleNeighborsCommand,
-  // path: handlePathCommand, // Coming in v3.21.0 - requires graph traversal implementation
-  outliers: handleOutliersCommand,
-  visualize: handleVisualizeCommand
+  async similar(a?: string, b?: string, options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    // Build argv-style object for handler
+    const argv: CommandArguments = {
+      _: ['neural', 'similar', a || '', b || ''].filter(x => x),
+      id: a,
+      query: b,
+      explain: options?.explain,
+      ...options
+    }
+
+    await handleSimilarCommand(neural, argv)
+  },
+
+  async cluster(options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    const argv: CommandArguments = {
+      _: ['neural', 'cluster'],
+      algorithm: options?.algorithm || 'hierarchical',
+      threshold: options?.threshold ? parseFloat(options.threshold) : 0.7,
+      limit: options?.maxClusters ? parseInt(options.maxClusters) : 10,
+      query: options?.near,
+      ...options
+    }
+
+    await handleClustersCommand(neural, argv)
+  },
+
+  async hierarchy(id?: string, options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    const argv: CommandArguments = {
+      _: ['neural', 'hierarchy', id || ''].filter(x => x),
+      id,
+      ...options
+    }
+
+    await handleHierarchyCommand(neural, argv)
+  },
+
+  async related(id?: string, options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    const argv: CommandArguments = {
+      _: ['neural', 'related', id || ''].filter(x => x),
+      id,
+      limit: options?.limit ? parseInt(options.limit) : 10,
+      threshold: options?.radius ? parseFloat(options.radius) : 0.3,
+      ...options
+    }
+
+    await handleNeighborsCommand(neural, argv)
+  },
+
+  async outliers(options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    const argv: CommandArguments = {
+      _: ['neural', 'outliers'],
+      threshold: options?.threshold ? parseFloat(options.threshold) : 0.3,
+      explain: options?.explain,
+      ...options
+    }
+
+    await handleOutliersCommand(neural, argv)
+  },
+
+  async visualize(options?: any) {
+    const brain = new Brainy()
+    const neural = brain.neural()
+
+    const argv: CommandArguments = {
+      _: ['neural', 'visualize'],
+      format: options?.format || 'json',
+      dimensions: options?.dimensions ? parseInt(options.dimensions) : 2,
+      limit: options?.maxNodes ? parseInt(options.maxNodes) : 500,
+      output: options?.output,
+      ...options
+    }
+
+    await handleVisualizeCommand(neural, argv)
+  }
 }
 
 export default neuralCommand

@@ -13,6 +13,10 @@ import { coreCommands } from './commands/core.js'
 import { utilityCommands } from './commands/utility.js'
 import { vfsCommands } from './commands/vfs.js'
 import { dataCommands } from './commands/data.js'
+import { storageCommands } from './commands/storage.js'
+import { nlpCommands } from './commands/nlp.js'
+import { insightsCommands } from './commands/insights.js'
+import { importCommands } from './commands/import.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -26,32 +30,78 @@ const program = new Command()
 
 program
   .name('brainy')
-  .description('🧠 Enterprise Neural Intelligence Database')
-  .version(version)
+  .description('🧠 Brainy - The Knowledge Operating System')
+  .version(version, '-V, --version', 'Show version number')
   .option('-v, --verbose', 'Verbose output')
   .option('--json', 'JSON output format')
   .option('--pretty', 'Pretty JSON output')
   .option('--no-color', 'Disable colored output')
+  .option('-q, --quiet', 'Suppress non-essential output')
+  .addHelpText('after', `
+${chalk.cyan('Examples:')}
+  ${chalk.dim('# Core operations')}
+  $ brainy add "React is a JavaScript library"
+  $ brainy find "JavaScript frameworks"
+  $ brainy update <id> --content "Updated content"
+  $ brainy delete <id>  ${chalk.dim('# Requires confirmation')}
+  $ brainy search "react" --type Component --where '{"tested":true}'
+
+  ${chalk.dim('# Neural API')}
+  $ brainy similar "react" "vue"
+  $ brainy cluster --algorithm kmeans
+  $ brainy related <id> --limit 10
+
+  ${chalk.dim('# NLP & Entity Extraction')}
+  $ brainy extract "Apple announced new iPhone in California"
+  $ brainy extract-concepts "Machine learning enables AI"
+  $ brainy analyze "Full text analysis with sentiment"
+
+  ${chalk.dim('# Insights & Analytics')}
+  $ brainy insights  ${chalk.dim('# Database analytics')}
+  $ brainy fields  ${chalk.dim('# All metadata fields')}
+  $ brainy field-values status  ${chalk.dim('# Values for a field')}
+  $ brainy query-plan --filters '{"status":"active"}'
+
+  ${chalk.dim('# VFS operations')}
+  $ brainy vfs ls /projects
+  $ brainy vfs search "React components"
+  $ brainy vfs similar /code/Button.tsx
+
+  ${chalk.dim('# Storage management (v4.0.0)')}
+  $ brainy storage status --quota
+  $ brainy storage lifecycle set ${chalk.dim('# Interactive mode')}
+  $ brainy storage cost-estimate
+  $ brainy storage batch-delete old-ids.txt
+
+  ${chalk.dim('# Interactive mode')}
+  $ brainy interactive
+
+${chalk.cyan('Documentation:')}
+  ${chalk.dim('Full docs:')} https://github.com/soulcraftlabs/brainy
+  ${chalk.dim('Report issues:')} https://github.com/soulcraftlabs/brainy/issues
+
+${chalk.yellow('💡 Tip:')} All commands work interactively if you omit parameters!
+  `)
 
 // ===== Core Commands =====
 
 program
-  .command('add <text>')
-  .description('Add text or JSON to the neural database')
+  .command('add [text]')
+  .description('Add text or JSON to the neural database (interactive if no text)')
   .option('-i, --id <id>', 'Specify custom ID')
   .option('-m, --metadata <json>', 'Add metadata')
   .option('-t, --type <type>', 'Specify noun type')
   .action(coreCommands.add)
 
 program
-  .command('find <query>')
-  .description('Simple NLP search (just like code: brain.find("query"))')
+  .command('find [query]')
+  .description('Simple NLP search (interactive if no query)')
   .option('-k, --limit <number>', 'Number of results', '10')
   .action(coreCommands.search)
 
 program
-  .command('search <query>')
-  .description('Advanced search with Triple Intelligence™ (vector + graph + field)')
+  .command('search [query]')
+  .description('Advanced search with Triple Intelligence™ (interactive if no query)')
   .option('-k, --limit <number>', 'Number of results', '10')
   .option('--offset <number>', 'Skip N results (pagination)')
   .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.7')
@@ -70,24 +120,52 @@ program
   .action(coreCommands.search)
 
 program
-  .command('get <id>')
-  .description('Get item by ID')
+  .command('get [id]')
+  .description('Get item by ID (interactive if no ID)')
   .option('--with-connections', 'Include connections')
   .action(coreCommands.get)
 
 program
-  .command('relate <source> <verb> <target>')
-  .description('Create a relationship between items')
+  .command('relate [source] [verb] [target]')
+  .description('Create a relationship between items (interactive if parameters missing)')
   .option('-w, --weight <number>', 'Relationship weight')
   .option('-m, --metadata <json>', 'Relationship metadata')
   .action(coreCommands.relate)
 
 program
-  .command('import <file>')
-  .description('Import data from file')
-  .option('-f, --format <format>', 'Input format (json|csv|jsonl)', 'json')
+  .command('update [id]')
+  .description('Update an existing entity (interactive if no ID)')
+  .option('-c, --content <text>', 'New content')
+  .option('-m, --metadata <json>', 'Metadata to merge')
+  .option('-t, --type <type>', 'New type')
+  .action(coreCommands.update)
+
+program
+  .command('delete [id]')
+  .description('Delete an entity (interactive if no ID, requires confirmation)')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .action(coreCommands.deleteEntity)
+
+program
+  .command('unrelate [id]')
+  .description('Remove a relationship (interactive if no ID, requires confirmation)')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .action(coreCommands.unrelate)
+
+program
+  .command('import [source]')
+  .description('Neural import from file, directory, or URL (interactive if no source)')
+  .option('-f, --format <format>', 'Format (json|csv|jsonl|yaml|markdown|html|xml|text)')
+  .option('--recursive', 'Import directories recursively')
   .option('--batch-size <number>', 'Batch size for import', '100')
-  .action(coreCommands.import)
+  .option('--extract-concepts', 'Extract concepts as entities')
+  .option('--extract-entities', 'Extract named entities (NLP)')
+  .option('--detect-relationships', 'Auto-detect relationships', true)
+  .option('--confidence <n>', 'Confidence threshold (0-1)', '0.5')
+  .option('--progress', 'Show progress')
+  .option('--skip-hidden', 'Skip hidden files')
+  .option('--skip-node-modules', 'Skip node_modules', true)
+  .action(importCommands.import)
 
 program
   .command('export [file]')
@@ -98,9 +176,9 @@ program
 // ===== Neural Commands =====
 
 program
-  .command('similar <a> <b>')
+  .command('similar [a] [b]')
   .alias('sim')
-  .description('Calculate similarity between two items')
+  .description('Calculate similarity between two items (interactive if parameters missing)')
   .option('--explain', 'Show detailed explanation')
   .option('--breakdown', 'Show similarity breakdown')
   .action(neuralCommands.similar)
@@ -108,7 +186,7 @@ program
 program
   .command('cluster')
   .alias('clusters')
-  .description('Find semantic clusters in the data')
+  .description('Find semantic clusters in the data (interactive mode available)')
   .option('--algorithm <type>', 'Clustering algorithm (hierarchical|kmeans|dbscan)', 'hierarchical')
   .option('--threshold <number>', 'Similarity threshold', '0.7')
   .option('--min-size <number>', 'Minimum cluster size', '2')
@@ -118,9 +196,9 @@ program
   .action(neuralCommands.cluster)
 
 program
-  .command('related <id>')
+  .command('related [id]')
   .alias('neighbors')
-  .description('Find semantically related items')
+  .description('Find semantically related items (interactive if no ID)')
   .option('-l, --limit <number>', 'Number of results', '10')
   .option('-r, --radius <number>', 'Semantic radius', '0.3')
   .option('--with-scores', 'Include similarity scores')
@@ -128,9 +206,9 @@ program
   .action(neuralCommands.related)
 
 program
-  .command('hierarchy <id>')
+  .command('hierarchy [id]')
   .alias('tree')
-  .description('Show semantic hierarchy for an item')
+  .description('Show semantic hierarchy for an item (interactive if no ID)')
   .option('-d, --depth <number>', 'Hierarchy depth', '3')
   .option('--parents-only', 'Show only parent hierarchy')
   .option('--children-only', 'Show only child hierarchy')
@@ -259,6 +337,22 @@ program
         vfsCommands.tree(path, options)
       })
   )
+  .addCommand(
+    new Command('import')
+      .argument('[source]', 'File or directory to import')
+      .description('Import files/directories into VFS (interactive if no source)')
+      .option('--target <path>', 'VFS target path', '/')
+      .option('--recursive', 'Import directories recursively', true)
+      .option('--generate-embeddings', 'Generate file embeddings', true)
+      .option('--extract-metadata', 'Extract file metadata', true)
+      .option('--skip-hidden', 'Skip hidden files')
+      .option('--skip-node-modules', 'Skip node_modules', true)
+      .option('--batch-size <number>', 'Batch size', '100')
+      .option('--progress', 'Show progress')
+      .action((source, options) => {
+        importCommands.vfsImport(source, options)
+      })
+  )
 
 // ===== VFS Commands (Backward Compatibility - Deprecated) =====
 
@@ -351,6 +445,94 @@ program
     vfsCommands.tree(path, options)
   })
 
+// ===== Storage Management Commands (v4.0.0) =====
+
+program
+  .command('storage')
+  .description('💾 Storage management and cost optimization')
+  .addCommand(
+    new Command('status')
+      .description('Show storage status and health')
+      .option('--detailed', 'Show detailed information')
+      .option('--quota', 'Show quota information (OPFS)')
+      .action((options) => {
+        storageCommands.status(options)
+      })
+  )
+  .addCommand(
+    new Command('lifecycle')
+      .description('Lifecycle policy management')
+      .addCommand(
+        new Command('set')
+          .argument('[config-file]', 'Policy configuration file (JSON)')
+          .description('Set lifecycle policy (interactive if no file)')
+          .option('--validate', 'Validate before applying')
+          .action((configFile, options) => {
+            storageCommands.lifecycle.set(configFile, options)
+          })
+      )
+      .addCommand(
+        new Command('get')
+          .description('Get current lifecycle policy')
+          .option('-f, --format <type>', 'Output format (json|yaml)', 'json')
+          .action((options) => {
+            storageCommands.lifecycle.get(options)
+          })
+      )
+      .addCommand(
+        new Command('remove')
+          .description('Remove lifecycle policy')
+          .action((options) => {
+            storageCommands.lifecycle.remove(options)
+          })
+      )
+  )
+  .addCommand(
+    new Command('compression')
+      .description('Compression management (FileSystem)')
+      .addCommand(
+        new Command('enable')
+          .description('Enable gzip compression')
+          .action((options) => {
+            storageCommands.compression.enable(options)
+          })
+      )
+      .addCommand(
+        new Command('disable')
+          .description('Disable compression')
+          .action((options) => {
+            storageCommands.compression.disable(options)
+          })
+      )
+      .addCommand(
+        new Command('status')
+          .description('Show compression status')
+          .action((options) => {
+            storageCommands.compression.status(options)
+          })
+      )
+  )
+  .addCommand(
+    new Command('batch-delete')
+      .argument('<file>', 'File containing entity IDs (one per line)')
+      .description('Batch delete with retry logic')
+      .option('--max-retries <n>', 'Maximum retry attempts', '3')
+      .option('--continue-on-error', 'Continue if some deletes fail')
+      .action((file, options) => {
+        storageCommands.batchDelete(file, options)
+      })
+  )
+  .addCommand(
+    new Command('cost-estimate')
+      .description('Estimate cloud storage costs')
+      .option('--provider <type>', 'Cloud provider (aws|gcs|azure|r2)')
+      .option('--size <gb>', 'Data size in GB')
+      .option('--operations <n>', 'Monthly operations')
+      .action((options) => {
+        storageCommands.costEstimate(options)
+      })
+  )
+
 // ===== Data Management Commands =====
 
 program
@@ -369,6 +551,48 @@ program
   .command('data-stats')
   .description('Show detailed database statistics')
   .action(dataCommands.stats)
+
+// ===== NLP Commands =====
+
+program
+  .command('extract [text]')
+  .description('Extract entities from text using neural NLP (interactive if no text)')
+  .action(nlpCommands.extract)
+
+program
+  .command('extract-concepts [text]')
+  .description('Extract concepts from text with neural analysis (interactive if no text)')
+  .option('--threshold <n>', 'Minimum confidence threshold (0-1)', '0.5')
+  .action(nlpCommands.extractConcepts)
+
+program
+  .command('analyze [text]')
+  .description('Full NLP analysis: entities, sentiment, topics (interactive if no text)')
+  .action(nlpCommands.analyze)
+
+// ===== Insights & Analytics Commands =====
+
+program
+  .command('insights')
+  .description('Get comprehensive database insights and analytics')
+  .action(insightsCommands.insights)
+
+program
+  .command('fields')
+  .description('List all metadata fields with statistics')
+  .action(insightsCommands.fields)
+
+program
+  .command('field-values [field]')
+  .description('Get all values for a specific metadata field (interactive if no field)')
+  .option('--limit <n>', 'Limit number of values shown', '100')
+  .action(insightsCommands.fieldValues)
+
+program
+  .command('query-plan')
+  .description('Get optimal query plan for filters')
+  .option('--filters <json>', 'Filter JSON to analyze')
+  .action(insightsCommands.queryPlan)
 
 // ===== Utility Commands =====
 

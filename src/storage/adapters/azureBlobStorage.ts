@@ -756,6 +756,192 @@ export class AzureBlobStorage extends BaseStorage {
   }
 
   /**
+   * Batch delete multiple blobs from Azure Blob Storage
+   * Deletes up to 256 blobs per batch (Azure limit)
+   * Handles throttling, retries, and partial failures
+   *
+   * @param keys - Array of blob names (paths) to delete
+   * @param options - Configuration options for batch deletion
+   * @returns Statistics about successful and failed deletions
+   */
+  public async batchDelete(
+    keys: string[],
+    options: {
+      maxRetries?: number
+      retryDelayMs?: number
+      continueOnError?: boolean
+    } = {}
+  ): Promise<{
+    totalRequested: number
+    successfulDeletes: number
+    failedDeletes: number
+    errors: Array<{ key: string; error: string }>
+  }> {
+    await this.ensureInitialized()
+
+    const {
+      maxRetries = 3,
+      retryDelayMs = 1000,
+      continueOnError = true
+    } = options
+
+    if (!keys || keys.length === 0) {
+      return {
+        totalRequested: 0,
+        successfulDeletes: 0,
+        failedDeletes: 0,
+        errors: []
+      }
+    }
+
+    this.logger.info(`Starting batch delete of ${keys.length} blobs`)
+
+    const stats = {
+      totalRequested: keys.length,
+      successfulDeletes: 0,
+      failedDeletes: 0,
+      errors: [] as Array<{ key: string; error: string }>
+    }
+
+    // Chunk keys into batches of max 256 (Azure limit)
+    const MAX_BATCH_SIZE = 256
+    const batches: string[][] = []
+    for (let i = 0; i < keys.length; i += MAX_BATCH_SIZE) {
+      batches.push(keys.slice(i, i + MAX_BATCH_SIZE))
+    }
+
+    this.logger.debug(`Split ${keys.length} keys into ${batches.length} batches`)
+
+    // Process each batch
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
+      let retryCount = 0
+      let batchSuccess = false
+
+      while (retryCount <= maxRetries && !batchSuccess) {
+        const requestId = await this.applyBackpressure()
+
+        try {
+          const { BlobBatchClient } = await import('@azure/storage-blob')
+
+          this.logger.debug(
+            `Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} blobs (attempt ${retryCount + 1}/${maxRetries + 1})`
+          )
+
+          // Create batch client
+          const batchClient = this.containerClient!.getBlobBatchClient()
+
+          // Execute batch delete
+          const deletePromises = batch.map((key) => {
+            const blobClient = this.containerClient!.getBlockBlobClient(key)
+            return blobClient.url
+          })
+
+          // Use batch delete
+          const batchDeleteResponse = await batchClient.deleteBlobs(
+            batch.map(key => this.containerClient!.getBlockBlobClient(key).url),
+            {
+              // Additional options can be added here
+            }
+          )
+
+          this.logger.debug(
+            `Batch ${batchIndex + 1} completed`
+          )
+
+          // Process results
+          for (let i = 0; i < batch.length; i++) {
+            const key = batch[i]
+            const subResponse = batchDeleteResponse.subResponses[i]
+
+            if (subResponse.status === 202 || subResponse.status === 404) {
+              // 202 Accepted = successful delete
+              // 404 Not Found = already deleted (treat as success)
+              stats.successfulDeletes++
+
+              if (subResponse.status === 404) {
+                this.logger.trace(`Blob ${key} already deleted (404)`)
+              }
+            } else {
+              // Deletion failed
+              stats.failedDeletes++
+              stats.errors.push({
+                key,
+                error: `HTTP ${subResponse.status}: ${subResponse.errorCode || 'Unknown error'}`
+              })
+
+              this.logger.error(
+                `Failed to delete ${key}: ${subResponse.status} - ${subResponse.errorCode}`
+              )
+            }
+          }
+
+          this.releaseBackpressure(true, requestId)
+          batchSuccess = true
+        } catch (error: any) {
+          this.releaseBackpressure(false, requestId)
+
+          // Handle throttling
+          if (this.isThrottlingError(error)) {
+            this.logger.warn(
+              `Batch ${batchIndex + 1} throttled, waiting before retry...`
+            )
+            await this.handleThrottling(error)
+            retryCount++
+
+            if (retryCount <= maxRetries) {
+              const delay = retryDelayMs * Math.pow(2, retryCount - 1) // Exponential backoff
+              await new Promise((resolve) => setTimeout(resolve, delay))
+            }
+            continue
+          }
+
+          // Handle other errors
+          this.logger.error(
+            `Batch ${batchIndex + 1} failed (attempt ${retryCount + 1}/${maxRetries + 1}):`,
+            error
+          )
+
+          if (retryCount < maxRetries) {
+            retryCount++
+            const delay = retryDelayMs * Math.pow(2, retryCount - 1)
+            await new Promise((resolve) => setTimeout(resolve, delay))
+            continue
+          }
+
+          // Max retries exceeded
+          if (continueOnError) {
+            // Mark all keys in this batch as failed and continue to next batch
+            for (const key of batch) {
+              stats.failedDeletes++
+              stats.errors.push({
+                key,
+                error: error.message || String(error)
+              })
+            }
+            this.logger.error(
+              `Batch ${batchIndex + 1} failed after ${maxRetries} retries, continuing to next batch`
+            )
+            batchSuccess = true // Mark as "handled" to move to next batch
+          } else {
+            // Stop processing and throw error
+            throw BrainyError.storage(
+              `Batch delete failed at batch ${batchIndex + 1}/${batches.length} after ${maxRetries} retries. Total: ${stats.successfulDeletes} deleted, ${stats.failedDeletes} failed`,
+              error instanceof Error ? error : undefined
+            )
+          }
+        }
+      }
+    }
+
+    this.logger.info(
+      `Batch delete completed: ${stats.successfulDeletes}/${stats.totalRequested} successful, ${stats.failedDeletes} failed`
+    )
+
+    return stats
+  }
+
+  /**
    * List all objects under a specific prefix in Azure
    * Primitive operation required by base class
    * @protected
@@ -1548,6 +1734,595 @@ export class AzureBlobStorage extends BaseStorage {
 
       this.logger.error('Failed to get HNSW system data:', error)
       throw new Error(`Failed to get HNSW system data: ${error}`)
+    }
+  }
+
+  /**
+   * Set the access tier for a specific blob (v4.0.0 cost optimization)
+   * Azure Blob Storage tiers:
+   * - Hot: $0.0184/GB/month - Frequently accessed data
+   * - Cool: $0.01/GB/month - Infrequently accessed data (45% cheaper)
+   * - Archive: $0.00099/GB/month - Rarely accessed data (99% cheaper!)
+   *
+   * @param blobName - Name of the blob to change tier
+   * @param tier - Target access tier ('Hot', 'Cool', or 'Archive')
+   * @returns Promise that resolves when tier is set
+   *
+   * @example
+   * // Move old vectors to Archive tier (99% cost savings)
+   * await storage.setBlobTier('entities/nouns/vectors/ab/old-id.json', 'Archive')
+   */
+  public async setBlobTier(
+    blobName: string,
+    tier: 'Hot' | 'Cool' | 'Archive'
+  ): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Setting blob tier for ${blobName} to ${tier}`)
+
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      await blockBlobClient.setAccessTier(tier)
+
+      this.logger.info(`Successfully set ${blobName} to ${tier} tier`)
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        throw new Error(`Blob not found: ${blobName}`)
+      }
+
+      this.logger.error(`Failed to set tier for ${blobName}:`, error)
+      throw new Error(`Failed to set blob tier: ${error}`)
+    }
+  }
+
+  /**
+   * Get the current access tier for a blob
+   *
+   * @param blobName - Name of the blob
+   * @returns Promise that resolves to the current tier or null if not found
+   *
+   * @example
+   * const tier = await storage.getBlobTier('entities/nouns/vectors/ab/id.json')
+   * console.log(`Current tier: ${tier}`) // 'Hot', 'Cool', or 'Archive'
+   */
+  public async getBlobTier(blobName: string): Promise<string | null> {
+    await this.ensureInitialized()
+
+    try {
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      const properties = await blockBlobClient.getProperties()
+
+      return properties.accessTier || null
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        return null
+      }
+
+      this.logger.error(`Failed to get tier for ${blobName}:`, error)
+      throw new Error(`Failed to get blob tier: ${error}`)
+    }
+  }
+
+  /**
+   * Set access tier for multiple blobs in batch (v4.0.0 cost optimization)
+   * Efficiently move large numbers of blobs between tiers for cost optimization
+   *
+   * @param blobs - Array of blob names and their target tiers
+   * @param options - Configuration options
+   * @returns Promise with statistics about tier changes
+   *
+   * @example
+   * // Move old data to Archive tier for 99% cost savings
+   * const oldBlobs = await storage.listObjectsUnderPath('entities/nouns/vectors/')
+   * await storage.setBlobTierBatch(
+   *   oldBlobs.map(name => ({ blobName: name, tier: 'Archive' }))
+   * )
+   */
+  public async setBlobTierBatch(
+    blobs: Array<{ blobName: string; tier: 'Hot' | 'Cool' | 'Archive' }>,
+    options: {
+      maxRetries?: number
+      retryDelayMs?: number
+      continueOnError?: boolean
+    } = {}
+  ): Promise<{
+    totalRequested: number
+    successfulChanges: number
+    failedChanges: number
+    errors: Array<{ blobName: string; error: string }>
+  }> {
+    await this.ensureInitialized()
+
+    const {
+      maxRetries = 3,
+      retryDelayMs = 1000,
+      continueOnError = true
+    } = options
+
+    if (!blobs || blobs.length === 0) {
+      return {
+        totalRequested: 0,
+        successfulChanges: 0,
+        failedChanges: 0,
+        errors: []
+      }
+    }
+
+    this.logger.info(`Starting batch tier change for ${blobs.length} blobs`)
+
+    const stats = {
+      totalRequested: blobs.length,
+      successfulChanges: 0,
+      failedChanges: 0,
+      errors: [] as Array<{ blobName: string; error: string }>
+    }
+
+    // Process each blob (Azure doesn't have batch tier API, so we parallelize)
+    const CONCURRENT_LIMIT = 10 // Limit concurrent operations to avoid throttling
+
+    for (let i = 0; i < blobs.length; i += CONCURRENT_LIMIT) {
+      const batch = blobs.slice(i, i + CONCURRENT_LIMIT)
+
+      const promises = batch.map(async ({ blobName, tier }) => {
+        let retryCount = 0
+
+        while (retryCount <= maxRetries) {
+          try {
+            await this.setBlobTier(blobName, tier)
+            return { blobName, success: true, error: null }
+          } catch (error: any) {
+            // Handle throttling
+            if (this.isThrottlingError(error)) {
+              this.logger.warn(`Tier change throttled for ${blobName}, retrying...`)
+              await this.handleThrottling(error)
+              retryCount++
+
+              if (retryCount <= maxRetries) {
+                const delay = retryDelayMs * Math.pow(2, retryCount - 1)
+                await new Promise((resolve) => setTimeout(resolve, delay))
+              }
+              continue
+            }
+
+            // Other errors
+            if (retryCount < maxRetries) {
+              retryCount++
+              const delay = retryDelayMs * Math.pow(2, retryCount - 1)
+              await new Promise((resolve) => setTimeout(resolve, delay))
+              continue
+            }
+
+            // Max retries exceeded
+            return {
+              blobName,
+              success: false,
+              error: error.message || String(error)
+            }
+          }
+        }
+
+        // Should never reach here, but TypeScript needs a return
+        return {
+          blobName,
+          success: false,
+          error: 'Max retries exceeded'
+        }
+      })
+
+      const results = await Promise.all(promises)
+
+      for (const result of results) {
+        if (result.success) {
+          stats.successfulChanges++
+        } else {
+          stats.failedChanges++
+          if (result.error) {
+            stats.errors.push({
+              blobName: result.blobName,
+              error: result.error
+            })
+          }
+        }
+      }
+    }
+
+    this.logger.info(
+      `Batch tier change completed: ${stats.successfulChanges}/${stats.totalRequested} successful, ${stats.failedChanges} failed`
+    )
+
+    return stats
+  }
+
+  /**
+   * Check if a blob in Archive tier has been rehydrated and is ready to read
+   * Archive tier blobs must be rehydrated before they can be read
+   *
+   * @param blobName - Name of the blob to check
+   * @returns Promise that resolves to rehydration status
+   *
+   * @example
+   * const status = await storage.checkRehydrationStatus('entities/nouns/vectors/ab/id.json')
+   * if (status.isRehydrated) {
+   *   // Blob is ready to read
+   *   const data = await storage.readObjectFromPath('entities/nouns/vectors/ab/id.json')
+   * }
+   */
+  public async checkRehydrationStatus(blobName: string): Promise<{
+    isArchived: boolean
+    isRehydrating: boolean
+    isRehydrated: boolean
+    rehydratePriority?: string
+  }> {
+    await this.ensureInitialized()
+
+    try {
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+      const properties = await blockBlobClient.getProperties()
+
+      const tier = properties.accessTier
+      const archiveStatus = properties.archiveStatus
+
+      return {
+        isArchived: tier === 'Archive',
+        isRehydrating: archiveStatus === 'rehydrate-pending-to-hot' || archiveStatus === 'rehydrate-pending-to-cool',
+        isRehydrated: tier === 'Hot' || tier === 'Cool',
+        rehydratePriority: properties.rehydratePriority
+      }
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        throw new Error(`Blob not found: ${blobName}`)
+      }
+
+      this.logger.error(`Failed to check rehydration status for ${blobName}:`, error)
+      throw new Error(`Failed to check rehydration status: ${error}`)
+    }
+  }
+
+  /**
+   * Rehydrate an archived blob (move from Archive to Hot or Cool tier)
+   * Note: Rehydration can take several hours depending on priority
+   *
+   * @param blobName - Name of the blob to rehydrate
+   * @param targetTier - Target tier after rehydration ('Hot' or 'Cool')
+   * @param priority - Rehydration priority ('Standard' or 'High')
+   *                  Standard: Up to 15 hours, cheaper
+   *                  High: Up to 1 hour, more expensive
+   * @returns Promise that resolves when rehydration is initiated
+   *
+   * @example
+   * // Rehydrate with standard priority (cheaper, slower)
+   * await storage.rehydrateBlob('entities/nouns/vectors/ab/id.json', 'Cool', 'Standard')
+   *
+   * // Check status
+   * const status = await storage.checkRehydrationStatus('entities/nouns/vectors/ab/id.json')
+   * console.log(`Rehydrating: ${status.isRehydrating}`)
+   */
+  public async rehydrateBlob(
+    blobName: string,
+    targetTier: 'Hot' | 'Cool',
+    priority: 'Standard' | 'High' = 'Standard'
+  ): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Rehydrating blob ${blobName} to ${targetTier} tier with ${priority} priority`)
+
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
+
+      // Set tier with rehydration priority
+      await blockBlobClient.setAccessTier(targetTier, {
+        rehydratePriority: priority
+      })
+
+      this.logger.info(`Successfully initiated rehydration for ${blobName}`)
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        throw new Error(`Blob not found: ${blobName}`)
+      }
+
+      this.logger.error(`Failed to rehydrate blob ${blobName}:`, error)
+      throw new Error(`Failed to rehydrate blob: ${error}`)
+    }
+  }
+
+  /**
+   * Set lifecycle management policy for automatic tier transitions and deletions (v4.0.0)
+   * Automates cost optimization by moving old data to cheaper tiers or deleting it
+   *
+   * Azure Lifecycle Management rules run once per day and apply to the entire container.
+   * Rules are evaluated against blob properties like lastModifiedTime and lastAccessTime.
+   *
+   * @param options - Lifecycle policy configuration
+   * @returns Promise that resolves when policy is set
+   *
+   * @example
+   * // Auto-archive old vectors for 99% cost savings
+   * await storage.setLifecyclePolicy({
+   *   rules: [
+   *     {
+   *       name: 'archiveOldVectors',
+   *       enabled: true,
+   *       type: 'Lifecycle',
+   *       definition: {
+   *         filters: {
+   *           blobTypes: ['blockBlob'],
+   *           prefixMatch: ['entities/nouns/vectors/']
+   *         },
+   *         actions: {
+   *           baseBlob: {
+   *             tierToCool: { daysAfterModificationGreaterThan: 30 },
+   *             tierToArchive: { daysAfterModificationGreaterThan: 90 },
+   *             delete: { daysAfterModificationGreaterThan: 365 }
+   *           }
+   *         }
+   *       }
+   *     }
+   *   ]
+   * })
+   */
+  public async setLifecyclePolicy(options: {
+    rules: Array<{
+      name: string
+      enabled: boolean
+      type: 'Lifecycle'
+      definition: {
+        filters: {
+          blobTypes: string[]
+          prefixMatch?: string[]
+        }
+        actions: {
+          baseBlob: {
+            tierToCool?: { daysAfterModificationGreaterThan: number }
+            tierToArchive?: { daysAfterModificationGreaterThan: number }
+            delete?: { daysAfterModificationGreaterThan: number }
+          }
+        }
+      }
+    }>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    if (!this.accountName) {
+      throw new Error('Lifecycle policies require accountName to be configured')
+    }
+
+    try {
+      this.logger.info(`Setting lifecycle policy with ${options.rules.length} rules`)
+
+      const { BlobServiceClient } = await import('@azure/storage-blob')
+
+      // Get blob service client
+      let blobServiceClient: any
+      if (this.connectionString) {
+        blobServiceClient = BlobServiceClient.fromConnectionString(this.connectionString)
+      } else if (this.accountName && this.accountKey) {
+        const { StorageSharedKeyCredential } = await import('@azure/storage-blob')
+        const credential = new StorageSharedKeyCredential(this.accountName, this.accountKey)
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else if (this.accountName && this.sasToken) {
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net${this.sasToken}`
+        )
+      } else if (this.accountName) {
+        const { DefaultAzureCredential } = await import('@azure/identity')
+        const credential = new DefaultAzureCredential()
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else {
+        throw new Error('Cannot set lifecycle policy without valid authentication')
+      }
+
+      // Get service properties to modify lifecycle policy
+      const serviceProperties = await blobServiceClient.getProperties()
+
+      // Format rules according to Azure's expected structure
+      const lifecyclePolicy = {
+        rules: options.rules.map(rule => ({
+          enabled: rule.enabled,
+          name: rule.name,
+          type: rule.type,
+          definition: {
+            filters: {
+              blobTypes: rule.definition.filters.blobTypes,
+              ...(rule.definition.filters.prefixMatch && {
+                prefixMatch: rule.definition.filters.prefixMatch
+              })
+            },
+            actions: {
+              baseBlob: {
+                ...(rule.definition.actions.baseBlob.tierToCool && {
+                  tierToCool: rule.definition.actions.baseBlob.tierToCool
+                }),
+                ...(rule.definition.actions.baseBlob.tierToArchive && {
+                  tierToArchive: rule.definition.actions.baseBlob.tierToArchive
+                }),
+                ...(rule.definition.actions.baseBlob.delete && {
+                  delete: rule.definition.actions.baseBlob.delete
+                })
+              }
+            }
+          }
+        }))
+      }
+
+      // Set the lifecycle management policy
+      await blobServiceClient.setProperties({
+        ...serviceProperties,
+        blobAnalyticsLogging: serviceProperties.blobAnalyticsLogging,
+        hourMetrics: serviceProperties.hourMetrics,
+        minuteMetrics: serviceProperties.minuteMetrics,
+        cors: serviceProperties.cors,
+        deleteRetentionPolicy: serviceProperties.deleteRetentionPolicy,
+        staticWebsite: serviceProperties.staticWebsite,
+        // Set lifecycle policy
+        lifecyclePolicy
+      })
+
+      this.logger.info(`Successfully set lifecycle policy with ${options.rules.length} rules`)
+    } catch (error: any) {
+      this.logger.error('Failed to set lifecycle policy:', error)
+      throw new Error(`Failed to set lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get the current lifecycle management policy
+   *
+   * @returns Promise that resolves to the current policy or null if not set
+   *
+   * @example
+   * const policy = await storage.getLifecyclePolicy()
+   * if (policy) {
+   *   console.log(`Found ${policy.rules.length} lifecycle rules`)
+   * }
+   */
+  public async getLifecyclePolicy(): Promise<{
+    rules: Array<{
+      name: string
+      enabled: boolean
+      type: string
+      definition: {
+        filters: {
+          blobTypes: string[]
+          prefixMatch?: string[]
+        }
+        actions: {
+          baseBlob: {
+            tierToCool?: { daysAfterModificationGreaterThan: number }
+            tierToArchive?: { daysAfterModificationGreaterThan: number }
+            delete?: { daysAfterModificationGreaterThan: number }
+          }
+        }
+      }
+    }>
+  } | null> {
+    await this.ensureInitialized()
+
+    if (!this.accountName) {
+      throw new Error('Lifecycle policies require accountName to be configured')
+    }
+
+    try {
+      this.logger.info('Getting lifecycle policy')
+
+      const { BlobServiceClient } = await import('@azure/storage-blob')
+
+      // Get blob service client
+      let blobServiceClient: any
+      if (this.connectionString) {
+        blobServiceClient = BlobServiceClient.fromConnectionString(this.connectionString)
+      } else if (this.accountName && this.accountKey) {
+        const { StorageSharedKeyCredential } = await import('@azure/storage-blob')
+        const credential = new StorageSharedKeyCredential(this.accountName, this.accountKey)
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else if (this.accountName && this.sasToken) {
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net${this.sasToken}`
+        )
+      } else if (this.accountName) {
+        const { DefaultAzureCredential } = await import('@azure/identity')
+        const credential = new DefaultAzureCredential()
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else {
+        throw new Error('Cannot get lifecycle policy without valid authentication')
+      }
+
+      // Get service properties
+      const serviceProperties = await blobServiceClient.getProperties()
+
+      if (!serviceProperties.lifecyclePolicy || !serviceProperties.lifecyclePolicy.rules) {
+        this.logger.info('No lifecycle policy configured')
+        return null
+      }
+
+      this.logger.info(`Found lifecycle policy with ${serviceProperties.lifecyclePolicy.rules.length} rules`)
+
+      return serviceProperties.lifecyclePolicy
+    } catch (error: any) {
+      this.logger.error('Failed to get lifecycle policy:', error)
+      throw new Error(`Failed to get lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Remove the lifecycle management policy
+   * All automatic tier transitions and deletions will stop
+   *
+   * @returns Promise that resolves when policy is removed
+   *
+   * @example
+   * await storage.removeLifecyclePolicy()
+   * console.log('Lifecycle policy removed - auto-archival disabled')
+   */
+  public async removeLifecyclePolicy(): Promise<void> {
+    await this.ensureInitialized()
+
+    if (!this.accountName) {
+      throw new Error('Lifecycle policies require accountName to be configured')
+    }
+
+    try {
+      this.logger.info('Removing lifecycle policy')
+
+      const { BlobServiceClient } = await import('@azure/storage-blob')
+
+      // Get blob service client
+      let blobServiceClient: any
+      if (this.connectionString) {
+        blobServiceClient = BlobServiceClient.fromConnectionString(this.connectionString)
+      } else if (this.accountName && this.accountKey) {
+        const { StorageSharedKeyCredential } = await import('@azure/storage-blob')
+        const credential = new StorageSharedKeyCredential(this.accountName, this.accountKey)
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else if (this.accountName && this.sasToken) {
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net${this.sasToken}`
+        )
+      } else if (this.accountName) {
+        const { DefaultAzureCredential } = await import('@azure/identity')
+        const credential = new DefaultAzureCredential()
+        blobServiceClient = new BlobServiceClient(
+          `https://${this.accountName}.blob.core.windows.net`,
+          credential
+        )
+      } else {
+        throw new Error('Cannot remove lifecycle policy without valid authentication')
+      }
+
+      // Get service properties
+      const serviceProperties = await blobServiceClient.getProperties()
+
+      // Set properties without lifecycle policy (removes it)
+      await blobServiceClient.setProperties({
+        ...serviceProperties,
+        blobAnalyticsLogging: serviceProperties.blobAnalyticsLogging,
+        hourMetrics: serviceProperties.hourMetrics,
+        minuteMetrics: serviceProperties.minuteMetrics,
+        cors: serviceProperties.cors,
+        deleteRetentionPolicy: serviceProperties.deleteRetentionPolicy,
+        staticWebsite: serviceProperties.staticWebsite,
+        // Remove lifecycle policy by not including it
+        lifecyclePolicy: undefined
+      })
+
+      this.logger.info('Successfully removed lifecycle policy')
+    } catch (error: any) {
+      this.logger.error('Failed to remove lifecycle policy:', error)
+      throw new Error(`Failed to remove lifecycle policy: ${error.message || error}`)
     }
   }
 }

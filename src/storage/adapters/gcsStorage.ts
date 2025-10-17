@@ -1887,4 +1887,290 @@ export class GcsStorage extends BaseStorage {
       throw new Error(`Failed to get HNSW system data: ${error}`)
     }
   }
+
+  // ============================================================================
+  // GCS Lifecycle Management & Autoclass (v4.0.0)
+  // Cost optimization through automatic tier transitions and Autoclass
+  // ============================================================================
+
+  /**
+   * Set lifecycle policy for automatic tier transitions and deletions
+   *
+   * GCS Storage Classes:
+   * - STANDARD: Hot data, most expensive (~$0.020/GB/month)
+   * - NEARLINE: <1 access/month (~$0.010/GB/month, 50% cheaper)
+   * - COLDLINE: <1 access/quarter (~$0.004/GB/month, 80% cheaper)
+   * - ARCHIVE: <1 access/year (~$0.0012/GB/month, 94% cheaper!)
+   *
+   * Example usage:
+   * ```typescript
+   * await storage.setLifecyclePolicy({
+   *   rules: [
+   *     {
+   *       action: { type: 'SetStorageClass', storageClass: 'NEARLINE' },
+   *       condition: { age: 30 }
+   *     },
+   *     {
+   *       action: { type: 'SetStorageClass', storageClass: 'COLDLINE' },
+   *       condition: { age: 90 }
+   *     },
+   *     {
+   *       action: { type: 'Delete' },
+   *       condition: { age: 365 }
+   *     }
+   *   ]
+   * })
+   * ```
+   *
+   * @param options Lifecycle configuration with rules for transitions and deletions
+   */
+  public async setLifecyclePolicy(options: {
+    rules: Array<{
+      action: {
+        type: 'Delete' | 'SetStorageClass'
+        storageClass?: 'STANDARD' | 'NEARLINE' | 'COLDLINE' | 'ARCHIVE'
+      }
+      condition: {
+        age?: number // Days since object creation
+        createdBefore?: string // ISO 8601 date
+        matchesPrefix?: string[]
+        matchesSuffix?: string[]
+      }
+    }>
+  }): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info(`Setting GCS lifecycle policy with ${options.rules.length} rules`)
+
+      // GCS lifecycle rules format
+      const lifecycleRules = options.rules.map(rule => {
+        const gcsRule: any = {
+          action: {
+            type: rule.action.type
+          },
+          condition: {}
+        }
+
+        // Add storage class for SetStorageClass action
+        if (rule.action.type === 'SetStorageClass' && rule.action.storageClass) {
+          gcsRule.action.storageClass = rule.action.storageClass
+        }
+
+        // Add conditions
+        if (rule.condition.age !== undefined) {
+          gcsRule.condition.age = rule.condition.age
+        }
+        if (rule.condition.createdBefore) {
+          gcsRule.condition.createdBefore = rule.condition.createdBefore
+        }
+        if (rule.condition.matchesPrefix) {
+          gcsRule.condition.matchesPrefix = rule.condition.matchesPrefix
+        }
+        if (rule.condition.matchesSuffix) {
+          gcsRule.condition.matchesSuffix = rule.condition.matchesSuffix
+        }
+
+        return gcsRule
+      })
+
+      // Update bucket lifecycle configuration
+      await this.bucket!.setMetadata({
+        lifecycle: {
+          rule: lifecycleRules
+        }
+      })
+
+      this.logger.info(`Successfully set lifecycle policy with ${options.rules.length} rules`)
+    } catch (error: any) {
+      this.logger.error('Failed to set lifecycle policy:', error)
+      throw new Error(`Failed to set GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get current lifecycle policy configuration
+   *
+   * @returns Lifecycle configuration with all rules, or null if no policy is set
+   */
+  public async getLifecyclePolicy(): Promise<{
+    rules: Array<{
+      action: {
+        type: string
+        storageClass?: string
+      }
+      condition: {
+        age?: number
+        createdBefore?: string
+        matchesPrefix?: string[]
+        matchesSuffix?: string[]
+      }
+    }>
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting GCS lifecycle policy')
+
+      const [metadata] = await this.bucket!.getMetadata()
+
+      if (!metadata.lifecycle || !metadata.lifecycle.rule || metadata.lifecycle.rule.length === 0) {
+        this.logger.info('No lifecycle policy configured')
+        return null
+      }
+
+      // Convert GCS format to our format
+      const rules = metadata.lifecycle.rule.map((rule: any) => ({
+        action: {
+          type: rule.action.type,
+          ...(rule.action.storageClass && { storageClass: rule.action.storageClass })
+        },
+        condition: {
+          ...(rule.condition.age !== undefined && { age: rule.condition.age }),
+          ...(rule.condition.createdBefore && { createdBefore: rule.condition.createdBefore }),
+          ...(rule.condition.matchesPrefix && { matchesPrefix: rule.condition.matchesPrefix }),
+          ...(rule.condition.matchesSuffix && { matchesSuffix: rule.condition.matchesSuffix })
+        }
+      }))
+
+      this.logger.info(`Found lifecycle policy with ${rules.length} rules`)
+
+      return { rules }
+    } catch (error: any) {
+      this.logger.error('Failed to get lifecycle policy:', error)
+      throw new Error(`Failed to get GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Remove lifecycle policy from bucket
+   */
+  public async removeLifecyclePolicy(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Removing GCS lifecycle policy')
+
+      // Remove lifecycle configuration
+      await this.bucket!.setMetadata({
+        lifecycle: null
+      })
+
+      this.logger.info('Successfully removed lifecycle policy')
+    } catch (error: any) {
+      this.logger.error('Failed to remove lifecycle policy:', error)
+      throw new Error(`Failed to remove GCS lifecycle policy: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Enable Autoclass for automatic storage class optimization
+   *
+   * GCS Autoclass automatically moves objects between storage classes based on access patterns:
+   * - Frequent Access → STANDARD
+   * - Infrequent Access (30 days) → NEARLINE
+   * - Rarely Accessed (90 days) → COLDLINE
+   * - Archive Access (365 days) → ARCHIVE
+   *
+   * Benefits:
+   * - Automatic optimization based on access patterns (no manual rules needed)
+   * - No early deletion fees
+   * - No retrieval fees for NEARLINE/COLDLINE (only ARCHIVE has retrieval fees)
+   * - Up to 94% cost savings automatically
+   *
+   * Note: Autoclass is a bucket-level feature that requires bucket.update permission.
+   * It cannot be enabled per-object or per-prefix.
+   *
+   * @param options Autoclass configuration
+   */
+  public async enableAutoclass(options: {
+    terminalStorageClass?: 'NEARLINE' | 'ARCHIVE' // Coldest storage class to use
+  } = {}): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Enabling GCS Autoclass')
+
+      const autoclassConfig: any = {
+        enabled: true
+      }
+
+      // Set terminal storage class if specified
+      if (options.terminalStorageClass) {
+        autoclassConfig.terminalStorageClass = options.terminalStorageClass
+      }
+
+      await this.bucket!.setMetadata({
+        autoclass: autoclassConfig
+      })
+
+      this.logger.info(`Successfully enabled Autoclass${options.terminalStorageClass ? ` with terminal class ${options.terminalStorageClass}` : ''}`)
+    } catch (error: any) {
+      this.logger.error('Failed to enable Autoclass:', error)
+      throw new Error(`Failed to enable GCS Autoclass: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Get Autoclass configuration and status
+   *
+   * @returns Autoclass status, or null if not configured
+   */
+  public async getAutoclassStatus(): Promise<{
+    enabled: boolean
+    terminalStorageClass?: string
+    toggleTime?: string
+  } | null> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Getting GCS Autoclass status')
+
+      const [metadata] = await this.bucket!.getMetadata()
+
+      if (!metadata.autoclass) {
+        this.logger.info('Autoclass not configured')
+        return null
+      }
+
+      const status = {
+        enabled: metadata.autoclass.enabled || false,
+        ...(metadata.autoclass.terminalStorageClass && {
+          terminalStorageClass: metadata.autoclass.terminalStorageClass
+        }),
+        ...(metadata.autoclass.toggleTime && {
+          toggleTime: metadata.autoclass.toggleTime
+        })
+      }
+
+      this.logger.info(`Autoclass status: ${status.enabled ? 'enabled' : 'disabled'}`)
+
+      return status
+    } catch (error: any) {
+      this.logger.error('Failed to get Autoclass status:', error)
+      throw new Error(`Failed to get GCS Autoclass status: ${error.message || error}`)
+    }
+  }
+
+  /**
+   * Disable Autoclass for the bucket
+   */
+  public async disableAutoclass(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      this.logger.info('Disabling GCS Autoclass')
+
+      await this.bucket!.setMetadata({
+        autoclass: {
+          enabled: false
+        }
+      })
+
+      this.logger.info('Successfully disabled Autoclass')
+    } catch (error: any) {
+      this.logger.error('Failed to disable Autoclass:', error)
+      throw new Error(`Failed to disable GCS Autoclass: ${error.message || error}`)
+    }
+  }
 }
