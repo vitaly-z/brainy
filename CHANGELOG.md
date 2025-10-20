@@ -1,6 +1,18 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/soulcraftlabs/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+## [4.1.0](https://github.com/soulcraftlabs/brainy/compare/v4.0.1...v4.1.0) (2025-10-20)
+
+
+### 📚 Documentation
+
+* restructure README for clarity and engagement ([26c5c78](https://github.com/soulcraftlabs/brainy/commit/26c5c784293293e2d922e0822b553b860262af1c))
+
+
+### ✨ Features
+
+* simplify GCS storage naming and add Cloud Run deployment options ([38343c0](https://github.com/soulcraftlabs/brainy/commit/38343c012846f0bdf70dc7402be0ef7ad93d7179))
 
 ## [4.0.0](https://github.com/soulcraftlabs/brainy/compare/v3.50.2...v4.0.0) (2025-10-17)
 
