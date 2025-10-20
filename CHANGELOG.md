@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.1.1](https://github.com/soulcraftlabs/brainy/compare/v4.1.0...v4.1.1) (2025-10-20)
+
+
+### 🐛 Bug Fixes
+
+* correct Node.js version references from 24 to 22 in comments and code ([22513ff](https://github.com/soulcraftlabs/brainy/commit/22513ffcb40cc6498898400ac5d1bae19c5d02ed))
+
 ## [4.1.0](https://github.com/soulcraftlabs/brainy/compare/v4.0.1...v4.1.0) (2025-10-20)
 
 
