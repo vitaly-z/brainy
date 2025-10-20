@@ -14,7 +14,7 @@ import { pipeline, env } from '@huggingface/transformers'
 if (typeof process !== 'undefined' && process.env) {
   process.env.ORT_DISABLE_MEMORY_ARENA = '1'
   process.env.ORT_DISABLE_MEMORY_PATTERN = '1'
-  // Force single-threaded operation for maximum stability (Node.js 24 compatibility)
+  // Force single-threaded operation for maximum stability (Node.js 22 LTS)
   process.env.ORT_INTRA_OP_NUM_THREADS = '1'    // Single thread for operators
   process.env.ORT_INTER_OP_NUM_THREADS = '1'    // Single thread for sessions
   process.env.ORT_NUM_THREADS = '1'             // Additional safety override

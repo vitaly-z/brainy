@@ -66,8 +66,8 @@ export async function areWorkerThreadsAvailable(): Promise<boolean> {
 export function areWorkerThreadsAvailableSync(): boolean {
   if (!isNode()) return false
 
-  // In Node.js 24.4.0+, worker_threads is always available
-  return parseInt(process.versions.node.split('.')[0]) >= 24
+  // In Node.js 22+, worker_threads is always available
+  return parseInt(process.versions.node.split('.')[0]) >= 22
 }
 
 /**

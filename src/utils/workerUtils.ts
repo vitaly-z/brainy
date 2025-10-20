@@ -1,6 +1,6 @@
 /**
  * Utility functions for executing functions in Worker Threads (Node.js) or Web Workers (Browser)
- * This implementation leverages Node.js 24's improved Worker Threads API for better performance
+ * This implementation leverages Node.js 22's stable Worker Threads API for maximum reliability
  */
 
 import { isBrowser, isNode } from './environment.js'
@@ -82,7 +82,7 @@ export function executeInThread<T>(fnString: string, args: any): Promise<T> {
 
 /**
  * Execute a function in a Node.js Worker Thread
- * Optimized for Node.js 24 with improved Worker Threads performance
+ * Optimized for Node.js 22 LTS with stable Worker Threads performance
  */
 function executeInNodeWorker<T>(fnString: string, args: any): Promise<T> {
   return new Promise<T>((resolve, reject) => {
