@@ -478,9 +478,10 @@ describe('GCS Native Storage Adapter', () => {
 
     const status = await storage.getStorageStatus()
 
-    expect(status.type).toBe('gcs-native')
+    expect(status.type).toBe('gcs') // Changed from 'gcs-native' to 'gcs'
     expect(status.details).toBeTruthy()
     expect(status.details!.bucket).toBe('test-bucket')
+    expect(status.details!.sdk).toBe('native') // Verify we're using native SDK
 
     console.log('✅ Storage status retrieved:', status)
   })

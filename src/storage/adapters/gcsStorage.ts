@@ -114,6 +114,10 @@ export class GcsStorage extends BaseStorage {
   // Module logger
   private logger = createModuleLogger('GcsStorage')
 
+  // Configuration options
+  private skipInitialScan: boolean = false
+  private skipCountsFile: boolean = false
+
   /**
    * Initialize the storage adapter
    * @param options Configuration options for Google Cloud Storage
@@ -129,6 +133,10 @@ export class GcsStorage extends BaseStorage {
     accessKeyId?: string
     secretAccessKey?: string
 
+    // Initialization configuration
+    skipInitialScan?: boolean
+    skipCountsFile?: boolean
+
     // Cache and operation configuration
     cacheConfig?: {
       hotCacheMaxSize?: number
@@ -143,6 +151,8 @@ export class GcsStorage extends BaseStorage {
     this.credentials = options.credentials
     this.accessKeyId = options.accessKeyId
     this.secretAccessKey = options.secretAccessKey
+    this.skipInitialScan = options.skipInitialScan || false
+    this.skipCountsFile = options.skipCountsFile || false
     this.readOnly = options.readOnly || false
 
     // Set up prefixes for different types of data using entity-based structure
@@ -1574,20 +1584,21 @@ export class GcsStorage extends BaseStorage {
       const [metadata] = await this.bucket!.getMetadata()
 
       return {
-        type: 'gcs',
+        type: 'gcs', // Consistent with new naming (native SDK is just 'gcs')
         used: 0, // GCS doesn't provide usage info easily
         quota: null, // No quota in GCS
         details: {
           bucket: this.bucketName,
           location: metadata.location,
           storageClass: metadata.storageClass,
-          created: metadata.timeCreated
+          created: metadata.timeCreated,
+          sdk: 'native' // Indicate we're using native SDK
         }
       }
     } catch (error) {
       this.logger.error('Failed to get storage status:', error)
       return {
-        type: 'gcs',
+        type: 'gcs', // Consistent with new naming
         used: 0,
         quota: null
       }
@@ -1671,6 +1682,16 @@ export class GcsStorage extends BaseStorage {
    * Initialize counts from storage
    */
   protected async initializeCounts(): Promise<void> {
+    // Skip counts file entirely if configured
+    if (this.skipCountsFile) {
+      prodLog.info('📊 Skipping counts file (skipCountsFile: true)')
+      this.totalNounCount = 0
+      this.totalVerbCount = 0
+      this.entityCounts = new Map()
+      this.verbCounts = new Map()
+      return
+    }
+
     const key = `${this.systemPrefix}counts.json`
 
     try {
@@ -1687,32 +1708,62 @@ export class GcsStorage extends BaseStorage {
       prodLog.info(`📊 Loaded counts from storage: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
     } catch (error: any) {
       if (error.code === 404) {
-        // No counts file yet - initialize from scan (first-time setup or counts not persisted)
-        prodLog.info('📊 No counts file found - this is normal for first init or if <10 entities were added')
-        await this.initializeCountsFromScan()
+        // No counts file yet
+        if (this.skipInitialScan) {
+          prodLog.info('📊 No counts file found - starting with zero counts (skipInitialScan: true)')
+          this.totalNounCount = 0
+          this.totalVerbCount = 0
+          this.entityCounts = new Map()
+          this.verbCounts = new Map()
+        } else {
+          // Initialize from scan (first-time setup or counts not persisted)
+          prodLog.info('📊 No counts file found - scanning bucket to initialize counts')
+          await this.initializeCountsFromScan()
+        }
       } else {
         // CRITICAL FIX: Don't silently fail on network/permission errors
         this.logger.error('❌ CRITICAL: Failed to load counts from GCS:', error)
         prodLog.error(`❌ Error loading ${key}: ${error.message}`)
 
-        // Try to recover by scanning the bucket
-        prodLog.warn('⚠️  Attempting recovery by scanning GCS bucket...')
-        await this.initializeCountsFromScan()
+        if (this.skipInitialScan) {
+          prodLog.warn('⚠️  Starting with zero counts due to error (skipInitialScan: true)')
+          this.totalNounCount = 0
+          this.totalVerbCount = 0
+          this.entityCounts = new Map()
+          this.verbCounts = new Map()
+        } else {
+          // Try to recover by scanning the bucket
+          prodLog.warn('⚠️  Attempting recovery by scanning GCS bucket...')
+          await this.initializeCountsFromScan()
+        }
       }
     }
   }
 
   /**
    * Initialize counts from storage scan (expensive - only for first-time init)
+   * Includes timeout handling to prevent Cloud Run startup failures
    */
   private async initializeCountsFromScan(): Promise<void> {
+    const SCAN_TIMEOUT_MS = 120000 // 2 minutes timeout
+
     try {
       prodLog.info('📊 Scanning GCS bucket to initialize counts...')
       prodLog.info(`🔍 Noun prefix: ${this.nounPrefix}`)
       prodLog.info(`🔍 Verb prefix: ${this.verbPrefix}`)
+      prodLog.info(`⏱️  Timeout: ${SCAN_TIMEOUT_MS / 1000}s (configure skipInitialScan to avoid this)`)
 
-      // Count nouns
-      const [nounFiles] = await this.bucket!.getFiles({ prefix: this.nounPrefix })
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Bucket scan timeout after ${SCAN_TIMEOUT_MS / 1000}s`))
+        }, SCAN_TIMEOUT_MS)
+      })
+
+      // Count nouns with timeout
+      const nounScanPromise = this.bucket!.getFiles({ prefix: this.nounPrefix })
+      const [nounFiles] = await Promise.race([nounScanPromise, timeoutPromise]) as any
+
       prodLog.info(`🔍 Found ${nounFiles?.length || 0} total files under noun prefix`)
 
       const jsonNounFiles = nounFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
@@ -1722,8 +1773,10 @@ export class GcsStorage extends BaseStorage {
         prodLog.info(`📄 Sample noun files: ${jsonNounFiles.slice(0, 5).map((f: any) => f.name).join(', ')}`)
       }
 
-      // Count verbs
-      const [verbFiles] = await this.bucket!.getFiles({ prefix: this.verbPrefix })
+      // Count verbs with timeout
+      const verbScanPromise = this.bucket!.getFiles({ prefix: this.verbPrefix })
+      const [verbFiles] = await Promise.race([verbScanPromise, timeoutPromise]) as any
+
       prodLog.info(`🔍 Found ${verbFiles?.length || 0} total files under verb prefix`)
 
       const jsonVerbFiles = verbFiles?.filter((f: any) => f.name?.endsWith('.json')) || []
@@ -1740,10 +1793,31 @@ export class GcsStorage extends BaseStorage {
       } else {
         prodLog.warn(`⚠️  No entities found during bucket scan. Check that entities exist and prefixes are correct.`)
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Handle timeout specifically
+      if (error.message?.includes('Bucket scan timeout')) {
+        prodLog.error(`❌ TIMEOUT: Bucket scan exceeded ${SCAN_TIMEOUT_MS / 1000}s limit`)
+        prodLog.error(`   This typically happens with large buckets in Cloud Run deployments.`)
+        prodLog.error(`   Solutions:`)
+        prodLog.error(`     1. Increase Cloud Run timeout: timeoutSeconds: 600`)
+        prodLog.error(`     2. Use skipInitialScan: true in gcsNativeStorage config`)
+        prodLog.error(`     3. Pre-create counts file before deployment`)
+        prodLog.warn(`⚠️  Starting with zero counts due to timeout`)
+        this.totalNounCount = 0
+        this.totalVerbCount = 0
+        this.entityCounts = new Map()
+        this.verbCounts = new Map()
+        return
+      }
+
       // CRITICAL FIX: Don't silently fail - this prevents data loss scenarios
       this.logger.error('❌ CRITICAL: Failed to initialize counts from GCS bucket scan:', error)
-      throw new Error(`Failed to initialize GCS storage counts: ${error}. This prevents container restarts from working correctly.`)
+      prodLog.error(`   Error: ${error.message || String(error)}`)
+      prodLog.warn(`⚠️  Starting with zero counts due to error`)
+      this.totalNounCount = 0
+      this.totalVerbCount = 0
+      this.entityCounts = new Map()
+      this.verbCounts = new Map()
     }
   }
 
@@ -1751,6 +1825,11 @@ export class GcsStorage extends BaseStorage {
    * Persist counts to storage
    */
   protected async persistCounts(): Promise<void> {
+    // Skip if skipCountsFile is enabled
+    if (this.skipCountsFile) {
+      return
+    }
+
     try {
       const key = `${this.systemPrefix}counts.json`
 

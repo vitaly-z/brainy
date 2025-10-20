@@ -27,8 +27,8 @@ export interface StorageOptions {
    * - 'filesystem': Use file system storage (Node.js only)
    * - 's3': Use Amazon S3 storage
    * - 'r2': Use Cloudflare R2 storage
-   * - 'gcs': Use Google Cloud Storage (S3-compatible with HMAC keys)
-   * - 'gcs-native': Use Google Cloud Storage (native SDK with ADC)
+   * - 'gcs': Use Google Cloud Storage (native SDK with ADC)
+   * - 'gcs-native': DEPRECATED - Use 'gcs' instead
    * - 'azure': Use Azure Blob Storage (native SDK with Managed Identity)
    * - 'type-aware': Use type-first storage adapter (wraps another adapter)
    */
@@ -120,7 +120,9 @@ export interface StorageOptions {
   }
 
   /**
-   * Configuration for Google Cloud Storage (S3-compatible with HMAC keys)
+   * Configuration for Google Cloud Storage (Legacy S3-compatible with HMAC keys)
+   * @deprecated Use gcsNativeStorage instead for better performance with ADC
+   * This is only needed if you must use HMAC keys for backward compatibility
    */
   gcsStorage?: {
     /**
@@ -151,6 +153,8 @@ export interface StorageOptions {
 
   /**
    * Configuration for Google Cloud Storage (native SDK with ADC)
+   * This is the recommended way to use GCS with Brainy
+   * Supports Application Default Credentials for zero-config cloud deployments
    */
   gcsNativeStorage?: {
     /**
@@ -170,13 +174,30 @@ export interface StorageOptions {
 
     /**
      * HMAC access key ID (backward compatibility, not recommended)
+     * @deprecated Use ADC, keyFilename, or credentials instead
      */
     accessKeyId?: string
 
     /**
      * HMAC secret access key (backward compatibility, not recommended)
+     * @deprecated Use ADC, keyFilename, or credentials instead
      */
     secretAccessKey?: string
+
+    /**
+     * Skip initial bucket scan for counting entities
+     * Useful for large buckets where the scan would timeout
+     * If true, counts start at 0 and are updated incrementally
+     * @default false
+     */
+    skipInitialScan?: boolean
+
+    /**
+     * Skip loading and saving the counts file entirely
+     * Useful for very large datasets where counts aren't critical
+     * @default false
+     */
+    skipCountsFile?: boolean
   }
 
   /**
@@ -467,43 +488,62 @@ export async function createStorage(
           return new MemoryStorage()
         }
 
-      case 'gcs':
-        if (options.gcsStorage) {
-          console.log('Using Google Cloud Storage (S3-compatible)')
-          return new S3CompatibleStorage({
-            bucketName: options.gcsStorage.bucketName,
-            region: options.gcsStorage.region,
-            endpoint:
-              options.gcsStorage.endpoint || 'https://storage.googleapis.com',
-            accessKeyId: options.gcsStorage.accessKeyId,
-            secretAccessKey: options.gcsStorage.secretAccessKey,
-            serviceType: 'gcs',
-            cacheConfig: options.cacheConfig
-          })
-        } else {
+      case 'gcs-native':
+        // DEPRECATED: gcs-native is deprecated in favor of just 'gcs'
+        console.warn(
+          '⚠️  DEPRECATED: type "gcs-native" is deprecated. Use type "gcs" instead.'
+        )
+        console.warn(
+          '   This will continue to work but may be removed in a future version.'
+        )
+        // Fall through to 'gcs' case
+
+      case 'gcs': {
+        // Prefer gcsNativeStorage, but also accept gcsStorage for backward compatibility
+        const gcsNative = options.gcsNativeStorage
+        const gcsLegacy = options.gcsStorage
+
+        if (!gcsNative && !gcsLegacy) {
           console.warn(
             'GCS storage configuration is missing, falling back to memory storage'
           )
           return new MemoryStorage()
         }
 
-      case 'gcs-native':
-        if (options.gcsNativeStorage) {
-          console.log('Using Google Cloud Storage (native SDK)')
-          return new GcsStorage({
-            bucketName: options.gcsNativeStorage.bucketName,
-            keyFilename: options.gcsNativeStorage.keyFilename,
-            credentials: options.gcsNativeStorage.credentials,
-            accessKeyId: options.gcsNativeStorage.accessKeyId,
-            secretAccessKey: options.gcsNativeStorage.secretAccessKey,
+        // If using legacy gcsStorage with HMAC keys, use S3-compatible adapter
+        if (gcsLegacy && gcsLegacy.accessKeyId && gcsLegacy.secretAccessKey) {
+          console.warn(
+            '⚠️  GCS with HMAC keys detected. Consider using gcsNativeStorage with ADC instead.'
+          )
+          console.warn(
+            '   Native GCS with Application Default Credentials is recommended for better performance and security.'
+          )
+          // Use S3-compatible storage for HMAC keys
+          return new S3CompatibleStorage({
+            bucketName: gcsLegacy.bucketName,
+            region: gcsLegacy.region,
+            endpoint: gcsLegacy.endpoint || 'https://storage.googleapis.com',
+            accessKeyId: gcsLegacy.accessKeyId,
+            secretAccessKey: gcsLegacy.secretAccessKey,
+            serviceType: 'gcs',
             cacheConfig: options.cacheConfig
           })
-        } else {
-          console.warn(
-            'GCS native storage configuration is missing, falling back to memory storage'
-          )
-          return new MemoryStorage()
         }
+
+        // Use native GCS SDK (the correct default!)
+        const config = gcsNative || gcsLegacy!
+        console.log('Using Google Cloud Storage (native SDK)')
+        return new GcsStorage({
+          bucketName: config.bucketName,
+          keyFilename: gcsNative?.keyFilename,
+          credentials: gcsNative?.credentials,
+          accessKeyId: config.accessKeyId,
+          secretAccessKey: config.secretAccessKey,
+          skipInitialScan: gcsNative?.skipInitialScan,
+          skipCountsFile: gcsNative?.skipCountsFile,
+          cacheConfig: options.cacheConfig
+        })
+      }
 
       case 'azure':
         if (options.azureStorage) {
@@ -594,29 +634,44 @@ export async function createStorage(
     })
   }
 
-  // If GCS native storage is specified, use it (prioritize native over S3-compatible)
-  if (options.gcsNativeStorage) {
-    console.log('Using Google Cloud Storage (native SDK)')
-    return new GcsStorage({
-      bucketName: options.gcsNativeStorage.bucketName,
-      keyFilename: options.gcsNativeStorage.keyFilename,
-      credentials: options.gcsNativeStorage.credentials,
-      accessKeyId: options.gcsNativeStorage.accessKeyId,
-      secretAccessKey: options.gcsNativeStorage.secretAccessKey,
-      cacheConfig: options.cacheConfig
-    })
-  }
+  // If GCS storage is specified (native or legacy S3-compatible)
+  // Prefer gcsNativeStorage, but also accept gcsStorage for backward compatibility
+  const gcsNative = options.gcsNativeStorage
+  const gcsLegacy = options.gcsStorage
 
-  // If GCS storage is specified, use it (S3-compatible)
-  if (options.gcsStorage) {
-    console.log('Using Google Cloud Storage (S3-compatible)')
-    return new S3CompatibleStorage({
-      bucketName: options.gcsStorage.bucketName,
-      region: options.gcsStorage.region,
-      endpoint: options.gcsStorage.endpoint || 'https://storage.googleapis.com',
-      accessKeyId: options.gcsStorage.accessKeyId,
-      secretAccessKey: options.gcsStorage.secretAccessKey,
-      serviceType: 'gcs',
+  if (gcsNative || gcsLegacy) {
+    // If using legacy gcsStorage with HMAC keys, use S3-compatible adapter
+    if (gcsLegacy && gcsLegacy.accessKeyId && gcsLegacy.secretAccessKey) {
+      console.warn(
+        '⚠️  GCS with HMAC keys detected. Consider using gcsNativeStorage with ADC instead.'
+      )
+      console.warn(
+        '   Native GCS with Application Default Credentials is recommended for better performance and security.'
+      )
+      // Use S3-compatible storage for HMAC keys
+      console.log('Using Google Cloud Storage (S3-compatible with HMAC - auto-detected)')
+      return new S3CompatibleStorage({
+        bucketName: gcsLegacy.bucketName,
+        region: gcsLegacy.region,
+        endpoint: gcsLegacy.endpoint || 'https://storage.googleapis.com',
+        accessKeyId: gcsLegacy.accessKeyId,
+        secretAccessKey: gcsLegacy.secretAccessKey,
+        serviceType: 'gcs',
+        cacheConfig: options.cacheConfig
+      })
+    }
+
+    // Use native GCS SDK (the correct default!)
+    const config = gcsNative || gcsLegacy!
+    console.log('Using Google Cloud Storage (native SDK - auto-detected)')
+    return new GcsStorage({
+      bucketName: config.bucketName,
+      keyFilename: gcsNative?.keyFilename,
+      credentials: gcsNative?.credentials,
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+      skipInitialScan: gcsNative?.skipInitialScan,
+      skipCountsFile: gcsNative?.skipCountsFile,
       cacheConfig: options.cacheConfig
     })
   }

@@ -2912,31 +2912,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private normalizeConfig(config?: BrainyConfig): Required<BrainyConfig> {
     // Validate storage configuration
-    if (config?.storage?.type && !['auto', 'memory', 'filesystem', 'opfs', 'remote', 's3', 'r2', 'gcs', 'gcs-native'].includes(config.storage.type)) {
-      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: auto, memory, filesystem, opfs, remote, s3, r2, gcs, gcs-native`)
+    if (config?.storage?.type && !['auto', 'memory', 'filesystem', 'opfs', 'remote', 's3', 'r2', 'gcs', 'gcs-native', 'azure'].includes(config.storage.type)) {
+      throw new Error(`Invalid storage type: ${config.storage.type}. Must be one of: auto, memory, filesystem, opfs, remote, s3, r2, gcs, gcs-native, azure`)
     }
 
-    // Validate storage type/config pairing (catch common mismatches)
+    // Warn about deprecated gcs-native
+    if (config?.storage?.type === ('gcs-native' as any)) {
+      console.warn('⚠️  DEPRECATED: type "gcs-native" is deprecated. Use type "gcs" instead.')
+      console.warn('   This will continue to work but may be removed in a future version.')
+    }
+
+    // Validate storage type/config pairing (now more lenient)
     if (config?.storage) {
       const storage = config.storage as any
 
-      // Check for gcs/gcsNativeStorage mismatch
-      if (storage.type === 'gcs' && storage.gcsNativeStorage) {
-        throw new Error(
-          `Storage type/config mismatch: type 'gcs' requires 'gcsStorage' config object (S3-compatible). ` +
-          `You provided 'gcsNativeStorage' which requires type 'gcs-native'. ` +
-          `Either change type to 'gcs-native' or use 'gcsStorage' instead of 'gcsNativeStorage'.`
-        )
+      // Warn about legacy gcsStorage config with HMAC keys
+      if (storage.gcsStorage && storage.gcsStorage.accessKeyId && storage.gcsStorage.secretAccessKey) {
+        console.warn('⚠️  GCS with HMAC keys (gcsStorage) is legacy. Consider migrating to native GCS (gcsNativeStorage) with ADC.')
       }
 
-      // Check for gcs-native/gcsStorage mismatch
-      if (storage.type === 'gcs-native' && storage.gcsStorage) {
-        throw new Error(
-          `Storage type/config mismatch: type 'gcs-native' requires 'gcsNativeStorage' config object. ` +
-          `You provided 'gcsStorage' which requires type 'gcs' (S3-compatible). ` +
-          `Either change type to 'gcs' or use 'gcsNativeStorage' instead of 'gcsStorage'.`
-        )
-      }
+      // No longer throw errors for mismatches - storageFactory now handles this intelligently
+      // Both 'gcs' and 'gcs-native' can now use either gcsStorage or gcsNativeStorage
     }
 
     // Validate model configuration
