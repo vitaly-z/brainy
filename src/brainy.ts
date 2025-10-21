@@ -867,28 +867,91 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Get relationships
+   * Get relationships between entities
+   *
+   * Supports multiple query patterns:
+   * - No parameters: Returns all relationships (paginated, default limit: 100)
+   * - String ID: Returns relationships from that entity (shorthand for { from: id })
+   * - Parameters object: Fine-grained filtering and pagination
+   *
+   * @param paramsOrId - Optional string ID or parameters object
+   * @returns Promise resolving to array of relationships
+   *
+   * @example
+   * ```typescript
+   * // Get all relationships (first 100)
+   * const all = await brain.getRelations()
+   *
+   * // Get relationships from specific entity (shorthand syntax)
+   * const fromEntity = await brain.getRelations(entityId)
+   *
+   * // Get relationships with filters
+   * const filtered = await brain.getRelations({
+   *   type: VerbType.FriendOf,
+   *   limit: 50
+   * })
+   *
+   * // Pagination
+   * const page2 = await brain.getRelations({ offset: 100, limit: 100 })
+   * ```
+   *
+   * @since v4.1.3 - Fixed bug where calling without parameters returned empty array
+   * @since v4.1.3 - Added string ID shorthand syntax: getRelations(id)
    */
   async getRelations(
-    params: GetRelationsParams = {}
+    paramsOrId?: string | GetRelationsParams
   ): Promise<Relation<T>[]> {
     await this.ensureInitialized()
 
-    const relations: Relation<T>[] = []
+    // Handle string ID shorthand: getRelations(id) -> getRelations({ from: id })
+    const params = typeof paramsOrId === 'string'
+      ? { from: paramsOrId }
+      : (paramsOrId || {})
 
+    const limit = params.limit || 100
+    const offset = params.offset || 0
+
+    let relations: Relation<T>[] = []
+
+    // Case 1: Filter by source
     if (params.from) {
       const verbs = await this.storage.getVerbsBySource(params.from)
-      relations.push(...this.verbsToRelations(verbs))
+      relations.push(...this.verbsToRelations(verbs as any))
     }
-
-    if (params.to) {
+    // Case 2: Filter by target
+    else if (params.to) {
       const verbs = await this.storage.getVerbsByTarget(params.to)
-      relations.push(...this.verbsToRelations(verbs))
+      relations.push(...this.verbsToRelations(verbs as any))
+    }
+    // Case 3: Get ALL relationships (NEW - fixes v4.1.2 bug)
+    else {
+      // Production safety: warn for large unfiltered queries
+      if (!params.type && limit > 10000) {
+        console.warn(
+          `[Brainy] getRelations(): Fetching ${limit} relationships without filters. ` +
+          `Consider adding 'type' filter or reducing 'limit' for better performance.`
+        )
+      }
+
+      // Fetch from storage using pagination
+      const result = await this.storage.getVerbs({
+        pagination: {
+          limit: limit + offset, // Fetch enough for offset + limit
+          offset: 0,
+          cursor: params.cursor
+        },
+        filter: params.type
+          ? { verbType: Array.isArray(params.type) ? params.type : [params.type] as any }
+          : undefined
+      })
+
+      relations = this.verbsToRelations(result.items as any)
     }
 
-    // Filter by type
+    // Filter by type (only if not already filtered at storage level)
     let filtered = relations
-    if (params.type) {
+    if (params.type && (params.from || params.to)) {
+      // Type filter only needed for from/to queries
       const types = Array.isArray(params.type) ? params.type : [params.type]
       filtered = relations.filter((r) => types.includes(r.type))
     }
@@ -898,9 +961,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       filtered = filtered.filter((r) => r.service === params.service)
     }
 
-    // Apply pagination
-    const limit = params.limit || 100
-    const offset = params.offset || 0
+    // Apply pagination (for from/to queries, or trim excess from storage query)
     return filtered.slice(offset, offset + limit)
   }
 

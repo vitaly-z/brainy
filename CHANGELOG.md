@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.1.3](https://github.com/soulcraftlabs/brainy/compare/v4.1.2...v4.1.3) (2025-10-21)
+
+
+### 🐛 Bug Fixes
+
+* **api**: fix getRelations() returning empty array when called without parameters
+  - Fixed critical bug where `brain.getRelations()` returned `[]` instead of all relationships
+  - Added support for retrieving all relationships with pagination (default limit: 100)
+  - Added string ID shorthand syntax: `brain.getRelations(entityId)` as alias for `brain.getRelations({ from: entityId })`
+  - Production safety: Warns when fetching >10k relationships without filters
+  - Fixed broken method calls in improvedNeuralAPI.ts (replaced non-existent `getVerbsForNoun` with `getRelations`)
+  - Fixed property access bugs: `verb.target` → `verb.to`, `verb.verb` → `verb.type`
+  - Added comprehensive integration tests (14 tests covering all query patterns)
+  - Updated JSDoc documentation with usage examples
+  - **Impact**: Resolves Workshop team bug where 524 imported relationships were inaccessible
+  - **Breaking**: None - fully backward compatible
+
 ### [4.1.2](https://github.com/soulcraftlabs/brainy/compare/v4.1.1...v4.1.2) (2025-10-21)
 
 

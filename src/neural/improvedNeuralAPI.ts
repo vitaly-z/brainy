@@ -1617,18 +1617,18 @@ export class ImprovedNeuralAPI {
     // Get all verbs connecting the items
     for (const sourceId of itemIds) {
       const sourceVerbs = await this.brain.getRelations(sourceId)
-      
+
       for (const verb of sourceVerbs) {
-        const targetId = verb.target
-        
+        const targetId = verb.to
+
         if (nodes.has(targetId) && sourceId !== targetId) {
           // Initialize edge map if needed
           if (!edges.has(sourceId)) {
             edges.set(sourceId, new Map())
           }
-          
+
           // Calculate edge weight from verb type and metadata
-          const verbType = verb.verb
+          const verbType = verb.type
           const baseWeight = (relationshipWeights as Record<string, number>)[verbType] || 0.5
           const confidenceWeight = verb.confidence || 1.0
           const weight = baseWeight * confidenceWeight
@@ -3437,7 +3437,7 @@ export class ImprovedNeuralAPI {
     const sampleSize = Math.min(50, itemIds.length)
     for (let i = 0; i < sampleSize; i++) {
       try {
-        const verbs = await this.brain.getVerbsForNoun(itemIds[i])
+        const verbs = await this.brain.getRelations({ from: itemIds[i] })
         connectionCount += verbs.length
       } catch (error) {
         // Skip items that can't be processed
@@ -3507,10 +3507,10 @@ export class ImprovedNeuralAPI {
         if (fromType !== toType) {
           for (const fromItem of fromItems.slice(0, 10)) { // Sample to avoid N^2
             try {
-              const verbs = await this.brain.getVerbsForNoun(fromItem.id)
-              
+              const verbs = await this.brain.getRelations({ from: fromItem.id })
+
               for (const verb of verbs) {
-                const toItem = toItems.find(item => item.id === verb.target)
+                const toItem = toItems.find(item => item.id === verb.to)
                 if (toItem) {
                   connections.push({
                     from: fromItem.id,

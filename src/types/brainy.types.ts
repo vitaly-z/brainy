@@ -217,15 +217,90 @@ export interface SimilarParams<T = any> {
 
 /**
  * Parameters for getting relationships
+ *
+ * All parameters are optional. When called without parameters, returns all relationships
+ * with pagination (default limit: 100).
+ *
+ * @example
+ * ```typescript
+ * // Get all relationships (default limit: 100)
+ * const all = await brain.getRelations()
+ *
+ * // Get relationships from a specific entity (string shorthand)
+ * const fromEntity = await brain.getRelations(entityId)
+ *
+ * // Equivalent to:
+ * const fromEntity2 = await brain.getRelations({ from: entityId })
+ *
+ * // Get relationships to a specific entity
+ * const toEntity = await brain.getRelations({ to: entityId })
+ *
+ * // Filter by relationship type
+ * const friends = await brain.getRelations({ type: VerbType.FriendOf })
+ *
+ * // Pagination
+ * const page2 = await brain.getRelations({ offset: 100, limit: 50 })
+ *
+ * // Combined filters
+ * const filtered = await brain.getRelations({
+ *   from: entityId,
+ *   type: VerbType.WorksWith,
+ *   limit: 20
+ * })
+ * ```
+ *
+ * @since v4.1.3 - Fixed bug where calling without parameters returned empty array
+ * @since v4.1.3 - Added string ID shorthand syntax
  */
 export interface GetRelationsParams {
-  from?: string              // Source entity
-  to?: string                // Target entity
-  type?: VerbType | VerbType[] // Relationship types
-  limit?: number             // Max results
-  offset?: number            // Pagination
-  cursor?: string            // Cursor pagination
-  service?: string           // Multi-tenancy
+  /**
+   * Filter by source entity ID
+   *
+   * Returns all relationships originating from this entity.
+   */
+  from?: string
+
+  /**
+   * Filter by target entity ID
+   *
+   * Returns all relationships pointing to this entity.
+   */
+  to?: string
+
+  /**
+   * Filter by relationship type(s)
+   *
+   * Can be a single VerbType or array of VerbTypes.
+   */
+  type?: VerbType | VerbType[]
+
+  /**
+   * Maximum number of results to return
+   *
+   * @default 100
+   */
+  limit?: number
+
+  /**
+   * Number of results to skip (offset-based pagination)
+   *
+   * @default 0
+   */
+  offset?: number
+
+  /**
+   * Cursor for cursor-based pagination
+   *
+   * More efficient than offset for large result sets.
+   */
+  cursor?: string
+
+  /**
+   * Filter by service (multi-tenancy)
+   *
+   * Only return relationships belonging to this service.
+   */
+  service?: string
 }
 
 // ============= Batch Operations =============
