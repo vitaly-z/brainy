@@ -771,10 +771,8 @@ export class R2Storage extends BaseStorage {
 
       this.verbCacheManager.set(edge.id, edge)
 
-      const metadata = await this.getVerbMetadata(edge.id)
-      if (metadata && metadata.type) {
-        await this.incrementVerbCount(metadata.type as string)
-      }
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // This fixes the race condition where metadata didn't exist yet
 
       this.releaseBackpressure(true, requestId)
     } catch (error: any) {

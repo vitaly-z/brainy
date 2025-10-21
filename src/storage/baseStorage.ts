@@ -925,12 +925,35 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Internal method for saving noun metadata (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   *
+   * CRITICAL (v4.1.2): Count synchronization happens here
+   * This ensures counts are updated AFTER metadata exists, fixing the race condition
+   * where storage adapters tried to read metadata before it was saved.
+   *
    * @protected
    */
   protected async saveNounMetadata_internal(id: string, metadata: NounMetadata): Promise<void> {
     await this.ensureInitialized()
+
+    // Determine if this is a new entity by checking if metadata already exists
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
-    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+    const existingMetadata = await this.readObjectFromPath(keyInfo.fullPath)
+    const isNew = !existingMetadata
+
+    // Save the metadata
+    await this.writeObjectToPath(keyInfo.fullPath, metadata)
+
+    // CRITICAL FIX (v4.1.2): Increment count for new entities
+    // This runs AFTER metadata is saved, guaranteeing type information is available
+    // Uses synchronous increment since storage operations are already serialized
+    // Fixes Bug #1: Count synchronization failure during add() and import()
+    if (isNew && metadata.noun) {
+      this.incrementEntityCount(metadata.noun)
+      // Persist counts asynchronously (fire and forget)
+      this.scheduleCountPersist().catch(() => {
+        // Ignore persist errors - will retry on next operation
+      })
+    }
   }
 
   /**
@@ -965,12 +988,38 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Internal method for saving verb metadata (v4.0.0: now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
+   *
+   * CRITICAL (v4.1.2): Count synchronization happens here
+   * This ensures verb counts are updated AFTER metadata exists, fixing the race condition
+   * where storage adapters tried to read metadata before it was saved.
+   *
+   * Note: Verb type is now stored in both HNSWVerb (vector file) and VerbMetadata for count tracking
+   *
    * @protected
    */
   protected async saveVerbMetadata_internal(id: string, metadata: VerbMetadata): Promise<void> {
     await this.ensureInitialized()
+
+    // Determine if this is a new verb by checking if metadata already exists
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
-    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+    const existingMetadata = await this.readObjectFromPath(keyInfo.fullPath)
+    const isNew = !existingMetadata
+
+    // Save the metadata
+    await this.writeObjectToPath(keyInfo.fullPath, metadata)
+
+    // CRITICAL FIX (v4.1.2): Increment verb count for new relationships
+    // This runs AFTER metadata is saved
+    // Verb type is now stored in metadata (as of v4.1.2) to avoid loading HNSWVerb
+    // Uses synchronous increment since storage operations are already serialized
+    // Fixes Bug #2: Count synchronization failure during relate() and import()
+    if (isNew && (metadata as any).verb) {
+      this.incrementVerbCount((metadata as any).verb)
+      // Persist counts asynchronously (fire and forget)
+      this.scheduleCountPersist().catch(() => {
+        // Ignore persist errors - will retry on next operation
+      })
+    }
   }
 
   /**

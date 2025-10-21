@@ -1057,11 +1057,8 @@ export class AzureBlobStorage extends BaseStorage {
       // Update cache
       this.verbCacheManager.set(edge.id, edge)
 
-      // Increment verb count
-      const metadata = await this.getVerbMetadata(edge.id)
-      if (metadata && metadata.type) {
-        await this.incrementVerbCount(metadata.type as string)
-      }
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Edge ${edge.id} saved successfully`)
       this.releaseBackpressure(true, requestId)

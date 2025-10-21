@@ -79,7 +79,8 @@ export class MemoryStorage extends BaseStorage {
     // Save the noun directly in the nouns map
     this.nouns.set(noun.id, nounCopy)
 
-    // Note: Count tracking happens in saveNounMetadata since type info is in metadata now
+    // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
+    // This fixes the race condition where metadata didn't exist yet
   }
 
   /**

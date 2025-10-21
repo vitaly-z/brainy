@@ -784,7 +784,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return this.augmentationRegistry.execute('relate', params, async () => {
       // v4.0.0: Prepare verb metadata
+      // CRITICAL (v4.1.2): Include verb type in metadata for count tracking
       const verbMetadata = {
+        verb: params.type, // Store verb type for count synchronization
         weight: params.weight ?? 1.0,
         ...(params.metadata || {}),
         createdAt: Date.now()

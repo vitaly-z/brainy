@@ -488,11 +488,8 @@ export class GcsStorage extends BaseStorage {
       }
       // Note: Empty vectors are intentional during HNSW lazy mode - not logged
 
-      // Increment noun count
-      const metadata = await this.getNounMetadata(node.id)
-      if (metadata && metadata.type) {
-        await this.incrementEntityCountSafe(metadata.type as string)
-      }
+      // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
+      // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Node ${node.id} saved successfully`)
       this.releaseBackpressure(true, requestId)
@@ -858,11 +855,8 @@ export class GcsStorage extends BaseStorage {
       // Update cache
       this.verbCacheManager.set(edge.id, edge)
 
-      // Increment verb count
-      const metadata = await this.getVerbMetadata(edge.id)
-      if (metadata && metadata.type) {
-        await this.incrementVerbCount(metadata.type as string)
-      }
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Edge ${edge.id} saved successfully`)
       this.releaseBackpressure(true, requestId)

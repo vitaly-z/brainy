@@ -253,9 +253,6 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // Check if this is a new node to update counts
-    const isNew = !(await this.fileExists(this.getNodePath(node.id)))
-
     // Convert connections Map to a serializable format
     // CRITICAL: Only save lightweight vector data (no metadata)
     // Metadata is saved separately via saveNounMetadata() (2-file system)
@@ -276,18 +273,8 @@ export class FileSystemStorage extends BaseStorage {
       JSON.stringify(serializableNode, null, 2)
     )
 
-    // Update counts for new nodes (v4.0.0: load metadata separately)
-    if (isNew) {
-      // v4.0.0: Get type from separate metadata storage
-      const metadata = await this.getNounMetadata(node.id)
-      const type = metadata?.noun || 'default'
-      this.incrementEntityCount(type)
-
-      // Persist counts periodically (every 10 operations for efficiency)
-      if (this.totalNounCount % 10 === 0) {
-        await this.persistCounts()
-      }
-    }
+    // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
+    // This fixes the race condition where metadata didn't exist yet
   }
 
   /**
@@ -460,9 +447,6 @@ export class FileSystemStorage extends BaseStorage {
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
-    // Check if this is a new edge to update counts
-    const isNew = !(await this.fileExists(this.getVerbPath(edge.id)))
-
     // Convert connections Map to a serializable format
     // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
     // These fields are essential for 90% of operations - no metadata lookup needed
@@ -489,15 +473,8 @@ export class FileSystemStorage extends BaseStorage {
       JSON.stringify(serializableEdge, null, 2)
     )
 
-    // Update verb count for new edges (production-scale optimizations)
-    if (isNew) {
-      this.totalVerbCount++
-
-      // Persist counts periodically (every 10 operations for efficiency)
-      if (this.totalVerbCount % 10 === 0) {
-        this.persistCounts() // Async persist, don't await
-      }
-    }
+    // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+    // This fixes the race condition where metadata didn't exist yet
   }
 
   /**

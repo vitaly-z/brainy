@@ -1015,47 +1015,63 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Increment verb count - O(1) operation with mutex protection
+   * Increment verb count - O(1) operation (v4.1.2: now synchronous)
+   * Protected by storage-specific mechanisms (mutex, distributed consensus, etc.)
    * @param type The verb type
    */
-  protected async incrementVerbCount(type: string): Promise<void> {
+  protected incrementVerbCount(type: string): void {
+    this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
+    this.totalVerbCount++
+    // Update cache
+    this.countCache.set('verbs_count', {
+      count: this.totalVerbCount,
+      timestamp: Date.now()
+    })
+  }
+
+  /**
+   * Thread-safe increment for verb counts (v4.1.2)
+   * Uses mutex for single-node, distributed consensus for multi-node
+   * @param type The verb type
+   */
+  protected async incrementVerbCountSafe(type: string): Promise<void> {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-verb-${type}`, async () => {
-      this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
-      this.totalVerbCount++
-      // Update cache
-      this.countCache.set('verbs_count', {
-        count: this.totalVerbCount,
-        timestamp: Date.now()
-      })
-
+      this.incrementVerbCount(type)
       // Smart batching (v3.32.3+): Adapts to storage type
       await this.scheduleCountPersist()
     })
   }
 
   /**
-   * Decrement verb count - O(1) operation with mutex protection
+   * Decrement verb count - O(1) operation (v4.1.2: now synchronous)
    * @param type The verb type
    */
-  protected async decrementVerbCount(type: string): Promise<void> {
+  protected decrementVerbCount(type: string): void {
+    const current = this.verbCounts.get(type) || 0
+    if (current > 1) {
+      this.verbCounts.set(type, current - 1)
+    } else {
+      this.verbCounts.delete(type)
+    }
+    if (this.totalVerbCount > 0) {
+      this.totalVerbCount--
+    }
+    // Update cache
+    this.countCache.set('verbs_count', {
+      count: this.totalVerbCount,
+      timestamp: Date.now()
+    })
+  }
+
+  /**
+   * Thread-safe decrement for verb counts (v4.1.2)
+   * @param type The verb type
+   */
+  protected async decrementVerbCountSafe(type: string): Promise<void> {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-verb-${type}`, async () => {
-      const current = this.verbCounts.get(type) || 0
-      if (current > 1) {
-        this.verbCounts.set(type, current - 1)
-      } else {
-        this.verbCounts.delete(type)
-      }
-      if (this.totalVerbCount > 0) {
-        this.totalVerbCount--
-      }
-      // Update cache
-      this.countCache.set('verbs_count', {
-        count: this.totalVerbCount,
-        timestamp: Date.now()
-      })
-
+      this.decrementVerbCount(type)
       // Smart batching (v3.32.3+): Adapts to storage type
       await this.scheduleCountPersist()
     })
