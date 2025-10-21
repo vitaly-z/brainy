@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.1.2](https://github.com/soulcraftlabs/brainy/compare/v4.1.1...v4.1.2) (2025-10-21)
+
+
+### 🐛 Bug Fixes
+
+* **storage**: resolve count synchronization race condition across all storage adapters ([798a694](https://github.com/soulcraftlabs/brainy/commit/798a694))
+  - Fixed critical bug where entity and relationship counts were not tracked correctly during add(), relate(), and import()
+  - Root cause: Race condition where count increment tried to read metadata before it was saved
+  - Fixed in baseStorage for all storage adapters (FileSystem, GCS, R2, Azure, Memory, OPFS, S3, TypeAware)
+  - Added verb type to VerbMetadata for proper count tracking
+  - Refactored verb count methods to prevent mutex deadlocks
+  - Added rebuildCounts utility to repair corrupted counts from actual storage data
+  - Added comprehensive integration tests (11 tests covering all operations)
+
 ### [4.1.1](https://github.com/soulcraftlabs/brainy/compare/v4.1.0...v4.1.1) (2025-10-20)
 
 
