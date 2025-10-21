@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [4.1.3](https://github.com/soulcraftlabs/brainy/compare/v4.1.2...v4.1.3) (2025-10-21)
 
+- perf: make getRelations() pagination consistent and efficient (54d819c)
+- fix: resolve getRelations() empty array bug and add string ID shorthand (8d217f3)
+
+
+### [4.1.3](https://github.com/soulcraftlabs/brainy/compare/v4.1.2...v4.1.3) (2025-10-21)
+
 
 ### 🐛 Bug Fixes
 
