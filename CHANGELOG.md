@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file. See [standa
   - Fixed critical bug where `brain.getRelations()` returned `[]` instead of all relationships
   - Added support for retrieving all relationships with pagination (default limit: 100)
   - Added string ID shorthand syntax: `brain.getRelations(entityId)` as alias for `brain.getRelations({ from: entityId })`
+  - **Performance**: Made pagination consistent - now ALL query patterns paginate at storage layer
+  - **Efficiency**: `getRelations({ from: id, limit: 10 })` now fetches only 10 instead of fetching ALL then slicing
+  - Fixed storage.getVerbs() offset handling - now properly converts offset to cursor for adapters
   - Production safety: Warns when fetching >10k relationships without filters
   - Fixed broken method calls in improvedNeuralAPI.ts (replaced non-existent `getVerbsForNoun` with `getRelations`)
   - Fixed property access bugs: `verb.target` → `verb.to`, `verb.verb` → `verb.type`

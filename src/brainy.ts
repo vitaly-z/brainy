@@ -911,58 +911,45 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const limit = params.limit || 100
     const offset = params.offset || 0
 
-    let relations: Relation<T>[] = []
+    // Production safety: warn for large unfiltered queries
+    if (!params.from && !params.to && !params.type && limit > 10000) {
+      console.warn(
+        `[Brainy] getRelations(): Fetching ${limit} relationships without filters. ` +
+        `Consider adding 'from', 'to', or 'type' filter for better performance.`
+      )
+    }
 
-    // Case 1: Filter by source
+    // Build filter for storage query
+    const filter: any = {}
+
     if (params.from) {
-      const verbs = await this.storage.getVerbsBySource(params.from)
-      relations.push(...this.verbsToRelations(verbs as any))
-    }
-    // Case 2: Filter by target
-    else if (params.to) {
-      const verbs = await this.storage.getVerbsByTarget(params.to)
-      relations.push(...this.verbsToRelations(verbs as any))
-    }
-    // Case 3: Get ALL relationships (NEW - fixes v4.1.2 bug)
-    else {
-      // Production safety: warn for large unfiltered queries
-      if (!params.type && limit > 10000) {
-        console.warn(
-          `[Brainy] getRelations(): Fetching ${limit} relationships without filters. ` +
-          `Consider adding 'type' filter or reducing 'limit' for better performance.`
-        )
-      }
-
-      // Fetch from storage using pagination
-      const result = await this.storage.getVerbs({
-        pagination: {
-          limit: limit + offset, // Fetch enough for offset + limit
-          offset: 0,
-          cursor: params.cursor
-        },
-        filter: params.type
-          ? { verbType: Array.isArray(params.type) ? params.type : [params.type] as any }
-          : undefined
-      })
-
-      relations = this.verbsToRelations(result.items as any)
+      filter.sourceId = params.from
     }
 
-    // Filter by type (only if not already filtered at storage level)
-    let filtered = relations
-    if (params.type && (params.from || params.to)) {
-      // Type filter only needed for from/to queries
-      const types = Array.isArray(params.type) ? params.type : [params.type]
-      filtered = relations.filter((r) => types.includes(r.type))
+    if (params.to) {
+      filter.targetId = params.to
     }
 
-    // Filter by service
+    if (params.type) {
+      filter.verbType = Array.isArray(params.type) ? params.type : [params.type]
+    }
+
     if (params.service) {
-      filtered = filtered.filter((r) => r.service === params.service)
+      filter.service = params.service
     }
 
-    // Apply pagination (for from/to queries, or trim excess from storage query)
-    return filtered.slice(offset, offset + limit)
+    // Fetch from storage with pagination at storage layer (efficient!)
+    const result = await this.storage.getVerbs({
+      pagination: {
+        limit,
+        offset,
+        cursor: params.cursor
+      },
+      filter: Object.keys(filter).length > 0 ? filter : undefined
+    })
+
+    // Convert to Relation format
+    return this.verbsToRelations(result.items as any)
   }
 
   // ============= SEARCH & DISCOVERY =============

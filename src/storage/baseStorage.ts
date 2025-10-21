@@ -752,14 +752,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Check if the adapter has a paginated method for getting verbs
       if (typeof (this as any).getVerbsWithPagination === 'function') {
         // Use the adapter's paginated method
+        // Convert offset to cursor if no cursor provided (adapters use cursor for offset)
+        const effectiveCursor = cursor || (offset > 0 ? offset.toString() : undefined)
+
         const result = await (this as any).getVerbsWithPagination({
           limit,
-          cursor,
+          cursor: effectiveCursor,
           filter: options?.filter
         })
 
-        // Apply offset if needed (some adapters might not support offset)
-        const items = result.items.slice(offset)
+        // Items are already offset by the adapter via cursor, no need to slice
+        const items = result.items
 
         // CRITICAL SAFETY CHECK: Prevent infinite loops
         // If we have no items but hasMore is true, force hasMore to false
