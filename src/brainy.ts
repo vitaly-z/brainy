@@ -1863,33 +1863,91 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Import files with auto-detection and dual storage (VFS + Knowledge Graph)
+   * Import files with intelligent extraction and dual storage (VFS + Knowledge Graph)
    *
    * Unified import system that:
    * - Auto-detects format (Excel, PDF, CSV, JSON, Markdown)
-   * - Extracts entities and relationships
+   * - Extracts entities with AI-powered name/type detection
+   * - Infers semantic relationships from context
    * - Stores in both VFS (organized files) and Knowledge Graph (connected entities)
    * - Links VFS files to graph entities
    *
-   * @example
-   * // Import from file path
-   * const result = await brain.import('/path/to/file.xlsx')
+   * @since 4.0.0
    *
-   * @example
-   * // Import from buffer
+   * @example Quick Start (All AI features enabled by default)
+   * ```typescript
+   * const result = await brain.import('./glossary.xlsx')
+   * // Auto-detects format, extracts entities, infers relationships
+   * ```
+   *
+   * @example Full-Featured Import (v4.x)
+   * ```typescript
+   * const result = await brain.import('./data.xlsx', {
+   *   // AI features
+   *   enableNeuralExtraction: true,      // Extract entity names/metadata
+   *   enableRelationshipInference: true, // Detect semantic relationships
+   *   enableConceptExtraction: true,     // Extract types/concepts
+   *
+   *   // VFS features
+   *   vfsPath: '/imports/my-data',       // Store in VFS directory
+   *   groupBy: 'type',                   // Organize by entity type
+   *   preserveSource: true,              // Keep original file
+   *
+   *   // Progress tracking
+   *   onProgress: (p) => console.log(p.message)
+   * })
+   * ```
+   *
+   * @example Performance Tuning (Large Files)
+   * ```typescript
+   * const result = await brain.import('./huge-file.csv', {
+   *   enableDeduplication: false,  // Skip dedup for speed
+   *   confidenceThreshold: 0.8,    // Higher threshold = fewer entities
+   *   onProgress: (p) => console.log(`${p.processed}/${p.total}`)
+   * })
+   * ```
+   *
+   * @example Import from Buffer or Object
+   * ```typescript
+   * // From buffer
    * const result = await brain.import(buffer, { format: 'pdf' })
    *
-   * @example
-   * // Import JSON object
+   * // From object
    * const result = await brain.import({ entities: [...] })
+   * ```
    *
-   * @example
-   * // Custom VFS path and grouping
-   * const result = await brain.import(buffer, {
-   *   vfsPath: '/my-imports/data',
-   *   groupBy: 'type',
-   *   onProgress: (progress) => console.log(progress.message)
-   * })
+   * @throws {Error} If invalid options are provided (v4.x breaking changes)
+   *
+   * @see {@link https://brainy.dev/docs/api/import API Documentation}
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   *
+   * @remarks
+   * **⚠️ Breaking Changes from v3.x:**
+   *
+   * The import API was redesigned in v4.0.0 for clarity and better feature control.
+   * Old v3.x option names are **no longer recognized** and will throw errors.
+   *
+   * **Option Changes:**
+   * - ❌ `extractRelationships` → ✅ `enableRelationshipInference`
+   * - ❌ `createFileStructure` → ✅ `vfsPath: '/your/path'`
+   * - ❌ `autoDetect` → ✅ *(removed - always enabled)*
+   * - ❌ `excelSheets` → ✅ *(removed - all sheets processed)*
+   * - ❌ `pdfExtractTables` → ✅ *(removed - always enabled)*
+   *
+   * **New Options:**
+   * - ✅ `enableNeuralExtraction` - Extract entity names via AI
+   * - ✅ `enableConceptExtraction` - Extract entity types via AI
+   * - ✅ `preserveSource` - Save original file in VFS
+   *
+   * **If you get an error:**
+   * The error message includes migration instructions and examples.
+   * See the complete migration guide for all details.
+   *
+   * **Why these changes?**
+   * - Clearer option names (explicitly describe what they do)
+   * - Separation of concerns (neural, relationships, VFS are separate)
+   * - Better defaults (AI features enabled by default)
+   * - Reduced confusion (removed redundant options)
    */
   async import(
     source: Buffer | string | object,

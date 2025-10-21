@@ -223,22 +223,110 @@ $ brainy import ./research-papers --extract-concepts --progress
 
 ### ⚠️ Breaking Changes
 
-**NONE** - v4.0.0 is 100% backward compatible!
+#### 💥 Import API Redesign
 
-All v4.0.0 features are:
+The import API has been redesigned for clarity and better feature control. **Old v3.x option names are no longer recognized** and will throw errors.
+
+**What Changed:**
+
+| v3.x Option | v4.x Option | Action Required |
+|-------------|-------------|-----------------|
+| `extractRelationships` | `enableRelationshipInference` | **Rename option** |
+| `autoDetect` | *(removed)* | **Delete option** (always enabled) |
+| `createFileStructure` | `vfsPath` | **Replace** with VFS path |
+| `excelSheets` | *(removed)* | **Delete option** (all sheets processed) |
+| `pdfExtractTables` | *(removed)* | **Delete option** (always enabled) |
+| - | `enableNeuralExtraction` | **Add option** (new in v4.x) |
+| - | `enableConceptExtraction` | **Add option** (new in v4.x) |
+| - | `preserveSource` | **Add option** (new in v4.x) |
+
+**Why These Changes?**
+
+1. **Clearer option names**: `enableRelationshipInference` explicitly indicates AI-powered relationship inference
+2. **Separation of concerns**: Neural extraction, relationship inference, and VFS are now separate, explicit options
+3. **Better defaults**: Auto-detection and AI features are enabled by default
+4. **Reduced confusion**: Removed redundant options like `autoDetect` and format-specific options
+
+**Migration Examples:**
+
+<details>
+<summary>Example 1: Basic Excel Import</summary>
+
+```typescript
+// v3.x (OLD - Will throw error)
+await brain.import('./glossary.xlsx', {
+  extractRelationships: true,
+  createFileStructure: true
+})
+
+// v4.x (NEW - Use this)
+await brain.import('./glossary.xlsx', {
+  enableRelationshipInference: true,
+  vfsPath: '/imports/glossary'
+})
+```
+</details>
+
+<details>
+<summary>Example 2: Full-Featured Import</summary>
+
+```typescript
+// v3.x (OLD - Will throw error)
+await brain.import('./data.xlsx', {
+  extractRelationships: true,
+  autoDetect: true,
+  createFileStructure: true
+})
+
+// v4.x (NEW - Use this)
+await brain.import('./data.xlsx', {
+  enableNeuralExtraction: true,      // Extract entity names
+  enableRelationshipInference: true, // Infer semantic relationships
+  enableConceptExtraction: true,     // Extract entity types
+  vfsPath: '/imports/data',          // VFS directory
+  preserveSource: true               // Save original file
+})
+```
+</details>
+
+**Error Messages:**
+
+If you use old v3.x options, you'll get a clear error message:
+
+```
+❌ Invalid import options detected (Brainy v4.x breaking changes)
+
+The following v3.x options are no longer supported:
+
+  ❌ extractRelationships
+     → Use: enableRelationshipInference
+     → Why: Option renamed for clarity in v4.x
+
+📖 Migration Guide: https://brainy.dev/docs/guides/migrating-to-v4
+```
+
+**Other v4.0.0 Features (Non-Breaking):**
+
+All other v4.0.0 features are:
 - ✅ Opt-in (lifecycle, compression, batch operations)
 - ✅ Additive (new CLI commands, new methods)
 - ✅ Non-breaking (existing code continues to work)
 
 ### 📝 Migration
 
-**No migration required!** All v4.0.0 features are optional enhancements.
+**Import API migration required** if you use `brain.import()` with the old v3.x option names.
 
-To use new features:
+#### Required Changes:
 1. Update to v4.0.0: `npm install @soulcraft/brainy@4.0.0`
-2. Enable lifecycle policies: `brainy storage lifecycle set`
-3. Use batch operations: `brainy storage batch-delete entities.txt`
-4. See `docs/MIGRATION-V3-TO-V4.md` for full feature documentation
+2. Update import calls to use new option names (see table above)
+3. Test your imports - you'll get clear error messages if you use old options
+
+#### Optional Enhancements:
+- Enable lifecycle policies: `brainy storage lifecycle set`
+- Use batch operations: `brainy storage batch-delete entities.txt`
+- See full migration guide: `docs/guides/migrating-to-v4.md`
+
+**Complete Migration Guide:** [docs/guides/migrating-to-v4.md](./docs/guides/migrating-to-v4.md)
 
 ### 🎓 What This Means
 

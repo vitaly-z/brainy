@@ -36,7 +36,10 @@ export interface ImportSource {
   filename?: string
 }
 
-export interface ImportOptions {
+/**
+ * Valid import options for v4.x
+ */
+export interface ValidImportOptions {
   /** Force specific format (skip auto-detection) */
   format?: SupportedFormat
 
@@ -85,6 +88,51 @@ export interface ImportOptions {
   /** Progress callback */
   onProgress?: (progress: ImportProgress) => void
 }
+
+/**
+ * Deprecated import options from v3.x
+ * Using these will cause TypeScript compile errors
+ *
+ * @deprecated These options are no longer supported in v4.x
+ * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+ */
+export interface DeprecatedImportOptions {
+  /**
+   * @deprecated Use `enableRelationshipInference` instead
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   */
+  extractRelationships?: never
+
+  /**
+   * @deprecated Removed in v4.x - auto-detection is now always enabled
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   */
+  autoDetect?: never
+
+  /**
+   * @deprecated Use `vfsPath` to specify the directory path instead
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   */
+  createFileStructure?: never
+
+  /**
+   * @deprecated Removed in v4.x - all sheets are now processed automatically
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   */
+  excelSheets?: never
+
+  /**
+   * @deprecated Removed in v4.x - table extraction is now automatic for PDF imports
+   * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   */
+  pdfExtractTables?: never
+}
+
+/**
+ * Complete import options interface
+ * Combines valid v4.x options with deprecated v3.x options (which cause TypeScript errors)
+ */
+export type ImportOptions = ValidImportOptions & DeprecatedImportOptions
 
 export interface ImportProgress {
   stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'relationships' | 'complete'
@@ -210,6 +258,9 @@ export class ImportCoordinator {
   ): Promise<ImportResult> {
     const startTime = Date.now()
     const importId = uuidv4()
+
+    // Validate options (v4.0.0+: Reject deprecated v3.x options)
+    this.validateOptions(options)
 
     // Normalize source
     const normalizedSource = this.normalizeSource(source, options.format)
@@ -799,5 +850,115 @@ export class ImportCoordinator {
 
     // Fallback: return as-is
     return result
+  }
+
+  /**
+   * Validate options and reject deprecated v3.x options (v4.0.0+)
+   * Throws clear errors with migration guidance
+   */
+  private validateOptions(options: any): void {
+    const invalidOptions: Array<{ old: string; new: string; message: string }> = []
+
+    // Check for v3.x deprecated options
+    if ('extractRelationships' in options) {
+      invalidOptions.push({
+        old: 'extractRelationships',
+        new: 'enableRelationshipInference',
+        message: 'Option renamed for clarity in v4.x - explicitly indicates AI-powered relationship inference'
+      })
+    }
+
+    if ('autoDetect' in options) {
+      invalidOptions.push({
+        old: 'autoDetect',
+        new: '(removed)',
+        message: 'Auto-detection is now always enabled - no need to specify this option'
+      })
+    }
+
+    if ('createFileStructure' in options) {
+      invalidOptions.push({
+        old: 'createFileStructure',
+        new: 'vfsPath',
+        message: 'Use vfsPath to explicitly specify the virtual filesystem directory path'
+      })
+    }
+
+    if ('excelSheets' in options) {
+      invalidOptions.push({
+        old: 'excelSheets',
+        new: '(removed)',
+        message: 'All sheets are now processed automatically - no configuration needed'
+      })
+    }
+
+    if ('pdfExtractTables' in options) {
+      invalidOptions.push({
+        old: 'pdfExtractTables',
+        new: '(removed)',
+        message: 'Table extraction is now automatic for PDF imports'
+      })
+    }
+
+    // If invalid options found, throw error with detailed message
+    if (invalidOptions.length > 0) {
+      const errorMessage = this.buildValidationErrorMessage(invalidOptions)
+      throw new Error(errorMessage)
+    }
+  }
+
+  /**
+   * Build detailed error message for invalid options
+   * Respects LOG_LEVEL for verbosity (detailed in dev, concise in prod)
+   */
+  private buildValidationErrorMessage(
+    invalidOptions: Array<{ old: string; new: string; message: string }>
+  ): string {
+    // Check environment for verbosity level
+    const verbose =
+      process.env.LOG_LEVEL === 'debug' ||
+      process.env.LOG_LEVEL === 'verbose' ||
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'dev'
+
+    if (verbose) {
+      // DETAILED mode (development)
+      const optionDetails = invalidOptions
+        .map(
+          (opt) => `
+  ❌ ${opt.old}
+     → Use: ${opt.new}
+     → Why: ${opt.message}`
+        )
+        .join('\n')
+
+      return `
+❌ Invalid import options detected (Brainy v4.x breaking changes)
+
+The following v3.x options are no longer supported:
+${optionDetails}
+
+📖 Migration Guide: https://brainy.dev/docs/guides/migrating-to-v4
+💡 Quick Fix Examples:
+
+   Before (v3.x):
+   await brain.import(file, {
+     extractRelationships: true,
+     createFileStructure: true
+   })
+
+   After (v4.x):
+   await brain.import(file, {
+     enableRelationshipInference: true,
+     vfsPath: '/imports/my-data'
+   })
+
+🔗 Full API docs: https://brainy.dev/docs/api/import
+      `.trim()
+    } else {
+      // CONCISE mode (production)
+      const optionsList = invalidOptions.map((o) => `'${o.old}'`).join(', ')
+      return `Invalid import options: ${optionsList}. See https://brainy.dev/docs/guides/migrating-to-v4`
+    }
   }
 }
