@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.1.4](https://github.com/soulcraftlabs/brainy/compare/v4.1.3...v4.1.4) (2025-10-21)
+
+- feat: add import API validation and v4.x migration guide (a1a0576)
+
+
 ### [4.1.3](https://github.com/soulcraftlabs/brainy/compare/v4.1.2...v4.1.3) (2025-10-21)
 
 - perf: make getRelations() pagination consistent and efficient (54d819c)
