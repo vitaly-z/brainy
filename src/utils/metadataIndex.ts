@@ -2091,7 +2091,7 @@ export class MetadataIndexManager {
 
     this.isRebuilding = true
     try {
-      prodLog.info('🔄 Starting non-blocking metadata index rebuild with batch processing to prevent socket exhaustion...')
+      prodLog.info('🔄 Starting non-blocking metadata index rebuild with batch processing...')
     prodLog.info(`📊 Storage adapter: ${this.storage.constructor.name}`)
     prodLog.info(`🔧 Batch processing available: ${!!this.storage.getMetadataBatch}`)
 
@@ -2104,9 +2104,18 @@ export class MetadataIndexManager {
       // This ensures rebuild starts fresh (v3.44.1)
       this.unifiedCache.clear('metadata')
 
+      // Adaptive batch sizing based on storage adapter (v4.2.2)
+      // FileSystem/Memory/OPFS: Large batches (fast local I/O, no socket limits)
+      // Cloud (GCS/S3/R2): Small batches (prevent socket exhaustion)
+      const storageType = this.storage.constructor.name
+      const isLocalStorage = storageType === 'FileSystemStorage' ||
+                            storageType === 'MemoryStorage' ||
+                            storageType === 'OPFSStorage'
+      const nounLimit = isLocalStorage ? 500 : 25
+      prodLog.info(`⚡ Using ${isLocalStorage ? 'optimized' : 'conservative'} batch size: ${nounLimit} items/batch`)
+
       // Rebuild noun metadata indexes using pagination
       let nounOffset = 0
-      const nounLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
       let hasMoreNouns = true
       let totalNounsProcessed = 0
       let consecutiveEmptyBatches = 0
@@ -2201,7 +2210,7 @@ export class MetadataIndexManager {
       
       // Rebuild verb metadata indexes using pagination
       let verbOffset = 0
-      const verbLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
+      const verbLimit = isLocalStorage ? 500 : 25 // Same adaptive batch sizing as nouns
       let hasMoreVerbs = true
       let totalVerbsProcessed = 0
       let consecutiveEmptyVerbBatches = 0
