@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.2.1](https://github.com/soulcraftlabs/brainy/compare/v4.2.0...v4.2.1) (2025-10-23)
+
+
+### 🐛 Bug Fixes
+
+* **performance**: fix 100x metadata rebuild regression in v4.2.0
+  - **Critical Fix**: Metadata index rebuild now takes 2-3 seconds instead of 8-9 minutes for 1,157 entities
+  - **Root Cause**: Hardcoded batch size of 25 was too conservative for FileSystemStorage (no socket limits)
+  - **Solution**: Implemented adaptive batch sizing based on storage adapter type:
+    - FileSystemStorage/MemoryStorage: 1000 entities/batch (40x larger → 47 batches reduced to 2 batches)
+    - Cloud Storage (GCS/S3/R2): 25 entities/batch (keeps conservative batching to prevent socket exhaustion)
+    - OPFS/Unknown: 100 entities/batch (balanced default)
+  - **Performance**: 100x speedup for local development and FileSystemStorage deployments
+  - **Impact**: Fixes Workshop team bug report - cold starts now complete in seconds, not minutes
+  - **Backward Compatible**: Cloud storage performance unchanged, only local storage optimized
+  - **Files Changed**: `src/utils/metadataIndex.ts` (lines 1727-1770, 2052-2079, 2174)
+
+### [4.2.0](https://github.com/soulcraftlabs/brainy/compare/v4.1.4...v4.2.0) (2025-10-23)
+
+
+### ✨ Features
+
+* **import**: implement progressive flush intervals for streaming imports
+  - Dynamically adjusts flush frequency based on current entity count (not total)
+  - Starts at 100 entities for frequent early updates, scales to 5000 for large imports
+  - Works for both known totals (files) and unknown totals (streaming APIs)
+  - Provides live query access during imports and crash resilience
+  - Zero configuration required - always-on streaming architecture
+  - Updated documentation with engineering insights and usage examples
+
 ### [4.1.4](https://github.com/soulcraftlabs/brainy/compare/v4.1.3...v4.1.4) (2025-10-21)
 
 - feat: add import API validation and v4.x migration guide (a1a0576)

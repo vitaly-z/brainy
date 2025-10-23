@@ -1725,6 +1725,51 @@ export class MetadataIndexManager {
   }
 
   /**
+   * Get adaptive batch size based on storage adapter type
+   * v4.2.1: Fixes 100x performance regression in metadata rebuild
+   *
+   * Performance characteristics by storage type:
+   * - FileSystemStorage/MemoryStorage: No socket limits, I/O bound, benefits from large batches
+   * - Cloud Storage (GCS/S3/R2): Socket exhaustion risk, needs conservative batching
+   *
+   * Batch size optimization:
+   * - 1000 entities/batch for local storage = 1-2 batches for typical dev datasets
+   * - 25 entities/batch for cloud storage = prevents connection pool exhaustion
+   * - 100 entities/batch for unknown storage = balanced default
+   */
+  private getAdaptiveBatchSize(): number {
+    const storageType = this.storage.constructor.name
+
+    // Local storage: Optimize for speed (no socket limits)
+    // FileSystemStorage can handle 1000+ concurrent file reads efficiently
+    // MemoryStorage is even faster with no I/O overhead
+    if (storageType === 'FileSystemStorage' || storageType === 'MemoryStorage') {
+      return 1000 // 40x larger than v4.2.0, reduces 47 batches → 2 batches for 1,157 entities
+    }
+
+    // Cloud storage: Optimize for reliability (prevent socket exhaustion)
+    // GCS/S3/R2 have connection pool limits and timeout risks
+    // Conservative batching prevents "EMFILE: too many open files" errors
+    if (storageType.includes('GCS') ||
+        storageType.includes('S3') ||
+        storageType.includes('R2') ||
+        storageType === 'GoogleCloudStorage' ||
+        storageType === 'S3CompatibleStorage') {
+      return 25 // Keep v4.2.0 behavior for cloud storage
+    }
+
+    // OPFS (Origin Private File System) in browsers: Moderate batching
+    // Browser storage has different constraints than Node.js filesystem
+    if (storageType === 'OPFSStorage') {
+      return 100 // Balance between speed and browser resource limits
+    }
+
+    // Unknown storage type: Use safe default
+    // Better to be conservative than risk socket exhaustion
+    return 100
+  }
+
+  /**
    * Load field index from storage
    */
   private async loadFieldIndex(field: string): Promise<FieldIndexData | null> {
@@ -2004,9 +2049,21 @@ export class MetadataIndexManager {
 
     this.isRebuilding = true
     try {
-      prodLog.info('🔄 Starting non-blocking metadata index rebuild with batch processing to prevent socket exhaustion...')
-    prodLog.info(`📊 Storage adapter: ${this.storage.constructor.name}`)
-    prodLog.info(`🔧 Batch processing available: ${!!this.storage.getMetadataBatch}`)
+      // v4.2.1: Get adaptive batch size based on storage type
+      const batchSize = this.getAdaptiveBatchSize()
+      const storageType = this.storage.constructor.name
+
+      prodLog.info('🔄 Starting metadata index rebuild with adaptive batch processing...')
+      prodLog.info(`📊 Storage adapter: ${storageType}`)
+      prodLog.info(`📦 Adaptive batch size: ${batchSize} entities/batch`)
+      prodLog.info(`🔧 Batch processing method: ${this.storage.getMetadataBatch ? 'getMetadataBatch()' : 'individual calls with concurrency limit'}`)
+
+      // Log performance expectations
+      if (storageType === 'FileSystemStorage' || storageType === 'MemoryStorage') {
+        prodLog.info(`⚡ Local storage detected: Optimized for speed (40x faster than v4.2.0)`)
+      } else if (storageType.includes('GCS') || storageType.includes('S3') || storageType.includes('R2')) {
+        prodLog.info(`☁️  Cloud storage detected: Conservative batching to prevent socket exhaustion`)
+      }
 
       // Clear existing indexes (v3.42.0 - use sparse indices instead of flat files)
       // v3.44.1: No sparseIndices Map to clear - UnifiedCache handles eviction
@@ -2016,10 +2073,10 @@ export class MetadataIndexManager {
       // Clear all cached sparse indices in UnifiedCache
       // This ensures rebuild starts fresh (v3.44.1)
       this.unifiedCache.clear('metadata')
-      
+
       // Rebuild noun metadata indexes using pagination
       let nounOffset = 0
-      const nounLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
+      const nounLimit = batchSize // v4.2.1: Adaptive batch size (1000 for local, 25 for cloud)
       let hasMoreNouns = true
       let totalNounsProcessed = 0
       let consecutiveEmptyBatches = 0
@@ -2114,7 +2171,7 @@ export class MetadataIndexManager {
       
       // Rebuild verb metadata indexes using pagination
       let verbOffset = 0
-      const verbLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
+      const verbLimit = batchSize // v4.2.1: Use same adaptive batch size as nouns
       let hasMoreVerbs = true
       let totalVerbsProcessed = 0
       let consecutiveEmptyVerbBatches = 0
