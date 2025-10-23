@@ -350,15 +350,22 @@ export class ImportCoordinator {
     const extractionResult = await this.extract(normalizedSource, detection.format, options)
 
     // Set defaults
+    // CRITICAL FIX (v4.3.2): Spread options FIRST, then apply defaults
+    // Previously: ...options at the end overwrote normalized defaults with undefined
+    // Now: Defaults properly override undefined values
+    // v4.4.0: Enable AI features by default for smarter imports
     const opts = {
+      ...options,  // Spread first to get all options
       vfsPath: options.vfsPath || `/imports/${Date.now()}`,
       groupBy: options.groupBy || 'type',
       createEntities: options.createEntities !== false,
       createRelationships: options.createRelationships !== false,
       preserveSource: options.preserveSource !== false,
       enableDeduplication: options.enableDeduplication !== false,
-      deduplicationThreshold: options.deduplicationThreshold || 0.85,
-      ...options
+      enableNeuralExtraction: options.enableNeuralExtraction !== false,  // v4.4.0: Default true
+      enableRelationshipInference: options.enableRelationshipInference !== false,  // v4.4.0: Default true
+      enableConceptExtraction: options.enableConceptExtraction !== false,  // Already defaults to true
+      deduplicationThreshold: options.deduplicationThreshold || 0.85
     }
 
     // Report VFS storage stage
@@ -730,7 +737,10 @@ export class ImportCoordinator {
     let mergedCount = 0
     let newCount = 0
 
-    if (!options.createEntities) {
+    // CRITICAL FIX (v4.3.2): Default to true when undefined
+    // Previously: if (!options.createEntities) treated undefined as false
+    // Now: Only skip when explicitly set to false
+    if (options.createEntities === false) {
       return { entities, relationships, merged: 0, newEntities: 0 }
     }
 
