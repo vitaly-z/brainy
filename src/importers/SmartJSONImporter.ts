@@ -13,6 +13,7 @@
 import { Brainy } from '../brainy.js'
 import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtractor.js'
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
+import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 
 export interface SmartJSONOptions {
@@ -126,11 +127,13 @@ export class SmartJSONImporter {
   private brain: Brainy
   private extractor: NeuralEntityExtractor
   private nlp: NaturalLanguageProcessor
+  private relationshipExtractor: SmartRelationshipExtractor
 
   constructor(brain: Brainy) {
     this.brain = brain
     this.extractor = new NeuralEntityExtractor(brain)
     this.nlp = new NaturalLanguageProcessor(brain)
+    this.relationshipExtractor = new SmartRelationshipExtractor(brain)
   }
 
   /**
@@ -285,12 +288,29 @@ export class SmartJSONImporter {
         // Create hierarchical relationship if parent exists
         if (options.enableHierarchicalRelationships && parentPath && entityMap.has(parentPath)) {
           const parentId = entityMap.get(parentPath)!
+
+          // Extract parent and child names from paths
+          const parentName = parentPath.split('.').pop()?.replace(/\[(\d+)\]/, 'item $1') || 'parent'
+          const childName = entity.name
+
+          // Infer relationship type using SmartRelationshipExtractor
+          const context = `Hierarchical JSON structure: ${parentName} contains ${childName}. Parent path: ${parentPath}, Child path: ${path}`
+
+          const inferredRelationship = await this.relationshipExtractor.infer(
+            parentName,
+            childName,
+            context,
+            {
+              objectType: entity.type  // Pass child entity type as hint
+            }
+          )
+
           relationships.push({
             from: parentId,
             to: entity.id,
-            type: VerbType.Contains,
-            confidence: 0.95,
-            evidence: `Hierarchical relationship: ${parentPath} contains ${path}`
+            type: inferredRelationship?.type || VerbType.Contains,  // Fallback to Contains for hierarchical relationships
+            confidence: inferredRelationship?.confidence || 0.95,
+            evidence: inferredRelationship?.evidence || `Hierarchical relationship: ${parentPath} contains ${path}`
           })
         }
       }
@@ -346,12 +366,30 @@ export class SmartJSONImporter {
           // Link to parent if exists
           if (options.enableHierarchicalRelationships && parentPath && entityMap.has(parentPath)) {
             const parentId = entityMap.get(parentPath)!
+
+            // Extract parent name from path
+            const parentName = parentPath.split('.').pop()?.replace(/\[(\d+)\]/, 'item $1') || 'parent'
+            const childName = entity.name
+
+            // Infer relationship type using SmartRelationshipExtractor
+            // Context: entity was extracted from string value within parent container
+            const context = `Entity "${childName}" found in text value at path ${path} within parent "${parentName}". Full text: "${node.substring(0, 200)}..."`
+
+            const inferredRelationship = await this.relationshipExtractor.infer(
+              parentName,
+              childName,
+              context,
+              {
+                objectType: entity.type  // Pass extracted entity type as hint
+              }
+            )
+
             relationships.push({
               from: parentId,
               to: entity.id,
-              type: VerbType.RelatedTo,
-              confidence: extracted.confidence * 0.9,
-              evidence: `Found in: ${path}`
+              type: inferredRelationship?.type || VerbType.RelatedTo,  // Fallback to RelatedTo for text extraction
+              confidence: inferredRelationship?.confidence || (extracted.confidence * 0.9),
+              evidence: inferredRelationship?.evidence || `Found in: ${path}`
             })
           }
         }

@@ -9,7 +9,7 @@
  * NO MOCKS - Production-ready implementation
  */
 
-export type SupportedFormat = 'excel' | 'pdf' | 'csv' | 'json' | 'markdown'
+export type SupportedFormat = 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx'
 
 export interface DetectionResult {
   format: SupportedFormat
@@ -49,7 +49,11 @@ export class FormatDetector {
       '.csv': 'csv',
       '.json': 'json',
       '.md': 'markdown',
-      '.markdown': 'markdown'
+      '.markdown': 'markdown',
+      '.yaml': 'yaml',
+      '.yml': 'yaml',
+      '.docx': 'docx',
+      '.doc': 'docx'
     }
 
     const format = extensionMap[ext]
@@ -76,6 +80,15 @@ export class FormatDetector {
         format: 'json',
         confidence: 0.95,
         evidence: ['Content starts with { or [', 'Valid JSON structure']
+      }
+    }
+
+    // YAML detection (v4.2.0)
+    if (this.looksLikeYAML(trimmed)) {
+      return {
+        format: 'yaml',
+        confidence: 0.90,
+        evidence: ['Contains YAML key: value patterns', 'YAML-style indentation']
       }
     }
 
@@ -267,6 +280,39 @@ export class FormatDetector {
     }
 
     return false
+  }
+
+  /**
+   * Check if content looks like YAML
+   * v4.2.0: Added YAML detection
+   */
+  private looksLikeYAML(content: string): boolean {
+    const lines = content.split('\n').filter(l => l.trim()).slice(0, 20)
+    if (lines.length < 2) return false
+
+    let yamlIndicators = 0
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+
+      // Check for YAML key: value pattern
+      if (/^[\w-]+:\s/.test(trimmed)) {
+        yamlIndicators++
+      }
+
+      // Check for YAML list items (- item)
+      if (/^-\s+\w/.test(trimmed)) {
+        yamlIndicators++
+      }
+
+      // Check for YAML document separator (---)
+      if (trimmed === '---' || trimmed === '...') {
+        yamlIndicators += 2
+      }
+    }
+
+    // If >50% of lines have YAML indicators, it's likely YAML
+    return yamlIndicators / lines.length > 0.5
   }
 
   /**

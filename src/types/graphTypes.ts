@@ -194,6 +194,8 @@ export interface GraphNoun {
   data?: Record<string, any> // Additional flexible data storage
   embeddedVerbs?: EmbeddedGraphVerb[] // Optional embedded relationships
   embedding?: number[] // Vector representation of the noun
+  confidence?: number // Confidence in entity type classification (0-1)
+  weight?: number // Importance/salience of the entity
 }
 
 /**

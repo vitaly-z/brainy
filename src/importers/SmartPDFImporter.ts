@@ -13,6 +13,7 @@
 import { Brainy } from '../brainy.js'
 import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtractor.js'
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
+import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { PDFHandler } from '../augmentations/intelligentImport/handlers/pdfHandler.js'
 import type { FormatHandlerOptions } from '../augmentations/intelligentImport/types.js'
@@ -139,12 +140,14 @@ export class SmartPDFImporter {
   private brain: Brainy
   private extractor: NeuralEntityExtractor
   private nlp: NaturalLanguageProcessor
+  private relationshipExtractor: SmartRelationshipExtractor
   private pdfHandler: PDFHandler
 
   constructor(brain: Brainy) {
     this.brain = brain
     this.extractor = new NeuralEntityExtractor(brain)
     this.nlp = new NaturalLanguageProcessor(brain)
+    this.relationshipExtractor = new SmartRelationshipExtractor(brain)
     this.pdfHandler = new PDFHandler()
   }
 
@@ -460,36 +463,28 @@ export class SmartPDFImporter {
   }
 
   /**
-   * Infer relationship type from context
+   * Infer relationship type from context using SmartRelationshipExtractor
    */
   private async inferRelationship(
     fromEntity: string,
     toEntity: string,
-    context: string
+    context: string,
+    fromType?: NounType,
+    toType?: NounType
   ): Promise<VerbType> {
-    const lowerContext = context.toLowerCase()
-
-    // Pattern-based relationship detection
-    const patterns: Array<[RegExp, VerbType]> = [
-      [new RegExp(`${toEntity}.*of.*${fromEntity}`, 'i'), VerbType.PartOf],
-      [new RegExp(`${fromEntity}.*contains.*${toEntity}`, 'i'), VerbType.Contains],
-      [new RegExp(`${fromEntity}.*in.*${toEntity}`, 'i'), VerbType.LocatedAt],
-      [new RegExp(`${fromEntity}.*by.*${toEntity}`, 'i'), VerbType.CreatedBy],
-      [new RegExp(`${fromEntity}.*created.*${toEntity}`, 'i'), VerbType.Creates],
-      [new RegExp(`${fromEntity}.*authored.*${toEntity}`, 'i'), VerbType.CreatedBy],
-      [new RegExp(`${fromEntity}.*part of.*${toEntity}`, 'i'), VerbType.PartOf],
-      [new RegExp(`${fromEntity}.*related to.*${toEntity}`, 'i'), VerbType.RelatedTo],
-      [new RegExp(`${fromEntity}.*and.*${toEntity}`, 'i'), VerbType.RelatedTo]
-    ]
-
-    for (const [pattern, verbType] of patterns) {
-      if (pattern.test(lowerContext)) {
-        return verbType
+    // Use SmartRelationshipExtractor for robust relationship classification
+    const result = await this.relationshipExtractor.infer(
+      fromEntity,
+      toEntity,
+      context,
+      {
+        subjectType: fromType,
+        objectType: toType
       }
-    }
+    )
 
-    // Default to RelatedTo
-    return VerbType.RelatedTo
+    // Return inferred type or fallback to RelatedTo
+    return result?.type || VerbType.RelatedTo
   }
 
   /**

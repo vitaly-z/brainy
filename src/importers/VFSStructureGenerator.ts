@@ -263,6 +263,15 @@ export class VFSStructureGenerator {
   ): Map<string, typeof importResult.rows> {
     const groups = new Map<string, typeof importResult.rows>()
 
+    // Handle sheet-based grouping (v4.2.0)
+    if (options.groupBy === 'sheet' && importResult.sheets && importResult.sheets.length > 0) {
+      for (const sheet of importResult.sheets) {
+        groups.set(sheet.name, sheet.rows)
+      }
+      return groups
+    }
+
+    // Handle other grouping strategies
     for (const extracted of importResult.rows) {
       let groupName: string
 
@@ -279,6 +288,11 @@ export class VFSStructureGenerator {
           groupName = options.customGrouping ?
             options.customGrouping(extracted.entity) :
             'entities'
+          break
+
+        case 'sheet':
+          // Fallback if sheets data not available
+          groupName = 'entities'
           break
 
         default:

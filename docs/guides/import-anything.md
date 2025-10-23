@@ -3,8 +3,8 @@
 Brainy's import is **ONE magical method** that understands EVERYTHING:
 - 📊 Data (objects, arrays, strings)
 - 📁 Files (auto-detects by path)
-- 🌐 URLs (auto-fetches)
-- 📄 Formats (JSON, CSV, Excel, PDF, YAML, text - all auto-detected)
+- 🌐 URLs (auto-fetches with authentication support)
+- 📄 Formats (JSON, CSV, Excel, PDF, YAML, DOCX, Markdown - all auto-detected)
 
 ## The Ultimate Simplicity
 
@@ -92,6 +92,25 @@ await brain.import(yaml, { format: 'yaml' })
 // ✨ Hierarchical data becomes a connected graph!
 ```
 
+### 📄 Import Word Documents (DOCX) - v4.2.0
+```javascript
+// From file path
+await brain.import('research-paper.docx')
+// ✨ Extracts text, headings, tables, and metadata!
+
+// Or from buffer
+const buffer = fs.readFileSync('document.docx')
+await brain.import(buffer, { format: 'docx' })
+// ✨ Uses heading hierarchy for entity organization!
+
+// With neural extraction
+await brain.import('report.docx', {
+  enableNeuralExtraction: true,
+  enableHierarchicalRelationships: true
+})
+// ✨ Extracts entities from paragraphs and creates relationships within sections!
+```
+
 ### 🌐 Import from URLs - Auto-Detected!
 ```javascript
 // Just pass the URL - it knows!
@@ -101,6 +120,28 @@ await brain.import('https://api.example.com/data.json')
 // Works with any URL
 await brain.import('https://data.gov/census.csv')
 // ✨ Fetches CSV from web, parses, imports!
+
+// With authentication (v4.2.0)
+await brain.import({
+  type: 'url',
+  data: 'https://api.example.com/private/data.xlsx',
+  auth: {
+    username: 'user',
+    password: 'pass'
+  }
+})
+// ✨ Supports basic authentication for protected resources!
+
+// With custom headers (v4.2.0)
+await brain.import({
+  type: 'url',
+  data: 'https://api.example.com/data.json',
+  headers: {
+    'Authorization': 'Bearer TOKEN',
+    'X-API-Key': 'your-key'
+  }
+})
+// ✨ Full HTTP header customization support!
 ```
 
 ### 📖 Import Plain Text
@@ -118,12 +159,13 @@ await brain.import(article, { format: 'text' })
 
 When you import data, Brainy:
 
-1. **Auto-detects format** - CSV, Excel, PDF, JSON, YAML, text, or by file extension
-2. **Intelligent parsing** - CSV (encoding/delimiter detection), Excel (multi-sheet), PDF (text/tables)
+1. **Auto-detects format** - CSV, Excel, PDF, JSON, YAML, DOCX, Markdown, or by file extension
+2. **Intelligent parsing** - CSV (encoding/delimiter), Excel (multi-sheet), PDF (text/tables), DOCX (headings/paragraphs)
 3. **Identifies entity types** - Uses AI to classify as Person, Document, Product, etc. (31 types!)
 4. **Finds relationships** - Detects connections like "belongsTo", "createdBy", "references" (40 types!)
-5. **Creates embeddings** - Makes everything semantically searchable
-6. **Indexes metadata** - Enables lightning-fast filtering
+5. **Scores confidence & weight** - Every entity and relationship gets quality metrics (v4.2.0)
+6. **Creates embeddings** - Makes everything semantically searchable
+7. **Indexes metadata** - Enables lightning-fast filtering with range queries (v4.2.0)
 
 ## Intelligent Type Detection
 
@@ -160,6 +202,63 @@ await brain.import(data)
 // ✨ Automatically creates:
 // - Alice "reportsTo" Bob
 // - Bob "memberOf" Engineering
+```
+
+## Confidence & Weight Scoring - v4.2.0
+
+Every entity and relationship gets confidence and weight scores:
+
+```javascript
+// Import with confidence threshold
+await brain.import(data, {
+  confidenceThreshold: 0.8  // Only extract entities with >80% confidence
+})
+
+// Query high-confidence entities using range queries
+const highConfidence = await brain.find({
+  where: {
+    confidence: { gte: 0.8 }  // Get entities with confidence >= 0.8
+  }
+})
+
+// Range query operators: gt, gte, lt, lte, between
+const mediumConfidence = await brain.find({
+  where: {
+    confidence: { between: [0.6, 0.8] }
+  }
+})
+```
+
+**What do confidence scores mean?**
+- **High (>0.8)**: Very confident entity classification
+- **Medium (0.6-0.8)**: Reasonable confidence
+- **Low (<0.6)**: Uncertain classification (filtered by default)
+
+**Weights** indicate importance/relevance within the document context.
+
+## Per-Sheet Excel Extraction - v4.2.0
+
+Excel files with multiple sheets can be organized by sheet:
+
+```javascript
+// Group entities by sheet in VFS
+await brain.import('multi-sheet-data.xlsx', {
+  groupBy: 'sheet'  // Creates separate directories for each sheet
+})
+
+// Result VFS structure:
+// /imports/data/
+//   ├── Sheet1/
+//   │   ├── entity1.json
+//   │   └── entity2.json
+//   └── Sheet2/
+//       ├── entity3.json
+//       └── entity4.json
+
+// Other groupBy options:
+// - 'type': Group by entity type (Person, Place, etc.)
+// - 'flat': All entities in one directory
+// - 'custom': Use custom grouping function
 ```
 
 ## Query Your Imported Data

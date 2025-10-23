@@ -2,6 +2,7 @@
  * Neural Entity Extractor using Brainy's NounTypes
  * Uses embeddings and similarity matching for accurate type detection
  *
+ * v4.2.0: Now powered by SmartExtractor for ultra-neural classification
  * PRODUCTION-READY with caching support
  */
 
@@ -16,12 +17,14 @@ import {
   computeContentHash
 } from './entityExtractionCache.js'
 import { getNounTypeEmbeddings } from './embeddedTypeEmbeddings.js'
+import { SmartExtractor, type FormatContext } from './SmartExtractor.js'
 
 export interface ExtractedEntity {
   text: string
   type: NounType
   position: { start: number; end: number }
   confidence: number
+  weight?: number // v4.2.0: Entity importance/salience
   vector?: Vector
   metadata?: any
 }
@@ -45,9 +48,17 @@ export class NeuralEntityExtractor {
     size: 0
   }
 
+  // v4.2.0: SmartExtractor for ultra-neural classification
+  private smartExtractor: SmartExtractor
+
   constructor(brain: Brainy | Brainy<any>, cacheOptions?: EntityCacheOptions) {
     this.brain = brain
     this.cache = new EntityExtractionCache(cacheOptions)
+    this.smartExtractor = new SmartExtractor(brain, {
+      enableEnsemble: true,
+      enableFormatHints: true,
+      minConfidence: 0.60
+    })
   }
   
   /**
@@ -127,52 +138,43 @@ export class NeuralEntityExtractor {
     // Step 1: Extract potential entities using patterns
     const candidates = await this.extractCandidates(text)
     
-    // Step 2: Classify each candidate using neural matching
+    // Step 2: Classify each candidate using SmartExtractor (v4.2.0)
     for (const candidate of candidates) {
-      let bestType: NounType = NounType.Thing
-      let bestConfidence = 0
-      
-      if (useNeuralMatching) {
-        // Get embedding for the candidate
-        const candidateVector = await this.getEmbedding(candidate.text)
-        
-        // Find best matching NounType
-        for (const type of targetTypes) {
-          const typeVector = this.typeEmbeddings.get(type)
-          if (!typeVector) continue
-          
-          const similarity = this.cosineSimilarity(candidateVector, typeVector)
-          
-          // Apply context-based boosting
-          const contextBoost = this.getContextBoost(candidate.text, candidate.context, type)
-          const adjustedConfidence = similarity * (1 + contextBoost)
-          
-          if (adjustedConfidence > bestConfidence) {
-            bestConfidence = adjustedConfidence
-            bestType = type
-          }
-        }
-      } else {
-        // Fallback to rule-based classification
-        const classification = this.classifyByRules(candidate)
-        bestType = classification.type
-        bestConfidence = classification.confidence
+      // Use SmartExtractor for unified neural + rule-based classification
+      const classification = await this.smartExtractor.extract(candidate.text, {
+        definition: candidate.context,
+        allTerms: [candidate.text, candidate.context]
+      })
+
+      // Skip if SmartExtractor returns null (low confidence) or below threshold
+      if (!classification || classification.confidence < minConfidence) {
+        continue
       }
-      
-      if (bestConfidence >= minConfidence) {
-        const entity: ExtractedEntity = {
-          text: candidate.text,
-          type: bestType,
-          position: candidate.position,
-          confidence: bestConfidence
-        }
-        
-        if (options?.includeVectors) {
-          entity.vector = await this.getEmbedding(candidate.text)
-        }
-        
-        entities.push(entity)
+
+      // Filter by requested types if specified
+      if (options?.types && !options.types.includes(classification.type)) {
+        continue
       }
+
+      // Calculate weight from signal results (average of all signals that voted)
+      const signalResults = classification.metadata?.signalResults || []
+      const avgWeight = signalResults.length > 0
+        ? signalResults.reduce((sum: number, s: any) => sum + s.weight, 0) / signalResults.length
+        : 1.0
+
+      const entity: ExtractedEntity = {
+        text: candidate.text,
+        type: classification.type,
+        position: candidate.position,
+        confidence: classification.confidence,
+        weight: avgWeight
+      }
+
+      if (options?.includeVectors) {
+        entity.vector = await this.getEmbedding(candidate.text)
+      }
+
+      entities.push(entity)
     }
 
     // Remove duplicates and overlaps

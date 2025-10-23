@@ -12,6 +12,7 @@
 import { Brainy } from '../brainy.js'
 import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtractor.js'
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
+import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { ExcelHandler } from '../augmentations/intelligentImport/handlers/excelHandler.js'
 import type { FormatHandlerOptions } from '../augmentations/intelligentImport/types.js'
@@ -109,6 +110,17 @@ export interface SmartExcelResult {
       low: number  // < 0.6
     }
   }
+
+  /** Sheet-specific data for VFS extraction (v4.2.0) */
+  sheets?: Array<{
+    name: string
+    rows: ExtractedRow[]
+    stats: {
+      rowCount: number
+      entityCount: number
+      relationshipCount: number
+    }
+  }>
 }
 
 /**
@@ -118,12 +130,14 @@ export class SmartExcelImporter {
   private brain: Brainy
   private extractor: NeuralEntityExtractor
   private nlp: NaturalLanguageProcessor
+  private relationshipExtractor: SmartRelationshipExtractor
   private excelHandler: ExcelHandler
 
   constructor(brain: Brainy) {
     this.brain = brain
     this.extractor = new NeuralEntityExtractor(brain)
     this.nlp = new NaturalLanguageProcessor(brain)
+    this.relationshipExtractor = new SmartRelationshipExtractor(brain)
     this.excelHandler = new ExcelHandler()
   }
 
@@ -261,7 +275,9 @@ export class SmartExcelImporter {
               const verbType = await this.inferRelationship(
                 term,
                 relEntity.text,
-                definition
+                definition,
+                mainEntityType,  // Pass subject type hint
+                relEntity.type   // Pass object type hint
               )
 
               relationships.push({
@@ -278,10 +294,18 @@ export class SmartExcelImporter {
               const terms = relatedTerms.split(/[,;]/).map(t => t.trim()).filter(Boolean)
               for (const relTerm of terms) {
                 if (relTerm.toLowerCase() !== term.toLowerCase()) {
+                  // Use SmartRelationshipExtractor even for explicit relationships
+                  const verbType = await this.inferRelationship(
+                    term,
+                    relTerm,
+                    `${term} related to ${relTerm}. ${definition}`,  // Combine for better context
+                    mainEntityType
+                  )
+
                   relationships.push({
                     from: entityId,
                     to: relTerm,
-                    type: VerbType.RelatedTo,
+                    type: verbType,
                     confidence: 0.9,
                     evidence: `Explicitly listed in "Related" column`
                   })
@@ -345,6 +369,29 @@ export class SmartExcelImporter {
       } as any)
     }
 
+    // Group rows by sheet for VFS extraction (v4.2.0)
+    const sheetGroups = new Map<string, ExtractedRow[]>()
+    extractedRows.forEach((extractedRow, index) => {
+      const originalRow = rows[index]
+      const sheetName = originalRow._sheet || 'Sheet1'
+
+      if (!sheetGroups.has(sheetName)) {
+        sheetGroups.set(sheetName, [])
+      }
+      sheetGroups.get(sheetName)!.push(extractedRow)
+    })
+
+    // Build sheet-specific statistics
+    const sheets = Array.from(sheetGroups.entries()).map(([name, sheetRows]) => ({
+      name,
+      rows: sheetRows,
+      stats: {
+        rowCount: sheetRows.length,
+        entityCount: sheetRows.reduce((sum, row) => sum + 1 + row.relatedEntities.length, 0),
+        relationshipCount: sheetRows.reduce((sum, row) => sum + row.relationships.length, 0)
+      }
+    }))
+
     return {
       rowsProcessed: rows.length,
       entitiesExtracted: extractedRows.reduce(
@@ -358,7 +405,8 @@ export class SmartExcelImporter {
       rows: extractedRows,
       entityMap,
       processingTime: Date.now() - startTime,
-      stats
+      stats,
+      sheets
     }
   }
 
@@ -435,36 +483,28 @@ export class SmartExcelImporter {
   }
 
   /**
-   * Infer relationship type from context
+   * Infer relationship type from context using SmartRelationshipExtractor
    */
   private async inferRelationship(
     fromTerm: string,
     toTerm: string,
-    context: string
+    context: string,
+    fromType?: NounType,
+    toType?: NounType
   ): Promise<VerbType> {
-    const lowerContext = context.toLowerCase()
-
-    // Pattern-based relationship detection
-    const patterns: Array<[RegExp, VerbType]> = [
-      [new RegExp(`${toTerm}.*of.*${fromTerm}`, 'i'), VerbType.PartOf],
-      [new RegExp(`${fromTerm}.*contains.*${toTerm}`, 'i'), VerbType.Contains],
-      [new RegExp(`located in.*${toTerm}`, 'i'), VerbType.LocatedAt],
-      [new RegExp(`ruled by.*${toTerm}`, 'i'), VerbType.Owns],
-      [new RegExp(`capital.*${toTerm}`, 'i'), VerbType.Contains],
-      [new RegExp(`created by.*${toTerm}`, 'i'), VerbType.CreatedBy],
-      [new RegExp(`authored by.*${toTerm}`, 'i'), VerbType.CreatedBy],
-      [new RegExp(`part of.*${toTerm}`, 'i'), VerbType.PartOf],
-      [new RegExp(`related to.*${toTerm}`, 'i'), VerbType.RelatedTo]
-    ]
-
-    for (const [pattern, verbType] of patterns) {
-      if (pattern.test(lowerContext)) {
-        return verbType
+    // Use SmartRelationshipExtractor for robust relationship classification
+    const result = await this.relationshipExtractor.infer(
+      fromTerm,
+      toTerm,
+      context,
+      {
+        subjectType: fromType,
+        objectType: toType
       }
-    }
+    )
 
-    // Default to RelatedTo
-    return VerbType.RelatedTo
+    // Return inferred type or fallback to RelatedTo
+    return result?.type || VerbType.RelatedTo
   }
 
   /**
