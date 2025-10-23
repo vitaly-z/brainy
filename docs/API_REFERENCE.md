@@ -90,6 +90,8 @@ Adds a new entity to the brain.
 - `id` - Custom ID (auto-generated if not provided)
 - `vector` - Pre-computed embedding vector
 - `service` - Service name for multi-tenancy
+- `confidence` - Type classification confidence (0-1) ✨ *New in v4.3.0*
+- `weight` - Entity importance/salience (0-1) ✨ *New in v4.3.0*
 - `writeOnly` - Skip validation for high-speed ingestion
 
 **Returns:** Entity ID
@@ -103,7 +105,9 @@ const id = await brain.add({
     date: '2024-01-15',
     author: 'John Smith',
     tags: ['planning', 'Q4']
-  }
+  },
+  confidence: 0.95,  // High confidence in Document classification
+  weight: 0.85       // High importance
 })
 ```
 
@@ -117,12 +121,26 @@ Retrieves an entity by ID.
 
 **Returns:** Entity object or null if not found
 
+**Entity Properties:** ✨ *Updated in v4.3.0*
+- `id` - Unique identifier
+- `type` - NounType classification
+- `data` - Original content
+- `metadata` - Custom metadata
+- `vector` - Embedding vector
+- `confidence` - Type classification confidence (0-1) *New*
+- `weight` - Entity importance/salience (0-1) *New*
+- `createdAt` - Creation timestamp
+- `updatedAt` - Last update timestamp
+- `service` - Service name (multi-tenancy)
+
 **Example:**
 ```typescript
 const entity = await brain.get('uuid-1234')
 if (entity) {
-  console.log(entity.type)     // NounType.Document
-  console.log(entity.metadata)  // { date: '2024-01-15', ... }
+  console.log(entity.type)        // NounType.Document
+  console.log(entity.metadata)    // { date: '2024-01-15', ... }
+  console.log(entity.confidence)  // 0.95 (if set)
+  console.log(entity.weight)      // 0.85 (if set)
 }
 ```
 
@@ -138,13 +156,17 @@ Updates an existing entity.
 - `metadata` - New or partial metadata
 - `merge` - Merge metadata (true) or replace (false), default: true
 - `vector` - New embedding vector
+- `confidence` - Update type classification confidence ✨ *New in v4.3.0*
+- `weight` - Update entity importance/salience ✨ *New in v4.3.0*
 
 **Example:**
 ```typescript
 await brain.update({
   id: 'uuid-1234',
   metadata: { status: 'reviewed' },
-  merge: true  // Keeps existing metadata, adds status
+  confidence: 0.98,  // Increase confidence after review
+  weight: 0.90,      // Boost importance
+  merge: true        // Keeps existing metadata, adds status
 })
 ```
 
@@ -368,10 +390,29 @@ Universal search with Triple Intelligence fusion.
 
 **Returns:** Array of Result objects with scores
 
+**Result Properties:** ✨ *Enhanced in v4.3.0*
+- `id` - Entity ID
+- `score` - Relevance score (0-1)
+- `type` - Entity type (flattened for convenience) *Enhanced*
+- `metadata` - Entity metadata (flattened) *Enhanced*
+- `data` - Entity data (flattened) *Enhanced*
+- `confidence` - Type classification confidence (flattened) *New*
+- `weight` - Entity importance (flattened) *New*
+- `entity` - Full Entity object (preserved for backward compatibility)
+- `explanation` - Score explanation (if `explain: true`)
+
 **Example:**
 ```typescript
 // Natural language search
 const results = await brain.find('recent product launches')
+
+// NEW in v4.3.0: Direct access to flattened fields
+console.log(results[0].metadata)    // Direct access (convenient!)
+console.log(results[0].confidence)  // Type confidence
+console.log(results[0].weight)      // Entity importance
+
+// Backward compatible: Nested access still works
+console.log(results[0].entity.metadata)  // Also works
 
 // Structured search with fusion
 const results = await brain.find({
@@ -389,6 +430,15 @@ const results = await brain.find({
   limit: 20,
   explain: true
 })
+
+// Access results with clean, predictable patterns
+for (const result of results) {
+  console.log(`Score: ${result.score}`)
+  console.log(`Type: ${result.type}`)
+  console.log(`Confidence: ${result.confidence ?? 'N/A'}`)
+  console.log(`Weight: ${result.weight ?? 'N/A'}`)
+  console.log(`Metadata:`, result.metadata)
+}
 ```
 
 ---
@@ -403,6 +453,8 @@ Finds similar entities using vector similarity.
 - `type` - Filter by type(s)
 - `where` - Metadata filters
 
+**Returns:** Array of Result objects (same structure as `find()`) ✨ *Enhanced in v4.3.0*
+
 **Example:**
 ```typescript
 const similar = await brain.similar({
@@ -411,6 +463,14 @@ const similar = await brain.similar({
   threshold: 0.8,
   type: NounType.Document
 })
+
+// NEW in v4.3.0: Access flattened fields directly
+for (const result of similar) {
+  console.log(`Similarity: ${result.score}`)
+  console.log(`Type: ${result.type}`)           // Flattened
+  console.log(`Confidence: ${result.confidence}`) // Flattened
+  console.log(`Metadata:`, result.metadata)     // Flattened
+}
 ```
 
 ---
@@ -1398,15 +1458,20 @@ Executes the pipeline.
 
 ### Core Interfaces
 
+✨ *Updated in v4.3.0 - Added confidence/weight to Entity, flattened Result fields*
+
 ```typescript
 interface Entity<T = any> {
   id: string
   vector: Vector
   type: NounType
+  data?: any
   metadata?: T
   service?: string
   createdAt: number
   updatedAt?: number
+  confidence?: number  // NEW: Type classification confidence (0-1)
+  weight?: number      // NEW: Entity importance/salience (0-1)
 }
 
 interface Relation<T = any> {
@@ -1415,18 +1480,38 @@ interface Relation<T = any> {
   to: string
   type: VerbType
   weight?: number
+  confidence?: number  // Relationship confidence
   metadata?: T
+  evidence?: RelationEvidence  // Why this relationship exists
   service?: string
   createdAt: number
 }
 
 interface Result<T = any> {
+  // Search metadata
   id: string
   score: number
+
+  // NEW: Flattened entity fields for convenience
+  type?: NounType
+  metadata?: T
+  data?: any
+  confidence?: number
+  weight?: number
+
+  // Full entity (backward compatible)
   entity: Entity<T>
+
+  // Score explanation
   explanation?: ScoreExplanation
 }
 ```
+
+**Key Changes in v4.3.0:**
+- ✅ `Entity` now exposes `confidence` and `weight`
+- ✅ `Result` flattens commonly-used entity fields to top level
+- ✅ Direct access: `result.metadata` instead of `result.entity.metadata`
+- ✅ Backward compatible: `result.entity` still available
 
 ---
 

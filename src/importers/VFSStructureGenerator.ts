@@ -66,23 +66,33 @@ export interface VFSStructureResult {
  */
 export class VFSStructureGenerator {
   private brain: Brainy
-  private vfs: VirtualFileSystem
+  private vfs!: VirtualFileSystem  // Non-null assertion - will be set in init()
 
   constructor(brain: Brainy) {
     this.brain = brain
-    this.vfs = new VirtualFileSystem(brain)
+    // CRITICAL FIX: Use brain.vfs() instead of creating separate instance
+    // This ensures VFSStructureGenerator and user code share the same VFS instance
+    // Before: Created separate instance that wasn't accessible to users
+    // After: Uses brain's cached instance, making VFS queryable after import
   }
 
   /**
    * Initialize the generator
+   *
+   * CRITICAL: Gets brain's VFS instance and initializes it if needed.
+   * This ensures that after import, brain.vfs() returns an initialized instance.
    */
   async init(): Promise<void> {
-    // Always ensure VFS is initialized
+    // Get brain's cached VFS instance (creates if doesn't exist)
+    this.vfs = this.brain.vfs()
+
+    // Initialize if not already initialized
+    // VFS.init() is idempotent (safe to call multiple times)
     try {
-      // Check if VFS is initialized by trying to access root
+      // Check if already initialized
       await this.vfs.stat('/')
     } catch (error) {
-      // VFS not initialized, initialize it
+      // Not initialized, initialize now
       await this.vfs.init()
     }
   }

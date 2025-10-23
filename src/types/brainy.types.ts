@@ -22,6 +22,8 @@ export interface Entity<T = any> {
   createdAt: number
   updatedAt?: number
   createdBy?: string
+  confidence?: number  // Type classification confidence (0-1)
+  weight?: number      // Entity importance/salience (0-1)
 }
 
 /**
@@ -59,11 +61,26 @@ export interface RelationEvidence {
 
 /**
  * Search result with similarity score
+ *
+ * Flattens commonly-used entity fields to top level for convenience,
+ * while preserving full entity in 'entity' field for backward compatibility.
  */
 export interface Result<T = any> {
+  // Search metadata
   id: string
   score: number
+
+  // Convenience: Common entity fields flattened to top level
+  type?: NounType      // Entity type (from entity.type)
+  metadata?: T         // Entity metadata (from entity.metadata)
+  data?: any           // Entity data (from entity.data)
+  confidence?: number  // Type classification confidence (from entity.confidence)
+  weight?: number      // Entity importance (from entity.weight)
+
+  // Full entity (preserved for backward compatibility)
   entity: Entity<T>
+
+  // Score transparency
   explanation?: ScoreExplanation
 }
 
@@ -90,6 +107,8 @@ export interface AddParams<T = any> {
   id?: string                  // Optional custom ID
   vector?: Vector              // Pre-computed vector (skip embedding)
   service?: string             // Multi-tenancy support
+  confidence?: number          // Type classification confidence (0-1)
+  weight?: number              // Entity importance/salience (0-1)
 }
 
 /**
@@ -102,6 +121,8 @@ export interface UpdateParams<T = any> {
   metadata?: Partial<T>        // Metadata to update
   merge?: boolean             // Merge or replace metadata (default: true)
   vector?: Vector             // New pre-computed vector
+  confidence?: number          // Update type classification confidence
+  weight?: number              // Update entity importance/salience
 }
 
 /**

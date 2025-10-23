@@ -48,7 +48,8 @@ import {
   DeleteManyParams,
   RelateManyParams,
   BatchResult,
-  BrainyConfig
+  BrainyConfig,
+  ScoreExplanation
 } from './types/brainy.types.js'
 import { NounType, VerbType } from './types/graphTypes.js'
 import { BrainyInterface } from './types/brainyInterface.js'
@@ -296,6 +297,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Add an entity to the database
    *
    * @param params - Parameters for adding the entity
+   * @param params.data - Content to embed and store (required)
+   * @param params.type - NounType classification (required)
+   * @param params.metadata - Custom metadata object
+   * @param params.id - Custom ID (auto-generated if not provided)
+   * @param params.vector - Pre-computed embedding vector
+   * @param params.service - Service name for multi-tenancy
+   * @param params.confidence - Type classification confidence (0-1) *New in v4.3.0*
+   * @param params.weight - Entity importance/salience (0-1) *New in v4.3.0*
    * @returns Promise that resolves to the entity ID
    *
    * @example Basic entity creation
@@ -306,6 +315,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   metadata: { role: "engineer", team: "backend" }
    * })
    * console.log(`Created entity: ${id}`)
+   * ```
+   *
+   * @example Adding with confidence and weight (New in v4.3.0)
+   * ```typescript
+   * const id = await brain.add({
+   *   data: "Machine learning model for sentiment analysis",
+   *   type: NounType.Concept,
+   *   metadata: { accuracy: 0.95, version: "2.1" },
+   *   confidence: 0.92,  // High confidence in Concept classification
+   *   weight: 0.85       // High importance entity
+   * })
    * ```
    *
    * @example Adding with custom ID
@@ -377,7 +397,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         _data: params.data, // Store the raw data in metadata
         noun: params.type,
         service: params.service,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        // Preserve confidence and weight if provided
+        ...(params.confidence !== undefined && { confidence: params.confidence }),
+        ...(params.weight !== undefined && { weight: params.weight })
       }
 
       // v4.0.0: Save vector and metadata separately
@@ -403,6 +426,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param id - The unique identifier of the entity to retrieve
    * @returns Promise that resolves to the entity if found, null if not found
    *
+   * **Entity includes (v4.3.0):**
+   * - `confidence` - Type classification confidence (0-1) if set
+   * - `weight` - Entity importance/salience (0-1) if set
+   * - All standard fields: id, type, data, metadata, vector, timestamps
+   *
    * @example
    * // Basic entity retrieval
    * const entity = await brainy.get('user-123')
@@ -411,6 +439,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   console.log('Created at:', new Date(entity.createdAt))
    * } else {
    *   console.log('Entity not found')
+   * }
+   *
+   * @example
+   * // Accessing confidence and weight (New in v4.3.0)
+   * const entity = await brainy.get('concept-456')
+   * if (entity) {
+   *   console.log(`Type: ${entity.type}`)
+   *   console.log(`Confidence: ${entity.confidence ?? 'N/A'}`)
+   *   console.log(`Weight: ${entity.weight ?? 'N/A'}`)
    * }
    *
    * @example
@@ -484,12 +521,42 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Create a flattened Result object from entity
+   * Flattens commonly-used entity fields to top level for convenience
+   */
+  private createResult(id: string, score: number, entity: Entity<T>, explanation?: ScoreExplanation): Result<T> {
+    return {
+      id,
+      score,
+      // Flatten common entity fields to top level
+      type: entity.type,
+      metadata: entity.metadata,
+      data: entity.data,
+      confidence: entity.confidence,
+      weight: entity.weight,
+      // Preserve full entity for backward compatibility
+      entity,
+      // Optional score explanation
+      ...(explanation && { explanation })
+    }
+  }
+
+  /**
    * Convert a noun from storage to an entity
    */
   private async convertNounToEntity(noun: any): Promise<Entity<T>> {
     // Extract metadata - separate user metadata from system metadata
-    const { noun: nounType, service, createdAt, updatedAt, _data, ...userMetadata } = noun.metadata || {}
-    
+    const {
+      noun: nounType,
+      service,
+      createdAt,
+      updatedAt,
+      _data,
+      confidence,  // Entity confidence score (0-1)
+      weight,      // Entity importance/salience (0-1)
+      ...userMetadata
+    } = noun.metadata || {}
+
     const entity: Entity<T> = {
       id: noun.id,
       vector: noun.vector,
@@ -499,12 +566,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: updatedAt as number
     }
-    
-    // Only add data field if it exists
+
+    // Only add optional fields if they exist
     if (_data !== undefined) {
       entity.data = _data
     }
-    
+    if (confidence !== undefined) {
+      entity.confidence = confidence as number
+    }
+    if (weight !== undefined) {
+      entity.weight = weight as number
+    }
+
     return entity
   }
 
@@ -558,7 +631,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         noun: params.type || existing.type,
         service: existing.service,
         createdAt: existing.createdAt,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        // Update confidence and weight if provided, otherwise preserve existing
+        ...(params.confidence !== undefined && { confidence: params.confidence }),
+        ...(params.weight !== undefined && { weight: params.weight }),
+        ...(params.confidence === undefined && existing.confidence !== undefined && { confidence: existing.confidence }),
+        ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight })
       }
 
       // v4.0.0: Save vector and metadata separately
@@ -961,6 +1039,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param query - Natural language string or structured FindParams object
    * @returns Promise that resolves to array of search results with scores
    *
+   * **Result Structure (v4.3.0):**
+   * Each result includes flattened entity fields for convenient access:
+   * - `metadata`, `type`, `data` - Direct access (flattened from entity)
+   * - `confidence`, `weight` - Entity confidence/importance (if set)
+   * - `entity` - Full Entity object (backward compatible)
+   * - `score` - Search relevance score (0-1)
+   *
    * @example
    * // Natural language queries (most common)
    * const results = await brainy.find('users who work on AI projects')
@@ -979,10 +1064,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   }
    * })
    *
-   * // Process results
+   * // NEW in v4.3.0: Access flattened fields directly
    * for (const result of results) {
-   *   console.log(`Found: ${result.entity.data} (score: ${result.score})`)
+   *   console.log(`Score: ${result.score}`)
+   *   console.log(`Type: ${result.type}`)           // Flattened!
+   *   console.log(`Metadata:`, result.metadata)     // Flattened!
+   *   console.log(`Confidence: ${result.confidence ?? 'N/A'}`)  // Flattened!
+   *   console.log(`Weight: ${result.weight ?? 'N/A'}`)          // Flattened!
    * }
+   *
+   * // Backward compatible: Nested access still works
+   * console.log(result.entity.data)  // Also works
    *
    * @example
    * // Metadata-only filtering (no vector search)
@@ -1171,11 +1263,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         for (const id of pageIds) {
           const entity = await this.get(id)
           if (entity) {
-            results.push({
-              id,
-              score: 1.0, // All metadata-filtered results equally relevant
-              entity
-            })
+            results.push(this.createResult(id, 1.0, entity))
           }
         }
 
@@ -1195,11 +1283,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           const noun = storageResults.items[i]
           if (noun) {
             const entity = await this.convertNounToEntity(noun)
-            results.push({
-              id: noun.id,
-              score: 1.0, // All results equally relevant for empty query
-              entity
-            })
+            results.push(this.createResult(noun.id, 1.0, entity))
           }
         }
 
@@ -1305,11 +1389,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           for (const id of pageIds) {
             const entity = await this.get(id)
             if (entity) {
-              results.push({
-                id,
-                score: 1.0, // All metadata matches are equally relevant
-                entity: entity as Entity<T>
-              })
+              results.push(this.createResult(id, 1.0, entity))
             }
           }
 
@@ -1350,7 +1430,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Find similar entities using vector similarity
    *
    * @param params - Parameters specifying the target for similarity search
-   * @returns Promise that resolves to array of similar entities with similarity scores
+   * @param params.to - Entity ID, Entity object, or Vector to find similar to (required)
+   * @param params.limit - Maximum results (default: 10)
+   * @param params.threshold - Minimum similarity (0-1)
+   * @param params.type - Filter by NounType(s)
+   * @param params.where - Metadata filters
+   * @returns Promise that resolves to array of Result objects with similarity scores (same structure as find())
+   *
+   * **Returns (v4.3.0):**
+   * Same Result structure as find() with flattened fields for convenient access
    *
    * @example
    * // Find entities similar to a specific entity by ID
@@ -1359,9 +1447,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   limit: 10
    * })
    *
-   * // Process similarity results
+   * // NEW in v4.3.0: Access flattened fields
    * for (const result of similarDocs) {
-   *   console.log(`Similar entity: ${result.entity.data} (similarity: ${result.score})`)
+   *   console.log(`Similarity: ${result.score}`)
+   *   console.log(`Type: ${result.type}`)              // Flattened!
+   *   console.log(`Metadata:`, result.metadata)        // Flattened!
+   *   console.log(`Confidence: ${result.confidence ?? 'N/A'}`)  // Flattened!
    * }
    *
    * @example
@@ -1987,6 +2078,32 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Virtual File System API - Knowledge Operating System
+   *
+   * Returns a cached VFS instance. You must call vfs.init() before use:
+   *
+   * @example After import
+   * ```typescript
+   * await brain.import('./data.xlsx', { vfsPath: '/imports/data' })
+   *
+   * const vfs = brain.vfs()
+   * await vfs.init()  // Required! (safe to call multiple times)
+   * const files = await vfs.readdir('/imports/data')
+   * ```
+   *
+   * @example Direct VFS usage
+   * ```typescript
+   * const vfs = brain.vfs()
+   * await vfs.init()  // Always required before first use
+   * await vfs.writeFile('/docs/readme.md', 'Hello World')
+   * const content = await vfs.readFile('/docs/readme.md')
+   * ```
+   *
+   * **Note:** brain.import() automatically initializes the VFS, so after
+   * an import you can call vfs.init() again (it's idempotent) and immediately
+   * query the imported files.
+   *
+   * **Pattern:** The VFS instance is cached, so multiple calls to brain.vfs()
+   * return the same instance. This ensures import and user code share state.
    */
   vfs(): VirtualFileSystem {
     if (!this._vfs) {
@@ -2601,7 +2718,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const entity = await this.get(id)
       if (entity) {
         const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
-        results.push({ id, score, entity })
+        results.push(this.createResult(id, score, entity))
       }
     }
     
@@ -2625,11 +2742,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const results: Result<T>[] = []
     for (const [id, distance] of nearResults) {
       const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
-      
+
       if (score >= (params.near.threshold || 0.7)) {
         const entity = await this.get(id)
         if (entity) {
-          results.push({ id, score, entity })
+          results.push(this.createResult(id, score, entity))
         }
       }
     }
@@ -2668,11 +2785,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     for (const id of connectedIds) {
       const entity = await this.get(id)
       if (entity) {
-        results.push({
-          id,
-          score: 1.0,
-          entity
-        })
+        results.push(this.createResult(id, 1.0, entity))
       }
     }
     

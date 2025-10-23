@@ -1000,12 +1000,21 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initialized) {
-      throw new Error(
-        'VFS not initialized. You must call await vfs.init() after getting the VFS instance.\n' +
-        'Example:\n' +
-        '  const vfs = brain.vfs()  // Note: vfs() is a method, not a property\n' +
-        '  await vfs.init()         // This creates the root directory\n' +
-        'See docs: https://github.com/Brainy-Technologies/brainy/blob/main/docs/vfs/QUICK_START.md'
+      throw new VFSError(
+        VFSErrorCode.EINVAL,
+        'VFS not initialized. Call await vfs.init() before using VFS operations.\n\n' +
+        '✅ After brain.import():\n' +
+        '  await brain.import(file, { vfsPath: "/imports/data" })\n' +
+        '  const vfs = brain.vfs()\n' +
+        '  await vfs.init()  // ← Required! Safe to call multiple times\n' +
+        '  const files = await vfs.readdir("/imports/data")\n\n' +
+        '✅ Direct VFS usage:\n' +
+        '  const vfs = brain.vfs()\n' +
+        '  await vfs.init()  // ← Always required before first use\n' +
+        '  await vfs.writeFile("/docs/readme.md", "Hello")\n\n' +
+        '📖 Docs: https://github.com/soulcraftlabs/brainy/blob/main/docs/vfs/QUICK_START.md',
+        '<unknown>',
+        'VFS'
       )
     }
   }

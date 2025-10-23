@@ -126,6 +126,11 @@ NLP is a branch of AI that helps computers understand human language.
   console.log('📂 VFS Structure:')
   try {
     const vfs = brain.vfs()
+
+    // IMPORTANT: Initialize VFS before querying!
+    // This is required even after import (idempotent - safe to call multiple times)
+    await vfs.init()
+
     const rootContents = await vfs.readdir('/')
     console.log('   Root directories:', rootContents.filter(f => !f.includes('.')))
 
@@ -133,8 +138,8 @@ NLP is a branch of AI that helps computers understand human language.
       const imports = await vfs.readdir('/imports')
       console.log('   Import directories:', imports)
     }
-  } catch (error) {
-    console.log('   (VFS not yet initialized)')
+  } catch (error: any) {
+    console.log(`   Error: ${error.message}`)
   }
 
   console.log()
