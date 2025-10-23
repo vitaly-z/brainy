@@ -242,9 +242,15 @@ export class SmartExcelImporter {
               : Promise.resolve([])
           ])
 
-          // Determine main entity type
+          // Determine main entity type with priority order:
+          // 1. Explicit "Type" column (highest priority - user specified)
+          // 2. Sheet name inference (NEW - semantic hint from Excel structure)
+          // 3. AI extraction from related entities
+          // 4. Default to Thing (fallback)
+          const sheetTypeHint = this.inferTypeFromSheetName(row._sheet || '')
           const mainEntityType = type ?
             this.mapTypeString(type) :
+            sheetTypeHint ||
             (relatedEntities.length > 0 ? relatedEntities[0].type : NounType.Thing)
 
           // Generate entity ID
@@ -480,6 +486,67 @@ export class SmartExcelImporter {
     }
 
     return mapping[normalized] || NounType.Thing
+  }
+
+  /**
+   * Infer entity type from Excel sheet name
+   *
+   * Uses common naming patterns to suggest appropriate entity types:
+   * - "Characters", "People", "Humans" → Person
+   * - "Places", "Locations" → Location
+   * - "Terms", "Concepts", "Glossary" → Concept
+   * - etc.
+   *
+   * @param sheetName - Excel sheet name
+   * @returns Inferred NounType or null if no match
+   *
+   * @example
+   * inferTypeFromSheetName("Characters") // → NounType.Person
+   * inferTypeFromSheetName("Places") // → NounType.Location
+   * inferTypeFromSheetName("Animals") // → null (no semantic hint)
+   */
+  private inferTypeFromSheetName(sheetName: string): NounType | null {
+    if (!sheetName) return null
+
+    const normalized = sheetName.toLowerCase()
+
+    // Person types: characters, people, humans, individuals
+    if (normalized.match(/character|people|person|human|individual|npc|cast/)) {
+      return NounType.Person
+    }
+
+    // Location types: places, locations, areas, regions
+    if (normalized.match(/place|location|area|region|zone|geography|map|world/)) {
+      return NounType.Location
+    }
+
+    // Concept types: terms, concepts, ideas, glossary
+    if (normalized.match(/term|concept|idea|definition|glossary|vocabulary|lexicon/)) {
+      return NounType.Concept
+    }
+
+    // Organization types: groups, factions, companies
+    if (normalized.match(/organization|company|group|faction|tribe|guild|clan|corp/)) {
+      return NounType.Organization
+    }
+
+    // Event types: events, occurrences, happenings
+    if (normalized.match(/event|occurrence|happening|battle|encounter|scene/)) {
+      return NounType.Event
+    }
+
+    // Product types: items, equipment, gear
+    if (normalized.match(/item|product|equipment|gear|weapon|armor|artifact|treasure/)) {
+      return NounType.Product
+    }
+
+    // Project types: quests, missions, campaigns
+    if (normalized.match(/project|quest|mission|campaign|task/)) {
+      return NounType.Project
+    }
+
+    // No semantic match found - return null to continue to next type determination method
+    return null
   }
 
   /**
