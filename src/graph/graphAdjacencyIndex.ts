@@ -297,14 +297,23 @@ export class GraphAdjacencyIndex {
       // Note: LSM-trees will be recreated from storage via their own initialization
       // We just need to repopulate the verb cache
 
-      // Load all verbs from storage (uses existing pagination)
-      let totalVerbs = 0
-      let hasMore = true
-      let cursor: string | undefined = undefined
+      // Adaptive loading strategy based on storage type (v4.2.4)
+      const storageType = this.storage?.constructor.name || ''
+      const isLocalStorage =
+        storageType === 'FileSystemStorage' ||
+        storageType === 'MemoryStorage' ||
+        storageType === 'OPFSStorage'
 
-      while (hasMore) {
+      let totalVerbs = 0
+
+      if (isLocalStorage) {
+        // Local storage: Load all verbs at once to avoid repeated getAllShardedFiles() calls
+        prodLog.info(
+          `GraphAdjacencyIndex: Using optimized strategy - load all verbs at once (${storageType})`
+        )
+
         const result = await this.storage.getVerbs({
-          pagination: { limit: 1000, cursor }
+          pagination: { limit: 10000000 } // Effectively unlimited for local development
         })
 
         // Add each verb to index
@@ -313,13 +322,42 @@ export class GraphAdjacencyIndex {
           totalVerbs++
         }
 
-        hasMore = result.hasMore
-        cursor = result.nextCursor
+        prodLog.info(
+          `GraphAdjacencyIndex: Loaded ${totalVerbs.toLocaleString()} verbs at once (local storage)`
+        )
+      } else {
+        // Cloud storage: Use pagination with native cloud APIs (efficient)
+        prodLog.info(
+          `GraphAdjacencyIndex: Using cloud pagination strategy (${storageType})`
+        )
 
-        // Progress logging
-        if (totalVerbs % 10000 === 0) {
-          prodLog.info(`GraphAdjacencyIndex: Indexed ${totalVerbs} verbs...`)
+        let hasMore = true
+        let cursor: string | undefined = undefined
+        const batchSize = 1000
+
+        while (hasMore) {
+          const result = await this.storage.getVerbs({
+            pagination: { limit: batchSize, cursor }
+          })
+
+          // Add each verb to index
+          for (const verb of result.items) {
+            await this.addVerb(verb)
+            totalVerbs++
+          }
+
+          hasMore = result.hasMore
+          cursor = result.nextCursor
+
+          // Progress logging
+          if (totalVerbs % 10000 === 0) {
+            prodLog.info(`GraphAdjacencyIndex: Indexed ${totalVerbs} verbs...`)
+          }
         }
+
+        prodLog.info(
+          `GraphAdjacencyIndex: Loaded ${totalVerbs.toLocaleString()} verbs via pagination (cloud storage)`
+        )
       }
 
       const rebuildTime = Date.now() - this.rebuildStartTime

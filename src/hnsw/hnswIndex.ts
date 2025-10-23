@@ -855,30 +855,33 @@ export class HNSWIndex {
         )
       }
 
-      // Step 4: Paginate through all nouns and restore HNSW graph structure
+      // Step 4: Adaptive loading strategy based on storage type (v4.2.4)
+      // FileSystem/Memory/OPFS: Load all at once (avoids repeated getAllShardedFiles() calls)
+      // Cloud (GCS/S3/R2): Use pagination (efficient native cloud APIs)
+      const storageType = this.storage?.constructor.name || ''
+      const isLocalStorage = storageType === 'FileSystemStorage' ||
+                            storageType === 'MemoryStorage' ||
+                            storageType === 'OPFSStorage'
+
       let loadedCount = 0
       let totalCount: number | undefined = undefined
-      let hasMore = true
-      let cursor: string | undefined = undefined
 
-      while (hasMore) {
-        // Fetch batch of nouns from storage (cast needed as method is not in base interface)
+      if (isLocalStorage) {
+        // Local storage: Load all nouns at once
+        prodLog.info(`HNSW: Using optimized strategy - load all nodes at once (${storageType})`)
+
         const result: {
           items: HNSWNoun[]
           totalCount?: number
           hasMore: boolean
           nextCursor?: string
         } = await (this.storage as any).getNounsWithPagination({
-          limit: batchSize,
-          cursor
+          limit: 10000000  // Effectively unlimited for local development
         })
 
-        // Set total count on first batch
-        if (totalCount === undefined && result.totalCount !== undefined) {
-          totalCount = result.totalCount
-        }
+        totalCount = result.totalCount || result.items.length
 
-        // Process each noun in the batch
+        // Process all nouns at once
         for (const nounData of result.items) {
           try {
             // Load HNSW graph data for this entity
@@ -921,14 +924,89 @@ export class HNSWIndex {
           }
         }
 
-        // Report progress
+        // Report final progress
         if (options.onProgress && totalCount !== undefined) {
           options.onProgress(loadedCount, totalCount)
         }
 
-        // Check for more data
-        hasMore = result.hasMore
-        cursor = result.nextCursor
+        prodLog.info(`HNSW: Loaded ${loadedCount.toLocaleString()} nodes at once (local storage)`)
+
+      } else {
+        // Cloud storage: Use pagination with native cloud APIs
+        prodLog.info(`HNSW: Using cloud pagination strategy (${storageType})`)
+
+        let hasMore = true
+        let cursor: string | undefined = undefined
+
+        while (hasMore) {
+          // Fetch batch of nouns from storage (cast needed as method is not in base interface)
+          const result: {
+            items: HNSWNoun[]
+            totalCount?: number
+            hasMore: boolean
+            nextCursor?: string
+          } = await (this.storage as any).getNounsWithPagination({
+            limit: batchSize,
+            cursor
+          })
+
+          // Set total count on first batch
+          if (totalCount === undefined && result.totalCount !== undefined) {
+            totalCount = result.totalCount
+          }
+
+          // Process each noun in the batch
+          for (const nounData of result.items) {
+            try {
+              // Load HNSW graph data for this entity
+              const hnswData = await (this.storage as any).getHNSWData(nounData.id)
+
+              if (!hnswData) {
+                // No HNSW data - skip (might be entity added before persistence)
+                continue
+              }
+
+              // Create noun object with restored connections
+              const noun: HNSWNoun = {
+                id: nounData.id,
+                vector: shouldPreload ? nounData.vector : [],  // Preload if dataset is small
+                connections: new Map(),
+                level: hnswData.level
+              }
+
+              // Restore connections from persisted data
+              for (const [levelStr, nounIds] of Object.entries(hnswData.connections)) {
+                const level = parseInt(levelStr, 10)
+                noun.connections.set(level, new Set<string>(nounIds as string[]))
+              }
+
+              // Add to in-memory index
+              this.nouns.set(nounData.id, noun)
+
+              // Track high-level nodes for O(1) entry point selection
+              if (noun.level >= 2 && noun.level <= this.MAX_TRACKED_LEVELS) {
+                if (!this.highLevelNodes.has(noun.level)) {
+                  this.highLevelNodes.set(noun.level, new Set())
+                }
+                this.highLevelNodes.get(noun.level)!.add(nounData.id)
+              }
+
+              loadedCount++
+            } catch (error) {
+              // Log error but continue (robust error recovery)
+              console.error(`Failed to rebuild HNSW data for ${nounData.id}:`, error)
+            }
+          }
+
+          // Report progress
+          if (options.onProgress && totalCount !== undefined) {
+            options.onProgress(loadedCount, totalCount)
+          }
+
+          // Check for more data
+          hasMore = result.hasMore
+          cursor = result.nextCursor
+        }
       }
 
       const cacheInfo = shouldPreload
