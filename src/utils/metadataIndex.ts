@@ -200,6 +200,10 @@ export class MetadataIndexManager {
    * This must be called after construction and before any queries
    */
   async init(): Promise<void> {
+    // Load field registry to discover persisted indices (v4.2.1)
+    // Must run first to populate fieldIndexes directory before warming cache
+    await this.loadFieldRegistry()
+
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
 
@@ -1712,6 +1716,9 @@ export class MetadataIndexManager {
     // Flush EntityIdMapper (UUID ↔ integer mappings) (v3.43.0)
     await this.idMapper.flush()
 
+    // Save field registry for fast cold-start discovery (v4.2.1)
+    await this.saveFieldRegistry()
+
     this.dirtyFields.clear()
     this.lastFlushTime = Date.now()
   }
@@ -1722,51 +1729,6 @@ export class MetadataIndexManager {
    */
   private async yieldToEventLoop(): Promise<void> {
     return new Promise(resolve => setImmediate(resolve))
-  }
-
-  /**
-   * Get adaptive batch size based on storage adapter type
-   * v4.2.1: Fixes 100x performance regression in metadata rebuild
-   *
-   * Performance characteristics by storage type:
-   * - FileSystemStorage/MemoryStorage: No socket limits, I/O bound, benefits from large batches
-   * - Cloud Storage (GCS/S3/R2): Socket exhaustion risk, needs conservative batching
-   *
-   * Batch size optimization:
-   * - 1000 entities/batch for local storage = 1-2 batches for typical dev datasets
-   * - 25 entities/batch for cloud storage = prevents connection pool exhaustion
-   * - 100 entities/batch for unknown storage = balanced default
-   */
-  private getAdaptiveBatchSize(): number {
-    const storageType = this.storage.constructor.name
-
-    // Local storage: Optimize for speed (no socket limits)
-    // FileSystemStorage can handle 1000+ concurrent file reads efficiently
-    // MemoryStorage is even faster with no I/O overhead
-    if (storageType === 'FileSystemStorage' || storageType === 'MemoryStorage') {
-      return 1000 // 40x larger than v4.2.0, reduces 47 batches → 2 batches for 1,157 entities
-    }
-
-    // Cloud storage: Optimize for reliability (prevent socket exhaustion)
-    // GCS/S3/R2 have connection pool limits and timeout risks
-    // Conservative batching prevents "EMFILE: too many open files" errors
-    if (storageType.includes('GCS') ||
-        storageType.includes('S3') ||
-        storageType.includes('R2') ||
-        storageType === 'GoogleCloudStorage' ||
-        storageType === 'S3CompatibleStorage') {
-      return 25 // Keep v4.2.0 behavior for cloud storage
-    }
-
-    // OPFS (Origin Private File System) in browsers: Moderate batching
-    // Browser storage has different constraints than Node.js filesystem
-    if (storageType === 'OPFSStorage') {
-      return 100 // Balance between speed and browser resource limits
-    }
-
-    // Unknown storage type: Use safe default
-    // Better to be conservative than risk socket exhaustion
-    return 100
   }
 
   /**
@@ -1851,6 +1813,86 @@ export class MetadataIndexManager {
       if (lockAcquired) {
         await this.releaseLock(lockKey)
       }
+    }
+  }
+
+  /**
+   * Save field registry to storage for fast cold-start discovery
+   * v4.2.1: Solves 100x performance regression by persisting field directory
+   *
+   * This enables instant cold starts by discovering which fields have persisted indices
+   * without needing to rebuild from scratch. Similar to how HNSW persists system metadata.
+   *
+   * Registry size: ~4-8KB for typical deployments (50-200 fields)
+   * Scales: O(log N) - field count grows logarithmically with entity count
+   */
+  private async saveFieldRegistry(): Promise<void> {
+    // Nothing to save if no fields indexed yet
+    if (this.fieldIndexes.size === 0) {
+      return
+    }
+
+    try {
+      const registry = {
+        noun: 'FieldRegistry',
+        fields: Array.from(this.fieldIndexes.keys()),
+        version: 1,
+        lastUpdated: Date.now(),
+        totalFields: this.fieldIndexes.size
+      }
+
+      await this.storage.saveMetadata('__metadata_field_registry__', registry)
+
+      prodLog.debug(`📝 Saved field registry: ${registry.totalFields} fields`)
+    } catch (error) {
+      // Non-critical: Log warning but don't throw
+      // System will rebuild registry on next cold start if needed
+      prodLog.warn('Failed to save field registry:', error)
+    }
+  }
+
+  /**
+   * Load field registry from storage to populate fieldIndexes directory
+   * v4.2.1: Enables O(1) discovery of persisted sparse indices
+   *
+   * Called during init() to discover which fields have persisted indices.
+   * Populates fieldIndexes Map with skeleton entries - actual sparse indices
+   * are lazy-loaded via UnifiedCache when first accessed.
+   *
+   * Gracefully handles missing registry (first run or corrupted data).
+   */
+  private async loadFieldRegistry(): Promise<void> {
+    try {
+      const registry = await this.storage.getMetadata('__metadata_field_registry__')
+
+      if (!registry?.fields || !Array.isArray(registry.fields)) {
+        // Registry doesn't exist or is invalid - not an error, just first run
+        prodLog.debug('📂 No field registry found - will build on first flush')
+        return
+      }
+
+      // Populate fieldIndexes Map from discovered fields
+      // Skeleton entries with empty values - sparse indices loaded lazily
+      const lastUpdated = typeof registry.lastUpdated === 'number'
+        ? registry.lastUpdated
+        : Date.now()
+
+      for (const field of registry.fields) {
+        if (typeof field === 'string' && field.length > 0) {
+          this.fieldIndexes.set(field, {
+            values: {},
+            lastUpdated
+          })
+        }
+      }
+
+      prodLog.info(
+        `✅ Loaded field registry: ${registry.fields.length} persisted fields discovered\n` +
+        `   Fields: ${registry.fields.slice(0, 5).join(', ')}${registry.fields.length > 5 ? '...' : ''}`
+      )
+    } catch (error) {
+      // Silent failure - registry not critical, will rebuild if needed
+      prodLog.debug('Could not load field registry:', error)
     }
   }
 
@@ -2049,21 +2091,9 @@ export class MetadataIndexManager {
 
     this.isRebuilding = true
     try {
-      // v4.2.1: Get adaptive batch size based on storage type
-      const batchSize = this.getAdaptiveBatchSize()
-      const storageType = this.storage.constructor.name
-
-      prodLog.info('🔄 Starting metadata index rebuild with adaptive batch processing...')
-      prodLog.info(`📊 Storage adapter: ${storageType}`)
-      prodLog.info(`📦 Adaptive batch size: ${batchSize} entities/batch`)
-      prodLog.info(`🔧 Batch processing method: ${this.storage.getMetadataBatch ? 'getMetadataBatch()' : 'individual calls with concurrency limit'}`)
-
-      // Log performance expectations
-      if (storageType === 'FileSystemStorage' || storageType === 'MemoryStorage') {
-        prodLog.info(`⚡ Local storage detected: Optimized for speed (40x faster than v4.2.0)`)
-      } else if (storageType.includes('GCS') || storageType.includes('S3') || storageType.includes('R2')) {
-        prodLog.info(`☁️  Cloud storage detected: Conservative batching to prevent socket exhaustion`)
-      }
+      prodLog.info('🔄 Starting non-blocking metadata index rebuild with batch processing to prevent socket exhaustion...')
+    prodLog.info(`📊 Storage adapter: ${this.storage.constructor.name}`)
+    prodLog.info(`🔧 Batch processing available: ${!!this.storage.getMetadataBatch}`)
 
       // Clear existing indexes (v3.42.0 - use sparse indices instead of flat files)
       // v3.44.1: No sparseIndices Map to clear - UnifiedCache handles eviction
@@ -2076,7 +2106,7 @@ export class MetadataIndexManager {
 
       // Rebuild noun metadata indexes using pagination
       let nounOffset = 0
-      const nounLimit = batchSize // v4.2.1: Adaptive batch size (1000 for local, 25 for cloud)
+      const nounLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
       let hasMoreNouns = true
       let totalNounsProcessed = 0
       let consecutiveEmptyBatches = 0
@@ -2171,7 +2201,7 @@ export class MetadataIndexManager {
       
       // Rebuild verb metadata indexes using pagination
       let verbOffset = 0
-      const verbLimit = batchSize // v4.2.1: Use same adaptive batch size as nouns
+      const verbLimit = 25 // Even smaller batches during initialization to prevent socket exhaustion
       let hasMoreVerbs = true
       let totalVerbsProcessed = 0
       let consecutiveEmptyVerbBatches = 0
