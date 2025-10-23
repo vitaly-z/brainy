@@ -2104,29 +2104,74 @@ export class MetadataIndexManager {
       // This ensures rebuild starts fresh (v3.44.1)
       this.unifiedCache.clear('metadata')
 
-      // Adaptive batch sizing based on storage adapter (v4.2.2)
-      // FileSystem/Memory/OPFS: Large batches (fast local I/O, no socket limits)
-      // Cloud (GCS/S3/R2): Small batches (prevent socket exhaustion)
+      // Adaptive rebuild strategy based on storage adapter (v4.2.3)
+      // FileSystem/Memory/OPFS: Load all at once (avoids getAllShardedFiles() overhead on every batch)
+      // Cloud (GCS/S3/R2): Use pagination with small batches (prevent socket exhaustion)
       const storageType = this.storage.constructor.name
       const isLocalStorage = storageType === 'FileSystemStorage' ||
                             storageType === 'MemoryStorage' ||
                             storageType === 'OPFSStorage'
-      const nounLimit = isLocalStorage ? 500 : 25
-      prodLog.info(`⚡ Using ${isLocalStorage ? 'optimized' : 'conservative'} batch size: ${nounLimit} items/batch`)
 
-      // Rebuild noun metadata indexes using pagination
-      let nounOffset = 0
-      let hasMoreNouns = true
+      let nounLimit: number
       let totalNounsProcessed = 0
-      let consecutiveEmptyBatches = 0
-      const MAX_ITERATIONS = 10000 // Safety limit to prevent infinite loops
-      let iterations = 0
 
-      while (hasMoreNouns && iterations < MAX_ITERATIONS) {
-        iterations++
+      if (isLocalStorage) {
+        // Load all nouns at once for local storage
+        // Avoids repeated directory scans in getAllShardedFiles()
+        prodLog.info(`⚡ Using optimized strategy: load all nouns at once (local storage)`)
         const result = await this.storage.getNouns({
-          pagination: { offset: nounOffset, limit: nounLimit }
+          pagination: { offset: 0, limit: 1000000 } // Effectively unlimited
         })
+
+        prodLog.info(`📦 Loading ${result.items.length} nouns with metadata...`)
+
+        // Get all metadata in one batch if available
+        const nounIds = result.items.map(noun => noun.id)
+        let metadataBatch: Map<string, any>
+
+        if (this.storage.getMetadataBatch) {
+          metadataBatch = await this.storage.getMetadataBatch(nounIds)
+          prodLog.info(`✅ Loaded ${metadataBatch.size}/${nounIds.length} metadata objects`)
+        } else {
+          // Fallback to individual calls
+          metadataBatch = new Map()
+          for (const id of nounIds) {
+            try {
+              const metadata = await this.storage.getNounMetadata(id)
+              if (metadata) metadataBatch.set(id, metadata)
+            } catch (error) {
+              prodLog.debug(`Failed to read metadata for ${id}:`, error)
+            }
+          }
+        }
+
+        // Process all nouns
+        for (const noun of result.items) {
+          const metadata = metadataBatch.get(noun.id)
+          if (metadata) {
+            await this.addToIndex(noun.id, metadata, true)
+          }
+        }
+
+        totalNounsProcessed = result.items.length
+        prodLog.info(`✅ Indexed ${totalNounsProcessed} nouns`)
+
+      } else {
+        // Cloud storage: use conservative batching
+        nounLimit = 25
+        prodLog.info(`⚡ Using conservative batch size: ${nounLimit} items/batch (cloud storage)`)
+
+        let nounOffset = 0
+        let hasMoreNouns = true
+        let consecutiveEmptyBatches = 0
+        const MAX_ITERATIONS = 10000
+        let iterations = 0
+
+        while (hasMoreNouns && iterations < MAX_ITERATIONS) {
+          iterations++
+          const result = await this.storage.getNouns({
+            pagination: { offset: nounOffset, limit: nounLimit }
+          })
 
         // CRITICAL SAFETY CHECK: Prevent infinite loop on empty results
         if (result.items.length === 0) {
@@ -2206,21 +2251,70 @@ export class MetadataIndexManager {
           prodLog.debug(`📊 Indexed ${totalNounsProcessed} nouns...`)
         }
         await this.yieldToEventLoop()
-      }
-      
-      // Rebuild verb metadata indexes using pagination
-      let verbOffset = 0
-      const verbLimit = isLocalStorage ? 500 : 25 // Same adaptive batch sizing as nouns
-      let hasMoreVerbs = true
-      let totalVerbsProcessed = 0
-      let consecutiveEmptyVerbBatches = 0
-      let verbIterations = 0
+        }
 
-      while (hasMoreVerbs && verbIterations < MAX_ITERATIONS) {
-        verbIterations++
+        // Check iteration limits for cloud storage
+        if (iterations >= MAX_ITERATIONS) {
+          prodLog.error(`❌ Metadata noun rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
+        }
+      }
+
+      // Rebuild verb metadata indexes - same strategy as nouns
+      let totalVerbsProcessed = 0
+
+      if (isLocalStorage) {
+        // Load all verbs at once for local storage
+        prodLog.info(`⚡ Loading all verbs at once (local storage)`)
         const result = await this.storage.getVerbs({
-          pagination: { offset: verbOffset, limit: verbLimit }
+          pagination: { offset: 0, limit: 1000000 } // Effectively unlimited
         })
+
+        prodLog.info(`📦 Loading ${result.items.length} verbs with metadata...`)
+
+        // Get all verb metadata at once
+        const verbIds = result.items.map(verb => verb.id)
+        let verbMetadataBatch: Map<string, any>
+
+        if ((this.storage as any).getVerbMetadataBatch) {
+          verbMetadataBatch = await (this.storage as any).getVerbMetadataBatch(verbIds)
+          prodLog.info(`✅ Loaded ${verbMetadataBatch.size}/${verbIds.length} verb metadata objects`)
+        } else {
+          verbMetadataBatch = new Map()
+          for (const id of verbIds) {
+            try {
+              const metadata = await this.storage.getVerbMetadata(id)
+              if (metadata) verbMetadataBatch.set(id, metadata)
+            } catch (error) {
+              prodLog.debug(`Failed to read verb metadata for ${id}:`, error)
+            }
+          }
+        }
+
+        // Process all verbs
+        for (const verb of result.items) {
+          const metadata = verbMetadataBatch.get(verb.id)
+          if (metadata) {
+            await this.addToIndex(verb.id, metadata, true)
+          }
+        }
+
+        totalVerbsProcessed = result.items.length
+        prodLog.info(`✅ Indexed ${totalVerbsProcessed} verbs`)
+
+      } else {
+        // Cloud storage: use conservative batching
+        let verbOffset = 0
+        const verbLimit = 25
+        let hasMoreVerbs = true
+        let consecutiveEmptyVerbBatches = 0
+        let verbIterations = 0
+        const MAX_ITERATIONS = 10000
+
+        while (hasMoreVerbs && verbIterations < MAX_ITERATIONS) {
+          verbIterations++
+          const result = await this.storage.getVerbs({
+            pagination: { offset: verbOffset, limit: verbLimit }
+          })
 
         // CRITICAL SAFETY CHECK: Prevent infinite loop on empty results
         if (result.items.length === 0) {
@@ -2297,14 +2391,12 @@ export class MetadataIndexManager {
           prodLog.debug(`🔗 Indexed ${totalVerbsProcessed} verbs...`)
         }
         await this.yieldToEventLoop()
-      }
-      
-      // Check if we hit iteration limits
-      if (iterations >= MAX_ITERATIONS) {
-        prodLog.error(`❌ Metadata noun rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
-      }
-      if (verbIterations >= MAX_ITERATIONS) {
-        prodLog.error(`❌ Metadata verb rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
+        }
+
+        // Check iteration limits for cloud storage
+        if (verbIterations >= MAX_ITERATIONS) {
+          prodLog.error(`❌ Metadata verb rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
+        }
       }
 
       // Flush to storage with final yield

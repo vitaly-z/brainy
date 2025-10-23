@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.2.3](https://github.com/soulcraftlabs/brainy/compare/v4.2.2...v4.2.3) (2025-10-23)
+
+
+### 🐛 Bug Fixes
+
+* **metadata-index**: fix rebuild stalling after first batch on FileSystemStorage
+  - **Critical Fix**: v4.2.2 rebuild stalled after processing first batch (500/1,157 entities)
+  - **Root Cause**: `getAllShardedFiles()` was called on EVERY batch, re-reading all 256 shard directories each time
+  - **Performance Impact**: Second batch call to `getAllShardedFiles()` took 3+ minutes, appearing to hang
+  - **Solution**: Load all entities at once for local storage (FileSystem/Memory/OPFS)
+    - FileSystem/Memory/OPFS: Load all nouns/verbs in single batch (no pagination overhead)
+    - Cloud (GCS/S3/R2): Keep conservative pagination (25 items/batch for socket safety)
+  - **Benefits**:
+    - FileSystem: 1,157 entities load in **2-3 seconds** (one `getAllShardedFiles()` call)
+    - Cloud: Unchanged behavior (still uses safe batching)
+    - Zero config: Auto-detects storage type via `constructor.name`
+  - **Technical Details**:
+    - Pagination was designed for cloud storage socket exhaustion
+    - FileSystem doesn't need pagination - can handle loading thousands of entities at once
+    - Eliminates repeated directory scans: 3 batches × 256 dirs → 1 batch × 256 dirs
+  - **Workshop Team**: This resolves the v4.2.2 stalling issue - rebuild will now complete in seconds
+  - **Files Changed**: `src/utils/metadataIndex.ts` (rebuilt() method with adaptive loading strategy)
+
 ### [4.2.2](https://github.com/soulcraftlabs/brainy/compare/v4.2.1...v4.2.2) (2025-10-23)
 
 
