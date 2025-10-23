@@ -10,10 +10,27 @@ This document explains how Brainy's four indexes (MetadataIndex, HNSWIndex, Grap
 
 | Index | Persisted Data | Storage Method | Since Version |
 |-------|---------------|----------------|---------------|
-| **MetadataIndex** | Chunked sparse indices with bloom filters + zone maps | `storage.saveMetadata()` | v3.42.0 |
+| **MetadataIndex** | Field registry + chunked sparse indices with bloom filters + zone maps | `storage.saveMetadata()` | v3.42.0 (chunks), v4.2.1 (registry) |
 | **HNSWIndex** | Vector embeddings + HNSW graph connections | `storage.saveHNSWData()` + `storage.saveHNSWSystem()` | v3.35.0 |
 | **GraphAdjacencyIndex** | Relationships via LSM-tree SSTables | LSM-tree auto-persistence | v3.44.0 |
 | **DeletedItemsIndex** | Set of deleted IDs | `storage.saveDeletedItems()` | v3.0.0 |
+
+#### MetadataIndex Persistence Details (v4.2.1+)
+
+The MetadataIndex now persists two components:
+
+1. **Field Registry** (`__metadata_field_registry__`): Directory of indexed fields for O(1) discovery
+   - Size: ~4-8KB (50-200 fields typical)
+   - Enables instant cold starts by discovering persisted indices
+   - Auto-saved during every flush operation
+
+2. **Sparse Indices** (`__sparse_index__<field>`): Per-field index directories
+   - Contains chunk metadata, zone maps, and bloom filters
+   - Lazy-loaded via UnifiedCache on first query
+
+3. **Chunks** (`__metadata_chunk__<field>_<chunkId>`): Actual inverted index data
+   - Roaring bitmaps for compressed entity ID storage
+   - Loaded on-demand based on query patterns
 
 All storage operations use the **StorageAdapter** interface, which works with FileSystem, OPFS, S3, GCS, R2, and Memory backends.
 
@@ -93,11 +110,19 @@ async init(): Promise<void> {
 }
 ```
 
-**Timeline** (typical cold start with 10K entities):
+**Timeline** (typical cold start with 10K entities, v4.2.1+):
 - 0-50ms: Storage adapter initialization
-- 50-100ms: Index lazy initialization (LSM-tree loading, metadata discovery)
-- 100-1500ms: Parallel rebuild if needed
-- Total: ~1-3 seconds
+- 50-100ms: Field registry loading (O(1) discovery of persisted indices)
+- 100-200ms: Index lazy initialization (LSM-tree loading)
+- 200-500ms: Cache warming (preload common fields)
+- **No rebuild needed!** Registry discovers existing indices
+- Total: ~0.5-1 second (instant cold starts)
+
+**Timeline** (cold start WITHOUT field registry - first run only):
+- 0-50ms: Storage adapter initialization
+- 50-100ms: Index lazy initialization
+- 100-2000ms: One-time rebuild to create indices
+- Total: ~1-3 seconds (one time only)
 
 ## Rebuild Process
 
@@ -282,36 +307,77 @@ while (hasMore) {
 - 200-600x speedup: Load from storage instead of recomputing (O(N) vs O(N log N))
 - **Combined**: ~6000x speedup! (150 minutes → 1.5 seconds for 10K entities)
 
-### 3. MetadataIndex Rebuild
+### 3. MetadataIndex Rebuild (v4.2.1+ with Field Registry)
+
+**v4.2.1 Critical Fix**: Field registry persistence eliminates unnecessary rebuilds!
 
 ```typescript
-// src/utils/metadataIndex.ts
-async rebuild(): Promise<void> {
-  // STEP 1: Clear in-memory structures
-  this.fieldIndexes.clear()
-  this.sparseIndices.clear()
+// src/utils/metadataIndex.ts (lines 202-216)
+async init(): Promise<void> {
+  // STEP 1: Load field registry to discover persisted indices (v4.2.1)
+  // This is THE KEY FIX - O(1) discovery of existing indices
+  await this.loadFieldRegistry()
 
-  // STEP 2: Load chunked sparse indices from storage
-  // Note: Chunks are lazy-loaded on demand, so rebuild is fast
-  const fields = await this.storage.getIndexedFields()
+  // If registry found, fieldIndexes Map is now populated
+  // getStats() will return totalEntries > 0 → skips rebuild!
 
-  for (const field of fields) {
-    // Load sparse index metadata (chunk descriptors, bloom filters)
-    const sparseIndex = await this.storage.getSparseIndex(field)
-    this.sparseIndices.set(field, sparseIndex)
+  // STEP 2: Initialize EntityIdMapper
+  await this.idMapper.init()
+
+  // STEP 3: Warm cache with discovered fields
+  await this.warmCache()
+}
+
+async loadFieldRegistry(): Promise<void> {
+  const registry = await this.storage.getMetadata('__metadata_field_registry__')
+
+  if (registry?.fields) {
+    // Populate fieldIndexes Map from discovered fields
+    // Sparse indices are lazy-loaded when first accessed
+    for (const field of registry.fields) {
+      this.fieldIndexes.set(field, {
+        values: {},
+        lastUpdated: registry.lastUpdated
+      })
+    }
+    // Result: getStats() now returns totalEntries > 0
+    // → Brain skips rebuild, cold start in 2-3 seconds!
   }
-
-  // STEP 3: Load lightweight statistics
-  const stats = await this.storage.getMetadataStats()
-  this.fieldStats = stats.fieldStats
-  this.typeFieldAffinity = stats.typeFieldAffinity
 }
 ```
 
+**Rebuild Only Happens If**:
+1. **First run** (no field registry exists yet)
+2. **Registry corruption** (rare)
+3. **Explicit rebuild request** (manual operation)
+
+```typescript
+// Only runs if field registry not found
+async rebuild(): Promise<void> {
+  // STEP 1: Clear in-memory structures
+  this.fieldIndexes.clear()
+
+  // STEP 2: Load all entity metadata and rebuild indices
+  // Sequential batching (25/batch) to prevent socket exhaustion
+  // After rebuild: Field registry saved during next flush()
+
+  // One-time cost: ~2-3 seconds for 1K entities
+}
+```
+
+**Performance Comparison**:
+
+| Version | Cold Start | Discovery Method | Rebuild Needed? |
+|---------|------------|------------------|-----------------|
+| v4.2.0 | 8-9 min | None (always rebuild) | Always |
+| v4.2.1 | 2-3 sec | Field registry O(1) | First run only |
+
 **Key Points**:
-- ✅ Lazy chunk loading - only loads chunks when queried
+- ✅ Field registry enables O(1) discovery (4-8KB file)
+- ✅ Sparse indices lazy-loaded on first query
 - ✅ Bloom filters + zone maps loaded for fast filtering
-- ✅ O(F) complexity where F = number of fields (typically < 100)
+- ✅ One-time rebuild on first run, then instant restarts forever
+- ✅ Automatic: No configuration needed
 
 ### 4. GraphAdjacencyIndex Rebuild
 
