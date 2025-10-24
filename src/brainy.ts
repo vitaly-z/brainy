@@ -1016,6 +1016,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       filter.service = params.service
     }
 
+    // v4.5.1: Exclude VFS relationships by default (same pattern as brain.find())
+    // VFS relationships have metadata.isVFS = true
+    // Only include VFS relationships if explicitly requested
+    if (params.includeVFS !== true) {
+      filter.metadata = filter.metadata || {}
+      filter.metadata.isVFS = { notEquals: true }
+    }
+
     // Fetch from storage with pagination at storage layer (efficient!)
     const result = await this.storage.getVerbs({
       pagination: {

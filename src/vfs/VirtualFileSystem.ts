@@ -422,7 +422,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         await this.brain.relate({
           from: parentId,
           to: existingId,
-          type: VerbType.Contains
+          type: VerbType.Contains,
+          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
         })
       }
     } else {
@@ -440,7 +441,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       await this.brain.relate({
         from: parentId,
         to: entity,
-        type: VerbType.Contains
+        type: VerbType.Contains,
+        metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
       })
 
       // Update path resolver cache
@@ -762,7 +764,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         await this.brain.relate({
           from: parentId,
           to: entity,
-          type: VerbType.Contains
+          type: VerbType.Contains,
+          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
         })
       }
 
@@ -1674,7 +1677,12 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       // Add to new parent
       if (newParentPath && newParentPath !== '/') {
         const newParentId = await this.pathResolver.resolve(newParentPath)
-        await this.brain.relate({ from: newParentId, to: entityId, type: VerbType.Contains })
+        await this.brain.relate({
+          from: newParentId,
+          to: entityId,
+          type: VerbType.Contains,
+          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+        })
       }
     }
 
@@ -1747,7 +1755,12 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const parentPath = this.getParentPath(destPath)
     if (parentPath && parentPath !== '/') {
       const parentId = await this.pathResolver.resolve(parentPath)
-      await this.brain.relate({ from: parentId, to: newEntity, type: VerbType.Contains })
+      await this.brain.relate({
+        from: parentId,
+        to: newEntity,
+        type: VerbType.Contains,
+        metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+      })
     }
 
     // Update path cache
@@ -1847,7 +1860,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     await this.brain.relate({
       from: parentId,
       to: entity,
-      type: VerbType.Contains
+      type: VerbType.Contains,
+      metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
     })
 
     // Update path resolver cache
@@ -2056,7 +2070,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     await this.brain.relate({
       from: fromEntityId,
       to: toEntityId,
-      type: type as any  // Convert string to VerbType
+      type: type as any,  // Convert string to VerbType
+      metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
     })
 
     // Invalidate caches for both paths

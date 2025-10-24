@@ -199,7 +199,8 @@ export class PathResolver {
     // Get all relationships where parentId contains other entities
     const relations = await this.brain.getRelations({
       from: parentId,
-      type: VerbType.Contains
+      type: VerbType.Contains,
+      includeVFS: true  // v4.5.1: Required to see VFS relationships
     })
 
     // Find the child with matching name
@@ -227,7 +228,8 @@ export class PathResolver {
     // Production-ready: Use graph relationships (VFS creates these in mkdir/writeFile)
     const relations = await this.brain.getRelations({
       from: dirId,
-      type: VerbType.Contains
+      type: VerbType.Contains,
+      includeVFS: true  // v4.5.1: Required to see VFS relationships
     })
 
     const validChildren: VFSEntity[] = []

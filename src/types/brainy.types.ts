@@ -324,6 +324,17 @@ export interface GetRelationsParams {
    * Only return relationships belonging to this service.
    */
   service?: string
+
+  /**
+   * Include VFS relationships (v4.5.1)
+   *
+   * By default, getRelations() excludes VFS relationships (since v4.4.0).
+   * Set this to true when you need to traverse VFS structure.
+   *
+   * @default false
+   * @since v4.5.1
+   */
+  includeVFS?: boolean
 }
 
 // ============= Batch Operations =============
