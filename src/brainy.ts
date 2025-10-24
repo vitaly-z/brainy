@@ -1185,6 +1185,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   console.error('Search failed:', error)
    *   return []
    * }
+   *
+   * @example
+   * // VFS Filtering (v4.4.0): Exclude VFS entities by default
+   * // Knowledge graph queries stay clean - no VFS files in results
+   * const knowledge = await brainy.find({ query: 'AI concepts' })
+   * // Returns only knowledge entities, VFS files excluded
+   *
+   * @example
+   * // Include VFS entities when needed
+   * const everything = await brainy.find({
+   *   query: 'documentation',
+   *   includeVFS: true  // Opt-in to include VFS files
+   * })
+   * // Returns both knowledge entities AND VFS files
+   *
+   * @example
+   * // Search only VFS files
+   * const files = await brainy.find({
+   *   where: { vfsType: 'file', extension: '.md' },
+   *   includeVFS: true  // Required to find VFS entities
+   * })
    */
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
