@@ -159,6 +159,13 @@ export class SmartYAMLImporter {
   ): Promise<SmartYAMLResult> {
     const startTime = Date.now()
 
+    // v4.5.0: Report parsing start
+    options.onProgress?.({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
+
     // Parse YAML to JavaScript object
     const yamlString = typeof yamlContent === 'string'
       ? yamlContent
@@ -170,6 +177,13 @@ export class SmartYAMLImporter {
     } catch (error: any) {
       throw new Error(`Failed to parse YAML: ${error.message}`)
     }
+
+    // v4.5.0: Report parsing complete
+    options.onProgress?.({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
 
     // Process as JSON-like structure
     const result = await this.extractFromData(data, options)

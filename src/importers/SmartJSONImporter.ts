@@ -167,6 +167,13 @@ export class SmartJSONImporter {
       ...options
     }
 
+    // v4.5.0: Report parsing start
+    opts.onProgress({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
+
     // Parse JSON if string
     let jsonData: any
     if (typeof data === 'string') {
@@ -178,6 +185,13 @@ export class SmartJSONImporter {
     } else {
       jsonData = data
     }
+
+    // v4.5.0: Report parsing complete, starting traversal
+    opts.onProgress({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
 
     // Traverse and extract
     const entities: ExtractedJSONEntity[] = []
@@ -213,6 +227,13 @@ export class SmartJSONImporter {
         }
       }
     )
+
+    // v4.5.0: Report completion
+    opts.onProgress({
+      processed: nodesProcessed,
+      entities: entities.length,
+      relationships: relationships.length
+    })
 
     return {
       nodesProcessed,

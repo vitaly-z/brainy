@@ -385,6 +385,138 @@ export interface BatchResult<T = any> {
   duration: number          // Time taken in ms
 }
 
+// ============= Import Progress (v4.5.0) =============
+
+/**
+ * Import stage enumeration
+ */
+export type ImportStage =
+  | 'detecting'   // Detecting file format
+  | 'reading'     // Reading file from disk/network
+  | 'parsing'     // Parsing file structure (CSV rows, PDF pages, Excel sheets)
+  | 'extracting'  // Extracting entities using AI
+  | 'indexing'    // Creating graph nodes and relationships
+  | 'completing'  // Final cleanup and stats
+
+/**
+ * Overall import status
+ */
+export type ImportStatus =
+  | 'starting'    // Initializing import
+  | 'processing'  // Actively importing
+  | 'completing'  // Finalizing
+  | 'done'        // Complete
+
+/**
+ * Comprehensive import progress information
+ *
+ * Provides multi-dimensional progress tracking:
+ * - Bytes processed (always deterministic)
+ * - Entities extracted and indexed
+ * - Stage-specific progress
+ * - Time estimates
+ * - Performance metrics
+ *
+ * @since v4.5.0
+ */
+export interface ImportProgress {
+  // Overall Progress
+  overall_progress: number        // 0-100 weighted estimate across all stages
+  overall_status: ImportStatus    // High-level status
+
+  // Current Stage
+  stage: ImportStage              // What's happening now
+  stage_progress: number          // 0-100 within current stage (0 if unknown)
+  stage_message: string           // Human-readable: "Extracting entities from PDF..."
+
+  // Bytes (Always Available - most deterministic metric)
+  bytes_processed: number         // Bytes read/processed so far
+  total_bytes: number             // Total file size (0 if streaming/unknown)
+  bytes_percentage: number        // Convenience: bytes_processed / total_bytes * 100
+  bytes_per_second?: number       // Processing rate (relevant during parsing)
+
+  // Entities (Available when extraction starts)
+  entities_extracted: number      // Entities found during AI extraction
+  entities_indexed: number        // Entities added to Brainy graph
+  entities_per_second?: number    // Entities/sec (relevant during extraction/indexing)
+  estimated_total_entities?: number  // Estimated final count
+  estimation_confidence?: number  // 0-1 confidence in estimation
+
+  // Timing
+  elapsed_ms: number              // Time since import started
+  estimated_remaining_ms?: number // Estimated time remaining
+  estimated_total_ms?: number     // Estimated total time
+
+  // Context (helps users understand what's happening)
+  current_item?: string           // "Processing page 5 of 23"
+  current_file?: string           // "Sheet: Q2 Sales Data"
+  file_number?: number            // 3 (when importing multiple files)
+  total_files?: number            // 10
+
+  // Performance Metrics (for debugging/optimization)
+  metrics?: {
+    parsing_rate_mbps?: number              // MB/s during parsing
+    extraction_rate_entities_per_sec?: number  // Entities/s during extraction
+    indexing_rate_entities_per_sec?: number    // Entities/s during indexing
+    memory_usage_mb?: number                // Current memory usage
+    peak_memory_mb?: number                 // Peak memory usage
+  }
+
+  // Backwards Compatibility (for legacy code)
+  current: number  // Alias for entities_indexed
+  total: number    // Alias for estimated_total_entities or 0
+}
+
+/**
+ * Import progress callback - backwards compatible
+ *
+ * Supports both legacy (current, total) and new (ImportProgress object) signatures
+ */
+export type ImportProgressCallback =
+  | ((progress: ImportProgress) => void)
+  | ((current: number, total: number) => void)
+
+/**
+ * Stage weight configuration for overall progress calculation
+ *
+ * These weights reflect the typical time distribution across stages.
+ * Extraction is typically the slowest stage (60% of time).
+ */
+export interface StageWeights {
+  detecting: number    // Default: 0.01 (1%)
+  reading: number      // Default: 0.05 (5%)
+  parsing: number      // Default: 0.10 (10%)
+  extracting: number   // Default: 0.60 (60% - slowest!)
+  indexing: number     // Default: 0.20 (20%)
+  completing: number   // Default: 0.04 (4%)
+}
+
+/**
+ * Import result statistics
+ */
+export interface ImportStats {
+  graphNodesCreated: number     // Entities added to graph
+  graphEdgesCreated: number     // Relationships created
+  vfsFilesCreated: number       // VFS files created
+  duration: number              // Total time in ms
+  bytesProcessed: number        // Total bytes read
+  averageRate: number           // Average entities/sec
+  peakMemoryMB?: number         // Peak memory usage
+}
+
+/**
+ * Import operation result
+ */
+export interface ImportResult {
+  success: boolean
+  stats: ImportStats
+  errors?: Array<{
+    stage: ImportStage
+    message: string
+    error?: any
+  }>
+}
+
 // ============= Advanced Operations =============
 
 /**

@@ -149,23 +149,28 @@ export const importCommands = {
         options.recursive = answer.recursive
       }
 
-      spinner = ora('Initializing neural import...').start()
+      spinner = ora('Initializing import...').start()
       const brain = getBrainy()
-
-      // Load UniversalImportAPI
-      const { UniversalImportAPI } = await import('../../api/UniversalImportAPI.js')
-      const universalImport = new UniversalImportAPI(brain)
-      await universalImport.init()
-
-      spinner.text = 'Processing import...'
 
       // Handle different source types
       let result: any
 
       if (isURL) {
-        // URL import
+        // URL import - fetch first
         spinner.text = `Fetching from ${source}...`
-        result = await universalImport.importFromURL(source)
+        const response = await fetch(source)
+        const buffer = Buffer.from(await response.arrayBuffer())
+
+        spinner.text = 'Importing...'
+        result = await brain.import(buffer, {
+          enableNeuralExtraction: options.extractEntities !== false,
+          enableRelationshipInference: options.detectRelationships !== false,
+          enableConceptExtraction: options.extractConcepts || false,
+          confidenceThreshold: options.confidence ? parseFloat(options.confidence) : 0.6,
+          onProgress: options.progress ? (p) => {
+            spinner.text = `${p.message}${p.entities ? ` (${p.entities} entities)` : ''}`
+          } : undefined
+        })
       } else if (isDirectory) {
         // Directory import - process each file
         spinner.text = `Scanning directory: ${source}...`
@@ -202,34 +207,45 @@ export const importCommands = {
 
         spinner.succeed(`Found ${files.length} files`)
 
-        // Process files in batches
-        const batchSize = options.batchSize ? parseInt(options.batchSize) : 100
+        // Process files with progress
         let totalEntities = 0
         let totalRelationships = 0
         let filesProcessed = 0
 
-        for (let i = 0; i < files.length; i += batchSize) {
-          const batch = files.slice(i, i + batchSize)
+        for (const file of files) {
+          try {
+            if (options.progress) {
+              spinner = ora(`[${filesProcessed + 1}/${files.length}] Importing ${file}...`).start()
+            }
 
-          if (options.progress) {
-            spinner = ora(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(files.length / batchSize)} (${filesProcessed}/${files.length} files)...`).start()
-          }
+            const fileResult = await brain.import(file, {
+              enableNeuralExtraction: options.extractEntities !== false,
+              enableRelationshipInference: options.detectRelationships !== false,
+              enableConceptExtraction: options.extractConcepts || false,
+              confidenceThreshold: options.confidence ? parseFloat(options.confidence) : 0.6,
+              onProgress: options.progress ? (p) => {
+                spinner.text = `[${filesProcessed + 1}/${files.length}] ${p.message}`
+              } : undefined
+            })
 
-          for (const file of batch) {
-            try {
-              const fileResult = await universalImport.importFromFile(file)
-              totalEntities += fileResult.stats.entitiesCreated
-              totalRelationships += fileResult.stats.relationshipsCreated
-              filesProcessed++
-            } catch (error: any) {
-              if (options.verbose) {
-                console.log(chalk.yellow(`⚠️  Failed to import ${file}: ${error.message}`))
-              }
+            totalEntities += fileResult.entities.length
+            totalRelationships += fileResult.relationships.length
+            filesProcessed++
+
+            if (options.progress) {
+              spinner.succeed(`[${filesProcessed}/${files.length}] ${file}`)
+            }
+          } catch (error: any) {
+            if (options.verbose) {
+              if (spinner) spinner.fail(`Failed: ${file}`)
+              console.log(chalk.yellow(`⚠️  ${error.message}`))
             }
           }
         }
 
         result = {
+          entities: [],
+          relationships: [],
           stats: {
             filesProcessed,
             entitiesCreated: totalEntities,
@@ -238,10 +254,22 @@ export const importCommands = {
           }
         }
 
-        spinner.succeed('Directory import complete')
+        spinner = ora().succeed(`Directory import complete: ${filesProcessed} files`)
       } else {
-        // File import
-        result = await universalImport.importFromFile(source)
+        // File import with progress
+        result = await brain.import(source, {
+          format: options.format as any,
+          enableNeuralExtraction: options.extractEntities !== false,
+          enableRelationshipInference: options.detectRelationships !== false,
+          enableConceptExtraction: options.extractConcepts || false,
+          confidenceThreshold: options.confidence ? parseFloat(options.confidence) : 0.6,
+          onProgress: options.progress ? (p) => {
+            spinner.text = `${p.message}${p.entities ? ` (${p.entities} entities, ${p.relationships || 0} relationships)` : ''}`
+            if (p.throughput && p.eta) {
+              spinner.text += ` - ${p.throughput.toFixed(1)}/sec, ETA: ${Math.round(p.eta / 1000)}s`
+            }
+          } : undefined
+        })
       }
 
       spinner.succeed('Import complete')
@@ -323,18 +351,26 @@ export const importCommands = {
         console.log(chalk.cyan('\n📊 Import Results:\n'))
 
         console.log(chalk.bold('Statistics:'))
-        console.log(`  Entities created: ${chalk.green(result.stats.entitiesCreated)}`)
+        const entitiesCount = result.stats?.entitiesCreated || result.entities?.length || 0
+        const relationshipsCount = result.stats?.relationshipsCreated || result.relationships?.length || 0
 
-        if (result.stats.relationshipsCreated > 0) {
-          console.log(`  Relationships created: ${chalk.green(result.stats.relationshipsCreated)}`)
+        console.log(`  Entities created: ${chalk.green(entitiesCount)}`)
+
+        if (relationshipsCount > 0) {
+          console.log(`  Relationships created: ${chalk.green(relationshipsCount)}`)
         }
 
-        if (result.stats.filesProcessed) {
+        if (result.stats?.filesProcessed) {
           console.log(`  Files processed: ${chalk.green(result.stats.filesProcessed)}`)
         }
 
-        console.log(`  Average confidence: ${chalk.yellow((result.stats.averageConfidence * 100).toFixed(1))}%`)
-        console.log(`  Processing time: ${chalk.dim(result.stats.processingTimeMs)}ms`)
+        if (result.stats?.averageConfidence) {
+          console.log(`  Average confidence: ${chalk.yellow((result.stats.averageConfidence * 100).toFixed(1))}%`)
+        }
+
+        if (result.stats?.processingTimeMs) {
+          console.log(`  Processing time: ${chalk.dim(result.stats.processingTimeMs)}ms`)
+        }
 
         if (options.verbose && result.entities && result.entities.length > 0) {
           console.log(chalk.bold('\n📦 Imported Entities (first 10):'))

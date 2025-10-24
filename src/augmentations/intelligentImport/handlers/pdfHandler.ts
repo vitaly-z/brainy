@@ -46,9 +46,19 @@ export class PDFHandler extends BaseFormatHandler {
 
   async process(data: Buffer | string, options: FormatHandlerOptions): Promise<ProcessedData> {
     const startTime = Date.now()
+    const progressHooks = options.progressHooks
 
     // Convert to buffer
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary')
+    const totalBytes = buffer.length
+
+    // v4.5.0: Report start
+    if (progressHooks?.onBytesProcessed) {
+      progressHooks.onBytesProcessed(0)
+    }
+    if (progressHooks?.onCurrentItem) {
+      progressHooks.onCurrentItem('Loading PDF document...')
+    }
 
     try {
       // Load PDF document
@@ -64,12 +74,22 @@ export class PDFHandler extends BaseFormatHandler {
       const metadata = await pdfDoc.getMetadata()
       const numPages = pdfDoc.numPages
 
+      // v4.5.0: Report document loaded
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(`Processing ${numPages} pages...`)
+      }
+
       // Extract text and structure from all pages
       const allData: Array<Record<string, any>> = []
       let totalTextLength = 0
       let detectedTables = 0
 
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        // v4.5.0: Report current page
+        if (progressHooks?.onCurrentItem) {
+          progressHooks.onCurrentItem(`Processing page ${pageNum} of ${numPages}`)
+        }
+
         const page = await pdfDoc.getPage(pageNum)
         const textContent = await page.getTextContent()
 
@@ -110,9 +130,35 @@ export class PDFHandler extends BaseFormatHandler {
             })
           }
         }
+
+        // v4.5.0: Estimate bytes processed (pages are sequential)
+        const bytesProcessed = Math.floor((pageNum / numPages) * totalBytes)
+        if (progressHooks?.onBytesProcessed) {
+          progressHooks.onBytesProcessed(bytesProcessed)
+        }
+
+        // v4.5.0: Report extraction progress
+        if (progressHooks?.onDataExtracted) {
+          progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until complete
+        }
+      }
+
+      // v4.5.0: Final progress - all bytes processed
+      if (progressHooks?.onBytesProcessed) {
+        progressHooks.onBytesProcessed(totalBytes)
+      }
+      if (progressHooks?.onDataExtracted) {
+        progressHooks.onDataExtracted(allData.length, allData.length)
       }
 
       const processingTime = Date.now() - startTime
+
+      // v4.5.0: Report completion
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(
+          `PDF complete: ${numPages} pages, ${allData.length} items extracted`
+        )
+      }
 
       // Get all unique fields (excluding metadata fields)
       const fields = allData.length > 0

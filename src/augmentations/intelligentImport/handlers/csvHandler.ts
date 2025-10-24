@@ -34,9 +34,19 @@ export class CSVHandler extends BaseFormatHandler {
 
   async process(data: Buffer | string, options: FormatHandlerOptions): Promise<ProcessedData> {
     const startTime = Date.now()
+    const progressHooks = options.progressHooks
 
     // Convert to buffer if string
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf-8')
+    const totalBytes = buffer.length
+
+    // v4.5.0: Report total bytes for progress tracking
+    if (progressHooks?.onBytesProcessed) {
+      progressHooks.onBytesProcessed(0)
+    }
+    if (progressHooks?.onCurrentItem) {
+      progressHooks.onCurrentItem('Detecting CSV encoding and delimiter...')
+    }
 
     // Detect encoding
     const detectedEncoding = options.encoding || this.detectEncodingSafe(buffer)
@@ -44,6 +54,11 @@ export class CSVHandler extends BaseFormatHandler {
 
     // Detect delimiter if not specified
     const delimiter = options.csvDelimiter || this.detectDelimiter(text)
+
+    // v4.5.0: Report progress - parsing started
+    if (progressHooks?.onCurrentItem) {
+      progressHooks.onCurrentItem(`Parsing CSV rows (delimiter: "${delimiter}")...`)
+    }
 
     // Parse CSV
     const hasHeaders = options.csvHeaders !== false
@@ -60,22 +75,46 @@ export class CSVHandler extends BaseFormatHandler {
         cast: false // We'll do type inference ourselves
       })
 
+      // v4.5.0: Report bytes processed (entire file parsed)
+      if (progressHooks?.onBytesProcessed) {
+        progressHooks.onBytesProcessed(totalBytes)
+      }
+
       // Convert to array of objects
       const data = Array.isArray(records) ? records : [records]
+
+      // v4.5.0: Report data extraction progress
+      if (progressHooks?.onDataExtracted) {
+        progressHooks.onDataExtracted(data.length, data.length)
+      }
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(`Extracted ${data.length} rows, inferring types...`)
+      }
 
       // Infer types and convert values
       const fields = data.length > 0 ? Object.keys(data[0]) : []
       const types = this.inferFieldTypes(data)
 
-      const convertedData = data.map(row => {
+      const convertedData = data.map((row, index) => {
         const converted: Record<string, any> = {}
         for (const [key, value] of Object.entries(row)) {
           converted[key] = this.convertValue(value, types[key] || 'string')
         }
+
+        // v4.5.0: Report progress every 1000 rows
+        if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
+          progressHooks.onCurrentItem(`Converting types: ${index}/${data.length} rows...`)
+        }
+
         return converted
       })
 
       const processingTime = Date.now() - startTime
+
+      // v4.5.0: Final progress update
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(`CSV processing complete: ${convertedData.length} rows`)
+      }
 
       return {
         format: this.format,

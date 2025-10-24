@@ -21,6 +21,8 @@ interface AddOptions extends CoreOptions {
   id?: string
   metadata?: string
   type?: string
+  confidence?: string
+  weight?: string
 }
 
 interface SearchOptions extends CoreOptions {
@@ -35,6 +37,7 @@ interface SearchOptions extends CoreOptions {
   via?: string
   explain?: boolean
   includeRelations?: boolean
+  includeVfs?: boolean
   fusion?: string
   vectorWeight?: string
   graphWeight?: string
@@ -163,24 +166,40 @@ export const coreCommands = {
       }
       
       // Add with explicit type
-      const result = await brain.add({
+      const addParams: any = {
         data: text,
         type: nounType,
         metadata
-      })
-      
+      }
+
+      // v4.3.x: Add confidence and weight if provided
+      if (options.confidence) {
+        addParams.confidence = parseFloat(options.confidence)
+      }
+      if (options.weight) {
+        addParams.weight = parseFloat(options.weight)
+      }
+
+      const result = await brain.add(addParams)
+
       spinner.succeed('Added successfully')
-      
+
       if (!options.json) {
         console.log(chalk.green(`✓ Added with ID: ${result}`))
         if (options.type) {
           console.log(chalk.dim(`  Type: ${options.type}`))
         }
+        if (options.confidence) {
+          console.log(chalk.dim(`  Confidence: ${options.confidence}`))
+        }
+        if (options.weight) {
+          console.log(chalk.dim(`  Weight: ${options.weight}`))
+        }
         if (Object.keys(metadata).length > 0) {
           console.log(chalk.dim(`  Metadata: ${JSON.stringify(metadata)}`))
         }
       } else {
-        formatOutput({ id: result, metadata }, options)
+        formatOutput({ id: result, metadata, confidence: addParams.confidence, weight: addParams.weight }, options)
       }
     } catch (error: any) {
       if (spinner) spinner.fail('Failed to add data')
@@ -326,6 +345,11 @@ export const coreCommands = {
       // Include relationships
       if (options.includeRelations) {
         searchParams.includeRelations = true
+      }
+
+      // Include VFS files (v4.4.0 - find excludes VFS by default)
+      if (options.includeVfs) {
+        searchParams.includeVFS = true
       }
 
       // Triple Intelligence Fusion - custom weighting

@@ -184,7 +184,43 @@ export class SmartExcelImporter {
     }
 
     // Parse Excel using existing handler
-    const processedData = await this.excelHandler.process(buffer, options)
+    // v4.5.0: Pass progress hooks to handler for file parsing progress
+    const processedData = await this.excelHandler.process(buffer, {
+      ...options,
+      totalBytes: buffer.length,
+      progressHooks: {
+        onBytesProcessed: (bytes) => {
+          // Handler reports bytes processed during parsing
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: `Parsing Excel (${Math.round((bytes / buffer.length) * 100)}%)`
+          })
+        },
+        onCurrentItem: (message) => {
+          // Handler reports current processing step (e.g., "Reading sheet: Sales (1/3)")
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: message
+          })
+        },
+        onDataExtracted: (count, total) => {
+          // Handler reports rows extracted
+          opts.onProgress?.({
+            processed: 0,
+            total: total || count,
+            entities: 0,
+            relationships: 0,
+            phase: `Extracted ${count} rows from Excel`
+          })
+        }
+      }
+    })
     const rows = processedData.data
 
     if (rows.length === 0) {

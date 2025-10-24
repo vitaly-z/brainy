@@ -174,8 +174,24 @@ export class SmartMarkdownImporter {
       ...options
     }
 
+    // v4.5.0: Report parsing start
+    opts.onProgress({
+      processed: 0,
+      total: 0,
+      entities: 0,
+      relationships: 0
+    })
+
     // Parse markdown into sections
     const parsedSections = this.parseMarkdown(markdown, opts)
+
+    // v4.5.0: Report parsing complete
+    opts.onProgress({
+      processed: 0,
+      total: parsedSections.length,
+      entities: 0,
+      relationships: 0
+    })
 
     // Process each section
     const sections: MarkdownSection[] = []
@@ -202,10 +218,20 @@ export class SmartMarkdownImporter {
       })
     }
 
+    // v4.5.0: Report completion
+    const totalEntities = sections.reduce((sum, s) => sum + s.entities.length, 0)
+    const totalRelationships = sections.reduce((sum, s) => sum + s.relationships.length, 0)
+    opts.onProgress({
+      processed: sections.length,
+      total: sections.length,
+      entities: totalEntities,
+      relationships: totalRelationships
+    })
+
     return {
       sectionsProcessed: sections.length,
-      entitiesExtracted: sections.reduce((sum, s) => sum + s.entities.length, 0),
-      relationshipsInferred: sections.reduce((sum, s) => sum + s.relationships.length, 0),
+      entitiesExtracted: totalEntities,
+      relationshipsInferred: totalRelationships,
       sections,
       entityMap,
       processingTime: Date.now() - startTime,

@@ -181,7 +181,43 @@ export class SmartPDFImporter {
     }
 
     // Parse PDF using existing handler
-    const processedData = await this.pdfHandler.process(buffer, options)
+    // v4.5.0: Pass progress hooks to handler for file parsing progress
+    const processedData = await this.pdfHandler.process(buffer, {
+      ...options,
+      totalBytes: buffer.length,
+      progressHooks: {
+        onBytesProcessed: (bytes) => {
+          // Handler reports bytes processed during parsing
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: `Parsing PDF (${Math.round((bytes / buffer.length) * 100)}%)`
+          })
+        },
+        onCurrentItem: (message) => {
+          // Handler reports current processing step (e.g., "Processing page 5 of 23")
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: message
+          })
+        },
+        onDataExtracted: (count, total) => {
+          // Handler reports items extracted (paragraphs + tables)
+          opts.onProgress?.({
+            processed: 0,
+            total: total || count,
+            entities: 0,
+            relationships: 0,
+            phase: `Extracted ${count} items from PDF`
+          })
+        }
+      }
+    })
     const data = processedData.data
     const pdfMetadata = processedData.metadata.additionalInfo?.pdfMetadata || {}
 

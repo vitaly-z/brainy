@@ -187,11 +187,25 @@ export class SmartDOCXImporter {
       await this.init()
     }
 
+    // v4.5.0: Report parsing start
+    options.onProgress?.({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
+
     // Extract raw text for entity extraction
     const textResult = await mammoth.extractRawText({ buffer })
 
     // Extract HTML for structure analysis (headings, tables)
     const htmlResult = await mammoth.convertToHtml({ buffer })
+
+    // v4.5.0: Report parsing complete
+    options.onProgress?.({
+      processed: 0,
+      entities: 0,
+      relationships: 0
+    })
 
     // Process the document
     const result = await this.extractFromContent(

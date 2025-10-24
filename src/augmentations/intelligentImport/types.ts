@@ -3,6 +3,34 @@
  * Handles Excel, PDF, and CSV import with intelligent extraction
  */
 
+import { ImportProgressTracker } from '../../utils/import-progress-tracker.js'
+
+/**
+ * Progress hooks for format handlers
+ *
+ * Handlers call these hooks to report progress during processing.
+ * This enables real-time progress tracking for any file format.
+ */
+export interface FormatHandlerProgressHooks {
+  /**
+   * Report bytes processed
+   * Call this as you read/parse the file
+   */
+  onBytesProcessed?: (bytes: number) => void
+
+  /**
+   * Set current processing context
+   * Examples: "Processing page 5", "Reading sheet: Q2 Sales"
+   */
+  onCurrentItem?: (item: string) => void
+
+  /**
+   * Report structured data extraction progress
+   * Examples: "Extracted 100 rows", "Parsed 50 paragraphs"
+   */
+  onDataExtracted?: (count: number, total?: number) => void
+}
+
 export interface FormatHandler {
   /**
    * Format name (e.g., 'csv', 'xlsx', 'pdf')
@@ -58,6 +86,18 @@ export interface FormatHandlerOptions {
 
   /** Whether to stream large files */
   streaming?: boolean
+
+  /**
+   * Progress hooks (v4.5.0)
+   * Handlers call these to report progress during processing
+   */
+  progressHooks?: FormatHandlerProgressHooks
+
+  /**
+   * Total file size in bytes (v4.5.0)
+   * Used for progress percentage calculation
+   */
+  totalBytes?: number
 }
 
 export interface ProcessedData {

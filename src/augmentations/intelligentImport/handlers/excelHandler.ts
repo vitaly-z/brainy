@@ -21,9 +21,19 @@ export class ExcelHandler extends BaseFormatHandler {
 
   async process(data: Buffer | string, options: FormatHandlerOptions): Promise<ProcessedData> {
     const startTime = Date.now()
+    const progressHooks = options.progressHooks
 
     // Convert to buffer if string (though Excel should always be binary)
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary')
+    const totalBytes = buffer.length
+
+    // v4.5.0: Report start
+    if (progressHooks?.onBytesProcessed) {
+      progressHooks.onBytesProcessed(0)
+    }
+    if (progressHooks?.onCurrentItem) {
+      progressHooks.onCurrentItem('Loading Excel workbook...')
+    }
 
     try {
       // Read workbook
@@ -37,11 +47,25 @@ export class ExcelHandler extends BaseFormatHandler {
       // Determine which sheets to process
       const sheetsToProcess = this.getSheetsToProcess(workbook, options)
 
+      // v4.5.0: Report workbook loaded
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(`Processing ${sheetsToProcess.length} sheets...`)
+      }
+
       // Extract data from sheets
       const allData: Array<Record<string, any>> = []
       const sheetMetadata: Record<string, any> = {}
 
-      for (const sheetName of sheetsToProcess) {
+      for (let sheetIndex = 0; sheetIndex < sheetsToProcess.length; sheetIndex++) {
+        const sheetName = sheetsToProcess[sheetIndex]
+
+        // v4.5.0: Report current sheet
+        if (progressHooks?.onCurrentItem) {
+          progressHooks.onCurrentItem(
+            `Reading sheet: ${sheetName} (${sheetIndex + 1}/${sheetsToProcess.length})`
+          )
+        }
+
         const sheet = workbook.Sheets[sheetName]
         if (!sheet) continue
 
@@ -92,6 +116,25 @@ export class ExcelHandler extends BaseFormatHandler {
           columnCount: headers.length,
           headers
         }
+
+        // v4.5.0: Estimate bytes processed (sheets are sequential)
+        const bytesProcessed = Math.floor(((sheetIndex + 1) / sheetsToProcess.length) * totalBytes)
+        if (progressHooks?.onBytesProcessed) {
+          progressHooks.onBytesProcessed(bytesProcessed)
+        }
+
+        // v4.5.0: Report extraction progress
+        if (progressHooks?.onDataExtracted) {
+          progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until complete
+        }
+      }
+
+      // v4.5.0: Report data extraction complete
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(`Extracted ${allData.length} rows, inferring types...`)
+      }
+      if (progressHooks?.onDataExtracted) {
+        progressHooks.onDataExtracted(allData.length, allData.length)
       }
 
       // Infer types (excluding _sheet field)
@@ -99,7 +142,7 @@ export class ExcelHandler extends BaseFormatHandler {
       const types = this.inferFieldTypes(allData)
 
       // Convert values to appropriate types
-      const convertedData = allData.map(row => {
+      const convertedData = allData.map((row, index) => {
         const converted: Record<string, any> = {}
         for (const [key, value] of Object.entries(row)) {
           if (key === '_sheet') {
@@ -108,10 +151,28 @@ export class ExcelHandler extends BaseFormatHandler {
             converted[key] = this.convertValue(value, types[key] || 'string')
           }
         }
+
+        // v4.5.0: Report progress every 1000 rows (avoid spam)
+        if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
+          progressHooks.onCurrentItem(`Converting types: ${index}/${allData.length} rows...`)
+        }
+
         return converted
       })
 
+      // v4.5.0: Final progress - all bytes processed
+      if (progressHooks?.onBytesProcessed) {
+        progressHooks.onBytesProcessed(totalBytes)
+      }
+
       const processingTime = Date.now() - startTime
+
+      // v4.5.0: Report completion
+      if (progressHooks?.onCurrentItem) {
+        progressHooks.onCurrentItem(
+          `Excel complete: ${sheetsToProcess.length} sheets, ${convertedData.length} rows`
+        )
+      }
 
       return {
         format: this.format,

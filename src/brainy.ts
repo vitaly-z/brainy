@@ -2039,9 +2039,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   groupBy: 'type',                   // Organize by entity type
    *   preserveSource: true,              // Keep original file
    *
-   *   // Progress tracking
-   *   onProgress: (p) => console.log(p.message)
+   *   // Progress tracking (v4.5.0 - STANDARDIZED FOR ALL 7 FORMATS!)
+   *   onProgress: (p) => {
+   *     console.log(`[${p.stage}] ${p.message}`)
+   *     console.log(`Entities: ${p.entities || 0}, Rels: ${p.relationships || 0}`)
+   *     if (p.throughput) console.log(`Rate: ${p.throughput.toFixed(1)}/sec`)
+   *   }
    * })
+   * // THIS SAME HANDLER WORKS FOR CSV, PDF, Excel, JSON, Markdown, YAML, DOCX!
+   * ```
+   *
+   * @example Universal Progress Handler (v4.5.0)
+   * ```typescript
+   * // ONE handler for ALL 7 formats - no format-specific code needed!
+   * const universalProgress = (p) => {
+   *   updateUI(p.stage, p.message, p.entities, p.relationships)
+   * }
+   *
+   * await brain.import(csvBuffer, { onProgress: universalProgress })
+   * await brain.import(pdfBuffer, { onProgress: universalProgress })
+   * await brain.import(excelBuffer, { onProgress: universalProgress })
+   * // Works for JSON, Markdown, YAML, DOCX too!
    * ```
    *
    * @example Performance Tuning (Large Files)
@@ -2066,6 +2084,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *
    * @see {@link https://brainy.dev/docs/api/import API Documentation}
    * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
+   * @see {@link https://brainy.dev/docs/guides/standard-import-progress Standard Progress API (v4.5.0)}
    *
    * @remarks
    * **⚠️ Breaking Changes from v3.x:**
@@ -2098,7 +2117,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async import(
     source: Buffer | string | object,
     options?: {
-      format?: 'excel' | 'pdf' | 'csv' | 'json' | 'markdown'
+      format?: 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx'
       vfsPath?: string
       groupBy?: 'type' | 'sheet' | 'flat' | 'custom'
       customGrouping?: (entity: any) => string

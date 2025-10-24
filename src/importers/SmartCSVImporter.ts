@@ -169,10 +169,44 @@ export class SmartCSVImporter {
     }
 
     // Parse CSV using existing handler
+    // v4.5.0: Pass progress hooks to handler for file parsing progress
     const processedData = await this.csvHandler.process(buffer, {
       ...options,
       csvDelimiter: opts.csvDelimiter,
-      csvHeaders: opts.csvHeaders
+      csvHeaders: opts.csvHeaders,
+      totalBytes: buffer.length,
+      progressHooks: {
+        onBytesProcessed: (bytes) => {
+          // Handler reports bytes processed during parsing
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: `Parsing CSV (${Math.round((bytes / buffer.length) * 100)}%)`
+          })
+        },
+        onCurrentItem: (message) => {
+          // Handler reports current processing step
+          opts.onProgress?.({
+            processed: 0,
+            total: 0,
+            entities: 0,
+            relationships: 0,
+            phase: message
+          })
+        },
+        onDataExtracted: (count, total) => {
+          // Handler reports rows extracted
+          opts.onProgress?.({
+            processed: 0,
+            total: total || count,
+            entities: 0,
+            relationships: 0,
+            phase: `Extracted ${count} rows`
+          })
+        }
+      }
     })
     const rows = processedData.data
 
