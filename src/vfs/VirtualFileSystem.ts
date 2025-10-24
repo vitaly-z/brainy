@@ -167,7 +167,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         path: '/',           // ✅ Correct field name
         vfsType: 'directory' // ✅ Correct field name
       },
-      limit: 10
+      limit: 10,
+      includeVFS: true  // v4.4.0: CRITICAL - Must find VFS root entity!
     })
 
     if (existing.length > 0) {
