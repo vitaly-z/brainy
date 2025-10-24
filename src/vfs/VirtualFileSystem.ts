@@ -158,17 +158,33 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   private async initializeRoot(): Promise<string> {
-    // Check if root already exists - search using where clause
+    // FIXED (v4.3.3): Use correct field names in where clause
+    // Metadata index stores flat fields: path, vfsType, name
+    // NOT nested: 'metadata.path', 'metadata.vfsType'
     const existing = await this.brain.find({
+      type: NounType.Collection,
       where: {
-        'metadata.path': '/',
-        'metadata.vfsType': 'directory'
+        path: '/',           // ✅ Correct field name
+        vfsType: 'directory' // ✅ Correct field name
       },
-      limit: 1
+      limit: 10
     })
 
     if (existing.length > 0) {
+      // Handle duplicate roots (Workshop team reported ~10 duplicates!)
+      if (existing.length > 1) {
+        console.warn(`⚠️  Found ${existing.length} root entities! Using first one, consider cleanup.`)
+
+        // Sort by creation time - use oldest root (most likely to have children)
+        existing.sort((a, b) => {
+          const aTime = a.metadata?.createdAt || a.metadata?.modified || 0
+          const bTime = b.metadata?.createdAt || b.metadata?.modified || 0
+          return aTime - bTime
+        })
+      }
+
       const rootEntity = existing[0]
+
       // Ensure the root entity has proper metadata structure
       const entityMetadata = (rootEntity as any).metadata || rootEntity
       if (!entityMetadata.vfsType) {
@@ -179,6 +195,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
             path: '/',
             name: '',
             vfsType: 'directory',
+            isVFS: true,  // v4.3.3: Mark as VFS entity
             size: 0,
             permissions: 0o755,
             owner: 'root',
@@ -192,7 +209,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       return rootEntity.id
     }
 
-    // Create root directory
+    // Create root directory (only if truly doesn't exist)
     const root = await this.brain.add({
       data: '/',  // Root directory content as string
       type: NounType.Collection,
@@ -200,12 +217,14 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         path: '/',
         name: '',
         vfsType: 'directory',
+        isVFS: true,  // v4.3.3: Mark as VFS entity
         size: 0,
         permissions: 0o755,
         owner: 'root',
         group: 'root',
         accessed: Date.now(),
-        modified: Date.now()
+        modified: Date.now(),
+        createdAt: Date.now()  // Track creation time for duplicate detection
       } as VFSMetadata
     })
 
@@ -363,6 +382,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       name,
       parent: parentId,
       vfsType: 'file',
+      isVFS: true,  // v4.3.3: Mark as VFS entity
       size: buffer.length,
       mimeType,
       extension: this.getExtension(name),
@@ -720,6 +740,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         name,
         parent: parentId,
         vfsType: 'directory',
+        isVFS: true,  // v4.3.3: Mark as VFS entity
         size: 0,
         permissions: options?.mode || this.config.permissions?.defaultDirectory || 0o755,
         owner: 'user',

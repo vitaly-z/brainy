@@ -33,6 +33,7 @@ export interface VFSMetadata {
   name: string                    // Filename or directory name
   parent?: string                 // Parent directory entity ID
   vfsType: 'file' | 'directory' | 'symlink'
+  isVFS?: boolean                 // v4.3.3: Mark as VFS entity (separates from knowledge graph)
 
   // File attributes
   size: number                    // Size in bytes (0 for directories)

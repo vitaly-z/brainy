@@ -224,7 +224,7 @@ export class PathResolver {
    * Uses proper graph relationships to traverse the tree
    */
   async getChildren(dirId: string): Promise<VFSEntity[]> {
-    // Use proper graph API to get all Contains relationships from this directory
+    // Production-ready: Use graph relationships (VFS creates these in mkdir/writeFile)
     const relations = await this.brain.getRelations({
       from: dirId,
       type: VerbType.Contains
@@ -233,7 +233,7 @@ export class PathResolver {
     const validChildren: VFSEntity[] = []
     const childNames = new Set<string>()
 
-    // Fetch all child entities
+    // Fetch all child entities via relationships
     for (const relation of relations) {
       const entity = await this.brain.get(relation.to)
       if (entity && entity.metadata?.vfsType && entity.metadata?.name) {
