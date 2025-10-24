@@ -48,7 +48,7 @@ describe('VFS-Knowledge Separation (Option 3C)', () => {
     await vfs.writeFile('/docs/readme.md', '# Hello World')
 
     // Create knowledge entity (no isVFS flag)
-    const knowledgeEntity = await brain.add({
+    const knowledgeId = await brain.add({
       data: 'This is a knowledge document about AI',
       type: NounType.Document,
       metadata: {
@@ -74,7 +74,7 @@ describe('VFS-Knowledge Separation (Option 3C)', () => {
     // Should only return knowledge entities (no VFS)
     expect(vfsResults.length).toBe(0)
     expect(knowledgeResults.length).toBeGreaterThan(0)
-    expect(results.some(r => r.id === knowledgeEntity.id)).toBe(true)
+    expect(results.some(r => r.id === knowledgeId)).toBe(true)
   })
 
   it('should include VFS entities when includeVFS: true', async () => {
