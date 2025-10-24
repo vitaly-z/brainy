@@ -185,6 +185,7 @@ export interface FindParams<T = any> {
   mode?: SearchMode          // Search strategy
   explain?: boolean          // Return scoring explanation
   includeRelations?: boolean // Include entity relationships
+  includeVFS?: boolean       // v4.3.3: Include VFS entities (default: false for knowledge queries)
   service?: string           // Multi-tenancy filter
   
   // Triple Intelligence Fusion

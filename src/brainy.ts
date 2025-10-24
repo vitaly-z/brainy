@@ -1239,6 +1239,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
+        // v4.3.3: Exclude VFS entities by default (Option 3C architecture)
+        // Only include VFS if explicitly requested via includeVFS: true
+        // BUT: Don't add automatic exclusion if user explicitly queries isVFS in where clause
+        if (params.includeVFS !== true && !params.where?.hasOwnProperty('isVFS')) {
+          filter.isVFS = { notEquals: true }
+        }
+
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
           if (types.length === 1) {
@@ -1275,15 +1282,35 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
-        const storageResults = await this.storage.getNouns({
-          pagination: { limit: limit + offset, offset: 0 }
-        })
+        // v4.3.3: Apply VFS filtering even for empty queries
+        let filter: any = {}
+        if (params.includeVFS !== true) {
+          filter.isVFS = { notEquals: true }
+        }
 
-        for (let i = offset; i < Math.min(offset + limit, storageResults.items.length); i++) {
-          const noun = storageResults.items[i]
-          if (noun) {
-            const entity = await this.convertNounToEntity(noun)
-            results.push(this.createResult(noun.id, 1.0, entity))
+        // Use metadata index if we need to filter VFS
+        if (Object.keys(filter).length > 0) {
+          const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+          const pageIds = filteredIds.slice(offset, offset + limit)
+
+          for (const id of pageIds) {
+            const entity = await this.get(id)
+            if (entity) {
+              results.push(this.createResult(id, 1.0, entity))
+            }
+          }
+        } else {
+          // No filtering needed, use direct storage query
+          const storageResults = await this.storage.getNouns({
+            pagination: { limit: limit + offset, offset: 0 }
+          })
+
+          for (let i = offset; i < Math.min(offset + limit, storageResults.items.length); i++) {
+            const noun = storageResults.items[i]
+            if (noun) {
+              const entity = await this.convertNounToEntity(noun)
+              results.push(this.createResult(noun.id, 1.0, entity))
+            }
           }
         }
 
@@ -1324,14 +1351,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       // Apply O(log n) metadata filtering using core MetadataIndexManager
-      if (params.where || params.type || params.service) {
+      if (params.where || params.type || params.service || params.includeVFS !== true) {
         // Build filter object for metadata index
         let filter: any = {}
-        
+
         // Base filter from where and service
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
-        
+
+        // v4.3.3: Exclude VFS entities by default (Option 3C architecture)
+        // BUT: Don't add automatic exclusion if user explicitly queries isVFS in where clause
+        if (params.includeVFS !== true && !params.where?.hasOwnProperty('isVFS')) {
+          filter.isVFS = { notEquals: true }
+        }
+
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
           if (types.length === 1) {
@@ -1346,7 +1379,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
         }
-        
+
         const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
         
         // CRITICAL FIX: Handle both cases properly
