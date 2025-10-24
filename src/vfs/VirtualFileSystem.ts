@@ -955,7 +955,10 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       limit: options?.limit || 10,
       offset: options?.offset,
       explain: options?.explain,
-      includeVFS: true  // v4.4.0: VFS search must include VFS entities!
+      includeVFS: true,  // v4.4.0: VFS search must include VFS entities!
+      where: {
+        vfsType: 'file'  // v4.4.0: Only search VFS files, not knowledge documents
+      }
     }
 
     // Add path filter if specified
@@ -1003,7 +1006,10 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       limit: options?.limit || 10,
       threshold: options?.threshold || 0.7,
       type: [NounType.File, NounType.Document, NounType.Media],
-      includeVFS: true  // v4.4.0: VFS similarity search must include VFS entities!
+      includeVFS: true,  // v4.4.0: VFS similarity search must include VFS entities!
+      where: {
+        vfsType: 'file'  // v4.4.0: Only find similar VFS files, not knowledge documents
+      }
     })
 
     return results.map(r => {
