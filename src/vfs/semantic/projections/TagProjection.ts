@@ -31,7 +31,8 @@ export class TagProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         tags: { contains: tagName }  // BFO operator for array contains
       },
-      limit: 1000
+      limit: 1000,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     }
 
     // Filter by filename if subpath specified
@@ -58,7 +59,8 @@ export class TagProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         tags: { contains: tagName }  // BFO operator
       },
-      limit: 1000
+      limit: 1000,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return this.extractIds(results)
@@ -74,7 +76,8 @@ export class TagProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         tags: { exists: true }  // BFO operator
       },
-      limit
+      limit,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return results.map(r => r.entity as VFSEntity)

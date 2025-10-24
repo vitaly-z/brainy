@@ -954,7 +954,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       type: [NounType.File, NounType.Document, NounType.Media],
       limit: options?.limit || 10,
       offset: options?.offset,
-      explain: options?.explain
+      explain: options?.explain,
+      includeVFS: true  // v4.4.0: VFS search must include VFS entities!
     }
 
     // Add path filter if specified
@@ -1001,7 +1002,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       to: entityId,
       limit: options?.limit || 10,
       threshold: options?.threshold || 0.7,
-      type: [NounType.File, NounType.Document, NounType.Media]
+      type: [NounType.File, NounType.Document, NounType.Media],
+      includeVFS: true  // v4.4.0: VFS similarity search must include VFS entities!
     })
 
     return results.map(r => {
@@ -2315,7 +2317,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         ...query.where,
         vfsType: 'entity'
       },
-      limit: query.limit || 100
+      limit: query.limit || 100,
+      includeVFS: true  // v4.4.0: VFS entity search must include VFS entities!
     }
 
     if (query.type) {

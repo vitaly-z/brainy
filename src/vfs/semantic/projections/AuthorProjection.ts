@@ -31,7 +31,8 @@ export class AuthorProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         owner: authorName
       },
-      limit: 1000
+      limit: 1000,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     }
 
     // Filter by filename if subpath specified
@@ -58,7 +59,8 @@ export class AuthorProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         owner: authorName
       },
-      limit: 1000
+      limit: 1000,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return this.extractIds(results)
@@ -75,7 +77,8 @@ export class AuthorProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         owner: { $exists: true }
       },
-      limit
+      limit,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return results.map(r => r.entity as VFSEntity)

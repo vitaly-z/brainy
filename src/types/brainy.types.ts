@@ -235,6 +235,7 @@ export interface SimilarParams<T = any> {
   type?: NounType | NounType[]    // Restrict to types
   where?: Partial<T>               // Additional filters
   service?: string                 // Multi-tenancy
+  includeVFS?: boolean             // v4.4.0: Include VFS entities (default: false)
 }
 
 /**

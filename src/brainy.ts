@@ -1603,7 +1603,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       limit: params.limit,
       type: params.type,
       where: params.where,
-      service: params.service
+      service: params.service,
+      includeVFS: params.includeVFS  // v4.4.0: Pass through VFS filtering
     })
   }
 

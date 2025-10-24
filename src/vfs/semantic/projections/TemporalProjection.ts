@@ -78,7 +78,8 @@ export class TemporalProjection extends BaseProjectionStrategy {
           lessEqual: endOfDay.getTime()        // BFO operator
         }
       },
-      limit: 1000
+      limit: 1000,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return this.extractIds(results)
@@ -95,7 +96,8 @@ export class TemporalProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         modified: { greaterEqual: oneDayAgo }  // BFO operator
       },
-      limit
+      limit,
+      includeVFS: true  // v4.4.0: Must include VFS entities!
     })
 
     return results.map(r => r.entity as VFSEntity)
