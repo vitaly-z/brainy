@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.4.0](https://github.com/soulcraftlabs/brainy/compare/v4.3.2...v4.4.0) (2025-10-24)
+
+- docs: update CHANGELOG for v4.4.0 release (a3c8a28)
+- docs: add VFS filtering examples to brain.find() JSDoc (d435593)
+- test: comprehensive tests for remaining APIs (17/17 passing) (f9e1bad)
+- fix: add includeVFS to initializeRoot() - prevents duplicate root creation (fbf2605)
+- fix: vfs.search() and vfs.findSimilar() now filter for VFS files only (0dda9dc)
+- test: add comprehensive API verification tests (21/25 passing) (ce8530b)
+- fix: wire up includeVFS parameter to ALL VFS-related APIs (6 critical bugs) (7582e3f)
+- test: fix brain.add() return type usage in VFS tests (970f243)
+- feat: brain.find() excludes VFS by default (Option 3C) (014b810)
+- test: update VFS where clause tests for correct field names (86f5956)
+- fix: VFS where clause field names + isVFS flag (f8d2d37)
+
+
 ## [4.4.0](https://github.com/soulcraftlabs/brainy/compare/v4.3.2...v4.4.0) (2025-10-24)
 
 
