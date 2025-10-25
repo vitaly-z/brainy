@@ -232,7 +232,7 @@ export class PathResolver {
       includeVFS: true  // v4.5.1: Required to see VFS relationships
     })
 
-    const validChildren: VFSEntity[] = []
+    const validChildren: VFSEntity[]= []
     const childNames = new Set<string>()
 
     // Fetch all child entities via relationships
