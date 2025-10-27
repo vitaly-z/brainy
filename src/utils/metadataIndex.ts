@@ -1125,9 +1125,11 @@ export class MetadataIndexManager {
         if (!this.shouldIndexField(fullKey)) continue
 
         // Special handling for metadata field at top level
-        // If this is an entity structure, recurse into metadata with prefix
+        // v4.8.0: Flatten metadata fields to top-level (no prefix) for cleaner queries
+        // Standard fields are already at top-level, custom fields go in metadata
+        // By flattening here, queries can use { category: 'B' } instead of { 'metadata.category': 'B' }
         if (key === 'metadata' && !prefix && typeof value === 'object' && !Array.isArray(value)) {
-          extract(value, 'metadata')
+          extract(value, '')  // Flatten to top-level, no prefix
           continue
         }
 
