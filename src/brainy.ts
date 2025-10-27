@@ -561,7 +561,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       id: noun.id,
       vector: noun.vector,
       type: (nounType as NounType) || NounType.Thing,
-      metadata: userMetadata as T,
+      // Preserve timestamps in metadata for indexing (v4.5.4 fix)
+      // Metadata index needs these fields to enable sorting and range queries
+      metadata: {
+        ...userMetadata,
+        ...(createdAt !== undefined && { createdAt }),
+        ...(updatedAt !== undefined && { updatedAt })
+      } as T,
       service: service as string,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: updatedAt as number
@@ -1289,8 +1295,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
 
-        // Get filtered IDs and paginate BEFORE loading entities
-        const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+        // v4.5.4: Apply sorting if requested, otherwise just filter
+        let filteredIds: string[]
+        if (params.orderBy) {
+          // Get sorted IDs using production-scale sorted filtering
+          filteredIds = await this.metadataIndex.getSortedIdsForFilter(
+            filter,
+            params.orderBy,
+            params.order || 'asc'
+          )
+        } else {
+          // Just filter without sorting
+          filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+        }
+
+        // Paginate BEFORE loading entities (production-scale!)
         const limit = params.limit || 10
         const offset = params.offset || 0
         const pageIds = filteredIds.slice(offset, offset + limit)
@@ -1457,6 +1476,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
           // Early return for metadata-only queries with pagination applied
           if (!params.query && !params.connected) {
+            // v4.5.4: Apply sorting if requested for metadata-only queries
+            if (params.orderBy) {
+              const sortedIds = await this.metadataIndex.getSortedIdsForFilter(
+                filter,
+                params.orderBy,
+                params.order || 'asc'
+              )
+
+              // Paginate sorted IDs BEFORE loading entities (production-scale!)
+              const limit = params.limit || 10
+              const offset = params.offset || 0
+              const pageIds = sortedIds.slice(offset, offset + limit)
+
+              // Load entities for paginated results only
+              const sortedResults: Result<T>[] = []
+              for (const id of pageIds) {
+                const entity = await this.get(id)
+                if (entity) {
+                  sortedResults.push(this.createResult(id, 1.0, entity))
+                }
+              }
+
+              return sortedResults
+            }
+
             return results
           }
         }
@@ -1466,14 +1510,41 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if (params.connected) {
         results = await this.executeGraphSearch(params, results)
       }
-      
+
       // Apply fusion scoring if requested
       if (params.fusion && results.length > 0) {
         results = this.applyFusionScoring(results, params.fusion)
       }
 
       // OPTIMIZED: Sort first, then apply efficient pagination
-      results.sort((a, b) => b.score - a.score)
+      // v4.5.4: Support custom orderBy for vector + metadata queries
+      if (params.orderBy && results.length > 0) {
+        // For vector + metadata queries, sort by specified field instead of score
+        // Load sort field values for all results (small set, already filtered)
+        const resultsWithValues = await Promise.all(results.map(async (r) => ({
+          result: r,
+          value: await this.metadataIndex.getFieldValueForEntity(r.id, params.orderBy!)
+        })))
+
+        // Sort by field value
+        resultsWithValues.sort((a, b) => {
+          // Handle null/undefined
+          if (a.value == null && b.value == null) return 0
+          if (a.value == null) return (params.order || 'asc') === 'asc' ? 1 : -1
+          if (b.value == null) return (params.order || 'asc') === 'asc' ? -1 : 1
+
+          // Compare values
+          if (a.value === b.value) return 0
+          const comparison = a.value < b.value ? -1 : 1
+          return (params.order || 'asc') === 'asc' ? comparison : -comparison
+        })
+
+        results = resultsWithValues.map(({ result }) => result)
+      } else {
+        // Default: sort by relevance score
+        results.sort((a, b) => b.score - a.score)
+      }
+
       const limit = params.limit || 10
       const offset = params.offset || 0
 

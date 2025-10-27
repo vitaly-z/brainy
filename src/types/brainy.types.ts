@@ -180,7 +180,11 @@ export interface FindParams<T = any> {
   limit?: number             // Max results (default: 10)
   offset?: number            // Skip N results
   cursor?: string            // Cursor-based pagination
-  
+
+  // Sorting (v4.5.4)
+  orderBy?: string           // Field to sort by (e.g., 'createdAt', 'title', 'metadata.priority')
+  order?: 'asc' | 'desc'     // Sort direction: 'asc' (default) or 'desc'
+
   // Advanced options
   mode?: SearchMode          // Search strategy
   explain?: boolean          // Return scoring explanation
