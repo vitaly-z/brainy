@@ -167,8 +167,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         path: '/',           // ✅ Correct field name
         vfsType: 'directory' // ✅ Correct field name
       },
-      limit: 10,
-      includeVFS: true  // v4.4.0: CRITICAL - Must find VFS root entity!
+      limit: 10
     })
 
     if (existing.length > 0) {
@@ -961,9 +960,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       limit: options?.limit || 10,
       offset: options?.offset,
       explain: options?.explain,
-      includeVFS: true,  // v4.4.0: VFS search must include VFS entities!
       where: {
-        vfsType: 'file'  // v4.4.0: Only search VFS files, not knowledge documents
+        vfsType: 'file'  // v4.7.0: Search VFS files
       }
     }
 
@@ -1012,9 +1010,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       limit: options?.limit || 10,
       threshold: options?.threshold || 0.7,
       type: [NounType.File, NounType.Document, NounType.Media],
-      includeVFS: true,  // v4.4.0: VFS similarity search must include VFS entities!
       where: {
-        vfsType: 'file'  // v4.4.0: Only find similar VFS files, not knowledge documents
+        vfsType: 'file'  // v4.7.0: Find similar VFS files
       }
     })
 
@@ -2341,8 +2338,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         ...query.where,
         vfsType: 'entity'
       },
-      limit: query.limit || 100,
-      includeVFS: true  // v4.4.0: VFS entity search must include VFS entities!
+      limit: query.limit || 100
     }
 
     if (query.type) {

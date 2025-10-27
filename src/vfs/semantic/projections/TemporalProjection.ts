@@ -69,17 +69,16 @@ export class TemporalProjection extends BaseProjectionStrategy {
     const endOfDay = new Date(date)
     endOfDay.setHours(23, 59, 59, 999)
 
-    // Use REAL Brainy metadata filtering with range operators
+    // v4.7.0: VFS entities are part of the knowledge graph
     const results = await brain.find({
       where: {
         vfsType: 'file',
         modified: {
-          greaterEqual: startOfDay.getTime(),  // BFO operator
-          lessEqual: endOfDay.getTime()        // BFO operator
+          greaterEqual: startOfDay.getTime(),
+          lessEqual: endOfDay.getTime()
         }
       },
-      limit: 1000,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit: 1000
     })
 
     return this.extractIds(results)
@@ -94,10 +93,9 @@ export class TemporalProjection extends BaseProjectionStrategy {
     const results = await brain.find({
       where: {
         vfsType: 'file',
-        modified: { greaterEqual: oneDayAgo }  // BFO operator
+        modified: { greaterEqual: oneDayAgo }
       },
-      limit,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit
     })
 
     return results.map(r => r.entity as VFSEntity)

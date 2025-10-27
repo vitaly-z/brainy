@@ -484,4 +484,81 @@ async function getDocumentsByDate(page: number, pageSize: number = 20) {
 }
 ```
 
+## VFS (Virtual File System) Visibility (v4.7.0+)
+
+### Default Behavior
+
+**VFS entities are now part of the knowledge graph** and included in query results by default:
+
+```typescript
+// Default: Searches ALL entities including VFS files
+await brain.find({ query: 'authentication setup' })
+// Returns: concepts, papers, AND markdown documentation files
+```
+
+**Why this change?** VFS files (imported markdown, PDFs, etc.) ARE knowledge entities. When you import documentation or papers into Brainy, you want to search them!
+
+### Excluding VFS Entities
+
+If you need to exclude VFS entities from specific queries, use the `excludeVFS` parameter:
+
+```typescript
+// Exclude VFS files from results
+await brain.find({
+  query: 'machine learning',
+  excludeVFS: true  // Only return non-file entities
+})
+```
+
+**Alternative**: Use explicit where clause for more control:
+
+```typescript
+// Explicit filtering (same as excludeVFS: true)
+await brain.find({
+  query: 'machine learning',
+  where: { vfsType: { exists: false } }
+})
+
+// Or only search VFS files
+await brain.find({
+  query: 'setup instructions',
+  where: { vfsType: 'file' }  // Only files
+})
+```
+
+### Performance
+
+**VFS filtering is production-scale:**
+- Uses MetadataIndex (O(1) for exists checks)
+- No performance penalty - same speed as any metadata filter
+- Works seamlessly with vector + metadata + graph queries
+
+### Migration from v4.6.x
+
+**BREAKING CHANGE** (v4.7.0): The `includeVFS` parameter has been removed:
+
+```typescript
+// ❌ Old (v4.6.x and earlier)
+await brain.find({
+  query: 'docs',
+  includeVFS: true  // No longer needed!
+})
+
+// ✅ New (v4.7.0+)
+await brain.find({
+  query: 'docs'  // VFS included by default
+})
+
+// ✅ To exclude VFS (if needed)
+await brain.find({
+  query: 'concepts',
+  excludeVFS: true
+})
+```
+
+**Why removed?** The old `includeVFS` parameter was:
+1. Broken (metadata filter incompatibility with storage adapters)
+2. Confusing (double-negative logic)
+3. Wrong default (VFS should be searchable)
+
 This system represents the most advanced query intelligence available in any database, combining the speed of specialized indices with the intelligence of natural language understanding and the power of graph relationships.

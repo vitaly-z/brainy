@@ -1022,13 +1022,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       filter.service = params.service
     }
 
-    // v4.5.1: Exclude VFS relationships by default (same pattern as brain.find())
-    // VFS relationships have metadata.isVFS = true
-    // Only include VFS relationships if explicitly requested
-    if (params.includeVFS !== true) {
-      filter.metadata = filter.metadata || {}
-      filter.metadata.isVFS = { notEquals: true }
-    }
+    // v4.7.0: VFS relationships are no longer filtered
+    // VFS is part of the knowledge graph - users can filter explicitly if needed
 
     // Fetch from storage with pagination at storage layer (efficient!)
     const result = await this.storage.getVerbs({
@@ -1207,18 +1202,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * // Returns only knowledge entities, VFS files excluded
    *
    * @example
-   * // Include VFS entities when needed
+   * // v4.7.0: VFS entities included by default
    * const everything = await brainy.find({
-   *   query: 'documentation',
-   *   includeVFS: true  // Opt-in to include VFS files
+   *   query: 'documentation'
    * })
    * // Returns both knowledge entities AND VFS files
    *
    * @example
    * // Search only VFS files
    * const files = await brainy.find({
-   *   where: { vfsType: 'file', extension: '.md' },
-   *   includeVFS: true  // Required to find VFS entities
+   *   where: { vfsType: 'file', extension: '.md' }
+   * })
+   *
+   * @example
+   * // Exclude VFS entities (if needed)
+   * const concepts = await brainy.find({
+   *   query: 'machine learning',
+   *   excludeVFS: true  // v4.7.0: Exclude VFS files
    * })
    */
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
@@ -1274,11 +1274,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v4.3.3: Exclude VFS entities by default (Option 3C architecture)
-        // Only include VFS if explicitly requested via includeVFS: true
-        // BUT: Don't add automatic exclusion if user explicitly queries isVFS in where clause
-        if (params.includeVFS !== true && !params.where?.hasOwnProperty('isVFS')) {
-          filter.isVFS = { notEquals: true }
+        // v4.7.0: excludeVFS helper for cleaner UX
+        // Use vfsType field (more semantic than isVFS)
+        if (params.excludeVFS === true) {
+          filter.vfsType = { exists: false }
         }
 
         if (params.type) {
@@ -1330,13 +1329,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
-        // v4.3.3: Apply VFS filtering even for empty queries
+        // v4.7.0: excludeVFS helper
         let filter: any = {}
-        if (params.includeVFS !== true) {
-          filter.isVFS = { notEquals: true }
+        if (params.excludeVFS === true) {
+          filter.vfsType = { exists: false }
         }
 
-        // Use metadata index if we need to filter VFS
+        // Use metadata index if we need to filter
         if (Object.keys(filter).length > 0) {
           const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
           const pageIds = filteredIds.slice(offset, offset + limit)
@@ -1399,7 +1398,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       // Apply O(log n) metadata filtering using core MetadataIndexManager
-      if (params.where || params.type || params.service || params.includeVFS !== true) {
+      if (params.where || params.type || params.service || params.excludeVFS) {
         // Build filter object for metadata index
         let filter: any = {}
 
@@ -1407,10 +1406,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v4.3.3: Exclude VFS entities by default (Option 3C architecture)
-        // BUT: Don't add automatic exclusion if user explicitly queries isVFS in where clause
-        if (params.includeVFS !== true && !params.where?.hasOwnProperty('isVFS')) {
-          filter.isVFS = { notEquals: true }
+        // v4.7.0: excludeVFS helper for cleaner UX
+        if (params.excludeVFS === true) {
+          filter.vfsType = { exists: false }
         }
 
         if (params.type) {
@@ -1704,7 +1702,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       type: params.type,
       where: params.where,
       service: params.service,
-      includeVFS: params.includeVFS  // v4.4.0: Pass through VFS filtering
+      excludeVFS: params.excludeVFS  // v4.7.0: Pass through VFS filtering
     })
   }
 

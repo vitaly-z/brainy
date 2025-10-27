@@ -29,10 +29,9 @@ export class TagProjection extends BaseProjectionStrategy {
     const query: FindParams = {
       where: {
         vfsType: 'file',
-        tags: { contains: tagName }  // BFO operator for array contains
+        tags: { contains: tagName }  // contains operator for array search
       },
-      limit: 1000,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit: 1000
     }
 
     // Filter by filename if subpath specified
@@ -53,14 +52,13 @@ export class TagProjection extends BaseProjectionStrategy {
    * Resolve tag to entity IDs using REAL Brainy.find()
    */
   async resolve(brain: Brainy, vfs: VirtualFileSystem, tagName: string): Promise<string[]> {
-    // Use REAL Brainy metadata filtering
+    // v4.7.0: VFS entities are part of the knowledge graph
     const results = await brain.find({
       where: {
         vfsType: 'file',
-        tags: { contains: tagName }  // BFO operator
+        tags: { contains: tagName }
       },
-      limit: 1000,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit: 1000
     })
 
     return this.extractIds(results)
@@ -74,10 +72,9 @@ export class TagProjection extends BaseProjectionStrategy {
     const results = await brain.find({
       where: {
         vfsType: 'file',
-        tags: { exists: true }  // BFO operator
+        tags: { exists: true }  // exists operator
       },
-      limit,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit
     })
 
     return results.map(r => r.entity as VFSEntity)

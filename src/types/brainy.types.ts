@@ -189,7 +189,7 @@ export interface FindParams<T = any> {
   mode?: SearchMode          // Search strategy
   explain?: boolean          // Return scoring explanation
   includeRelations?: boolean // Include entity relationships
-  includeVFS?: boolean       // v4.3.3: Include VFS entities (default: false for knowledge queries)
+  excludeVFS?: boolean       // v4.7.0: Exclude VFS entities from results (default: false - VFS included)
   service?: string           // Multi-tenancy filter
   
   // Triple Intelligence Fusion
@@ -239,7 +239,7 @@ export interface SimilarParams<T = any> {
   type?: NounType | NounType[]    // Restrict to types
   where?: Partial<T>               // Additional filters
   service?: string                 // Multi-tenancy
-  includeVFS?: boolean             // v4.4.0: Include VFS entities (default: false)
+  excludeVFS?: boolean             // v4.7.0: Exclude VFS entities (default: false - VFS included)
 }
 
 /**
@@ -328,17 +328,6 @@ export interface GetRelationsParams {
    * Only return relationships belonging to this service.
    */
   service?: string
-
-  /**
-   * Include VFS relationships (v4.5.1)
-   *
-   * By default, getRelations() excludes VFS relationships (since v4.4.0).
-   * Set this to true when you need to traverse VFS structure.
-   *
-   * @default false
-   * @since v4.5.1
-   */
-  includeVFS?: boolean
 }
 
 // ============= Batch Operations =============

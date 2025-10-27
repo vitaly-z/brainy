@@ -347,10 +347,8 @@ export const coreCommands = {
         searchParams.includeRelations = true
       }
 
-      // Include VFS files (v4.4.0 - find excludes VFS by default)
-      if (options.includeVfs) {
-        searchParams.includeVFS = true
-      }
+      // v4.7.0: VFS is now part of the knowledge graph (included by default)
+      // Users can exclude VFS with --where vfsType exists:false if needed
 
       // Triple Intelligence Fusion - custom weighting
       if (options.fusion || options.vectorWeight || options.graphWeight || options.fieldWeight) {

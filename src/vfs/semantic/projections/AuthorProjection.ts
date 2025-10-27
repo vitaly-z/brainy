@@ -31,8 +31,7 @@ export class AuthorProjection extends BaseProjectionStrategy {
         vfsType: 'file',
         owner: authorName
       },
-      limit: 1000,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit: 1000
     }
 
     // Filter by filename if subpath specified
@@ -53,14 +52,13 @@ export class AuthorProjection extends BaseProjectionStrategy {
    * Resolve author to entity IDs using REAL Brainy.find()
    */
   async resolve(brain: Brainy, vfs: VirtualFileSystem, authorName: string): Promise<string[]> {
-    // Use REAL Brainy metadata filtering
+    // v4.7.0: VFS entities are part of the knowledge graph
     const results = await brain.find({
       where: {
         vfsType: 'file',
         owner: authorName
       },
-      limit: 1000,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit: 1000
     })
 
     return this.extractIds(results)
@@ -75,10 +73,9 @@ export class AuthorProjection extends BaseProjectionStrategy {
     const results = await brain.find({
       where: {
         vfsType: 'file',
-        owner: { $exists: true }
+        owner: { exists: true }
       },
-      limit,
-      includeVFS: true  // v4.4.0: Must include VFS entities!
+      limit
     })
 
     return results.map(r => r.entity as VFSEntity)

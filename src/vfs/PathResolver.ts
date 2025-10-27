@@ -195,12 +195,11 @@ export class PathResolver {
       // Still need to verify it exists
     }
 
-    // Use proper graph traversal to find children
-    // Get all relationships where parentId contains other entities
+    // v4.7.0: Use proper graph traversal to find children
+    // VFS relationships are now part of the knowledge graph
     const relations = await this.brain.getRelations({
       from: parentId,
-      type: VerbType.Contains,
-      includeVFS: true  // v4.5.1: Required to see VFS relationships
+      type: VerbType.Contains
     })
 
     // Find the child with matching name
@@ -225,11 +224,11 @@ export class PathResolver {
    * Uses proper graph relationships to traverse the tree
    */
   async getChildren(dirId: string): Promise<VFSEntity[]> {
-    // Production-ready: Use graph relationships (VFS creates these in mkdir/writeFile)
+    // v4.7.0: Use O(1) graph relationships (VFS creates these in mkdir/writeFile)
+    // VFS relationships are now part of the knowledge graph (no special filtering needed)
     const relations = await this.brain.getRelations({
       from: dirId,
-      type: VerbType.Contains,
-      includeVFS: true  // v4.5.1: Required to see VFS relationships
+      type: VerbType.Contains
     })
 
     const validChildren: VFSEntity[]= []
