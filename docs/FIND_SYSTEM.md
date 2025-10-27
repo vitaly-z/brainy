@@ -360,4 +360,128 @@ await brain.find({
 // Total performance: ~1.2ms for 100K entities
 ```
 
+## Query Operators (v4.5.4+)
+
+### Canonical Operator Syntax
+
+Brainy uses SQL-style canonical operators for maximum clarity and developer familiarity:
+
+```typescript
+// Canonical operators (recommended)
+await brain.find({
+  where: {
+    age: { gte: 18 },              // Greater than or equal
+    score: { lt: 100 },            // Less than
+    status: { eq: 'active' },      // Equals
+    role: { ne: 'guest' },         // Not equals
+    priority: { in: [1, 2, 3] },   // In array
+    date: { between: [start, end] }, // Between range
+    tags: { contains: 'featured' }, // Contains value
+    email: { exists: true }        // Field exists
+  }
+})
+```
+
+### Complete Operator Reference
+
+| **Canonical** | **Aliases** | **Description** | **Example** |
+|---------------|-------------|-----------------|-------------|
+| `eq` | `equals` | Exact equality | `{ status: { eq: 'active' } }` |
+| `ne` | `notEquals` | Not equal to | `{ role: { ne: 'admin' } }` |
+| `gt` | `greaterThan` | Greater than | `{ age: { gt: 18 } }` |
+| `gte` | `greaterThanOrEqual` | Greater than or equal | `{ score: { gte: 80 } }` |
+| `lt` | `lessThan` | Less than | `{ price: { lt: 100 } }` |
+| `lte` | `lessThanOrEqual` | Less than or equal | `{ stock: { lte: 10 } }` |
+| `in` | - | Value in array | `{ category: { in: ['A', 'B'] } }` |
+| `between` | - | Range (inclusive) | `{ year: { between: [2020, 2024] } }` |
+| `contains` | - | Contains substring/value | `{ tags: { contains: 'urgent' } }` |
+| `exists` | - | Field exists (boolean) | `{ email: { exists: true } }` |
+
+**Deprecated Operators** (removed in v5.0.0):
+- `is`, `isNot` → Use `eq`, `ne` instead
+- `greaterEqual`, `lessEqual` → Use `gte`, `lte` instead
+
+**Backward Compatibility**: All aliases are fully supported. Deprecated operators still work but will be removed in v5.0.0.
+
+### Sorting Results (v4.5.4+)
+
+Sort query results by any field, including timestamps:
+
+```typescript
+// Sort by timestamp (descending - newest first)
+await brain.find({
+  type: NounType.Document,
+  orderBy: 'createdAt',
+  order: 'desc',
+  limit: 10
+})
+
+// Sort by custom field (ascending)
+await brain.find({
+  where: { status: { eq: 'published' } },
+  orderBy: 'priority',
+  order: 'asc'
+})
+
+// Sort with filtering and pagination
+await brain.find({
+  where: {
+    publishDate: { gte: startDate },
+    citations: { gte: 50 }
+  },
+  orderBy: 'citations',
+  order: 'desc',
+  limit: 20,
+  offset: 0
+})
+```
+
+**Sorting Performance**:
+- **Production-scale**: O(k log k) where k = filtered results
+- **Memory**: O(k) for filtered set, independent of total entity count
+- **Timestamp fields**: Exact millisecond precision (createdAt, updatedAt)
+- **Works with**: Metadata-only queries and vector + metadata queries
+- **Default order**: `asc` if not specified
+
+**Timestamp Sorting**:
+```typescript
+// Range query + sorting
+await brain.find({
+  where: {
+    createdAt: { gte: Date.now() - 86400000 } // Last 24 hours
+  },
+  orderBy: 'createdAt',
+  order: 'desc'  // Newest first
+})
+
+// Works with updatedAt, accessed, modified
+await brain.find({
+  orderBy: 'updatedAt',
+  order: 'desc'
+})
+```
+
+**Advanced Sorting Examples**:
+```typescript
+// Sort search results by custom field instead of relevance
+await brain.find({
+  query: "machine learning",
+  where: { publishDate: { gte: 2023 } },
+  orderBy: 'citations',  // Sort by citations, not relevance
+  order: 'desc'
+})
+
+// Paginated sorted results
+async function getDocumentsByDate(page: number, pageSize: number = 20) {
+  return await brain.find({
+    type: NounType.Document,
+    where: { status: { eq: 'published' } },
+    orderBy: 'publishDate',
+    order: 'desc',
+    limit: pageSize,
+    offset: page * pageSize
+  })
+}
+```
+
 This system represents the most advanced query intelligence available in any database, combining the speed of specialized indices with the intelligence of natural language understanding and the power of graph relationships.
