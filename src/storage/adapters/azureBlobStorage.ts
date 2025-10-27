@@ -1254,8 +1254,8 @@ export class AzureBlobStorage extends BaseStorage {
       const node = await this.getNode(id)
       if (!node) continue
 
+      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
       const metadata = await this.getNounMetadata(id)
-      if (!metadata) continue
 
       // Apply filters if provided
       if (options.filter) {
@@ -1274,7 +1274,7 @@ export class AzureBlobStorage extends BaseStorage {
       // Combine node with metadata
       items.push({
         ...node,
-        metadata
+        metadata: (metadata || {}) as NounMetadata // Empty if none
       })
 
       count++

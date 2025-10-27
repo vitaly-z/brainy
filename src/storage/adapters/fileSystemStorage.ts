@@ -908,11 +908,11 @@ export class FileSystemStorage extends BaseStorage {
           const parsedNoun = JSON.parse(data)
 
           // v4.0.0: Load metadata from separate storage
+          // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
           const metadata = await this.getNounMetadata(id)
-          if (!metadata) continue
 
           // Apply filter if provided
-          if (options.filter) {
+          if (options.filter && metadata) {
             let matches = true
             for (const [key, value] of Object.entries(options.filter)) {
               if (metadata[key] !== value) {
@@ -939,7 +939,7 @@ export class FileSystemStorage extends BaseStorage {
             vector: parsedNoun.vector,
             connections: connections,
             level: parsedNoun.level || 0,
-            metadata: metadata
+            metadata: (metadata || {}) as NounMetadata // Empty if none
           }
 
           items.push(nounWithMetadata)

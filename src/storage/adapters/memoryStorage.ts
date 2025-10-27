@@ -204,8 +204,8 @@ export class MemoryStorage extends BaseStorage {
       if (!noun) continue
 
       // Get metadata from separate storage
+      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
       const metadata = await this.getNounMetadata(id)
-      if (!metadata) continue // Skip if no metadata
 
       // v4.0.0: Create HNSWNounWithMetadata with metadata field
       const nounWithMetadata: HNSWNounWithMetadata = {
@@ -213,7 +213,7 @@ export class MemoryStorage extends BaseStorage {
         vector: [...noun.vector],
         connections: new Map(),
         level: noun.level || 0,
-        metadata: metadata // Include metadata field
+        metadata: (metadata || {}) as NounMetadata // Include metadata field (empty if none)
       }
 
       // Copy connections
@@ -466,8 +466,9 @@ export class MemoryStorage extends BaseStorage {
       if (!hnswVerb) continue
 
       // Get metadata from separate storage
+      // FIX v4.7.4: Don't skip verbs without metadata - metadata is optional in v4.0.0
+      // Core fields (verb, sourceId, targetId) are in HNSWVerb itself
       const metadata = await this.getVerbMetadata(id)
-      if (!metadata) continue // Skip if no metadata
 
       // v4.0.0: Create HNSWVerbWithMetadata with metadata field
       const verbWithMetadata: HNSWVerbWithMetadata = {
@@ -480,8 +481,8 @@ export class MemoryStorage extends BaseStorage {
         sourceId: hnswVerb.sourceId,
         targetId: hnswVerb.targetId,
 
-        // Metadata field
-        metadata: metadata
+        // Metadata field (empty if none)
+        metadata: metadata || {}
       }
 
       // Copy connections

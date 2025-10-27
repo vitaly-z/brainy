@@ -556,8 +556,17 @@ export class SmartExtractor {
       }
     }
 
+    // Determine final confidence score
+    // FIX: When only one signal matches, use its original confidence instead of weighted score
+    // The weighted score is too low when only one signal matches (e.g., 0.8 * 0.2 = 0.16 < 0.60 threshold)
+    let finalConfidence = bestScore
+    if (bestSignals.length === 1) {
+      // Single signal: use its original confidence
+      finalConfidence = bestSignals[0].confidence
+    }
+
     // Check minimum confidence threshold
-    if (!bestType || bestScore < this.options.minConfidence) {
+    if (!bestType || finalConfidence < this.options.minConfidence) {
       return null
     }
 
@@ -572,7 +581,7 @@ export class SmartExtractor {
 
     return {
       type: bestType,
-      confidence: Math.min(bestScore, 1.0), // Cap at 1.0
+      confidence: Math.min(finalConfidence, 1.0), // Cap at 1.0
       source: 'ensemble',
       evidence,
       metadata: {
@@ -609,7 +618,9 @@ export class SmartExtractor {
 
     const best = validResults[0]
 
-    if (best.weightedScore < this.options.minConfidence) {
+    // FIX: Use original confidence, not weighted score for threshold check
+    // Weighted score is for ranking signals, not for absolute threshold
+    if (best.confidence < this.options.minConfidence) {
       return null
     }
 

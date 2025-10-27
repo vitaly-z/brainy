@@ -1686,11 +1686,11 @@ export class OPFSStorage extends BaseStorage {
       const noun = await this.getNoun_internal(id)
       if (noun) {
         // Load metadata for filtering and combining
+        // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
         const metadata = await this.getNounMetadata(id)
-        if (!metadata) continue
 
         // Apply filters if provided
-        if (options.filter) {
+        if (options.filter && metadata) {
           // Filter by noun type
           if (options.filter.nounType) {
             const nounTypes = Array.isArray(options.filter.nounType)
@@ -1730,7 +1730,7 @@ export class OPFSStorage extends BaseStorage {
           vector: [...noun.vector],
           connections: new Map(noun.connections),
           level: noun.level || 0,
-          metadata: metadata
+          metadata: (metadata || {}) as NounMetadata // Empty if none
         }
 
         items.push(nounWithMetadata)
@@ -1819,11 +1819,12 @@ export class OPFSStorage extends BaseStorage {
       const hnswVerb = await this.getVerb_internal(id)
       if (hnswVerb) {
         // Load metadata for filtering and combining
+        // FIX v4.7.4: Don't skip verbs without metadata - metadata is optional in v4.0.0
+        // Core fields (verb, sourceId, targetId) are in HNSWVerb itself
         const metadata = await this.getVerbMetadata(id)
-        if (!metadata) continue
 
         // Apply filters if provided
-        if (options.filter) {
+        if (options.filter && metadata) {
           // Filter by verb type
           // v4.0.0: verb field is in HNSWVerb structure (NOT in metadata)
           if (options.filter.verbType) {
@@ -1888,7 +1889,7 @@ export class OPFSStorage extends BaseStorage {
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
-          metadata: metadata
+          metadata: (metadata || {}) as VerbMetadata // Empty if none
         }
 
         items.push(verbWithMetadata)

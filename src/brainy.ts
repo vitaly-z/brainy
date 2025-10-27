@@ -3026,7 +3026,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       from: v.sourceId,
       to: v.targetId,
       type: (v.verb || v.type) as VerbType,
-      weight: v.weight,
+      weight: v.metadata?.weight ?? 1.0, // v4.7.4: weight is in metadata
       metadata: v.metadata,
       service: v.metadata?.service as string,
       createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()

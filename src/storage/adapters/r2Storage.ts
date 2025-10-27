@@ -1190,11 +1190,11 @@ export class R2Storage extends BaseStorage {
       const noun = await this.getNoun_internal(id)
       if (noun) {
         // v4.0.0: Load metadata and combine with noun to create HNSWNounWithMetadata
+        // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
         const metadata = await this.getNounMetadata(id)
-        if (!metadata) continue
 
         // Apply filters if provided
-        if (options.filter) {
+        if (options.filter && metadata) {
           // Filter by noun type
           if (options.filter.nounType) {
             const nounTypes = Array.isArray(options.filter.nounType)
@@ -1234,7 +1234,7 @@ export class R2Storage extends BaseStorage {
           vector: [...noun.vector],
           connections: new Map(noun.connections),
           level: noun.level || 0,
-          metadata: metadata
+          metadata: (metadata || {}) as NounMetadata // Empty if none
         }
 
         items.push(nounWithMetadata)

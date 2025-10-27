@@ -109,31 +109,56 @@ export class PatternSignal {
    * - Document: files, papers, reports
    */
   private initializePatterns(): void {
-    // Person patterns
-    this.addPatterns(NounType.Person, 0.80, [
-      /\b(?:Dr|Prof|Mr|Mrs|Ms|Sir|Lady|Lord)\s+[A-Z][a-z]+/,
-      /\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/, // Full names
-      /\b(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Developer|Designer)\b/i,
-      /\b(?:author|creator|founder|inventor|contributor|maintainer)\b/i,
-      /\b(?:user|member|participant|attendee|speaker|presenter)\b/i
+    // Organization patterns - HIGH PRIORITY (must check before person full name pattern)
+    this.addPatterns(NounType.Organization, 0.88, [
+      /\b(?:Inc|LLC|Corp|Ltd|GmbH|SA|AG)\b/, // Strong org indicators
+      /\b[A-Z][a-z]+\s+(?:Company|Corporation|Enterprises|Industries|Group)\b/
     ])
 
-    // Location patterns
-    this.addPatterns(NounType.Location, 0.75, [
-      /\b(?:city|town|village|country|nation|state|province)\b/i,
-      /\b(?:street|avenue|road|boulevard|lane|drive)\b/i,
-      /\b(?:building|tower|center|complex|headquarters)\b/i,
-      /\b(?:north|south|east|west|central)\s+[A-Z][a-z]+/i,
-      /\b[A-Z][a-z]+,\s*[A-Z]{2}\b/ // City, State format
+    // Location patterns - HIGH PRIORITY (city/country format, addresses)
+    this.addPatterns(NounType.Location, 0.86, [
+      /\b[A-Z][a-z]+,\s*[A-Z]{2}\b/, // City, State format (e.g., "Paris, FR")
+      /\b(?:street|avenue|road|boulevard|lane|drive)\b/i
     ])
 
-    // Organization patterns
-    this.addPatterns(NounType.Organization, 0.78, [
-      /\b(?:Inc|LLC|Corp|Ltd|GmbH|SA|AG)\b/,
-      /\b[A-Z][a-z]+\s+(?:Company|Corporation|Enterprises|Industries|Group)\b/,
+    // Event patterns - HIGH PRIORITY (specific event keywords)
+    this.addPatterns(NounType.Event, 0.84, [
+      /\b(?:conference|summit|symposium|workshop|seminar|webinar)\b/i,
+      /\b(?:hackathon|bootcamp)\b/i
+    ])
+
+    // Person patterns - SPECIFIC INDICATORS (high confidence)
+    this.addPatterns(NounType.Person, 0.82, [
+      /\b(?:Dr|Prof|Mr|Mrs|Ms|Sir|Lady|Lord)\s+[A-Z][a-z]+/, // Titles
+      /\b(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Developer|Designer)\b/i, // Roles
+      /\b(?:author|creator|founder|inventor|contributor|maintainer)\b/i
+    ])
+
+    // Organization patterns - MEDIUM PRIORITY
+    this.addPatterns(NounType.Organization, 0.76, [
       /\b(?:university|college|institute|academy|school)\b/i,
       /\b(?:department|division|team|committee|board)\b/i,
       /\b(?:government|agency|bureau|ministry|administration)\b/i
+    ])
+
+    // Location patterns - MEDIUM PRIORITY
+    this.addPatterns(NounType.Location, 0.74, [
+      /\b(?:city|town|village|country|nation|state|province)\b/i,
+      /\b(?:building|tower|center|complex|headquarters)\b/i,
+      /\b(?:north|south|east|west|central)\s+[A-Z][a-z]+/i
+    ])
+
+    // Event patterns - MEDIUM PRIORITY
+    this.addPatterns(NounType.Event, 0.72, [
+      /\b(?:meeting|session|call|standup|retrospective|sprint)\b/i,
+      /\b(?:release|launch|deployment|rollout|update)\b/i,
+      /\b(?:training|course|tutorial)\b/i
+    ])
+
+    // Person patterns - GENERIC (low confidence, catches full names but easily overridden)
+    this.addPatterns(NounType.Person, 0.68, [
+      /\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/, // Full names (generic, low priority)
+      /\b(?:user|member|participant|attendee|speaker|presenter)\b/i
     ])
 
     // Technology patterns (Thing type)

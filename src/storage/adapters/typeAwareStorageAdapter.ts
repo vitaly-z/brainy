@@ -436,19 +436,28 @@ export class TypeAwareStorageAdapter extends BaseStorage {
           // Check sourceId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
           if (hnswVerb.sourceId !== sourceId) continue
 
-          // Load metadata separately
+          // Load metadata separately (optional in v4.0.0!)
+          // FIX: Don't skip verbs without metadata - metadata is optional!
+          // VFS relationships often have NO metadata (just verb/source/target)
           const metadata = await this.getVerbMetadata(id)
-          if (!metadata) continue
 
           // Create HNSWVerbWithMetadata (verbs don't have level field)
+          // Convert connections from plain object to Map<number, Set<string>>
+          const connectionsMap = new Map<number, Set<string>>()
+          if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
+            for (const [level, ids] of Object.entries(hnswVerb.connections)) {
+              connectionsMap.set(Number(level), new Set(ids as string[]))
+            }
+          }
+
           const verbWithMetadata: HNSWVerbWithMetadata = {
             id: hnswVerb.id,
             vector: [...hnswVerb.vector],
-            connections: new Map(hnswVerb.connections),
+            connections: connectionsMap,
             verb: hnswVerb.verb,
             sourceId: hnswVerb.sourceId,
             targetId: hnswVerb.targetId,
-            metadata: metadata
+            metadata: metadata || {} // Empty metadata if none exists
           }
 
           verbs.push(verbWithMetadata)
@@ -485,19 +494,27 @@ export class TypeAwareStorageAdapter extends BaseStorage {
           // Check targetId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
           if (hnswVerb.targetId !== targetId) continue
 
-          // Load metadata separately
+          // Load metadata separately (optional in v4.0.0!)
+          // FIX: Don't skip verbs without metadata - metadata is optional!
           const metadata = await this.getVerbMetadata(id)
-          if (!metadata) continue
 
           // Create HNSWVerbWithMetadata (verbs don't have level field)
+          // Convert connections from plain object to Map<number, Set<string>>
+          const connectionsMap = new Map<number, Set<string>>()
+          if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
+            for (const [level, ids] of Object.entries(hnswVerb.connections)) {
+              connectionsMap.set(Number(level), new Set(ids as string[]))
+            }
+          }
+
           const verbWithMetadata: HNSWVerbWithMetadata = {
             id: hnswVerb.id,
             vector: [...hnswVerb.vector],
-            connections: new Map(hnswVerb.connections),
+            connections: connectionsMap,
             verb: hnswVerb.verb,
             sourceId: hnswVerb.sourceId,
             targetId: hnswVerb.targetId,
-            metadata: metadata
+            metadata: metadata || {} // Empty metadata if none exists
           }
 
           verbs.push(verbWithMetadata)
@@ -530,19 +547,27 @@ export class TypeAwareStorageAdapter extends BaseStorage {
         // Cache type from HNSWVerb for future O(1) retrievals
         this.verbTypeCache.set(hnswVerb.id, hnswVerb.verb as VerbType)
 
-        // Load metadata separately
+        // Load metadata separately (optional in v4.0.0!)
+        // FIX: Don't skip verbs without metadata - metadata is optional!
         const metadata = await this.getVerbMetadata(hnswVerb.id)
-        if (!metadata) continue
 
         // Create HNSWVerbWithMetadata (verbs don't have level field)
+        // Convert connections from plain object to Map<number, Set<string>>
+        const connectionsMap = new Map<number, Set<string>>()
+        if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
+          for (const [level, ids] of Object.entries(hnswVerb.connections)) {
+            connectionsMap.set(Number(level), new Set(ids as string[]))
+          }
+        }
+
         const verbWithMetadata: HNSWVerbWithMetadata = {
           id: hnswVerb.id,
           vector: [...hnswVerb.vector],
-          connections: new Map(hnswVerb.connections),
+          connections: connectionsMap,
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
-          metadata: metadata
+          metadata: metadata || {} // Empty metadata if none exists
         }
 
         verbs.push(verbWithMetadata)

@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.7.4](https://github.com/soulcraftlabs/brainy/compare/v4.7.3...v4.7.4) (2025-10-27)
+
+**CRITICAL SYSTEMIC VFS BUG FIX - Workshop Team Unblocked!**
+
+This hotfix resolves a systemic bug affecting ALL storage adapters that caused VFS queries to return empty results even when data existed.
+
+#### 🐛 Critical Bug Fixes
+
+* **storage**: Fix systemic metadata skip bug across ALL 7 storage adapters
+  - **Impact**: VFS queries returned empty arrays despite 577 "Contains" relationships existing
+  - **Root Cause**: All storage adapters skipped entities if metadata file read returned null
+  - **Bug Pattern**: `if (!metadata) continue` in getNouns()/getVerbs() methods
+  - **Fixed Locations**: 12 bug sites across 7 adapters (TypeAware, Memory, FileSystem, GCS, S3, R2, OPFS, Azure)
+  - **Solution**: Allow optional metadata with `metadata: (metadata || {}) as NounMetadata`
+  - **Result**: Workshop team UNBLOCKED - VFS entities now queryable
+
+* **neural**: Fix SmartExtractor weighted score threshold bug (28 test failures → 4)
+  - **Root Cause**: Single signal with 0.8 confidence × 0.2 weight = 0.16 < 0.60 threshold
+  - **Solution**: Use original confidence when only one signal matches
+  - **Impact**: Entity type extraction now works correctly
+
+* **neural**: Fix PatternSignal priority ordering
+  - Specific patterns (organization "Inc", location "City, ST") now ranked higher than generic patterns
+  - Prevents person full-name pattern from overriding organization/location indicators
+
+* **api**: Fix Brainy.relate() weight parameter not returned in getRelations()
+  - **Root Cause**: Weight stored in metadata but read from wrong location
+  - **Solution**: Extract weight from metadata: `v.metadata?.weight ?? 1.0`
+
+#### 📊 Test Results
+
+- TypeAwareStorageAdapter: 17/17 tests passing (was 7 failures)
+- SmartExtractor: 42/46 tests passing (was 28 failures)
+- Neural domain clustering: 3/3 tests passing
+- Brainy.relate() weight: 1/1 test passing
+
+#### 🏗️ Architecture Notes
+
+**Two-Phase Fix**:
+1. Storage Layer (NOW FIXED): Returns ALL entities, even with empty metadata
+2. VFS Layer (ALREADY SAFE): PathResolver uses optional chaining `entity.metadata?.vfsType`
+
+**Result**: Valid VFS entities pass through, invalid entities safely filtered out.
+
 ### [4.7.3](https://github.com/soulcraftlabs/brainy/compare/v4.7.2...v4.7.3) (2025-10-27)
 
 - fix(storage): CRITICAL - preserve vectors when updating HNSW connections (v4.7.3) (46e7482)

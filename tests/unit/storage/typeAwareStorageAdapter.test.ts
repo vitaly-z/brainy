@@ -42,35 +42,59 @@ describe('TypeAwareStorageAdapter', () => {
 
   describe('Noun Storage', () => {
     it('should save and retrieve a noun with type-first path', async () => {
-      const noun: HNSWNoun = {
-        id: '00000000-0000-0000-0000-000000000001', // test-person-1
-        vector: [1, 2, 3],
-        metadata: {
-          noun: 'person',
-          name: 'Alice'
-        }
+      const id = '00000000-0000-0000-0000-000000000001'
+      const vector = [1, 2, 3]
+      const metadata = {
+        noun: 'person',
+        name: 'Alice'
       }
 
-      await adapter.saveNoun(noun)
-      const retrieved = await adapter.getNoun('00000000-0000-0000-0000-000000000001')
+      // v4.0.0: Save vector and metadata separately
+      const noun: HNSWNoun = {
+        id,
+        vector,
+        connections: new Map(),
+        level: 0
+      }
 
-      expect(retrieved).toEqual(noun)
+      // Save metadata FIRST (populates type cache for routing)
+      await adapter.saveNounMetadata(id, metadata)
+      // Then save vector (uses cached type for routing)
+      await adapter.saveNoun(noun)
+
+      // getNoun() combines both
+      const retrieved = await adapter.getNoun(id)
+
+      expect(retrieved).toBeDefined()
+      expect(retrieved?.id).toBe(id)
+      expect(retrieved?.vector).toEqual(vector)
+      expect(retrieved?.level).toBe(0)
+      expect(retrieved?.metadata).toEqual(metadata)
     })
 
     it('should track noun counts by type', async () => {
+      const personId = '00000000-0000-0000-0000-000000000010'
+      const docId = '00000000-0000-0000-0000-000000000020'
+
       const person: HNSWNoun = {
-        id: '00000000-0000-0000-0000-000000000010', // person-1
+        id: personId,
         vector: [1, 2, 3],
-        metadata: { noun: 'person', name: 'Bob' }
+        connections: new Map(),
+        level: 0
       }
 
       const document: HNSWNoun = {
-        id: '00000000-0000-0000-0000-000000000020', // doc-1
+        id: docId,
         vector: [4, 5, 6],
-        metadata: { noun: 'document', title: 'Test Doc' }
+        connections: new Map(),
+        level: 0
       }
 
+      // v4.0.0: Save metadata first, then vectors
+      await adapter.saveNounMetadata(personId, { noun: 'person', name: 'Bob' })
       await adapter.saveNoun(person)
+
+      await adapter.saveNounMetadata(docId, { noun: 'document', title: 'Test Doc' })
       await adapter.saveNoun(document)
 
       const stats = adapter.getTypeStatistics()
@@ -84,58 +108,61 @@ describe('TypeAwareStorageAdapter', () => {
     })
 
     it('should retrieve nouns by noun type (O(1) with type-first paths)', async () => {
-      const people: HNSWNoun[] = [
-        {
-          id: '00000000-0000-0000-0000-000000000010', // person-1
-          vector: [1, 2, 3],
-          metadata: { noun: 'person', name: 'Alice' }
-        },
-        {
-          id: '00000000-0000-0000-0000-000000000011', // person-2
-          vector: [4, 5, 6],
-          metadata: { noun: 'person', name: 'Bob' }
-        }
-      ]
+      const peopleIds = ['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000011']
+      const docIds = ['00000000-0000-0000-0000-000000000020']
 
-      const docs: HNSWNoun[] = [
-        {
-          id: '00000000-0000-0000-0000-000000000020', // doc-1
-          vector: [7, 8, 9],
-          metadata: { noun: 'document', title: 'Doc 1' }
-        }
-      ]
+      // v4.0.0: Save metadata first, then vectors
+      await adapter.saveNounMetadata(peopleIds[0], { noun: 'person', name: 'Alice' })
+      await adapter.saveNoun({
+        id: peopleIds[0],
+        vector: [1, 2, 3],
+        connections: new Map(),
+        level: 0
+      })
 
-      for (const person of people) {
-        await adapter.saveNoun(person)
-      }
-      for (const doc of docs) {
-        await adapter.saveNoun(doc)
-      }
+      await adapter.saveNounMetadata(peopleIds[1], { noun: 'person', name: 'Bob' })
+      await adapter.saveNoun({
+        id: peopleIds[1],
+        vector: [4, 5, 6],
+        connections: new Map(),
+        level: 0
+      })
+
+      await adapter.saveNounMetadata(docIds[0], { noun: 'document', title: 'Doc 1' })
+      await adapter.saveNoun({
+        id: docIds[0],
+        vector: [7, 8, 9],
+        connections: new Map(),
+        level: 0
+      })
 
       const retrievedPeople = await adapter.getNounsByNounType('person')
       expect(retrievedPeople).toHaveLength(2)
-      expect(retrievedPeople.map(p => p.id).sort()).toEqual(['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000011'])
+      expect(retrievedPeople.map(p => p.id).sort()).toEqual(peopleIds.sort())
 
       const retrievedDocs = await adapter.getNounsByNounType('document')
       expect(retrievedDocs).toHaveLength(1)
-      expect(retrievedDocs[0].id).toBe('00000000-0000-0000-0000-000000000020')
+      expect(retrievedDocs[0].id).toBe(docIds[0])
     })
 
     it('should delete nouns and update counts', async () => {
-      const noun: HNSWNoun = {
-        id: '00000000-0000-0000-0000-000000000030', // person-to-delete
-        vector: [1, 2, 3],
-        metadata: { noun: 'person', name: 'ToDelete' }
-      }
+      const id = '00000000-0000-0000-0000-000000000030'
 
-      await adapter.saveNoun(noun)
+      // v4.0.0: Save metadata first, then vector
+      await adapter.saveNounMetadata(id, { noun: 'person', name: 'ToDelete' })
+      await adapter.saveNoun({
+        id,
+        vector: [1, 2, 3],
+        connections: new Map(),
+        level: 0
+      })
 
       let stats = adapter.getTypeStatistics()
       expect(stats.nouns.find(s => s.type === 'person')?.count).toBe(1)
 
-      await adapter.deleteNoun('00000000-0000-0000-0000-000000000030')
+      await adapter.deleteNoun(id)
 
-      const retrieved = await adapter.getNoun('00000000-0000-0000-0000-000000000030')
+      const retrieved = await adapter.getNoun(id)
       expect(retrieved).toBeNull()
 
       stats = adapter.getTypeStatistics()
@@ -146,23 +173,29 @@ describe('TypeAwareStorageAdapter', () => {
 
   describe('Verb Storage', () => {
     it('should save and retrieve a verb with type-first path', async () => {
+      const id = '00000000-0000-0000-0000-000000000040'
+      const timestamp = Date.now()
+
       const verb: HNSWVerb = {
-        id: '00000000-0000-0000-0000-000000000040', // verb-1
+        id,
         verb: 'creates',
         vector: [1, 2, 3],
+        connections: new Map(),
         sourceId: '00000000-0000-0000-0000-000000000010',
-        targetId: '00000000-0000-0000-0000-000000000020',
-        timestamp: Date.now()
+        targetId: '00000000-0000-0000-0000-000000000020'
       }
 
+      // v4.0.0: Save verb FIRST (so type is known), then metadata
       await adapter.saveVerb(verb)
-      const retrieved = await adapter.getVerb('00000000-0000-0000-0000-000000000040')
+      await adapter.saveVerbMetadata(id, { createdAt: timestamp })
 
-      // getVerb returns GraphVerb (with extra fields), so check key fields only
+      const retrieved = await adapter.getVerb(id)
+
+      // getVerb returns HNSWVerbWithMetadata
       expect(retrieved).toBeDefined()
-      expect(retrieved?.id).toBe(verb.id)
-      expect(retrieved?.verb).toBe(verb.verb)
-      expect(retrieved?.vector).toEqual(verb.vector)
+      expect(retrieved?.id).toBe(id)
+      expect(retrieved?.verb).toBe('creates')
+      expect(retrieved?.vector).toEqual([1, 2, 3])
       expect(retrieved?.sourceId).toBe(verb.sourceId)
       expect(retrieved?.targetId).toBe(verb.targetId)
     })
@@ -200,27 +233,22 @@ describe('TypeAwareStorageAdapter', () => {
     })
 
     it('should retrieve verbs by type (O(1) with type-first paths)', async () => {
-      const createsVerbs: HNSWVerb[] = [
-        {
-          id: '00000000-0000-0000-0000-000000000050', // creates-1
-          verb: 'creates',
-          vector: [1, 2, 3],
-          sourceId: '00000000-0000-0000-0000-0000000000a1',
-          targetId: '00000000-0000-0000-0000-0000000000b1',
-          timestamp: Date.now()
-        },
-        {
-          id: '00000000-0000-0000-0000-000000000051', // creates-2
-          verb: 'creates',
-          vector: [4, 5, 6],
-          sourceId: '00000000-0000-0000-0000-0000000000a2',
-          targetId: '00000000-0000-0000-0000-0000000000b2',
-          timestamp: Date.now()
-        }
+      const verbIds = [
+        '00000000-0000-0000-0000-000000000050',
+        '00000000-0000-0000-0000-000000000051'
       ]
 
-      for (const verb of createsVerbs) {
-        await adapter.saveVerb(verb)
+      // v4.0.0: Save verb FIRST (so type is known), then metadata
+      for (let i = 0; i < verbIds.length; i++) {
+        await adapter.saveVerb({
+          id: verbIds[i],
+          verb: 'creates',
+          vector: [i + 1, i + 2, i + 3],
+          connections: new Map(),
+          sourceId: `00000000-0000-0000-0000-0000000000a${i + 1}`,
+          targetId: `00000000-0000-0000-0000-0000000000b${i + 1}`
+        })
+        await adapter.saveVerbMetadata(verbIds[i], { createdAt: Date.now() })
       }
 
       const retrieved = await adapter.getVerbsByType('creates')
@@ -370,16 +398,24 @@ describe('TypeAwareStorageAdapter', () => {
       })
       await memAdapter.init()
 
-      const noun: HNSWNoun = {
-        id: '00000000-0000-0000-0000-0000000000ff', // test-1
+      const id = '00000000-0000-0000-0000-0000000000ff'
+
+      // v4.0.0: Save metadata first, then vector
+      await memAdapter.saveNounMetadata(id, { noun: 'person', name: 'Test' })
+      await memAdapter.saveNoun({
+        id,
         vector: [1, 2, 3],
-        metadata: { noun: 'person', name: 'Test' }
-      }
+        connections: new Map(),
+        level: 0
+      })
 
-      await memAdapter.saveNoun(noun)
-      const retrieved = await memAdapter.getNoun('00000000-0000-0000-0000-0000000000ff')
+      const retrieved = await memAdapter.getNoun(id)
 
-      expect(retrieved).toEqual(noun)
+      expect(retrieved).toBeDefined()
+      expect(retrieved?.id).toBe(id)
+      expect(retrieved?.vector).toEqual([1, 2, 3])
+      expect(retrieved?.level).toBe(0)
+      expect(retrieved?.metadata).toEqual({ noun: 'person', name: 'Test' })
     })
   })
 })

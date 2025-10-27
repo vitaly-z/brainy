@@ -3683,11 +3683,11 @@ export class S3CompatibleStorage extends BaseStorage {
     const nounsWithMetadata: HNSWNounWithMetadata[] = []
 
     for (const node of result.nodes) {
+      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
       const metadata = await this.getNounMetadata(node.id)
-      if (!metadata) continue
 
       // Apply filters if provided
-      if (options.filter) {
+      if (options.filter && metadata) {
         // Filter by noun type
         if (options.filter.nounType) {
           const nounTypes = Array.isArray(options.filter.nounType)
@@ -3729,7 +3729,7 @@ export class S3CompatibleStorage extends BaseStorage {
         vector: [...node.vector],
         connections: new Map(node.connections),
         level: node.level || 0,
-        metadata: metadata
+        metadata: (metadata || {}) as NounMetadata // Empty if none
       }
       nounsWithMetadata.push(nounWithMetadata)
     }

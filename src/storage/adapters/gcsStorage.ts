@@ -1046,8 +1046,8 @@ export class GcsStorage extends BaseStorage {
     const items: HNSWNounWithMetadata[] = []
 
     for (const node of result.nodes) {
+      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
       const metadata = await this.getNounMetadata(node.id)
-      if (!metadata) continue
 
       // Apply filters if provided
       if (options.filter) {
@@ -1083,7 +1083,7 @@ export class GcsStorage extends BaseStorage {
         vector: [...node.vector],
         connections: new Map(node.connections),
         level: node.level || 0,
-        metadata: metadata
+        metadata: (metadata || {}) as NounMetadata // Empty if none
       }
       items.push(nounWithMetadata)
     }
