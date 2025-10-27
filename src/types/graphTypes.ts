@@ -211,6 +211,7 @@ export interface GraphVerb {
   createdAt: Timestamp // When the verb was created
   updatedAt: Timestamp // When the verb was last updated
   createdBy: CreatorMetadata // Information about what created this verb
+  service?: string // Multi-tenancy support - which service created this verb
   data?: Record<string, any> // Additional flexible data storage
   embedding?: number[] // Vector representation of the relationship
   confidence?: number // Confidence score (0-1)

@@ -11,7 +11,8 @@ import {
   VerbMetadata,
   HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
-  StatisticsData
+  StatisticsData,
+  NounType
 } from '../../coreTypes.js'
 import {
   BaseStorage,
@@ -1724,13 +1725,24 @@ export class OPFSStorage extends BaseStorage {
           }
         }
 
-        // v4.0.0: Create HNSWNounWithMetadata by combining noun with metadata
+        // v4.8.0: Extract standard fields from metadata to top-level
+        const metadataObj = (metadata || {}) as NounMetadata
+        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
         const nounWithMetadata: HNSWNounWithMetadata = {
           id: noun.id,
           vector: [...noun.vector],
           connections: new Map(noun.connections),
           level: noun.level || 0,
-          metadata: (metadata || {}) as NounMetadata // Empty if none
+          type: (nounType as NounType) || NounType.Thing,
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          metadata: customMetadata
         }
 
         items.push(nounWithMetadata)
@@ -1881,7 +1893,10 @@ export class OPFSStorage extends BaseStorage {
           }
         }
 
-        // v4.0.0: Create HNSWVerbWithMetadata by combining verb with metadata
+        // v4.8.0: Extract standard fields from metadata to top-level
+        const metadataObj = (metadata || {}) as VerbMetadata
+        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
         const verbWithMetadata: HNSWVerbWithMetadata = {
           id: hnswVerb.id,
           vector: [...hnswVerb.vector],
@@ -1889,7 +1904,14 @@ export class OPFSStorage extends BaseStorage {
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
-          metadata: (metadata || {}) as VerbMetadata // Empty if none
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          metadata: customMetadata
         }
 
         items.push(verbWithMetadata)

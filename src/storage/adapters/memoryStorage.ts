@@ -11,7 +11,8 @@ import {
   VerbMetadata,
   HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
-  StatisticsData
+  StatisticsData,
+  NounType
 } from '../../coreTypes.js'
 import { BaseStorage, STATISTICS_KEY } from '../baseStorage.js'
 import { PaginatedResult } from '../../types/paginationTypes.js'
@@ -207,13 +208,27 @@ export class MemoryStorage extends BaseStorage {
       // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
       const metadata = await this.getNounMetadata(id)
 
-      // v4.0.0: Create HNSWNounWithMetadata with metadata field
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as NounMetadata
+      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
+      // v4.8.0: Create HNSWNounWithMetadata with standard fields at top-level
       const nounWithMetadata: HNSWNounWithMetadata = {
         id: noun.id,
         vector: [...noun.vector],
         connections: new Map(),
         level: noun.level || 0,
-        metadata: (metadata || {}) as NounMetadata // Include metadata field (empty if none)
+        // v4.8.0: Standard fields at top-level
+        type: (nounType as NounType) || NounType.Thing,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        // Only custom user fields in metadata
+        metadata: customMetadata
       }
 
       // Copy connections
@@ -470,7 +485,11 @@ export class MemoryStorage extends BaseStorage {
       // Core fields (verb, sourceId, targetId) are in HNSWVerb itself
       const metadata = await this.getVerbMetadata(id)
 
-      // v4.0.0: Create HNSWVerbWithMetadata with metadata field
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = metadata || {}
+      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
+      // v4.8.0: Create HNSWVerbWithMetadata with standard fields at top-level
       const verbWithMetadata: HNSWVerbWithMetadata = {
         id: hnswVerb.id,
         vector: [...hnswVerb.vector],
@@ -481,8 +500,17 @@ export class MemoryStorage extends BaseStorage {
         sourceId: hnswVerb.sourceId,
         targetId: hnswVerb.targetId,
 
-        // Metadata field (empty if none)
-        metadata: metadata || {}
+        // v4.8.0: Standard fields at top-level
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+
+        // Only custom user fields in metadata
+        metadata: customMetadata
       }
 
       // Copy connections

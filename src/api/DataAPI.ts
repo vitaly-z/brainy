@@ -103,9 +103,9 @@ export class DataAPI {
       const entity = {
         id: noun.id,
         vector: includeVectors ? noun.vector : undefined,
-        type: noun.metadata?.noun || NounType.Thing,
+        type: noun.type || NounType.Thing, // v4.8.0: type at top-level
         metadata: noun.metadata,
-        service: noun.metadata?.service
+        service: noun.service // v4.8.0: service at top-level
       }
       entities.push(entity)
     }
@@ -122,7 +122,7 @@ export class DataAPI {
         from: verb.sourceId,
         to: verb.targetId,
         type: verb.verb as string,
-        weight: verb.metadata?.weight || 1.0,
+        weight: verb.weight || 1.0, // v4.8.0: weight at top-level
         metadata: verb.metadata
       })
     }

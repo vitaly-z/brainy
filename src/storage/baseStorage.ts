@@ -184,13 +184,25 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return null
     }
 
-    // Combine into HNSWNounWithMetadata
+    // Combine into HNSWNounWithMetadata - v4.8.0: Extract standard fields to top-level
+    const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+
     return {
       id: vector.id,
       vector: vector.vector,
       connections: vector.connections,
       level: vector.level,
-      metadata
+      // v4.8.0: Standard fields at top-level
+      type: (noun as NounType) || NounType.Thing,
+      createdAt: (createdAt as number) || Date.now(),
+      updatedAt: (updatedAt as number) || Date.now(),
+      confidence: confidence as number | undefined,
+      weight: weight as number | undefined,
+      service: service as string | undefined,
+      data: data as Record<string, any> | undefined,
+      createdBy,
+      // Only custom user fields remain in metadata
+      metadata: customMetadata
     }
   }
 
@@ -205,14 +217,26 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Internal method returns HNSWNoun[], need to combine with metadata
     const nouns = await this.getNounsByNounType_internal(nounType)
 
-    // Combine each noun with its metadata
+    // Combine each noun with its metadata - v4.8.0: Extract standard fields to top-level
     const nounsWithMetadata: HNSWNounWithMetadata[] = []
     for (const noun of nouns) {
       const metadata = await this.getNounMetadata(noun.id)
       if (metadata) {
+        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+
         nounsWithMetadata.push({
           ...noun,
-          metadata
+          // v4.8.0: Standard fields at top-level
+          type: (nounType as NounType) || NounType.Thing,
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          // Only custom user fields in metadata
+          metadata: customMetadata
         })
       }
     }
@@ -275,7 +299,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return null
     }
 
-    // Combine into HNSWVerbWithMetadata
+    // Combine into HNSWVerbWithMetadata - v4.8.0: Extract standard fields to top-level
+    const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+
     return {
       id: verb.id,
       vector: verb.vector,
@@ -283,7 +309,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       verb: verb.verb,
       sourceId: verb.sourceId,
       targetId: verb.targetId,
-      metadata
+      // v4.8.0: Standard fields at top-level
+      createdAt: (createdAt as number) || Date.now(),
+      updatedAt: (updatedAt as number) || Date.now(),
+      confidence: confidence as number | undefined,
+      weight: weight as number | undefined,
+      service: service as string | undefined,
+      data: data as Record<string, any> | undefined,
+      createdBy,
+      // Only custom user fields remain in metadata
+      metadata: customMetadata
     }
   }
 

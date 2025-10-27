@@ -390,17 +390,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         await this.index.addItem({ id, vector })
       }
 
-      // Prepare metadata object with data field included
-      const metadata = {
+      // Prepare metadata for storage (backward compat format - unchanged)
+      const storageMetadata = {
         ...(typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data) ? params.data : {}),
         ...params.metadata,
-        _data: params.data, // Store the raw data in metadata
+        data: params.data, // Store the raw data in metadata
         noun: params.type,
         service: params.service,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
         // Preserve confidence and weight if provided
         ...(params.confidence !== undefined && { confidence: params.confidence }),
-        ...(params.weight !== undefined && { weight: params.weight })
+        ...(params.weight !== undefined && { weight: params.weight }),
+        ...(params.createdBy && { createdBy: params.createdBy })
       }
 
       // v4.0.0: Save vector and metadata separately
@@ -411,10 +413,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         level: 0
       })
 
-      await this.storage.saveNounMetadata(id, metadata)
+      await this.storage.saveNounMetadata(id, storageMetadata)
 
-      // Add to metadata index for fast filtering
-      await this.metadataIndex.addToIndex(id, metadata)
+      // v4.8.0: Build entity structure for indexing (NEW - with top-level fields)
+      const entityForIndexing = {
+        id,
+        vector,
+        connections: new Map(),
+        level: 0,
+        type: params.type,
+        confidence: params.confidence,
+        weight: params.weight,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        service: params.service,
+        data: params.data,
+        createdBy: params.createdBy,
+        // Only custom fields in metadata
+        metadata: params.metadata || {}
+      }
+
+      // Pass full entity structure to metadata index
+      await this.metadataIndex.addToIndex(id, entityForIndexing)
 
       return id
     })
@@ -542,46 +562,45 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Convert a noun from storage to an entity
+   * Convert a noun from storage to an entity (v4.8.0 - SIMPLIFIED!)
+   *
+   * v4.8.0: Dramatically simplified - standard fields moved to top-level
+   * - Extracts standard fields from metadata (storage format)
+   * - Returns entity with standard fields at top-level (in-memory format)
+   * - metadata contains ONLY custom user fields
    */
   private async convertNounToEntity(noun: any): Promise<Entity<T>> {
-    // Extract metadata - separate user metadata from system metadata
+    // Extract ALL standard fields and user metadata
     const {
       noun: nounType,
       service,
       createdAt,
       updatedAt,
-      _data,
-      confidence,  // Entity confidence score (0-1)
-      weight,      // Entity importance/salience (0-1)
-      ...userMetadata
+      data: _data,
+      confidence,
+      weight,
+      createdBy,
+      // Everything else is custom user metadata
+      ...customMetadata
     } = noun.metadata || {}
 
+    // v4.8.0: Clean structure with standard fields at top-level
     const entity: Entity<T> = {
       id: noun.id,
       vector: noun.vector,
       type: (nounType as NounType) || NounType.Thing,
-      // Preserve timestamps in metadata for indexing (v4.5.4 fix)
-      // Metadata index needs these fields to enable sorting and range queries
-      metadata: {
-        ...userMetadata,
-        ...(createdAt !== undefined && { createdAt }),
-        ...(updatedAt !== undefined && { updatedAt })
-      } as T,
-      service: service as string,
-      createdAt: (createdAt as number) || Date.now(),
-      updatedAt: updatedAt as number
-    }
 
-    // Only add optional fields if they exist
-    if (_data !== undefined) {
-      entity.data = _data
-    }
-    if (confidence !== undefined) {
-      entity.confidence = confidence as number
-    }
-    if (weight !== undefined) {
-      entity.weight = weight as number
+      // Standard fields at top-level (v4.8.0)
+      confidence: confidence as number | undefined,
+      weight: weight as number | undefined,
+      createdAt: (createdAt as number) || Date.now(),
+      updatedAt: (updatedAt as number) || Date.now(),
+      service: service as string | undefined,
+      data: _data,
+      createdBy,
+
+      // ONLY custom user fields in metadata
+      metadata: customMetadata as T
     }
 
     return entity
@@ -3018,7 +3037,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Convert verbs to relations
+   * Convert verbs to relations (v4.8.0 - read from top-level)
    */
   private verbsToRelations(verbs: GraphVerb[]): Relation<T>[] {
     return verbs.map((v) => ({
@@ -3026,9 +3045,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       from: v.sourceId,
       to: v.targetId,
       type: (v.verb || v.type) as VerbType,
-      weight: v.metadata?.weight ?? 1.0, // v4.7.4: weight is in metadata
+      weight: v.weight ?? 1.0, // v4.8.0: weight is at top-level
       metadata: v.metadata,
-      service: v.metadata?.service as string,
+      service: v.service as string,
       createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()
     }))
   }

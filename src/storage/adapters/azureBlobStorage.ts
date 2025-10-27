@@ -20,7 +20,8 @@ import {
   VerbMetadata,
   HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
-  StatisticsData
+  StatisticsData,
+  NounType
 } from '../../coreTypes.js'
 import {
   BaseStorage,
@@ -1271,10 +1272,24 @@ export class AzureBlobStorage extends BaseStorage {
         }
       }
 
-      // Combine node with metadata
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as NounMetadata
+      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
       items.push({
-        ...node,
-        metadata: (metadata || {}) as NounMetadata // Empty if none
+        id: node.id,
+        vector: node.vector,
+        connections: node.connections,
+        level: node.level || 0,
+        type: (nounType as NounType) || NounType.Thing,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        metadata: customMetadata
       })
 
       count++
@@ -1319,9 +1334,25 @@ export class AzureBlobStorage extends BaseStorage {
       if (!verb || verb.sourceId !== sourceId) continue
 
       const metadata = await this.getVerbMetadata(id)
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as VerbMetadata
+      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
       items.push({
-        ...verb,
-        metadata: metadata || {}
+        id: verb.id,
+        vector: verb.vector,
+        connections: verb.connections,
+        verb: verb.verb,
+        sourceId: verb.sourceId,
+        targetId: verb.targetId,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        metadata: customMetadata
       })
     }
 
@@ -1347,9 +1378,25 @@ export class AzureBlobStorage extends BaseStorage {
       if (!verb || verb.targetId !== targetId) continue
 
       const metadata = await this.getVerbMetadata(id)
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as VerbMetadata
+      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
       items.push({
-        ...verb,
-        metadata: metadata || {}
+        id: verb.id,
+        vector: verb.vector,
+        connections: verb.connections,
+        verb: verb.verb,
+        sourceId: verb.sourceId,
+        targetId: verb.targetId,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        metadata: customMetadata
       })
     }
 
@@ -1375,9 +1422,25 @@ export class AzureBlobStorage extends BaseStorage {
       if (!verb || verb.verb !== type) continue
 
       const metadata = await this.getVerbMetadata(id)
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as VerbMetadata
+      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
       items.push({
-        ...verb,
-        metadata: metadata || {}
+        id: verb.id,
+        vector: verb.vector,
+        connections: verb.connections,
+        verb: verb.verb,
+        sourceId: verb.sourceId,
+        targetId: verb.targetId,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        metadata: customMetadata
       })
     }
 

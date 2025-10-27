@@ -318,7 +318,25 @@ export class GraphAdjacencyIndex {
 
         // Add each verb to index
         for (const verb of result.items) {
-          await this.addVerb(verb)
+          // Convert HNSWVerbWithMetadata to GraphVerb format
+          const graphVerb: GraphVerb = {
+            id: verb.id,
+            sourceId: verb.sourceId,
+            targetId: verb.targetId,
+            vector: verb.vector,
+            source: verb.sourceId,
+            target: verb.targetId,
+            verb: verb.verb,
+            createdAt: { seconds: Math.floor(verb.createdAt / 1000), nanoseconds: (verb.createdAt % 1000) * 1000000 },
+            updatedAt: { seconds: Math.floor(verb.updatedAt / 1000), nanoseconds: (verb.updatedAt % 1000) * 1000000 },
+            createdBy: verb.createdBy || { augmentation: 'unknown', version: '0.0.0' },
+            service: verb.service,
+            data: verb.data,
+            embedding: verb.vector,
+            confidence: verb.confidence,
+            weight: verb.weight
+          }
+          await this.addVerb(graphVerb)
           totalVerbs++
         }
 
@@ -342,7 +360,25 @@ export class GraphAdjacencyIndex {
 
           // Add each verb to index
           for (const verb of result.items) {
-            await this.addVerb(verb)
+            // Convert HNSWVerbWithMetadata to GraphVerb format
+            const graphVerb: GraphVerb = {
+              id: verb.id,
+              sourceId: verb.sourceId,
+              targetId: verb.targetId,
+              vector: verb.vector,
+              source: verb.sourceId,
+              target: verb.targetId,
+              verb: verb.verb,
+              createdAt: { seconds: Math.floor(verb.createdAt / 1000), nanoseconds: (verb.createdAt % 1000) * 1000000 },
+              updatedAt: { seconds: Math.floor(verb.updatedAt / 1000), nanoseconds: (verb.updatedAt % 1000) * 1000000 },
+              createdBy: verb.createdBy || { augmentation: 'unknown', version: '0.0.0' },
+              service: verb.service,
+              data: verb.data,
+              embedding: verb.vector,
+              confidence: verb.confidence,
+              weight: verb.weight
+            }
+            await this.addVerb(graphVerb)
             totalVerbs++
           }
 

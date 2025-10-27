@@ -1090,25 +1090,31 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Extract indexable field-value pairs from metadata
+   * Extract indexable field-value pairs from entity or metadata
+   *
+   * v4.8.0: Now handles BOTH entity structure (with top-level fields) AND plain metadata
+   * - Extracts from top-level fields (confidence, weight, timestamps, type, service, etc.)
+   * - Also extracts from nested metadata field (custom user fields)
+   * - Skips HNSW-specific fields (vector, connections, level, id)
+   * - Maps 'type' → 'noun' for backward compatibility with existing indexes
    *
    * BUG FIX (v3.50.1): Exclude vector embeddings and large arrays from indexing
    * BUG FIX (v3.50.2): Also exclude purely numeric field names (array indices)
    * - Vector fields (384+ dimensions) were creating 825K chunk files for 1,144 entities
    * - Arrays converted to objects with numeric keys were still being indexed
    */
-  private extractIndexableFields(metadata: any): Array<{ field: string, value: any }> {
+  private extractIndexableFields(data: any): Array<{ field: string, value: any }> {
     const fields: Array<{ field: string, value: any }> = []
 
-    // Fields that should NEVER be indexed (vectors, embeddings, large arrays)
-    const NEVER_INDEX = new Set(['vector', 'embedding', 'embeddings', 'connections'])
+    // Fields that should NEVER be indexed (vectors, embeddings, large arrays, HNSW internals)
+    const NEVER_INDEX = new Set(['vector', 'embedding', 'embeddings', 'connections', 'level', 'id'])
 
     const extract = (obj: any, prefix = ''): void => {
       for (const [key, value] of Object.entries(obj)) {
         const fullKey = prefix ? `${prefix}.${key}` : key
 
-        // Skip fields in never-index list (CRITICAL: prevents vector indexing bug)
-        if (NEVER_INDEX.has(key)) continue
+        // Skip fields in never-index list (CRITICAL: prevents vector indexing bug + HNSW fields)
+        if (!prefix && NEVER_INDEX.has(key)) continue
 
         // Skip purely numeric field names (array indices converted to object keys)
         // Legitimate field names should never be purely numeric
@@ -1117,6 +1123,13 @@ export class MetadataIndexManager {
 
         // Skip fields based on user configuration
         if (!this.shouldIndexField(fullKey)) continue
+
+        // Special handling for metadata field at top level
+        // If this is an entity structure, recurse into metadata with prefix
+        if (key === 'metadata' && !prefix && typeof value === 'object' && !Array.isArray(value)) {
+          extract(value, 'metadata')
+          continue
+        }
 
         // Skip large arrays (> 10 elements) - likely vectors or bulk data
         if (Array.isArray(value) && value.length > 10) continue
@@ -1135,13 +1148,15 @@ export class MetadataIndexManager {
           }
         } else {
           // Primitive value: index it
-          fields.push({ field: fullKey, value })
+          // v4.8.0: Map 'type' → 'noun' for backward compatibility
+          const indexField = (!prefix && key === 'type') ? 'noun' : fullKey
+          fields.push({ field: indexField, value })
         }
       }
     }
 
-    if (metadata && typeof metadata === 'object') {
-      extract(metadata)
+    if (data && typeof data === 'object') {
+      extract(data)
     }
 
     return fields
@@ -1149,9 +1164,17 @@ export class MetadataIndexManager {
 
   /**
    * Add item to metadata indexes
+   *
+   * v4.8.0: Now accepts either entity structure or plain metadata
+   * - Entity structure: { id, type, confidence, weight, createdAt, metadata: {...} }
+   * - Plain metadata: { noun, confidence, weight, createdAt, ... }
+   *
+   * @param id - Entity ID
+   * @param entityOrMetadata - Either full entity structure (v4.8.0+) or plain metadata (backward compat)
+   * @param skipFlush - Skip automatic flush (used during batch operations)
    */
-  async addToIndex(id: string, metadata: any, skipFlush: boolean = false): Promise<void> {
-    const fields = this.extractIndexableFields(metadata)
+  async addToIndex(id: string, entityOrMetadata: any, skipFlush: boolean = false): Promise<void> {
+    const fields = this.extractIndexableFields(entityOrMetadata)
     
     // Sort fields to process 'noun' field first for type-field affinity tracking
     fields.sort((a, b) => {
@@ -1171,7 +1194,7 @@ export class MetadataIndexManager {
 
       // Update statistics and tracking
       this.updateCardinalityStats(field, value, 'add')
-      this.updateTypeFieldAffinity(id, field, value, 'add', metadata)
+      this.updateTypeFieldAffinity(id, field, value, 'add', entityOrMetadata)
       await this.updateFieldIndex(field, value, 1)
 
       // Yield to event loop every 5 fields to prevent blocking
@@ -1241,6 +1264,13 @@ export class MetadataIndexManager {
 
   /**
    * Remove item from metadata indexes
+   *
+   * v4.8.0: Now accepts either entity structure or plain metadata (same as addToIndex)
+   * - Entity structure: { id, type, confidence, weight, createdAt, metadata: {...} }
+   * - Plain metadata: { noun, confidence, weight, createdAt, ... }
+   *
+   * @param id - Entity ID to remove
+   * @param metadata - Optional entity or metadata structure (if not provided, requires scanning all fields - slow!)
    */
   async removeFromIndex(id: string, metadata?: any): Promise<void> {
     if (metadata) {

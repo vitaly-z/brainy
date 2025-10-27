@@ -17,7 +17,8 @@ import {
   VerbMetadata,
   HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
-  StatisticsData
+  StatisticsData,
+  NounType
 } from '../../coreTypes.js'
 import {
   BaseStorage,
@@ -1077,13 +1078,24 @@ export class GcsStorage extends BaseStorage {
         }
       }
 
-      // Combine node with metadata
+      // v4.8.0: Extract standard fields from metadata to top-level
+      const metadataObj = (metadata || {}) as NounMetadata
+      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
       const nounWithMetadata: HNSWNounWithMetadata = {
         id: node.id,
         vector: [...node.vector],
         connections: new Map(node.connections),
         level: node.level || 0,
-        metadata: (metadata || {}) as NounMetadata // Empty if none
+        type: (nounType as NounType) || NounType.Thing,
+        createdAt: (createdAt as number) || Date.now(),
+        updatedAt: (updatedAt as number) || Date.now(),
+        confidence: confidence as number | undefined,
+        weight: weight as number | undefined,
+        service: service as string | undefined,
+        data: data as Record<string, any> | undefined,
+        createdBy,
+        metadata: customMetadata
       }
       items.push(nounWithMetadata)
     }
@@ -1380,7 +1392,10 @@ export class GcsStorage extends BaseStorage {
           }
         }
 
-        // Combine verb with metadata
+        // v4.8.0: Extract standard fields from metadata to top-level
+        const metadataObj = (metadata || {}) as VerbMetadata
+        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
         const verbWithMetadata: HNSWVerbWithMetadata = {
           id: hnswVerb.id,
           vector: [...hnswVerb.vector],
@@ -1388,7 +1403,14 @@ export class GcsStorage extends BaseStorage {
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
-          metadata: metadata || {}
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          metadata: customMetadata
         }
         items.push(verbWithMetadata)
       }

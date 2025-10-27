@@ -109,6 +109,7 @@ export interface AddParams<T = any> {
   service?: string             // Multi-tenancy support
   confidence?: number          // Type classification confidence (0-1)
   weight?: number              // Entity importance/salience (0-1)
+  createdBy?: { augmentation: string; version: string }  // Track entity source
 }
 
 /**

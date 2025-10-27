@@ -450,6 +450,10 @@ export class TypeAwareStorageAdapter extends BaseStorage {
             }
           }
 
+          // v4.8.0: Extract standard fields from metadata to top-level
+          const metadataObj = (metadata || {}) as VerbMetadata
+          const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
           const verbWithMetadata: HNSWVerbWithMetadata = {
             id: hnswVerb.id,
             vector: [...hnswVerb.vector],
@@ -457,7 +461,14 @@ export class TypeAwareStorageAdapter extends BaseStorage {
             verb: hnswVerb.verb,
             sourceId: hnswVerb.sourceId,
             targetId: hnswVerb.targetId,
-            metadata: metadata || {} // Empty metadata if none exists
+            createdAt: (createdAt as number) || Date.now(),
+            updatedAt: (updatedAt as number) || Date.now(),
+            confidence: confidence as number | undefined,
+            weight: weight as number | undefined,
+            service: service as string | undefined,
+            data: data as Record<string, any> | undefined,
+            createdBy,
+            metadata: customMetadata
           }
 
           verbs.push(verbWithMetadata)
@@ -507,6 +518,10 @@ export class TypeAwareStorageAdapter extends BaseStorage {
             }
           }
 
+          // v4.8.0: Extract standard fields from metadata to top-level
+          const metadataObj = (metadata || {}) as VerbMetadata
+          const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
           const verbWithMetadata: HNSWVerbWithMetadata = {
             id: hnswVerb.id,
             vector: [...hnswVerb.vector],
@@ -514,7 +529,14 @@ export class TypeAwareStorageAdapter extends BaseStorage {
             verb: hnswVerb.verb,
             sourceId: hnswVerb.sourceId,
             targetId: hnswVerb.targetId,
-            metadata: metadata || {} // Empty metadata if none exists
+            createdAt: (createdAt as number) || Date.now(),
+            updatedAt: (updatedAt as number) || Date.now(),
+            confidence: confidence as number | undefined,
+            weight: weight as number | undefined,
+            service: service as string | undefined,
+            data: data as Record<string, any> | undefined,
+            createdBy,
+            metadata: customMetadata
           }
 
           verbs.push(verbWithMetadata)
@@ -560,6 +582,10 @@ export class TypeAwareStorageAdapter extends BaseStorage {
           }
         }
 
+        // v4.8.0: Extract standard fields from metadata to top-level
+        const metadataObj = (metadata || {}) as VerbMetadata
+        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+
         const verbWithMetadata: HNSWVerbWithMetadata = {
           id: hnswVerb.id,
           vector: [...hnswVerb.vector],
@@ -567,7 +593,14 @@ export class TypeAwareStorageAdapter extends BaseStorage {
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
-          metadata: metadata || {} // Empty metadata if none exists
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          metadata: customMetadata
         }
 
         verbs.push(verbWithMetadata)
