@@ -1642,14 +1642,39 @@ export class AzureBlobStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
+      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
       const shard = getShardIdFromUuid(nounId)
       const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-
       const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
-      const content = JSON.stringify(hnswData, null, 2)
-      await blockBlobClient.upload(content, content.length, {
-        blobHTTPHeaders: { blobContentType: 'application/json' }
-      })
+
+      try {
+        // Read existing node data
+        const downloadResponse = await blockBlobClient.download(0)
+        const existingData = await this.streamToBuffer(downloadResponse.readableStreamBody!)
+        const existingNode = JSON.parse(existingData.toString())
+
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
+
+        const content = JSON.stringify(updatedNode, null, 2)
+        await blockBlobClient.upload(content, content.length, {
+          blobHTTPHeaders: { blobContentType: 'application/json' }
+        })
+      } catch (error: any) {
+        // If node doesn't exist yet, create it with just HNSW data
+        if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+          const content = JSON.stringify(hnswData, null, 2)
+          await blockBlobClient.upload(content, content.length, {
+            blobHTTPHeaders: { blobContentType: 'application/json' }
+          })
+        } else {
+          throw error
+        }
+      }
     } catch (error) {
       this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
       throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)

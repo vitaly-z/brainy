@@ -2579,13 +2579,36 @@ export class FileSystemStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    // Use sharded path for HNSW data
-    const shard = nounId.substring(0, 2).toLowerCase()
-    const hnswDir = path.join(this.rootDir, 'entities', 'nouns', 'hnsw', shard)
-    await this.ensureDirectoryExists(hnswDir)
+    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+    // Previous implementation overwrote the entire file, destroying vector data
+    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
 
-    const filePath = path.join(hnswDir, `${nounId}.json`)
-    await fs.promises.writeFile(filePath, JSON.stringify(hnswData, null, 2))
+    const filePath = this.getNodePath(nounId)
+
+    try {
+      // Read existing node data
+      const existingData = await fs.promises.readFile(filePath, 'utf-8')
+      const existingNode = JSON.parse(existingData)
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNode = {
+        ...existingNode,  // Preserve all existing fields (id, vector, etc.)
+        level: hnswData.level,
+        connections: hnswData.connections
+      }
+
+      // Write back the COMPLETE node with updated HNSW data
+      await fs.promises.writeFile(filePath, JSON.stringify(updatedNode, null, 2))
+    } catch (error: any) {
+      // If node doesn't exist yet, create it with just HNSW data
+      // This should only happen during initial node creation
+      if (error.code === 'ENOENT') {
+        await this.ensureDirectoryExists(path.dirname(filePath))
+        await fs.promises.writeFile(filePath, JSON.stringify(hnswData, null, 2))
+      } else {
+        throw error
+      }
+    }
   }
 
   /**

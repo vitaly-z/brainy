@@ -2016,20 +2016,34 @@ export class OPFSStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Get or create the hnsw directory under nouns
+      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
       const hnswDir = await this.nounsDir!.getDirectoryHandle('hnsw', { create: true })
-
-      // Use sharded path for HNSW data
       const shard = getShardIdFromUuid(nounId)
       const shardDir = await hnswDir.getDirectoryHandle(shard, { create: true })
-
-      // Create or get the file in the shard directory
       const fileHandle = await shardDir.getFileHandle(`${nounId}.json`, { create: true })
 
-      // Write the HNSW data to the file
-      const writable = await fileHandle.createWritable()
-      await writable.write(JSON.stringify(hnswData, null, 2))
-      await writable.close()
+      try {
+        // Read existing node data
+        const file = await fileHandle.getFile()
+        const existingData = await file.text()
+        const existingNode = JSON.parse(existingData)
+
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
+
+        const writable = await fileHandle.createWritable()
+        await writable.write(JSON.stringify(updatedNode, null, 2))
+        await writable.close()
+      } catch (error) {
+        // If node doesn't exist or read fails, create with just HNSW data
+        const writable = await fileHandle.createWritable()
+        await writable.write(JSON.stringify(hnswData, null, 2))
+        await writable.close()
+      }
     } catch (error) {
       console.error(`Failed to save HNSW data for ${nounId}:`, error)
       throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)

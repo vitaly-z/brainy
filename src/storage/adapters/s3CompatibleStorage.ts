@@ -3907,20 +3907,53 @@ export class S3CompatibleStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const { PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3')
 
-      // Use sharded path for HNSW data
+      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
       const shard = getShardIdFromUuid(nounId)
       const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
 
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: key,
-          Body: JSON.stringify(hnswData, null, 2),
-          ContentType: 'application/json'
-        })
-      )
+      try {
+        // Read existing node data
+        const getResponse = await this.s3Client!.send(
+          new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: key
+          })
+        )
+        const existingData = await getResponse.Body!.transformToString()
+        const existingNode = JSON.parse(existingData)
+
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
+
+        await this.s3Client!.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+            Body: JSON.stringify(updatedNode, null, 2),
+            ContentType: 'application/json'
+          })
+        )
+      } catch (error: any) {
+        // If node doesn't exist yet, create it with just HNSW data
+        if (error.name === 'NoSuchKey' || error.Code === 'NoSuchKey') {
+          await this.s3Client!.send(
+            new PutObjectCommand({
+              Bucket: this.bucketName,
+              Key: key,
+              Body: JSON.stringify(hnswData, null, 2),
+              ContentType: 'application/json'
+            })
+          )
+        } else {
+          throw error
+        }
+      }
     } catch (error) {
       this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
       throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)

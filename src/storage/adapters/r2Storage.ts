@@ -1002,10 +1002,30 @@ export class R2Storage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
+    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
     const shard = getShardIdFromUuid(nounId)
     const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
 
-    await this.writeObjectToPath(key, hnswData)
+    try {
+      // Read existing node data
+      const existingNode = await this.readObjectFromPath(key)
+
+      if (existingNode) {
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
+        await this.writeObjectToPath(key, updatedNode)
+      } else {
+        // Node doesn't exist yet, create with just HNSW data
+        await this.writeObjectToPath(key, hnswData)
+      }
+    } catch (error) {
+      // If read fails, create with just HNSW data
+      await this.writeObjectToPath(key, hnswData)
+    }
   }
 
   public async getHNSWData(nounId: string): Promise<{

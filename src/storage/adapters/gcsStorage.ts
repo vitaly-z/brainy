@@ -1867,15 +1867,43 @@ export class GcsStorage extends BaseStorage {
     await this.ensureInitialized()
 
     try {
-      // Use sharded path for HNSW data
+      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+      // Previous implementation overwrote the entire file, destroying vector data
+      // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+
       const shard = getShardIdFromUuid(nounId)
       const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-
       const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(hnswData, null, 2), {
-        contentType: 'application/json',
-        resumable: false
-      })
+
+      try {
+        // Read existing node data
+        const [existingData] = await file.download()
+        const existingNode = JSON.parse(existingData.toString())
+
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
+
+        // Write back the COMPLETE node with updated HNSW data
+        await file.save(JSON.stringify(updatedNode, null, 2), {
+          contentType: 'application/json',
+          resumable: false
+        })
+      } catch (error: any) {
+        // If node doesn't exist yet, create it with just HNSW data
+        // This should only happen during initial node creation
+        if (error.code === 404) {
+          await file.save(JSON.stringify(hnswData, null, 2), {
+            contentType: 'application/json',
+            resumable: false
+          })
+        } else {
+          throw error
+        }
+      }
     } catch (error) {
       this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
       throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
