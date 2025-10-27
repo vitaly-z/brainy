@@ -15,16 +15,9 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
-  NOUNS_DIR,
-  VERBS_DIR,
-  METADATA_DIR,
-  NOUN_METADATA_DIR,
-  VERB_METADATA_DIR,
-  INDEX_DIR,
   SYSTEM_DIR,
   STATISTICS_KEY
 } from '../baseStorage.js'
-import { StorageCompatibilityLayer, StoragePaths } from '../backwardCompatibility.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -84,9 +77,8 @@ export class FileSystemStorage extends BaseStorage {
   private nounMetadataDir!: string
   private verbMetadataDir!: string
   private indexDir!: string  // Legacy - for backward compatibility
-  private systemDir!: string  // New location for system data
+  private systemDir!: string
   private lockDir!: string
-  private useDualWrite: boolean = true  // Write to both locations during migration
   private activeLocks: Set<string> = new Set()
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
@@ -149,13 +141,14 @@ export class FileSystemStorage extends BaseStorage {
 
     try {
       // Initialize directory paths now that path module is loaded
-      this.nounsDir = path.join(this.rootDir, NOUNS_DIR)
-      this.verbsDir = path.join(this.rootDir, VERBS_DIR)
-      this.metadataDir = path.join(this.rootDir, METADATA_DIR)
-      this.nounMetadataDir = path.join(this.rootDir, NOUN_METADATA_DIR)
-      this.verbMetadataDir = path.join(this.rootDir, VERB_METADATA_DIR)
-      this.indexDir = path.join(this.rootDir, INDEX_DIR)  // Legacy
-      this.systemDir = path.join(this.rootDir, SYSTEM_DIR)  // New
+      // Clean directory structure (v4.7.2+)
+      this.nounsDir = path.join(this.rootDir, 'entities/nouns/hnsw')
+      this.verbsDir = path.join(this.rootDir, 'entities/verbs/hnsw')
+      this.metadataDir = path.join(this.rootDir, 'entities/nouns/metadata')  // Legacy reference
+      this.nounMetadataDir = path.join(this.rootDir, 'entities/nouns/metadata')
+      this.verbMetadataDir = path.join(this.rootDir, 'entities/verbs/metadata')
+      this.indexDir = path.join(this.rootDir, 'indexes')
+      this.systemDir = path.join(this.rootDir, SYSTEM_DIR)
       this.lockDir = path.join(this.rootDir, 'locks')
 
       // Create the root directory if it doesn't exist
@@ -1642,7 +1635,7 @@ export class FileSystemStorage extends BaseStorage {
 
     try {
       // Get existing statistics to merge with new data
-      const existingStats = await this.getStatisticsWithBackwardCompat()
+      const existingStats = await this.getStatisticsData()
 
       if (existingStats) {
         // Merge statistics data
@@ -1686,140 +1679,25 @@ export class FileSystemStorage extends BaseStorage {
    * Get statistics data from storage
    */
   protected async getStatisticsData(): Promise<StatisticsData | null> {
-    return this.getStatisticsWithBackwardCompat()
-  }
-
-  /**
-   * Save statistics with backward compatibility (dual write)
-   */
-  private async saveStatisticsWithBackwardCompat(statistics: StatisticsData): Promise<void> {
-    // Always write to new location
-    const newPath = path.join(this.systemDir, `${STATISTICS_KEY}.json`)
-    await this.ensureDirectoryExists(this.systemDir)
-    await fs.promises.writeFile(newPath, JSON.stringify(statistics, null, 2))
-    
-    // During migration period, also write to old location if it exists
-    if (this.useDualWrite && await this.directoryExists(this.indexDir)) {
-      const oldPath = path.join(this.indexDir, `${STATISTICS_KEY}.json`)
-      try {
-        await fs.promises.writeFile(oldPath, JSON.stringify(statistics, null, 2))
-      } catch (error) {
-        // Log but don't fail if old location write fails
-        StorageCompatibilityLayer.logMigrationEvent(
-          'Failed to write to legacy location',
-          { path: oldPath, error }
-        )
-      }
-    }
-  }
-
-  /**
-   * Get statistics with backward compatibility (dual read)
-   */
-  private async getStatisticsWithBackwardCompat(): Promise<StatisticsData | null> {
-    let newStats: StatisticsData | null = null
-    let oldStats: StatisticsData | null = null
-    
-    // Try to read from new location first
     try {
-      const newPath = path.join(this.systemDir, `${STATISTICS_KEY}.json`)
-      const data = await fs.promises.readFile(newPath, 'utf-8')
-      newStats = JSON.parse(data)
+      const statsPath = path.join(this.systemDir, `${STATISTICS_KEY}.json`)
+      const data = await fs.promises.readFile(statsPath, 'utf-8')
+      return JSON.parse(data)
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
-        console.error('Error reading statistics from new location:', error)
+        console.error('Error reading statistics:', error)
       }
+      return null
     }
-    
-    // Try to read from old location as fallback
-    if (!newStats && await this.directoryExists(this.indexDir)) {
-      try {
-        const oldPath = path.join(this.indexDir, `${STATISTICS_KEY}.json`)
-        const data = await fs.promises.readFile(oldPath, 'utf-8')
-        oldStats = JSON.parse(data)
-        
-        // If we found data in old location but not new, migrate it
-        if (oldStats && !newStats) {
-          StorageCompatibilityLayer.logMigrationEvent(
-            'Migrating statistics from legacy location'
-          )
-          await this.saveStatisticsWithBackwardCompat(oldStats)
-        }
-      } catch (error: any) {
-        if (error.code !== 'ENOENT') {
-          console.error('Error reading statistics from old location:', error)
-        }
-      }
-    }
-    
-    // Merge statistics from both locations
-    return this.mergeStatistics(newStats, oldStats)
   }
 
   /**
-   * Merge statistics from multiple sources
+   * Save statistics to storage
    */
-  private mergeStatistics(
-    storageStats: StatisticsData | null,
-    localStats: StatisticsData | null
-  ): StatisticsData {
-    // Handle null cases
-    if (!storageStats && !localStats) {
-      // CRITICAL FIX (v3.37.4): Statistics files don't exist yet (first init)
-      // Return minimal stats with counts instead of zeros
-      // This prevents HNSW from seeing entityCount=0 during index rebuild
-      return {
-        nounCount: {},
-        verbCount: {},
-        metadataCount: {},
-        hnswIndexSize: 0,
-        totalNodes: this.totalNounCount,
-        totalEdges: this.totalVerbCount,
-        totalMetadata: 0,
-        lastUpdated: new Date().toISOString()
-      }
-    }
-    if (!storageStats) return localStats!
-    if (!localStats) return storageStats
-
-    // Merge noun counts by taking the maximum of each type
-    const mergedNounCount: Record<string, number> = {
-      ...storageStats.nounCount
-    }
-    for (const [type, count] of Object.entries(localStats.nounCount)) {
-      mergedNounCount[type] = Math.max(mergedNounCount[type] || 0, count)
-    }
-
-    // Merge verb counts by taking the maximum of each type
-    const mergedVerbCount: Record<string, number> = {
-      ...storageStats.verbCount
-    }
-    for (const [type, count] of Object.entries(localStats.verbCount)) {
-      mergedVerbCount[type] = Math.max(mergedVerbCount[type] || 0, count)
-    }
-
-    // Merge metadata counts by taking the maximum of each type
-    const mergedMetadataCount: Record<string, number> = {
-      ...storageStats.metadataCount
-    }
-    for (const [type, count] of Object.entries(localStats.metadataCount)) {
-      mergedMetadataCount[type] = Math.max(
-        mergedMetadataCount[type] || 0,
-        count
-      )
-    }
-
-    return {
-      nounCount: mergedNounCount,
-      verbCount: mergedVerbCount,
-      metadataCount: mergedMetadataCount,
-      hnswIndexSize: Math.max(storageStats.hnswIndexSize || 0, localStats.hnswIndexSize || 0),
-      totalNodes: Math.max(storageStats.totalNodes || 0, localStats.totalNodes || 0),
-      totalEdges: Math.max(storageStats.totalEdges || 0, localStats.totalEdges || 0),
-      totalMetadata: Math.max(storageStats.totalMetadata || 0, localStats.totalMetadata || 0),
-      operations: storageStats.operations || localStats.operations,
-      lastUpdated: new Date().toISOString()
-    }
+  private async saveStatisticsWithBackwardCompat(statistics: StatisticsData): Promise<void> {
+    const statsPath = path.join(this.systemDir, `${STATISTICS_KEY}.json`)
+    await this.ensureDirectoryExists(this.systemDir)
+    await fs.promises.writeFile(statsPath, JSON.stringify(statistics, null, 2))
   }
 
   // =============================================

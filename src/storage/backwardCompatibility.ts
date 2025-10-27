@@ -1,17 +1,15 @@
 /**
- * Storage backward compatibility layer for legacy data migrations
+ * DEPRECATED (v4.7.2): Backward compatibility stubs
+ * TODO: Remove in v4.7.3 after migrating s3CompatibleStorage
  */
 
 export class StorageCompatibilityLayer {
   static logMigrationEvent(event: string, details?: any): void {
-    // Simplified logging for migration events
-    if (process.env.DEBUG_MIGRATION) {
-      console.log(`[Migration] ${event}`, details)
-    }
+    // No-op
   }
-  
+
   static async migrateIfNeeded(storagePath: string): Promise<void> {
-    // No-op for now - can be extended later if needed
+    // No-op
   }
 }
 
@@ -24,14 +22,13 @@ export interface StoragePaths {
   statistics: string
 }
 
-// Helper to get default paths
 export function getDefaultStoragePaths(basePath: string): StoragePaths {
   return {
-    nouns: `${basePath}/nouns`,
-    verbs: `${basePath}/verbs`, 
-    metadata: `${basePath}/metadata`,
-    index: `${basePath}/index`,
-    system: `${basePath}/system`,
-    statistics: `${basePath}/statistics.json`
+    nouns: `${basePath}/entities/nouns/hnsw`,
+    verbs: `${basePath}/entities/verbs/hnsw`,
+    metadata: `${basePath}/entities/nouns/metadata`,
+    index: `${basePath}/indexes`,
+    system: `${basePath}/_system`,
+    statistics: `${basePath}/_system/statistics.json`
   }
 }

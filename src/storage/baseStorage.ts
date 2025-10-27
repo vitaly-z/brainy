@@ -32,50 +32,26 @@ interface StorageKeyInfo {
   fullPath: string
 }
 
-// Common directory/prefix names
-// Option A: Entity-Based Directory Structure
-export const ENTITIES_DIR = 'entities'
-export const NOUNS_VECTOR_DIR = 'entities/nouns/vectors'
+// Clean directory structure (v4.7.2+)
+// All storage adapters use this consistent structure
 export const NOUNS_METADATA_DIR = 'entities/nouns/metadata'
-export const VERBS_VECTOR_DIR = 'entities/verbs/vectors'
 export const VERBS_METADATA_DIR = 'entities/verbs/metadata'
-export const INDEXES_DIR = 'indexes'
-export const METADATA_INDEX_DIR = 'indexes/metadata'
-
-// Legacy paths - kept for backward compatibility during migration
-export const NOUNS_DIR = 'nouns'  // Legacy: now maps to entities/nouns/vectors
-export const VERBS_DIR = 'verbs'  // Legacy: now maps to entities/verbs/vectors
-export const METADATA_DIR = 'metadata'  // Legacy: now maps to entities/nouns/metadata
-export const NOUN_METADATA_DIR = 'noun-metadata'  // Legacy: now maps to entities/nouns/metadata
-export const VERB_METADATA_DIR = 'verb-metadata'  // Legacy: now maps to entities/verbs/metadata
-export const INDEX_DIR = 'index'  // Legacy - kept for backward compatibility
-export const SYSTEM_DIR = '_system'  // System config & metadata indexes
+export const SYSTEM_DIR = '_system'
 export const STATISTICS_KEY = 'statistics'
 
-// Migration version to track compatibility
-export const STORAGE_SCHEMA_VERSION = 3  // v3: Entity-Based Directory Structure (Option A)
-
-// Configuration flag to enable new directory structure
-export const USE_ENTITY_BASED_STRUCTURE = true  // Set to true to use Option A structure
-
-/**
- * Get the appropriate directory path based on configuration
- */
+// DEPRECATED (v4.7.2): Temporary stubs for adapters not yet migrated
+// TODO: Remove in v4.7.3 after migrating remaining adapters
+export const NOUNS_DIR = 'entities/nouns/hnsw'
+export const VERBS_DIR = 'entities/verbs/hnsw'
+export const METADATA_DIR = 'entities/nouns/metadata'
+export const NOUN_METADATA_DIR = 'entities/nouns/metadata'
+export const VERB_METADATA_DIR = 'entities/verbs/metadata'
+export const INDEX_DIR = 'indexes'
 export function getDirectoryPath(entityType: 'noun' | 'verb', dataType: 'vector' | 'metadata'): string {
-  if (USE_ENTITY_BASED_STRUCTURE) {
-    // Option A: Entity-Based Structure
-    if (entityType === 'noun') {
-      return dataType === 'vector' ? NOUNS_VECTOR_DIR : NOUNS_METADATA_DIR
-    } else {
-      return dataType === 'vector' ? VERBS_VECTOR_DIR : VERBS_METADATA_DIR  
-    }
+  if (entityType === 'noun') {
+    return dataType === 'vector' ? NOUNS_DIR : NOUNS_METADATA_DIR
   } else {
-    // Legacy structure
-    if (entityType === 'noun') {
-      return dataType === 'vector' ? NOUNS_DIR : METADATA_DIR
-    } else {
-      return dataType === 'vector' ? VERBS_DIR : VERB_METADATA_DIR
-    }
+    return dataType === 'vector' ? VERBS_DIR : VERBS_METADATA_DIR
   }
 }
 
