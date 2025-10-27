@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.7.3](https://github.com/soulcraftlabs/brainy/compare/v4.7.2...v4.7.3) (2025-10-27)
+
+- fix(storage): CRITICAL - preserve vectors when updating HNSW connections (v4.7.3) (46e7482)
+
+
 ### [4.4.0](https://github.com/soulcraftlabs/brainy/compare/v4.3.2...v4.4.0) (2025-10-24)
 
 - docs: update CHANGELOG for v4.4.0 release (a3c8a28)
