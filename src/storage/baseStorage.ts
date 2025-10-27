@@ -631,6 +631,46 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Optimize for common filter cases to avoid loading all verbs
     if (options?.filter) {
+      // CRITICAL VFS FIX: If filtering by sourceId + verbType (most common VFS pattern!)
+      // This is the query PathResolver.getChildren() uses: getRelations({ from: dirId, type: VerbType.Contains })
+      if (
+        options.filter.sourceId &&
+        options.filter.verbType &&
+        !options.filter.targetId &&
+        !options.filter.service &&
+        !options.filter.metadata
+      ) {
+        const sourceId = Array.isArray(options.filter.sourceId)
+          ? options.filter.sourceId[0]
+          : options.filter.sourceId
+
+        const verbType = Array.isArray(options.filter.verbType)
+          ? options.filter.verbType[0]
+          : options.filter.verbType
+
+        // Get verbs by source, then filter by type (O(1) graph lookup + O(n) type filter)
+        const verbsBySource = await this.getVerbsBySource_internal(sourceId)
+        const filteredVerbs = verbsBySource.filter(v => v.verb === verbType)
+
+        // Apply pagination
+        const paginatedVerbs = filteredVerbs.slice(offset, offset + limit)
+        const hasMore = offset + limit < filteredVerbs.length
+
+        // Set next cursor if there are more items
+        let nextCursor: string | undefined = undefined
+        if (hasMore && paginatedVerbs.length > 0) {
+          const lastItem = paginatedVerbs[paginatedVerbs.length - 1]
+          nextCursor = lastItem.id
+        }
+
+        return {
+          items: paginatedVerbs,
+          totalCount: filteredVerbs.length,
+          hasMore,
+          nextCursor
+        }
+      }
+
       // If filtering by sourceId only, use the optimized method
       if (
         options.filter.sourceId &&
