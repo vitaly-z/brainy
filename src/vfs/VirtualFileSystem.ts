@@ -177,10 +177,11 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         console.warn(`⚠️  Found ${existing.length} root entities! Using first one, consider cleanup.`)
 
         // Sort by creation time - use oldest root (most likely to have children)
-        // v4.5.2: FIX - createdAt is at entity level, not metadata level!
+        // v4.5.3: FIX - createdAt is in entity object, not at Result level!
+        // brain.find() returns Result[], which has entity.createdAt, not top-level createdAt
         existing.sort((a, b) => {
-          const aTime = (a as any).createdAt || a.metadata?.modified || 0
-          const bTime = (b as any).createdAt || b.metadata?.modified || 0
+          const aTime = a.entity?.createdAt || a.metadata?.modified || 0
+          const bTime = b.entity?.createdAt || b.metadata?.modified || 0
           return aTime - bTime
         })
       }
