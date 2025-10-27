@@ -570,37 +570,26 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * - metadata contains ONLY custom user fields
    */
   private async convertNounToEntity(noun: any): Promise<Entity<T>> {
-    // Extract ALL standard fields and user metadata
-    const {
-      noun: nounType,
-      service,
-      createdAt,
-      updatedAt,
-      data: _data,
-      confidence,
-      weight,
-      createdBy,
-      // Everything else is custom user metadata
-      ...customMetadata
-    } = noun.metadata || {}
+    // v4.8.0: Storage adapters ALREADY extract standard fields to top-level!
+    // Just read from top-level fields of HNSWNounWithMetadata
 
     // v4.8.0: Clean structure with standard fields at top-level
     const entity: Entity<T> = {
       id: noun.id,
       vector: noun.vector,
-      type: (nounType as NounType) || NounType.Thing,
+      type: noun.type || NounType.Thing,
 
       // Standard fields at top-level (v4.8.0)
-      confidence: confidence as number | undefined,
-      weight: weight as number | undefined,
-      createdAt: (createdAt as number) || Date.now(),
-      updatedAt: (updatedAt as number) || Date.now(),
-      service: service as string | undefined,
-      data: _data,
-      createdBy,
+      confidence: noun.confidence,
+      weight: noun.weight,
+      createdAt: noun.createdAt || Date.now(),
+      updatedAt: noun.updatedAt || Date.now(),
+      service: noun.service,
+      data: noun.data,
+      createdBy: noun.createdBy,
 
-      // ONLY custom user fields in metadata
-      metadata: customMetadata as T
+      // ONLY custom user fields in metadata (v4.8.0: already separated by storage adapter)
+      metadata: noun.metadata as T
     }
 
     return entity
