@@ -227,8 +227,25 @@ export class SmartExcelImporter {
       return this.emptyResult(startTime)
     }
 
-    // Detect column names
-    const columns = this.detectColumns(rows[0], opts)
+    // CRITICAL FIX (v4.8.6): Detect columns per-sheet, not globally
+    // Different sheets may have different column structures (Term vs Name, etc.)
+    // Group rows by sheet and detect columns for each sheet separately
+    const rowsBySheet = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const sheet = row._sheet || 'default'
+      if (!rowsBySheet.has(sheet)) {
+        rowsBySheet.set(sheet, [])
+      }
+      rowsBySheet.get(sheet)!.push(row)
+    }
+
+    // Detect columns for each sheet
+    const columnsBySheet = new Map<string, ReturnType<typeof this.detectColumns>>()
+    for (const [sheet, sheetRows] of rowsBySheet) {
+      if (sheetRows.length > 0) {
+        columnsBySheet.set(sheet, this.detectColumns(sheetRows[0], opts))
+      }
+    }
 
     // Process each row with BATCHED PARALLEL PROCESSING (v3.38.0)
     const extractedRows: ExtractedRow[] = []
@@ -251,6 +268,10 @@ export class SmartExcelImporter {
       const chunkResults = await Promise.all(
         chunk.map(async (row, chunkIndex) => {
           const i = chunkStart + chunkIndex
+
+          // CRITICAL FIX (v4.8.6): Use sheet-specific column mapping
+          const sheet = row._sheet || 'default'
+          const columns = columnsBySheet.get(sheet) || this.detectColumns(row, opts)
 
           // Extract data from row
           const term = this.getColumnValue(row, columns.term) || `Entity_${i}`

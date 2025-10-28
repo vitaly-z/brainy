@@ -846,20 +846,6 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Get children
     let children = await this.pathResolver.getChildren(entityId)
-    console.log(`[DEBUG VFS] readdir(${path}): Found ${children.length} children`)
-
-    // Debug first child
-    if (children.length > 0) {
-      const firstChild = children[0]
-      console.log(`[DEBUG VFS] First child structure:`, {
-        id: firstChild.id,
-        type: firstChild.type,
-        metadataKeys: Object.keys(firstChild.metadata || {}),
-        metadata_name: firstChild.metadata?.name,
-        metadata_path: firstChild.metadata?.path,
-        metadata_vfsType: firstChild.metadata?.vfsType
-      })
-    }
 
     // Apply filters
     if (options?.filter) {
@@ -884,17 +870,12 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Return appropriate format
     if (options?.withFileTypes) {
-      const result = children.map(child => ({
+      return children.map(child => ({
         name: child.metadata.name,
         path: child.metadata.path,
         type: child.metadata.vfsType,
         entityId: child.id
       } as VFSDirent))
-      console.log(`[DEBUG VFS] Returning ${result.length} VFSDirent items`)
-      if (result.length > 0) {
-        console.log(`[DEBUG VFS] First VFSDirent:`, result[0])
-      }
-      return result
     }
 
     return children.map(child => child.metadata.name)

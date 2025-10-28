@@ -573,14 +573,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // v4.8.0: Storage adapters ALREADY extract standard fields to top-level!
     // Just read from top-level fields of HNSWNounWithMetadata
 
-    console.log(`[DEBUG convertNounToEntity] Converting noun ${noun.id}:`, {
-      nounMetadataKeys: noun.metadata ? Object.keys(noun.metadata) : [],
-      nounType: noun.type,
-      hasName: !!noun.metadata?.name,
-      hasPath: !!noun.metadata?.path,
-      hasVfsType: !!noun.metadata?.vfsType
-    })
-
     // v4.8.0: Clean structure with standard fields at top-level
     const entity: Entity<T> = {
       id: noun.id,
@@ -599,13 +591,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // ONLY custom user fields in metadata (v4.8.0: already separated by storage adapter)
       metadata: noun.metadata as T
     }
-
-    console.log(`[DEBUG convertNounToEntity] Converted entity metadata:`, {
-      entityMetadataKeys: entity.metadata ? Object.keys(entity.metadata as any) : [],
-      metadata_name: (entity.metadata as any)?.name,
-      metadata_path: (entity.metadata as any)?.path,
-      metadata_vfsType: (entity.metadata as any)?.vfsType
-    })
 
     return entity
   }
