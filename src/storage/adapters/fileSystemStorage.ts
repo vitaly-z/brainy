@@ -1272,6 +1272,7 @@ export class FileSystemStorage extends BaseStorage {
     sourceId: string
   ): Promise<HNSWVerbWithMetadata[]> {
     console.log(`[DEBUG] getVerbsBySource_internal called for sourceId: ${sourceId}`)
+    console.log(`[DEBUG] verbsDir: ${this.verbsDir}`)
 
     // Use the working pagination method with source filter
     const result = await this.getVerbsWithPagination({
@@ -1280,6 +1281,7 @@ export class FileSystemStorage extends BaseStorage {
     })
 
     console.log(`[DEBUG] Found ${result.items.length} verbs for source ${sourceId}`)
+    console.log(`[DEBUG] Total verb files found: ${result.totalCount}`)
     return result.items
   }
 
@@ -1345,11 +1347,13 @@ export class FileSystemStorage extends BaseStorage {
     try {
       // Get actual verb files first (critical for accuracy)
       const verbFiles = await this.getAllShardedFiles(this.verbsDir)
+      console.log(`[DEBUG] getAllShardedFiles returned ${verbFiles.length} files from ${this.verbsDir}`)
       verbFiles.sort() // Consistent ordering for pagination
 
       // Use actual file count - don't trust cached totalVerbCount
       // This prevents accessing undefined array elements
       const actualFileCount = verbFiles.length
+      console.log(`[DEBUG] actualFileCount: ${actualFileCount}, startIndex: ${startIndex}, limit: ${limit}`)
 
       // For large datasets, warn about performance
       if (actualFileCount > 1000000) {
@@ -1436,7 +1440,12 @@ export class FileSystemStorage extends BaseStorage {
             // Check sourceId filter
             if (filter.sourceId) {
               const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-              if (!sources.includes(verbWithMetadata.sourceId)) continue
+              console.log(`[DEBUG] Checking verb ${verbWithMetadata.id}: sourceId=${verbWithMetadata.sourceId}, filter=${JSON.stringify(sources)}`)
+              if (!sources.includes(verbWithMetadata.sourceId)) {
+                console.log(`[DEBUG] Verb ${verbWithMetadata.id} filtered out (sourceId mismatch)`)
+                continue
+              }
+              console.log(`[DEBUG] Verb ${verbWithMetadata.id} MATCHES source filter!`)
             }
 
             // Check targetId filter
