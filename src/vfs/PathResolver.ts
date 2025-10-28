@@ -230,6 +230,7 @@ export class PathResolver {
       from: dirId,
       type: VerbType.Contains
     })
+    console.log(`[DEBUG PathResolver] getChildren(${dirId}): Found ${relations.length} Contains relations`)
 
     const validChildren: VFSEntity[]= []
     const childNames = new Set<string>()
@@ -237,12 +238,24 @@ export class PathResolver {
     // Fetch all child entities via relationships
     for (const relation of relations) {
       const entity = await this.brain.get(relation.to)
+      console.log(`[DEBUG PathResolver] Retrieved entity ${relation.to}:`, {
+        exists: !!entity,
+        type: entity?.type,
+        hasMetadata: !!entity?.metadata,
+        metadataKeys: entity?.metadata ? Object.keys(entity.metadata) : [],
+        metadata_vfsType: entity?.metadata?.vfsType,
+        metadata_name: entity?.metadata?.name
+      })
+
       if (entity && entity.metadata?.vfsType && entity.metadata?.name) {
         validChildren.push(entity as VFSEntity)
         childNames.add(entity.metadata.name)
+      } else {
+        console.log(`[DEBUG PathResolver] ❌ FILTERED OUT entity ${relation.to} - missing vfsType or name`)
       }
     }
 
+    console.log(`[DEBUG PathResolver] Returning ${validChildren.length} valid children (filtered from ${relations.length})`)
     // Update cache
     this.parentCache.set(dirId, childNames)
     return validChildren
