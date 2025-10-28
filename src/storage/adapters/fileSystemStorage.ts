@@ -1388,11 +1388,9 @@ export class FileSystemStorage extends BaseStorage {
           // Get metadata which contains the actual verb information
           const metadata = await this.getVerbMetadata(id)
 
-          // v4.0.0: No fallbacks - skip verbs without metadata
-          if (!metadata) {
-            console.warn(`Verb ${id} has no metadata, skipping`)
-            continue
-          }
+          // v4.8.1: Don't skip verbs without metadata - metadata is optional
+          // FIX: This was the root cause of the VFS bug (11 versions)
+          // Verbs can exist without metadata files (e.g., from imports/migrations)
 
           // Convert connections Map to proper format if needed
           let connections = edge.connections
@@ -1405,7 +1403,7 @@ export class FileSystemStorage extends BaseStorage {
           }
 
           // v4.8.0: Extract standard fields from metadata to top-level
-          const metadataObj = metadata as VerbMetadata
+          const metadataObj = (metadata || {}) as VerbMetadata
           const { createdAt, updatedAt, confidence, weight, service, data: dataField, createdBy, ...customMetadata } = metadataObj
 
           const verbWithMetadata: HNSWVerbWithMetadata = {
@@ -2426,11 +2424,9 @@ export class FileSystemStorage extends BaseStorage {
             const edge = JSON.parse(data)
             const metadata = await this.getVerbMetadata(id)
 
-            // v4.0.0: No fallbacks - skip verbs without metadata
-            if (!metadata) {
-              processedCount++
-              return true // continue, skip this verb
-            }
+            // v4.8.1: Don't skip verbs without metadata - metadata is optional
+            // FIX: This was the root cause of the VFS bug (11 versions)
+            // Verbs can exist without metadata files (e.g., from imports/migrations)
 
             // Convert connections if needed
             let connections = edge.connections
@@ -2443,7 +2439,7 @@ export class FileSystemStorage extends BaseStorage {
             }
 
             // v4.8.0: Extract standard fields from metadata to top-level
-            const metadataObj = metadata as VerbMetadata
+            const metadataObj = (metadata || {}) as VerbMetadata
             const { createdAt, updatedAt, confidence, weight, service, data: dataField, createdBy, ...customMetadata } = metadataObj
 
             const verbWithMetadata: HNSWVerbWithMetadata = {

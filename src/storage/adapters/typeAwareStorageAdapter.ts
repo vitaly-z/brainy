@@ -415,138 +415,29 @@ export class TypeAwareStorageAdapter extends BaseStorage {
    * Get verbs by source
    */
   protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Need to search across all verb types
-    // TODO: Optimize with metadata index in Phase 1b
-    const verbs: HNSWVerbWithMetadata[] = []
+    // v4.8.1 PERFORMANCE FIX: Delegate to underlying storage instead of scanning all files
+    // Previous implementation was O(total_verbs) - scanned ALL 40 verb types and ALL verb files
+    // This was the root cause of the 11-version VFS bug (timeouts/zero results)
+    //
+    // Underlying storage adapters have optimized implementations:
+    // - FileSystemStorage: Uses getVerbsWithPagination with sourceId filter
+    // - GcsStorage: Uses batch queries with prefix filtering
+    // - S3Storage: Uses listObjects with sourceId-based filtering
+    //
+    // Phase 1b TODO: Add graph adjacency index query for O(1) lookups:
+    // const verbIds = await this.graphIndex?.getOutgoingEdges(sourceId) || []
+    // return Promise.all(verbIds.map(id => this.getVerb(id)))
 
-    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
-      const type = TypeUtils.getVerbFromIndex(i)
-      const prefix = `entities/verbs/${type}/vectors/`
-      const paths = await this.u.listObjectsUnderPath(prefix)
-
-      for (const path of paths) {
-        try {
-          const id = path.split('/').pop()?.replace('.json', '')
-          if (!id) continue
-
-          // Load the HNSWVerb
-          const hnswVerb = await this.u.readObjectFromPath(path)
-          if (!hnswVerb) continue
-
-          // Check sourceId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
-          if (hnswVerb.sourceId !== sourceId) continue
-
-          // Load metadata separately (optional in v4.0.0!)
-          // FIX: Don't skip verbs without metadata - metadata is optional!
-          // VFS relationships often have NO metadata (just verb/source/target)
-          const metadata = await this.getVerbMetadata(id)
-
-          // Create HNSWVerbWithMetadata (verbs don't have level field)
-          // Convert connections from plain object to Map<number, Set<string>>
-          const connectionsMap = new Map<number, Set<string>>()
-          if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
-            for (const [level, ids] of Object.entries(hnswVerb.connections)) {
-              connectionsMap.set(Number(level), new Set(ids as string[]))
-            }
-          }
-
-          // v4.8.0: Extract standard fields from metadata to top-level
-          const metadataObj = (metadata || {}) as VerbMetadata
-          const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-          const verbWithMetadata: HNSWVerbWithMetadata = {
-            id: hnswVerb.id,
-            vector: [...hnswVerb.vector],
-            connections: connectionsMap,
-            verb: hnswVerb.verb,
-            sourceId: hnswVerb.sourceId,
-            targetId: hnswVerb.targetId,
-            createdAt: (createdAt as number) || Date.now(),
-            updatedAt: (updatedAt as number) || Date.now(),
-            confidence: confidence as number | undefined,
-            weight: weight as number | undefined,
-            service: service as string | undefined,
-            data: data as Record<string, any> | undefined,
-            createdBy,
-            metadata: customMetadata
-          }
-
-          verbs.push(verbWithMetadata)
-        } catch (error) {
-          // Continue searching
-        }
-      }
-    }
-
-    return verbs
+    return this.underlying.getVerbsBySource(sourceId)
   }
 
   /**
    * Get verbs by target
    */
   protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Similar to getVerbsBySource_internal
-    const verbs: HNSWVerbWithMetadata[] = []
-
-    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
-      const type = TypeUtils.getVerbFromIndex(i)
-      const prefix = `entities/verbs/${type}/vectors/`
-      const paths = await this.u.listObjectsUnderPath(prefix)
-
-      for (const path of paths) {
-        try {
-          const id = path.split('/').pop()?.replace('.json', '')
-          if (!id) continue
-
-          // Load the HNSWVerb
-          const hnswVerb = await this.u.readObjectFromPath(path)
-          if (!hnswVerb) continue
-
-          // Check targetId from HNSWVerb (v4.0.0: core fields are in HNSWVerb)
-          if (hnswVerb.targetId !== targetId) continue
-
-          // Load metadata separately (optional in v4.0.0!)
-          // FIX: Don't skip verbs without metadata - metadata is optional!
-          const metadata = await this.getVerbMetadata(id)
-
-          // Create HNSWVerbWithMetadata (verbs don't have level field)
-          // Convert connections from plain object to Map<number, Set<string>>
-          const connectionsMap = new Map<number, Set<string>>()
-          if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
-            for (const [level, ids] of Object.entries(hnswVerb.connections)) {
-              connectionsMap.set(Number(level), new Set(ids as string[]))
-            }
-          }
-
-          // v4.8.0: Extract standard fields from metadata to top-level
-          const metadataObj = (metadata || {}) as VerbMetadata
-          const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-          const verbWithMetadata: HNSWVerbWithMetadata = {
-            id: hnswVerb.id,
-            vector: [...hnswVerb.vector],
-            connections: connectionsMap,
-            verb: hnswVerb.verb,
-            sourceId: hnswVerb.sourceId,
-            targetId: hnswVerb.targetId,
-            createdAt: (createdAt as number) || Date.now(),
-            updatedAt: (updatedAt as number) || Date.now(),
-            confidence: confidence as number | undefined,
-            weight: weight as number | undefined,
-            service: service as string | undefined,
-            data: data as Record<string, any> | undefined,
-            createdBy,
-            metadata: customMetadata
-          }
-
-          verbs.push(verbWithMetadata)
-        } catch (error) {
-          // Continue
-        }
-      }
-    }
-
-    return verbs
+    // v4.8.1 PERFORMANCE FIX: Delegate to underlying storage (same as getVerbsBySource fix)
+    // Previous implementation was O(total_verbs) - scanned ALL 40 verb types and ALL verb files
+    return this.underlying.getVerbsByTarget(targetId)
   }
 
   /**
