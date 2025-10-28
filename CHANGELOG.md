@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.8.6](https://github.com/soulcraftlabs/brainy/compare/v4.8.5...v4.8.6) (2025-10-28)
+
+- fix: per-sheet column detection in Excel importer (401443a)
+
+
 ### [4.7.4](https://github.com/soulcraftlabs/brainy/compare/v4.7.3...v4.7.4) (2025-10-27)
 
 **CRITICAL SYSTEMIC VFS BUG FIX - Workshop Team Unblocked!**
