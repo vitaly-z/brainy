@@ -2338,10 +2338,31 @@ export class FileSystemStorage extends BaseStorage {
    * Traverses all shard subdirectories (00-ff)
    */
   private async getAllShardedFiles(baseDir: string): Promise<string[]> {
+    console.log(`[DEBUG] getAllShardedFiles called with baseDir: ${baseDir}`)
+    console.log(`[DEBUG] Current working directory: ${process.cwd()}`)
+    console.log(`[DEBUG] Resolved absolute path: ${path.resolve(baseDir)}`)
+
     const allFiles: string[] = []
 
     try {
+      // Check if directory exists
+      try {
+        const baseStat = await fs.promises.stat(baseDir)
+        console.log(`[DEBUG] baseDir exists: ${baseStat.isDirectory() ? 'is directory' : 'is NOT directory'}`)
+      } catch (statError: any) {
+        console.log(`[DEBUG] baseDir stat failed: ${statError.message}`)
+        if (statError.code === 'ENOENT') {
+          console.log(`[DEBUG] baseDir does not exist, returning empty array`)
+          return []
+        }
+        throw statError
+      }
+
       const shardDirs = await fs.promises.readdir(baseDir)
+      console.log(`[DEBUG] Found ${shardDirs.length} entries in baseDir: ${JSON.stringify(shardDirs.slice(0, 10))}${shardDirs.length > 10 ? '...' : ''}`)
+
+      let dirsProcessed = 0
+      let filesFound = 0
 
       for (const shardDir of shardDirs) {
         const shardPath = path.join(baseDir, shardDir)
@@ -2350,26 +2371,42 @@ export class FileSystemStorage extends BaseStorage {
           const stat = await fs.promises.stat(shardPath)
 
           if (stat.isDirectory()) {
+            dirsProcessed++
+            console.log(`[DEBUG] Processing shard directory ${dirsProcessed}: ${shardDir}`)
+
             const shardFiles = await fs.promises.readdir(shardPath)
+            console.log(`[DEBUG]   Found ${shardFiles.length} entries in ${shardDir}`)
+
+            let jsonCount = 0
             for (const file of shardFiles) {
               if (file.endsWith('.json')) {
                 allFiles.push(file)
+                jsonCount++
+                filesFound++
               }
             }
+            console.log(`[DEBUG]   Added ${jsonCount} .json files from ${shardDir} (total so far: ${filesFound})`)
+          } else {
+            console.log(`[DEBUG] Skipping non-directory entry: ${shardDir}`)
           }
-        } catch (shardError) {
+        } catch (shardError: any) {
           // Skip inaccessible shard directories
+          console.log(`[DEBUG] Error accessing shard ${shardDir}: ${shardError.message}`)
           continue
         }
       }
+
+      console.log(`[DEBUG] getAllShardedFiles complete: processed ${dirsProcessed} directories, found ${allFiles.length} total .json files`)
 
       // Sort for consistent ordering
       allFiles.sort()
       return allFiles
 
     } catch (error: any) {
+      console.log(`[DEBUG] getAllShardedFiles error: ${error.message}, code: ${error.code}`)
       if (error.code === 'ENOENT') {
         // Directory doesn't exist yet
+        console.log(`[DEBUG] Directory does not exist, returning empty array`)
         return []
       }
       throw error
