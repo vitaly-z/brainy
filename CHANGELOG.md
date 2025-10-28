@@ -781,17 +781,18 @@ Background mode:      0 seconds perceived startup
 Part of the billion-scale optimization roadmap:
 - **Phase 0**: Type system foundation (v3.45.0) ✅
 - **Phase 1a**: TypeAwareStorageAdapter (v3.45.0) ✅
-- **Phase 1b**: TypeFirstMetadataIndex (v3.46.0) ✅
+- **Phase 1b**: MetadataIndex Uint32Array tracking (v3.46.0) ✅
 - **Phase 1c**: Enhanced Brainy API (v3.46.0) ✅
 - **Phase 2**: Type-Aware HNSW (v3.47.0) ✅ **← COMPLETED**
-- **Phase 3**: Type-First Query Optimization (planned - 40% latency reduction)
+- **Phase 3**: Type-First Query Optimization (planned - PROJECTED 40% latency reduction)
 
-**Cumulative Impact (Phases 0-2):**
-- Memory: -87% for HNSW, -99.2% for type tracking
-- Query Speed: 10x faster for type-specific queries
-- Rebuild Speed: 31x faster with type filtering
-- Cache Performance: +25% hit rate improvement
+**Cumulative Impact (Phases 0-2) - MEASURED up to 1M entities:**
+- Memory: MEASURED -87% for HNSW (Phase 2 tests), -99.2% for type count tracking (Phase 1b)
+- Query Speed: MEASURED 10x faster for type-specific queries (typeAwareHNSW.integration.test.ts)
+- Rebuild Speed: MEASURED 31x faster with type filtering (test results)
+- Cache Performance: MEASURED +25% hit rate improvement
 - Backward Compatibility: 100% (zero breaking changes)
+- Note: Billion-scale claims are PROJECTIONS (not tested at 1B scale)
 
 ### 📝 Files Changed
 
@@ -819,11 +820,11 @@ Part of the billion-scale optimization roadmap:
 
 ### ✨ Features
 
-**Phase 1b: TypeFirstMetadataIndex - 99.2% Memory Reduction for Type Tracking**
+**Phase 1b: MetadataIndexManager - 99.2% Memory Reduction for Type Count Tracking**
 
 - **feat**: Enhanced MetadataIndexManager with Uint32Array type tracking (ddb9f04)
-  - Fixed-size type tracking: 31 noun types + 40 verb types = 284 bytes (was ~35KB)
-  - **99.2% memory reduction** for type count tracking
+  - Fixed-size type tracking: 31 noun types + 40 verb types = 284 bytes (was ~35KB Map)
+  - **99.2% memory reduction** for type count tracking ONLY (not total index memory)
   - 6 new O(1) type enum methods for faster type-specific queries
   - Bidirectional sync between Maps ↔ Uint32Arrays for backward compatibility
   - Type-aware cache warming: preloads top 3 types + their top 5 fields on init
@@ -875,10 +876,10 @@ Top types query:   O(31 × 1B) → O(31) iteration (1B x faster)
 Part of the billion-scale optimization roadmap:
 - **Phase 0**: Type system foundation (v3.45.0) ✅
 - **Phase 1a**: TypeAwareStorageAdapter (v3.45.0) ✅
-- **Phase 1b**: TypeFirstMetadataIndex (v3.46.0) ✅
+- **Phase 1b**: MetadataIndex Uint32Array tracking (v3.46.0) ✅
 - **Phase 1c**: Enhanced Brainy API (v3.46.0) ✅
-- **Phase 2**: Type-Aware HNSW (planned - 87% HNSW memory reduction)
-- **Phase 3**: Type-First Query Optimization (planned - 40% latency reduction)
+- **Phase 2**: Type-Aware HNSW (planned - PROJECTED 87% HNSW memory reduction)
+- **Phase 3**: Type-First Query Optimization (planned - PROJECTED 40% latency reduction)
 
 **Cumulative Impact (Phases 0-1c):**
 - Memory: -99.2% for type tracking

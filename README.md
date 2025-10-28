@@ -424,13 +424,13 @@ await brain.storage.enableIntelligentTiering('entities/', 'auto-tier')
 
 ## Production Features
 
-### 🎯 Type-Aware HNSW Indexing — 87% Memory Reduction
+### 🎯 Type-Aware HNSW Indexing
 
-Scale to billions affordably:
+Efficient type-based organization for large-scale deployments:
 
-- **1B entities:** 384GB → 50GB memory (-87%)
-- **Single-type queries:** 10x faster
-- **Multi-type queries:** 5-8x faster
+- **Type-based queries:** Faster via directory structure (measured at 1K-1M scale)
+- **Type count tracking:** 284 bytes (Uint32Array, measured)
+- **Billion-scale projections:** NOT tested at 1B entities (extrapolated from 1M)
 
 ```javascript
 const brain = new Brainy({ hnsw: { typeAware: true } })
@@ -496,7 +496,7 @@ Understand how vector search, graph relationships, and document filtering work t
 **[📖 API Reference: find() →](docs/api/README.md)**
 
 ### 🗂️ Type-Aware Indexing & HNSW
-Learn how we achieve 87% memory reduction and 10x query speedups at billion-scale:
+Learn about our indexing architecture with measured performance optimizations:
 
 **[📖 Data Storage Architecture →](docs/architecture/data-storage-architecture.md)**
 **[📖 Architecture Overview →](docs/architecture/overview.md)**
