@@ -766,7 +766,10 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: parentId,
           to: entity,
           type: VerbType.Contains,
-          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+          metadata: {
+            isVFS: true,  // v4.5.1: Mark as VFS relationship
+            relationshipType: 'vfs'  // v4.9.0: Standardized relationship type metadata
+          }
         })
       }
 

@@ -69,6 +69,9 @@ export interface ValidImportOptions {
   /** Create relationships in knowledge graph */
   createRelationships?: boolean
 
+  /** Create provenance relationships (document → entity) [v4.9.0] */
+  createProvenanceLinks?: boolean
+
   /** Preserve source file in VFS */
   preserveSource?: boolean
 
@@ -396,7 +399,15 @@ export class ImportCoordinator {
     })
 
     // Create entities and relationships in graph
-    const graphResult = await this.createGraphEntities(normalizedResult, vfsResult, opts)
+    const graphResult = await this.createGraphEntities(
+      normalizedResult,
+      vfsResult,
+      opts,
+      {
+        sourceFilename: normalizedSource.filename || `import.${detection.format}`,
+        format: detection.format
+      }
+    )
 
     // Report complete
     options.onProgress?.({
@@ -721,16 +732,23 @@ export class ImportCoordinator {
 
   /**
    * Create entities and relationships in knowledge graph
+   * v4.9.0: Added sourceInfo parameter for document entity creation
    */
   private async createGraphEntities(
     extractionResult: any,
     vfsResult: any,
-    options: ImportOptions
+    options: ImportOptions,
+    sourceInfo?: {
+      sourceFilename: string
+      format: string
+    }
   ): Promise<{
     entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string }>
     relationships: Array<{ id: string; from: string; to: string; type: VerbType }>
     merged: number
     newEntities: number
+    documentEntity?: string
+    provenanceCount?: number
   }> {
     const entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string }> = []
     const relationships: Array<{ id: string; from: string; to: string; type: VerbType }> = []
@@ -741,7 +759,14 @@ export class ImportCoordinator {
     // Previously: if (!options.createEntities) treated undefined as false
     // Now: Only skip when explicitly set to false
     if (options.createEntities === false) {
-      return { entities, relationships, merged: 0, newEntities: 0 }
+      return {
+        entities,
+        relationships,
+        merged: 0,
+        newEntities: 0,
+        documentEntity: undefined,
+        provenanceCount: 0
+      }
     }
 
     // Extract rows/sections/entities from result (unified across formats)
@@ -774,6 +799,33 @@ export class ImportCoordinator {
         `   Tip: For large imports, deduplicate manually after import or use smaller batches\n` +
         `   Override: Set deduplicationThreshold to force enable (not recommended for >500 entities)`
       )
+    }
+
+    // ============================================
+    // v4.9.0: Create document entity for import source
+    // ============================================
+    let documentEntityId: string | null = null
+    let provenanceCount = 0
+
+    if (sourceInfo && options.createProvenanceLinks !== false) {
+      console.log(`📄 Creating document entity for import source: ${sourceInfo.sourceFilename}`)
+
+      documentEntityId = await this.brain.add({
+        data: sourceInfo.sourceFilename,
+        type: NounType.Document,
+        metadata: {
+          name: sourceInfo.sourceFilename,
+          sourceFile: sourceInfo.sourceFilename,
+          format: sourceInfo.format,
+          importedAt: Date.now(),
+          importSource: true,
+          vfsPath: vfsResult.rootPath,
+          totalRows: rows.length,
+          byType: this.countByType(rows)
+        }
+      })
+
+      console.log(`✅ Document entity created: ${documentEntityId}`)
     }
 
     // Create entities in graph
@@ -848,6 +900,26 @@ export class ImportCoordinator {
           type: entity.type,
           vfsPath: vfsFile?.path
         })
+
+        // ============================================
+        // v4.9.0: Create provenance relationship (document → entity)
+        // ============================================
+        if (documentEntityId && options.createProvenanceLinks !== false) {
+          await this.brain.relate({
+            from: documentEntityId,
+            to: entityId,
+            type: VerbType.Contains,
+            metadata: {
+              relationshipType: 'provenance',
+              evidence: `Extracted from ${sourceInfo?.sourceFilename}`,
+              sheet: row.sheet,
+              rowNumber: row.rowNumber,
+              extractedAt: Date.now(),
+              format: sourceInfo?.format
+            }
+          })
+          provenanceCount++
+        }
 
         // Collect relationships for batch creation
         if (options.createRelationships && row.relationships) {
@@ -984,14 +1056,36 @@ export class ImportCoordinator {
     }
 
     // Batch create all relationships using brain.relateMany() for performance
+    // v4.9.0: Enhanced with type-based inference and semantic metadata
     if (options.createRelationships && relationships.length > 0) {
       try {
-        const relationshipParams = relationships.map(rel => ({
-          from: rel.from,
-          to: rel.to,
-          type: rel.type,
-          metadata: (rel as any).metadata
-        }))
+        const relationshipParams = relationships.map(rel => {
+          // Get entity types for inference
+          const sourceEntity = entities.find(e => e.id === rel.from)
+          const targetEntity = entities.find(e => e.id === rel.to)
+
+          // Infer better relationship type if generic and we have entity types
+          let verbType = rel.type
+          if (verbType === VerbType.RelatedTo && sourceEntity && targetEntity) {
+            verbType = this.inferRelationshipType(
+              sourceEntity.type,
+              targetEntity.type,
+              (rel as any).metadata?.evidence
+            )
+          }
+
+          return {
+            from: rel.from,
+            to: rel.to,
+            type: verbType,  // Enhanced type
+            metadata: {
+              ...((rel as any).metadata || {}),
+              relationshipType: 'semantic',  // v4.9.0: Distinguish from VFS/provenance
+              inferredType: verbType !== rel.type,  // Track if type was enhanced
+              originalType: rel.type
+            }
+          }
+        })
 
         const relationshipIds = await this.brain.relateMany({
           items: relationshipParams,
@@ -1028,7 +1122,9 @@ export class ImportCoordinator {
       entities,
       relationships,
       merged: mergedCount,
-      newEntities: newCount
+      newEntities: newCount,
+      documentEntity: documentEntityId || undefined,
+      provenanceCount
     }
   }
 
@@ -1298,5 +1394,92 @@ ${optionDetails}
     } else {
       return 5000 // Performance-focused interval for large imports
     }
+  }
+
+  /**
+   * Infer relationship type based on entity types and context
+   * v4.9.0: Semantic relationship enhancement
+   *
+   * @param sourceType - Type of source entity
+   * @param targetType - Type of target entity
+   * @param context - Optional context string for additional hints
+   * @returns Inferred verb type
+   */
+  private inferRelationshipType(
+    sourceType: NounType,
+    targetType: NounType,
+    context?: string
+  ): VerbType {
+    // Context-based inference (highest priority)
+    if (context) {
+      const lowerContext = context.toLowerCase()
+      if (lowerContext.includes('live') || lowerContext.includes('reside') || lowerContext.includes('dwell')) {
+        return VerbType.LocatedAt
+      }
+      if (lowerContext.includes('create') || lowerContext.includes('invent') || lowerContext.includes('make')) {
+        return VerbType.Creates
+      }
+      if (lowerContext.includes('own') || lowerContext.includes('possess') || lowerContext.includes('belong')) {
+        return VerbType.PartOf
+      }
+      if (lowerContext.includes('work') || lowerContext.includes('collaborate') || lowerContext.includes('team')) {
+        return VerbType.WorksWith
+      }
+      if (lowerContext.includes('use') || lowerContext.includes('wield') || lowerContext.includes('employ')) {
+        return VerbType.Uses
+      }
+      if (lowerContext.includes('know') || lowerContext.includes('friend') || lowerContext.includes('ally')) {
+        return VerbType.FriendOf
+      }
+    }
+
+    // Type-based inference (fallback)
+    // Sort types for consistent lookup
+    const sortedTypes = [sourceType, targetType].sort()
+    const typeKey = `${sortedTypes[0]}+${sortedTypes[1]}`
+
+    const typeMapping: Record<string, VerbType> = {
+      // Person relationships
+      [`${NounType.Person}+${NounType.Location}`]: VerbType.LocatedAt,
+      [`${NounType.Person}+${NounType.Thing}`]: VerbType.Uses,
+      [`${NounType.Person}+${NounType.Person}`]: VerbType.FriendOf,
+      [`${NounType.Person}+${NounType.Concept}`]: VerbType.RelatedTo,
+      [`${NounType.Person}+${NounType.Event}`]: VerbType.RelatedTo,
+
+      // Location relationships
+      [`${NounType.Location}+${NounType.Thing}`]: VerbType.Contains,
+      [`${NounType.Location}+${NounType.Concept}`]: VerbType.RelatedTo,
+      [`${NounType.Location}+${NounType.Event}`]: VerbType.LocatedAt,
+
+      // Thing relationships
+      [`${NounType.Thing}+${NounType.Concept}`]: VerbType.RelatedTo,
+      [`${NounType.Thing}+${NounType.Event}`]: VerbType.RelatedTo,
+
+      // Concept relationships
+      [`${NounType.Concept}+${NounType.Concept}`]: VerbType.RelatedTo,
+      [`${NounType.Concept}+${NounType.Event}`]: VerbType.RelatedTo,
+
+      // Event relationships
+      [`${NounType.Event}+${NounType.Event}`]: VerbType.Precedes
+    }
+
+    return typeMapping[typeKey] || VerbType.RelatedTo
+  }
+
+  /**
+   * Count entities by type for document metadata
+   * v4.9.0: Used for document entity statistics
+   *
+   * @param rows - Extracted rows from import
+   * @returns Record of entity type counts
+   */
+  private countByType(rows: any[]): Record<string, number> {
+    const counts: Record<string, number> = {}
+    for (const row of rows) {
+      const entity = row.entity || row
+      const type = entity.type || NounType.Thing
+      counts[type] = (counts[type] || 0) + 1
+    }
+    return counts
   }
 }

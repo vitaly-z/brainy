@@ -352,6 +352,9 @@ export class SmartExcelImporter {
               })
             }
 
+            // ============================================
+            // v4.9.0: Enhanced column-based relationship detection
+            // ============================================
             // Parse explicit "Related Terms" column
             if (relatedTerms) {
               const terms = relatedTerms.split(/[,;]/).map(t => t.trim()).filter(Boolean)
@@ -372,6 +375,63 @@ export class SmartExcelImporter {
                     confidence: 0.9,
                     evidence: `Explicitly listed in "Related" column`
                   })
+                }
+              }
+            }
+
+            // v4.9.0: Check for additional relationship-indicating columns
+            // Expanded patterns for various relationship types
+            const relationshipColumnPatterns = [
+              { pattern: /^(location|home|lives in|resides|dwelling|place)$/i, defaultType: VerbType.LocatedAt },
+              { pattern: /^(owner|owned by|belongs to|possessed by|wielder)$/i, defaultType: VerbType.PartOf },
+              { pattern: /^(created by|made by|invented by|authored by|creator|author)$/i, defaultType: VerbType.CreatedBy },
+              { pattern: /^(uses|utilizes|requires|needs|employs|tool|weapon|item)$/i, defaultType: VerbType.Uses },
+              { pattern: /^(member of|part of|within|inside|group|organization)$/i, defaultType: VerbType.PartOf },
+              { pattern: /^(knows|friend|associate|colleague|ally|companion)$/i, defaultType: VerbType.FriendOf },
+              { pattern: /^(connection|link|reference|see also|related to)$/i, defaultType: VerbType.RelatedTo }
+            ]
+
+            // Check all columns in the row
+            for (const [columnName, columnValue] of Object.entries(row)) {
+              // Skip standard columns
+              if (!columnValue || columnName === columns.term || columnName === columns.definition || columnName === columns.type) {
+                continue
+              }
+
+              // Find matching relationship pattern
+              const matchedPattern = relationshipColumnPatterns.find(rcp => rcp.pattern.test(columnName))
+
+              if (matchedPattern && typeof columnValue === 'string') {
+                // Parse comma/semicolon-separated values
+                const references = columnValue.split(/[,;]+/).map(s => s.trim()).filter(Boolean)
+
+                for (const ref of references) {
+                  if (ref.toLowerCase() !== term.toLowerCase()) {
+                    // Use SmartRelationshipExtractor for better type inference, fallback to pattern default
+                    let verbType: VerbType
+                    try {
+                      verbType = await this.inferRelationship(
+                        term,
+                        ref,
+                        `${term}'s ${columnName}: ${ref}. ${definition}`,
+                        mainEntityType
+                      )
+                      // If inference returns generic type, use column pattern hint
+                      if (verbType === VerbType.RelatedTo) {
+                        verbType = matchedPattern.defaultType
+                      }
+                    } catch {
+                      verbType = matchedPattern.defaultType
+                    }
+
+                    relationships.push({
+                      from: entityId,
+                      to: ref,
+                      type: verbType,
+                      confidence: 0.9,  // High confidence for explicit columns
+                      evidence: `Column "${columnName}": ${ref}`
+                    })
+                  }
                 }
               }
             }
