@@ -54,8 +54,9 @@ export class EntityIdMapper {
   async init(): Promise<void> {
     try {
       const metadata = await this.storage.getMetadata(this.storageKey)
-      if (metadata && metadata.data) {
-        const data = metadata.data as EntityIdMapperData
+      // v4.8.0: metadata IS the data (no nested 'data' property)
+      if (metadata && (metadata as any).nextId !== undefined) {
+        const data = metadata as any as EntityIdMapperData
         this.nextId = data.nextId
 
         // Rebuild maps from serialized data

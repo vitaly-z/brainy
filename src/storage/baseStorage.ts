@@ -72,6 +72,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @private
    */
   private analyzeKey(id: string, context: 'noun-metadata' | 'verb-metadata' | 'system'): StorageKeyInfo {
+    // v4.8.0: Guard against undefined/null IDs
+    if (!id || typeof id !== 'string') {
+      throw new Error(`Invalid storage key: ${id} (must be a non-empty string)`)
+    }
+
     // System resource detection
     const isSystemKey =
       id.startsWith('__metadata_') ||

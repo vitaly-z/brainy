@@ -641,7 +641,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const updatedMetadata = {
         ...newMetadata,
         ...dataFields,
-        _data: params.data !== undefined ? params.data : existing.data, // Update the data field
+        data: params.data !== undefined ? params.data : existing.data, // v4.8.0: Store data field
         noun: params.type || existing.type,
         service: existing.service,
         createdAt: existing.createdAt,
@@ -663,9 +663,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       await this.storage.saveNounMetadata(params.id, updatedMetadata)
 
-      // Update metadata index - remove old entry and add new one
+      // v4.8.0: Build entity structure for metadata index (with top-level fields)
+      const entityForIndexing = {
+        id: params.id,
+        vector,
+        connections: new Map(),
+        level: 0,
+        type: params.type || existing.type,
+        confidence: params.confidence !== undefined ? params.confidence : existing.confidence,
+        weight: params.weight !== undefined ? params.weight : existing.weight,
+        createdAt: existing.createdAt,
+        updatedAt: Date.now(),
+        service: existing.service,
+        data: params.data !== undefined ? params.data : existing.data,
+        createdBy: existing.createdBy,
+        // Only custom fields in metadata
+        metadata: newMetadata
+      }
+
+      // Update metadata index - remove old entry and add new one with v4.8.0 structure
       await this.metadataIndex.removeFromIndex(params.id, existing.metadata)
-      await this.metadataIndex.addToIndex(params.id, updatedMetadata)
+      await this.metadataIndex.addToIndex(params.id, entityForIndexing)
     })
   }
 

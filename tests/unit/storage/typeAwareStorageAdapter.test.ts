@@ -69,7 +69,9 @@ describe('TypeAwareStorageAdapter', () => {
       expect(retrieved?.id).toBe(id)
       expect(retrieved?.vector).toEqual(vector)
       expect(retrieved?.level).toBe(0)
-      expect(retrieved?.metadata).toEqual(metadata)
+      // v4.8.0: Standard fields (noun → type) at top-level, only custom fields in metadata
+      expect(retrieved?.type).toBe('person')
+      expect(retrieved?.metadata).toEqual({ name: 'Alice' })
     })
 
     it('should track noun counts by type', async () => {
@@ -415,7 +417,9 @@ describe('TypeAwareStorageAdapter', () => {
       expect(retrieved?.id).toBe(id)
       expect(retrieved?.vector).toEqual([1, 2, 3])
       expect(retrieved?.level).toBe(0)
-      expect(retrieved?.metadata).toEqual({ noun: 'person', name: 'Test' })
+      // v4.8.0: Standard fields (noun → type) at top-level, only custom fields in metadata
+      expect(retrieved?.type).toBe('person')
+      expect(retrieved?.metadata).toEqual({ name: 'Test' })
     })
   })
 })

@@ -346,7 +346,7 @@ describe('PatternSignal', () => {
       const result = await signal.classify('userName')
 
       expect(result).toBeDefined()
-      expect(result?.type).toBe(NounType.Attribute)
+      expect(result?.type).toBe(NounType.Measurement)
       expect(result?.metadata?.matchedPattern).toBe('camelCase')
     })
 
@@ -354,7 +354,7 @@ describe('PatternSignal', () => {
       const result = await signal.classify('MAX_CONNECTIONS')
 
       expect(result).toBeDefined()
-      expect(result?.type).toBe(NounType.Attribute)
+      expect(result?.type).toBe(NounType.Measurement)
       expect(result?.metadata?.matchedPattern).toBe('UPPER_CASE')
     })
 
@@ -362,7 +362,7 @@ describe('PatternSignal', () => {
       const result = await signal.classify('user_name')
 
       expect(result).toBeDefined()
-      expect(result?.type).toBe(NounType.Attribute)
+      expect(result?.type).toBe(NounType.Measurement)
       expect(result?.metadata?.matchedPattern).toBe('snake_case')
     })
 
