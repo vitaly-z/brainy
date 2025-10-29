@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.10.0](https://github.com/soulcraftlabs/brainy/compare/v4.9.2...v4.10.0) (2025-10-29)
+
+- perf: 48-64× faster HNSW bulk imports via concurrent neighbor updates (4038afd)
+
+
 ### [4.9.2](https://github.com/soulcraftlabs/brainy/compare/v4.9.1...v4.9.2) (2025-10-29)
 
 - fix: resolve HNSW concurrency race condition across all storage adapters (0bcf50a)
