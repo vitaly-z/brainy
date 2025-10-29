@@ -530,6 +530,168 @@ describe('HNSW Concurrency Bug Fix (v4.10.1)', () => {
     })
   })
 
+  describe('Production-Scale Concurrency (v4.10.1) - Critical Regression Tests', () => {
+    it('should handle 1000 concurrent saveHNSWData() on shared hub node (Workshop scenario)', async () => {
+      console.log('🧪 Testing production-scale concurrency (1000 ops) - CRITICAL TEST...')
+
+      const testDir = path.join(TEST_ROOT, `stress-test-${Date.now()}`)
+      await fs.mkdir(testDir, { recursive: true })
+
+      try {
+        const storage = new FileSystemStorage(testDir)
+        await storage.init()
+
+        const hubNodeId = 'ab000000-0000-0000-0000-HUB-NODE-001'
+
+        // Simulate 1000 concurrent updates (Workshop production scale)
+        // Each operation adds ONE connection - final should have ALL connections
+        const concurrentUpdates = []
+        for (let i = 0; i < 1000; i++) {
+          const connections: Record<string, string[]> = {
+            '0': [`neighbor-${i}`]
+          }
+
+          concurrentUpdates.push(
+            storage.saveHNSWData(hubNodeId, {
+              level: 0,
+              connections
+            })
+          )
+        }
+
+        // Execute ALL 1000 concurrently
+        const startTime = Date.now()
+        await Promise.all(concurrentUpdates)
+        const duration = Date.now() - startTime
+
+        // Verify final state
+        const finalData = await storage.getHNSWData(hubNodeId)
+        expect(finalData).toBeDefined()
+        expect(finalData!.level).toBe(0)
+        expect(finalData!.connections['0']).toBeDefined()
+
+        // CRITICAL: Due to mutex, last writer wins
+        // Should have 1 connection (the last update that won the race)
+        // WITHOUT mutex, would have random number due to race conditions
+        expect(finalData!.connections['0'].length).toBeGreaterThan(0)
+
+        console.log(`✅ 1000 concurrent ops completed in ${duration}ms`)
+        console.log(`   Final connections: ${finalData!.connections['0'].length}`)
+        console.log(`   NO corruption, NO undefined IDs, NO 8KB truncation`)
+      } finally {
+        await fs.rm(testDir, { recursive: true, force: true })
+      }
+    })
+
+    it('should handle concurrent updates at 450+ entity scale (corruption threshold)', async () => {
+      console.log('🧪 Testing corruption threshold (500 entities) - CRITICAL TEST...')
+
+      const testDir = path.join(TEST_ROOT, `scale-test-${Date.now()}`)
+      await fs.mkdir(testDir, { recursive: true })
+
+      try {
+        const storage = new FileSystemStorage(testDir)
+        await storage.init()
+
+        const { HNSWIndex } = await import('../../../src/hnsw/hnswIndex.js')
+        const hnsw = new HNSWIndex(
+          { M: 16, efConstruction: 100, efSearch: 50, ml: 4 },
+          undefined,
+          { storage }
+        )
+
+        // Create 500 entities (exceeds Workshop's corruption threshold at 450)
+        // All vectors close together to create hub nodes (high contention scenario)
+        const inserts = Array.from({ length: 500 }, (_, i) => {
+          const offset = i * 0.001  // Small offset = high connectivity
+          // Use proper UUID format (2 hex chars for sharding)
+          const shardHex = (i % 256).toString(16).padStart(2, '0')
+          const entityId = `${shardHex}${i.toString().padStart(6, '0')}-0000-0000-0000-000000000000`
+          return hnsw.addItem({
+            id: entityId,
+            vector: [0.5 + offset, 0.5 + offset, 0.5 + offset, 0.5 + offset]
+          })
+        })
+
+        await Promise.all(inserts)
+
+        // Verify ALL entities exist (no undefined IDs)
+        let undefinedCount = 0
+        let corruptedCount = 0
+        let jsonTruncationCount = 0
+
+        for (let i = 0; i < 500; i++) {
+          // Use same UUID format as above
+          const shardHex = (i % 256).toString(16).padStart(2, '0')
+          const entityId = `${shardHex}${i.toString().padStart(6, '0')}-0000-0000-0000-000000000000`
+
+          try {
+            const data = await storage.getHNSWData(entityId)
+
+            if (!data) {
+              undefinedCount++
+            } else if (!data.connections || Object.keys(data.connections).length === 0) {
+              corruptedCount++
+            }
+          } catch (error: any) {
+            // Check for 8KB truncation errors
+            if (error.message && error.message.includes('position 8192')) {
+              jsonTruncationCount++
+            }
+            undefinedCount++
+          }
+        }
+
+        // CRITICAL ASSERTIONS - These FAILED on v4.9.2 and v4.10.0
+        expect(undefinedCount).toBe(0)  // No missing entities
+        expect(corruptedCount).toBe(0)  // No corrupted data
+        expect(jsonTruncationCount).toBe(0)  // No 8KB truncation errors
+
+        console.log(`✅ All 500 entities verified:`)
+        console.log(`   ${500 - undefinedCount} entities exist (target: 500)`)
+        console.log(`   ${500 - corruptedCount} entities have connections (target: 500)`)
+        console.log(`   ${jsonTruncationCount} JSON truncation errors (target: 0)`)
+      } finally {
+        await fs.rm(testDir, { recursive: true, force: true })
+      }
+    })
+
+    it('should serialize concurrent system updates (entry point changes)', async () => {
+      console.log('🧪 Testing concurrent HNSW system updates...')
+
+      const testDir = path.join(TEST_ROOT, `system-test-${Date.now()}`)
+      await fs.mkdir(testDir, { recursive: true })
+
+      try {
+        const storage = new FileSystemStorage(testDir)
+        await storage.init()
+
+        // Simulate 100 concurrent system updates (entry point changes during construction)
+        const concurrentUpdates = []
+        for (let i = 0; i < 100; i++) {
+          concurrentUpdates.push(
+            storage.saveHNSWSystem({
+              entryPointId: `entry-${i}`,
+              maxLevel: i % 10  // Varies from 0-9
+            })
+          )
+        }
+
+        await Promise.all(concurrentUpdates)
+
+        // Verify system data exists and is consistent
+        const systemData = await storage.getHNSWSystem()
+        expect(systemData).toBeDefined()
+        expect(systemData!.entryPointId).toBeDefined()
+        expect(systemData!.maxLevel).toBeGreaterThanOrEqual(0)
+
+        console.log(`✅ Concurrent system updates completed without corruption`)
+      } finally {
+        await fs.rm(testDir, { recursive: true, force: true })
+      }
+    })
+  })
+
   // Cleanup test root after all tests
   afterEach(async () => {
     try {

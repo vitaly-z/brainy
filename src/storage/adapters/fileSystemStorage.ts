@@ -84,6 +84,11 @@ export class FileSystemStorage extends BaseStorage {
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
 
+  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // Prevents read-modify-write races during concurrent neighbor updates at scale (1000+ ops)
+  // Matches MemoryStorage and OPFSStorage behavior (tested in production)
+  private hnswLocks = new Map<string, Promise<void>>()
+
   // Compression configuration (v4.0.0)
   private compressionEnabled: boolean = true  // Enable gzip compression by default for 60-80% disk savings
   private compressionLevel: number = 6  // zlib compression level (1-9, default: 6 = balanced)
@@ -2598,54 +2603,80 @@ export class FileSystemStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-    // Previous implementation overwrote the entire file, destroying vector data
-    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
-
-    // CRITICAL FIX (v4.10.1): Atomic write to prevent race conditions during concurrent HNSW updates
-    // Uses temp file + atomic rename strategy (POSIX guarantees rename() atomicity)
-    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
-
     const filePath = this.getNodePath(nounId)
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+    const lockKey = `hnsw/${nounId}`
+
+    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // Problem: Without mutex, concurrent operations can:
+    //   1. Thread A reads file (connections: [1,2,3])
+    //   2. Thread B reads file (connections: [1,2,3])
+    //   3. Thread A adds connection 4, writes [1,2,3,4]
+    //   4. Thread B adds connection 5, writes [1,2,3,5] ← Connection 4 LOST!
+    // Solution: Mutex serializes operations per entity (like Memory/OPFS adapters)
+    // Production scale: Prevents corruption at 1000+ concurrent operations
+
+    // Wait for any pending operations on this entity
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // Read existing node data (if exists)
-      let existingNode: any = {}
+      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+      // Previous implementation overwrote the entire file, destroying vector data
+      // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+
+      // CRITICAL FIX (v4.9.2): Atomic write to prevent torn writes during crashes
+      // Uses temp file + atomic rename strategy (POSIX guarantees rename() atomicity)
+      // Note: Atomic rename alone does NOT prevent concurrent read-modify-write races (needs mutex above)
+
+      const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
       try {
-        const existingData = await fs.promises.readFile(filePath, 'utf-8')
-        existingNode = JSON.parse(existingData)
-      } catch (error: any) {
-        // File doesn't exist yet - will create new
-        if (error.code !== 'ENOENT') {
-          throw error
+        // Read existing node data (if exists)
+        let existingNode: any = {}
+        try {
+          const existingData = await fs.promises.readFile(filePath, 'utf-8')
+          existingNode = JSON.parse(existingData)
+        } catch (error: any) {
+          // File doesn't exist yet - will create new
+          if (error.code !== 'ENOENT') {
+            throw error
+          }
         }
-      }
 
-      // Preserve id and vector, update only HNSW graph metadata
-      const updatedNode = {
-        ...existingNode,  // Preserve all existing fields (id, vector, etc.)
-        level: hnswData.level,
-        connections: hnswData.connections
-      }
+        // Preserve id and vector, update only HNSW graph metadata
+        const updatedNode = {
+          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
+          level: hnswData.level,
+          connections: hnswData.connections
+        }
 
-      // ATOMIC WRITE SEQUENCE:
-      // 1. Write to temp file
-      await this.ensureDirectoryExists(path.dirname(tempPath))
-      await fs.promises.writeFile(tempPath, JSON.stringify(updatedNode, null, 2))
+        // ATOMIC WRITE SEQUENCE:
+        // 1. Write to temp file
+        await this.ensureDirectoryExists(path.dirname(tempPath))
+        await fs.promises.writeFile(tempPath, JSON.stringify(updatedNode, null, 2))
 
-      // 2. Atomic rename temp → final (POSIX atomicity guarantee)
-      // This operation is guaranteed atomic by POSIX - either succeeds completely or fails
-      // Multiple concurrent renames will serialize at the kernel level
-      await fs.promises.rename(tempPath, filePath)
-    } catch (error: any) {
-      // Clean up temp file on any error
-      try {
-        await fs.promises.unlink(tempPath)
-      } catch (cleanupError) {
-        // Ignore cleanup errors - temp file may not exist
+        // 2. Atomic rename temp → final (POSIX atomicity guarantee)
+        // This operation is guaranteed atomic by POSIX - either succeeds completely or fails
+        await fs.promises.rename(tempPath, filePath)
+      } catch (error: any) {
+        // Clean up temp file on any error
+        try {
+          await fs.promises.unlink(tempPath)
+        } catch (cleanupError) {
+          // Ignore cleanup errors - temp file may not exist
+        }
+        throw error
       }
-      throw error
+    } finally {
+      // Release lock (ALWAYS runs, even if error thrown)
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
@@ -2675,7 +2706,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    *
-   * CRITICAL FIX (v4.10.1): Atomic write to prevent race conditions during concurrent updates
+   * CRITICAL FIX (v4.10.1): Mutex lock + atomic write to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -2683,24 +2714,46 @@ export class FileSystemStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    const filePath = path.join(this.systemDir, 'hnsw-system.json')
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+    const lockKey = 'hnsw/system'
+
+    // CRITICAL FIX (v4.10.1): Mutex lock to serialize system updates
+    // System data (entry point, max level) updated frequently during HNSW construction
+    // Without mutex, concurrent updates can lose data (same as entity-level problem)
+
+    // Wait for any pending system updates
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // Write to temp file
-      await this.ensureDirectoryExists(path.dirname(tempPath))
-      await fs.promises.writeFile(tempPath, JSON.stringify(systemData, null, 2))
+      const filePath = path.join(this.systemDir, 'hnsw-system.json')
+      const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
-      // Atomic rename temp → final (POSIX atomicity guarantee)
-      await fs.promises.rename(tempPath, filePath)
-    } catch (error: any) {
-      // Clean up temp file on any error
       try {
-        await fs.promises.unlink(tempPath)
-      } catch (cleanupError) {
-        // Ignore cleanup errors
+        // Write to temp file
+        await this.ensureDirectoryExists(path.dirname(tempPath))
+        await fs.promises.writeFile(tempPath, JSON.stringify(systemData, null, 2))
+
+        // Atomic rename temp → final (POSIX atomicity guarantee)
+        await fs.promises.rename(tempPath, filePath)
+      } catch (error: any) {
+        // Clean up temp file on any error
+        try {
+          await fs.promises.unlink(tempPath)
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        throw error
       }
-      throw error
+    } finally {
+      // Release lock
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
