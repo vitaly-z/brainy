@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.9.2](https://github.com/soulcraftlabs/brainy/compare/v4.9.1...v4.9.2) (2025-10-29)
+
+- fix: resolve HNSW concurrency race condition across all storage adapters (0bcf50a)
+
+
 ## [4.9.1](https://github.com/soulcraftlabs/brainy/compare/v4.9.0...v4.9.1) (2025-10-29)
 
 ### 📚 Documentation
