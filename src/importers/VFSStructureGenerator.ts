@@ -13,6 +13,7 @@ import { Brainy } from '../brainy.js'
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import type { SmartExcelResult } from './SmartExcelImporter.js'
+import type { TrackingContext } from '../import/ImportCoordinator.js'
 
 export interface VFSStructureOptions {
   /** Root path in VFS for import */
@@ -38,6 +39,9 @@ export interface VFSStructureOptions {
 
   /** Create metadata file */
   createMetadataFile?: boolean
+
+  /** Import tracking context (v4.10.0) */
+  trackingContext?: TrackingContext
 }
 
 export interface VFSStructureResult {
@@ -116,9 +120,22 @@ export class VFSStructureGenerator {
     // Ensure VFS is initialized
     await this.init()
 
+    // Extract tracking metadata if provided
+    const trackingMetadata = options.trackingContext ? {
+      importIds: [options.trackingContext.importId],
+      projectId: options.trackingContext.projectId,
+      importedAt: options.trackingContext.importedAt,
+      importFormat: options.trackingContext.importFormat,
+      importSource: options.trackingContext.importSource,
+      ...options.trackingContext.customMetadata
+    } : {}
+
     // Create root directory
     try {
-      await this.vfs.mkdir(options.rootPath, { recursive: true })
+      await this.vfs.mkdir(options.rootPath, {
+        recursive: true,
+        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+      })
       result.directories.push(options.rootPath)
       result.operations++
     } catch (error: any) {
@@ -132,7 +149,9 @@ export class VFSStructureGenerator {
     // Preserve source file if requested
     if (options.preserveSource && options.sourceBuffer && options.sourceFilename) {
       const sourcePath = `${options.rootPath}/_source${this.getExtension(options.sourceFilename)}`
-      await this.vfs.writeFile(sourcePath, options.sourceBuffer)
+      await this.vfs.writeFile(sourcePath, options.sourceBuffer, {
+        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+      })
       result.files.push({
         path: sourcePath,
         type: 'source'
@@ -149,7 +168,10 @@ export class VFSStructureGenerator {
 
       // Create group directory
       try {
-        await this.vfs.mkdir(groupPath, { recursive: true })
+        await this.vfs.mkdir(groupPath, {
+          recursive: true,
+          metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        })
         result.directories.push(groupPath)
         result.operations++
       } catch (error: any) {
@@ -184,7 +206,12 @@ export class VFSStructureGenerator {
           }))
         }
 
-        await this.vfs.writeFile(entityPath, JSON.stringify(entityJson, null, 2))
+        await this.vfs.writeFile(entityPath, JSON.stringify(entityJson, null, 2), {
+          metadata: {
+            ...trackingMetadata,  // v4.10.0: Add tracking metadata
+            entityId: extracted.entity.id
+          }
+        })
         result.files.push({
           path: entityPath,
           entityId: extracted.entity.id,
@@ -213,7 +240,9 @@ export class VFSStructureGenerator {
         }
       }
 
-      await this.vfs.writeFile(relationshipsPath, JSON.stringify(relationshipsJson, null, 2))
+      await this.vfs.writeFile(relationshipsPath, JSON.stringify(relationshipsJson, null, 2), {
+        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+      })
       result.files.push({
         path: relationshipsPath,
         type: 'relationships'
@@ -252,7 +281,9 @@ export class VFSStructureGenerator {
         }
       }
 
-      await this.vfs.writeFile(metadataPath, JSON.stringify(metadataJson, null, 2))
+      await this.vfs.writeFile(metadataPath, JSON.stringify(metadataJson, null, 2), {
+        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+      })
       result.files.push({
         path: metadataPath,
         type: 'metadata'

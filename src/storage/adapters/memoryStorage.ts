@@ -823,18 +823,55 @@ export class MemoryStorage extends BaseStorage {
     return noun ? [...noun.vector] : null
   }
 
+  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // Even in-memory operations need serialization to prevent async race conditions
+  private hnswLocks = new Map<string, Promise<void>>()
+
   /**
    * Save HNSW graph data for a noun
+   *
+   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions during concurrent HNSW updates
+   * Even in-memory operations can race due to async/await interleaving
+   * Prevents data corruption when multiple entities connect to same neighbor simultaneously
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    // For memory storage, HNSW data is already in the noun object
-    // This method is a no-op since saveNoun already stores the full graph
-    // But we store it separately for consistency with other adapters
     const path = `hnsw/${nounId}.json`
-    await this.writeObjectToPath(path, hnswData)
+
+    // MUTEX LOCK: Wait for any pending operations on this entity
+    while (this.hnswLocks.has(path)) {
+      await this.hnswLocks.get(path)
+    }
+
+    // Acquire lock by creating a promise that we'll resolve when done
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(path, lockPromise)
+
+    try {
+      // Read existing data (if exists)
+      let existingNode: any = {}
+      const existing = this.objectStore.get(path)
+      if (existing) {
+        existingNode = existing
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNode = {
+        ...existingNode,  // Preserve all existing fields
+        level: hnswData.level,
+        connections: hnswData.connections
+      }
+
+      // Write atomically (in-memory, but now serialized by mutex)
+      this.objectStore.set(path, JSON.parse(JSON.stringify(updatedNode)))
+    } finally {
+      // Release lock
+      this.hnswLocks.delete(path)
+      releaseLock()
+    }
   }
 
   /**
@@ -851,13 +888,33 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Save HNSW system data (entry point, max level)
+   *
+   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
     maxLevel: number
   }): Promise<void> {
     const path = 'system/hnsw-system.json'
-    await this.writeObjectToPath(path, systemData)
+
+    // MUTEX LOCK: Wait for any pending operations
+    while (this.hnswLocks.has(path)) {
+      await this.hnswLocks.get(path)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(path, lockPromise)
+
+    try {
+      // Write atomically (serialized by mutex)
+      this.objectStore.set(path, JSON.parse(JSON.stringify(systemData)))
+    } finally {
+      // Release lock
+      this.hnswLocks.delete(path)
+      releaseLock()
+    }
   }
 
   /**

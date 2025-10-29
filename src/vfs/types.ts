@@ -73,6 +73,13 @@ export interface VFSMetadata {
   exports?: string[]             // For code files - what they export
   language?: string              // Programming language or human language
 
+  // Import tracking (optional, present if created during import)
+  importIds?: string[]           // Import operation IDs (array because entity can be in multiple imports)
+  projectId?: string             // Project identifier grouping related imports
+  importedAt?: number            // Timestamp when imported
+  importFormat?: string          // Format of import ('excel', 'csv', 'pdf', etc.)
+  importSource?: string          // Source filename or URL
+
   // Extended metadata for various file types
   lineCount?: number
   wordCount?: number

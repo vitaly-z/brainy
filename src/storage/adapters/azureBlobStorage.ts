@@ -1704,43 +1704,76 @@ export class AzureBlobStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+    // Previous implementation overwrote the entire file, destroying vector data
+    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
 
+    // CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
+    // Uses Azure Blob ETags with ifMatch preconditions - retries with exponential backoff on conflicts
+    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+
+    const shard = getShardIdFromUuid(nounId)
+    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // Read existing node data
-        const downloadResponse = await blockBlobClient.download(0)
-        const existingData = await this.streamToBuffer(downloadResponse.readableStreamBody!)
-        const existingNode = JSON.parse(existingData.toString())
+        // Get current ETag and data
+        let currentETag: string | undefined
+        let existingNode: any = {}
+
+        try {
+          const downloadResponse = await blockBlobClient.download(0)
+          const existingData = await this.streamToBuffer(downloadResponse.readableStreamBody!)
+          existingNode = JSON.parse(existingData.toString())
+          currentETag = downloadResponse.etag
+        } catch (error: any) {
+          // File doesn't exist yet - will create new
+          if (error.statusCode !== 404 && error.code !== 'BlobNotFound') {
+            throw error
+          }
+        }
 
         // Preserve id and vector, update only HNSW graph metadata
         const updatedNode = {
-          ...existingNode,
+          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
           level: hnswData.level,
           connections: hnswData.connections
         }
 
         const content = JSON.stringify(updatedNode, null, 2)
+
+        // ATOMIC WRITE: Use ETag precondition
+        // If currentETag exists, only write if ETag matches (no concurrent modification)
+        // If no ETag, only write if blob doesn't exist (ifNoneMatch: *)
         await blockBlobClient.upload(content, content.length, {
-          blobHTTPHeaders: { blobContentType: 'application/json' }
+          blobHTTPHeaders: { blobContentType: 'application/json' },
+          conditions: currentETag
+            ? { ifMatch: currentETag }
+            : { ifNoneMatch: '*' } // Only create if doesn't exist
         })
+
+        // Success! Exit retry loop
+        return
       } catch (error: any) {
-        // If node doesn't exist yet, create it with just HNSW data
-        if (error.statusCode === 404 || error.code === 'BlobNotFound') {
-          const content = JSON.stringify(hnswData, null, 2)
-          await blockBlobClient.upload(content, content.length, {
-            blobHTTPHeaders: { blobContentType: 'application/json' }
-          })
-        } else {
-          throw error
+        // Precondition failed - concurrent modification detected
+        if (error.statusCode === 412 || error.code === 'ConditionNotMet') {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
+            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
+          }
+
+          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
         }
+
+        // Other error - rethrow
+        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
+        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
       }
-    } catch (error) {
-      this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
     }
   }
 
@@ -1774,6 +1807,8 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Save HNSW system data (entry point, max level)
+   *
+   * CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -1781,17 +1816,54 @@ export class AzureBlobStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      const key = `${this.systemPrefix}hnsw-system.json`
+    const key = `${this.systemPrefix}hnsw-system.json`
+    const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
 
-      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
-      const content = JSON.stringify(systemData, null, 2)
-      await blockBlobClient.upload(content, content.length, {
-        blobHTTPHeaders: { blobContentType: 'application/json' }
-      })
-    } catch (error) {
-      this.logger.error('Failed to save HNSW system data:', error)
-      throw new Error(`Failed to save HNSW system data: ${error}`)
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Get current ETag
+        let currentETag: string | undefined
+
+        try {
+          const properties = await blockBlobClient.getProperties()
+          currentETag = properties.etag
+        } catch (error: any) {
+          // File doesn't exist yet
+          if (error.statusCode !== 404 && error.code !== 'BlobNotFound') {
+            throw error
+          }
+        }
+
+        const content = JSON.stringify(systemData, null, 2)
+
+        // ATOMIC WRITE: Use ETag precondition
+        await blockBlobClient.upload(content, content.length, {
+          blobHTTPHeaders: { blobContentType: 'application/json' },
+          conditions: currentETag
+            ? { ifMatch: currentETag }
+            : { ifNoneMatch: '*' }
+        })
+
+        // Success!
+        return
+      } catch (error: any) {
+        // Precondition failed - concurrent modification
+        if (error.statusCode === 412 || error.code === 'ConditionNotMet') {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for HNSW system data`)
+            throw new Error('Failed to save HNSW system data: max retries exceeded due to concurrent modifications')
+          }
+
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        // Other error - rethrow
+        this.logger.error('Failed to save HNSW system data:', error)
+        throw new Error(`Failed to save HNSW system data: ${error}`)
+      }
     }
   }
 

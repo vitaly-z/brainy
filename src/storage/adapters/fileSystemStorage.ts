@@ -2602,12 +2602,25 @@ export class FileSystemStorage extends BaseStorage {
     // Previous implementation overwrote the entire file, destroying vector data
     // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
 
+    // CRITICAL FIX (v4.10.1): Atomic write to prevent race conditions during concurrent HNSW updates
+    // Uses temp file + atomic rename strategy (POSIX guarantees rename() atomicity)
+    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+
     const filePath = this.getNodePath(nounId)
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
     try {
-      // Read existing node data
-      const existingData = await fs.promises.readFile(filePath, 'utf-8')
-      const existingNode = JSON.parse(existingData)
+      // Read existing node data (if exists)
+      let existingNode: any = {}
+      try {
+        const existingData = await fs.promises.readFile(filePath, 'utf-8')
+        existingNode = JSON.parse(existingData)
+      } catch (error: any) {
+        // File doesn't exist yet - will create new
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
+      }
 
       // Preserve id and vector, update only HNSW graph metadata
       const updatedNode = {
@@ -2616,17 +2629,23 @@ export class FileSystemStorage extends BaseStorage {
         connections: hnswData.connections
       }
 
-      // Write back the COMPLETE node with updated HNSW data
-      await fs.promises.writeFile(filePath, JSON.stringify(updatedNode, null, 2))
+      // ATOMIC WRITE SEQUENCE:
+      // 1. Write to temp file
+      await this.ensureDirectoryExists(path.dirname(tempPath))
+      await fs.promises.writeFile(tempPath, JSON.stringify(updatedNode, null, 2))
+
+      // 2. Atomic rename temp → final (POSIX atomicity guarantee)
+      // This operation is guaranteed atomic by POSIX - either succeeds completely or fails
+      // Multiple concurrent renames will serialize at the kernel level
+      await fs.promises.rename(tempPath, filePath)
     } catch (error: any) {
-      // If node doesn't exist yet, create it with just HNSW data
-      // This should only happen during initial node creation
-      if (error.code === 'ENOENT') {
-        await this.ensureDirectoryExists(path.dirname(filePath))
-        await fs.promises.writeFile(filePath, JSON.stringify(hnswData, null, 2))
-      } else {
-        throw error
+      // Clean up temp file on any error
+      try {
+        await fs.promises.unlink(tempPath)
+      } catch (cleanupError) {
+        // Ignore cleanup errors - temp file may not exist
       }
+      throw error
     }
   }
 
@@ -2655,6 +2674,8 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Save HNSW system data (entry point, max level)
+   *
+   * CRITICAL FIX (v4.10.1): Atomic write to prevent race conditions during concurrent updates
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -2663,7 +2684,24 @@ export class FileSystemStorage extends BaseStorage {
     await this.ensureInitialized()
 
     const filePath = path.join(this.systemDir, 'hnsw-system.json')
-    await fs.promises.writeFile(filePath, JSON.stringify(systemData, null, 2))
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
+    try {
+      // Write to temp file
+      await this.ensureDirectoryExists(path.dirname(tempPath))
+      await fs.promises.writeFile(tempPath, JSON.stringify(systemData, null, 2))
+
+      // Atomic rename temp → final (POSIX atomicity guarantee)
+      await fs.promises.rename(tempPath, filePath)
+    } catch (error: any) {
+      // Clean up temp file on any error
+      try {
+        await fs.promises.unlink(tempPath)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      throw error
+    }
   }
 
   /**

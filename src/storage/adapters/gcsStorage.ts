@@ -1888,19 +1888,39 @@ export class GcsStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-      // Previous implementation overwrote the entire file, destroying vector data
-      // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+    // Previous implementation overwrote the entire file, destroying vector data
+    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
 
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-      const file = this.bucket!.file(key)
+    // CRITICAL FIX (v4.10.1): Optimistic locking with generation numbers to prevent race conditions
+    // Uses GCS generation preconditions - retries with exponential backoff on conflicts
+    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
 
+    const shard = getShardIdFromUuid(nounId)
+    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    const file = this.bucket!.file(key)
+
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // Read existing node data
-        const [existingData] = await file.download()
-        const existingNode = JSON.parse(existingData.toString())
+        // Get current generation and data
+        let currentGeneration: string | undefined
+        let existingNode: any = {}
+
+        try {
+          // Download file and get metadata in parallel
+          const [data, metadata] = await Promise.all([
+            file.download(),
+            file.getMetadata()
+          ])
+          existingNode = JSON.parse(data[0].toString('utf-8'))
+          currentGeneration = metadata[0].generation?.toString()
+        } catch (error: any) {
+          // File doesn't exist yet - will create new
+          if (error.code !== 404) {
+            throw error
+          }
+        }
 
         // Preserve id and vector, update only HNSW graph metadata
         const updatedNode = {
@@ -1909,26 +1929,37 @@ export class GcsStorage extends BaseStorage {
           connections: hnswData.connections
         }
 
-        // Write back the COMPLETE node with updated HNSW data
+        // ATOMIC WRITE: Use generation precondition
+        // If currentGeneration exists, only write if generation matches (no concurrent modification)
+        // If no generation, only write if file doesn't exist (ifGenerationMatch: 0)
         await file.save(JSON.stringify(updatedNode, null, 2), {
           contentType: 'application/json',
-          resumable: false
+          resumable: false,
+          preconditionOpts: currentGeneration
+            ? { ifGenerationMatch: currentGeneration }
+            : { ifGenerationMatch: '0' } // Only create if doesn't exist
         })
+
+        // Success! Exit retry loop
+        return
       } catch (error: any) {
-        // If node doesn't exist yet, create it with just HNSW data
-        // This should only happen during initial node creation
-        if (error.code === 404) {
-          await file.save(JSON.stringify(hnswData, null, 2), {
-            contentType: 'application/json',
-            resumable: false
-          })
-        } else {
-          throw error
+        // Precondition failed (412) - concurrent modification detected
+        if (error.code === 412) {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
+            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
+          }
+
+          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
         }
+
+        // Other error - rethrow
+        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
+        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
       }
-    } catch (error) {
-      this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
     }
   }
 
@@ -1963,6 +1994,8 @@ export class GcsStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    * Storage path: system/hnsw-system.json
+   *
+   * CRITICAL FIX (v4.10.1): Optimistic locking with generation numbers to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -1970,17 +2003,53 @@ export class GcsStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      const key = `${this.systemPrefix}hnsw-system.json`
+    const key = `${this.systemPrefix}hnsw-system.json`
+    const file = this.bucket!.file(key)
 
-      const file = this.bucket!.file(key)
-      await file.save(JSON.stringify(systemData, null, 2), {
-        contentType: 'application/json',
-        resumable: false
-      })
-    } catch (error) {
-      this.logger.error('Failed to save HNSW system data:', error)
-      throw new Error(`Failed to save HNSW system data: ${error}`)
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Get current generation
+        let currentGeneration: string | undefined
+
+        try {
+          const [metadata] = await file.getMetadata()
+          currentGeneration = metadata.generation?.toString()
+        } catch (error: any) {
+          // File doesn't exist yet
+          if (error.code !== 404) {
+            throw error
+          }
+        }
+
+        // ATOMIC WRITE: Use generation precondition
+        await file.save(JSON.stringify(systemData, null, 2), {
+          contentType: 'application/json',
+          resumable: false,
+          preconditionOpts: currentGeneration
+            ? { ifGenerationMatch: currentGeneration }
+            : { ifGenerationMatch: '0' }
+        })
+
+        // Success!
+        return
+      } catch (error: any) {
+        // Precondition failed - concurrent modification
+        if (error.code === 412) {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for HNSW system data`)
+            throw new Error('Failed to save HNSW system data: max retries exceeded due to concurrent modifications')
+          }
+
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        // Other error - rethrow
+        this.logger.error('Failed to save HNSW system data:', error)
+        throw new Error(`Failed to save HNSW system data: ${error}`)
+      }
     }
   }
 

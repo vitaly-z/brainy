@@ -48,6 +48,30 @@ export interface ImportSource {
 }
 
 /**
+ * Tracking context for import operations
+ * Contains metadata that should be attached to all created entities/relationships
+ */
+export interface TrackingContext {
+  /** Unique identifier for this import operation */
+  importId: string
+
+  /** Project identifier grouping related imports */
+  projectId: string
+
+  /** Timestamp when import started */
+  importedAt: number
+
+  /** Format of imported data */
+  importFormat: string
+
+  /** Source filename or URL */
+  importSource: string
+
+  /** Custom metadata from user */
+  customMetadata: Record<string, any>
+}
+
+/**
  * Valid import options for v4.x
  */
 export interface ValidImportOptions {
@@ -98,6 +122,26 @@ export interface ValidImportOptions {
 
   /** Chunk size for streaming large imports (0 = no streaming) */
   chunkSize?: number
+
+  /**
+   * Unique identifier for this import operation (auto-generated if not provided)
+   * Used to track all entities/relationships created in this import
+   * Note: Entities can belong to multiple imports (stored as array)
+   */
+  importId?: string
+
+  /**
+   * Project identifier (user-specified or derived from vfsPath)
+   * Groups multiple imports under a common project
+   * If not specified, defaults to sanitized vfsPath
+   */
+  projectId?: string
+
+  /**
+   * Custom metadata to attach to all created entities
+   * Merged with import/project tracking metadata
+   */
+  customMetadata?: Record<string, any>
 
   /**
    * Progress callback for tracking import progress (v4.2.0+)
@@ -320,7 +364,6 @@ export class ImportCoordinator {
     options: ImportOptions = {}
   ): Promise<ImportResult> {
     const startTime = Date.now()
-    const importId = uuidv4()
 
     // Validate options (v4.0.0+: Reject deprecated v3.x options)
     this.validateOptions(options)
@@ -343,16 +386,7 @@ export class ImportCoordinator {
       throw new Error('Unable to detect file format. Please specify format explicitly.')
     }
 
-    // Report extraction stage
-    options.onProgress?.({
-      stage: 'extracting',
-      message: `Extracting entities from ${detection.format}...`
-    })
-
-    // Extract entities and relationships
-    const extractionResult = await this.extract(normalizedSource, detection.format, options)
-
-    // Set defaults
+    // Set defaults early (needed for tracking context)
     // CRITICAL FIX (v4.3.2): Spread options FIRST, then apply defaults
     // Previously: ...options at the end overwrote normalized defaults with undefined
     // Now: Defaults properly override undefined values
@@ -370,6 +404,27 @@ export class ImportCoordinator {
       enableConceptExtraction: options.enableConceptExtraction !== false,  // Already defaults to true
       deduplicationThreshold: options.deduplicationThreshold || 0.85
     }
+
+    // Generate tracking context (v4.10.0+: Unified import/project tracking)
+    const importId = options.importId || uuidv4()
+    const projectId = options.projectId || this.deriveProjectId(opts.vfsPath)
+    const trackingContext: TrackingContext = {
+      importId,
+      projectId,
+      importedAt: Date.now(),
+      importFormat: detection.format,
+      importSource: normalizedSource.filename || 'unknown',
+      customMetadata: options.customMetadata || {}
+    }
+
+    // Report extraction stage
+    options.onProgress?.({
+      stage: 'extracting',
+      message: `Extracting entities from ${detection.format}...`
+    })
+
+    // Extract entities and relationships
+    const extractionResult = await this.extract(normalizedSource, detection.format, options)
 
     // Report VFS storage stage
     options.onProgress?.({
@@ -389,7 +444,8 @@ export class ImportCoordinator {
       sourceBuffer: normalizedSource.type === 'buffer' ? normalizedSource.data as Buffer : undefined,
       sourceFilename: normalizedSource.filename || `import.${detection.format}`,
       createRelationshipFile: true,
-      createMetadataFile: true
+      createMetadataFile: true,
+      trackingContext  // v4.10.0: Pass tracking metadata to VFS
     })
 
     // Report graph storage stage
@@ -406,7 +462,8 @@ export class ImportCoordinator {
       {
         sourceFilename: normalizedSource.filename || `import.${detection.format}`,
         format: detection.format
-      }
+      },
+      trackingContext  // v4.10.0: Pass tracking metadata to graph creation
     )
 
     // Report complete
@@ -741,7 +798,8 @@ export class ImportCoordinator {
     sourceInfo?: {
       sourceFilename: string
       format: string
-    }
+    },
+    trackingContext?: TrackingContext  // v4.10.0: Import/project tracking
   ): Promise<{
     entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string }>
     relationships: Array<{ id: string; from: string; to: string; type: VerbType }>
@@ -817,11 +875,19 @@ export class ImportCoordinator {
           name: sourceInfo.sourceFilename,
           sourceFile: sourceInfo.sourceFilename,
           format: sourceInfo.format,
-          importedAt: Date.now(),
           importSource: true,
           vfsPath: vfsResult.rootPath,
           totalRows: rows.length,
-          byType: this.countByType(rows)
+          byType: this.countByType(rows),
+          // v4.10.0: Import tracking metadata
+          ...(trackingContext && {
+            importIds: [trackingContext.importId],
+            projectId: trackingContext.projectId,
+            importedAt: trackingContext.importedAt,
+            importFormat: trackingContext.importFormat,
+            importSource: trackingContext.importSource,
+            ...trackingContext.customMetadata
+          })
         }
       })
 
@@ -854,7 +920,18 @@ export class ImportCoordinator {
               metadata: {
                 ...entity.metadata,
                 vfsPath: vfsFile?.path,
-                importedFrom: 'import-coordinator'
+                importedFrom: 'import-coordinator',
+                // v4.10.0: Import tracking metadata
+                ...(trackingContext && {
+                  importIds: [trackingContext.importId],
+                  projectId: trackingContext.projectId,
+                  importedAt: trackingContext.importedAt,
+                  importFormat: trackingContext.importFormat,
+                  importSource: trackingContext.importSource,
+                  sourceRow: row.rowNumber,
+                  sourceSheet: row.sheet,
+                  ...trackingContext.customMetadata
+                })
               }
             },
             importSource,
@@ -883,9 +960,19 @@ export class ImportCoordinator {
               name: entity.name,
               confidence: entity.confidence,
               vfsPath: vfsFile?.path,
-              importedAt: Date.now(),
               importedFrom: 'import-coordinator',
-              imports: [importSource]
+              imports: [importSource],
+              // v4.10.0: Import tracking metadata
+              ...(trackingContext && {
+                importIds: [trackingContext.importId],
+                projectId: trackingContext.projectId,
+                importedAt: trackingContext.importedAt,
+                importFormat: trackingContext.importFormat,
+                importSource: trackingContext.importSource,
+                sourceRow: row.rowNumber,
+                sourceSheet: row.sheet,
+                ...trackingContext.customMetadata
+              })
             }
           })
           newCount++
@@ -915,7 +1002,15 @@ export class ImportCoordinator {
               sheet: row.sheet,
               rowNumber: row.rowNumber,
               extractedAt: Date.now(),
-              format: sourceInfo?.format
+              format: sourceInfo?.format,
+              // v4.10.0: Import tracking metadata
+              ...(trackingContext && {
+                importIds: [trackingContext.importId],
+                projectId: trackingContext.projectId,
+                createdAt: Date.now(),
+                importFormat: trackingContext.importFormat,
+                ...trackingContext.customMetadata
+              })
             }
           })
           provenanceCount++
@@ -959,7 +1054,14 @@ export class ImportCoordinator {
                       name: rel.to,
                       placeholder: true,
                       inferredFrom: entity.name,
-                      importedAt: Date.now()
+                      // v4.10.0: Import tracking metadata
+                      ...(trackingContext && {
+                        importIds: [trackingContext.importId],
+                        projectId: trackingContext.projectId,
+                        importedAt: trackingContext.importedAt,
+                        importFormat: trackingContext.importFormat,
+                        ...trackingContext.customMetadata
+                      })
                     }
                   })
 
@@ -982,7 +1084,14 @@ export class ImportCoordinator {
                 weight: rel.weight || 1.0,  // v4.2.0: Top-level field
                 metadata: {
                   evidence: rel.evidence,
-                  importedAt: Date.now()
+                  // v4.10.0: Import tracking metadata (will be merged in batch creation)
+                  ...(trackingContext && {
+                    importIds: [trackingContext.importId],
+                    projectId: trackingContext.projectId,
+                    importedAt: trackingContext.importedAt,
+                    importFormat: trackingContext.importFormat,
+                    ...trackingContext.customMetadata
+                  })
                 }
               } as any)
             } catch (error) {
@@ -1353,6 +1462,51 @@ ${optionDetails}
       const optionsList = invalidOptions.map((o) => `'${o.old}'`).join(', ')
       return `Invalid import options: ${optionsList}. See https://brainy.dev/docs/guides/migrating-to-v4`
     }
+  }
+
+  /**
+   * Derive project ID from VFS path
+   * Extracts meaningful project name from path, avoiding timestamps
+   *
+   * Examples:
+   * - /imports/myproject → "myproject"
+   * - /imports/2024-01-15/myproject → "myproject"
+   * - /imports/1234567890 → "import_1234567890"
+   * - /my-game/characters → "my-game"
+   *
+   * @param vfsPath - VFS path to derive project ID from
+   * @returns Derived project identifier
+   */
+  private deriveProjectId(vfsPath: string): string {
+    // Extract meaningful project name from vfsPath
+    const segments = vfsPath.split('/').filter(s => s.length > 0)
+
+    if (segments.length === 0) {
+      return 'default_project'
+    }
+
+    // If path starts with /imports/, look for meaningful segment
+    if (segments[0] === 'imports') {
+      if (segments.length === 1) {
+        return 'default_project'
+      }
+
+      const lastSegment = segments[segments.length - 1]
+
+      // If last segment looks like a timestamp, use parent
+      if (/^\d{4}-\d{2}-\d{2}$/.test(lastSegment) || /^\d{10,}$/.test(lastSegment)) {
+        // Use parent segment if available
+        if (segments.length >= 3) {
+          return segments[segments.length - 2]
+        }
+        return `import_${lastSegment}`
+      }
+
+      return lastSegment
+    }
+
+    // For non-/imports/ paths, use first segment as project
+    return segments[0]
   }
 
   /**

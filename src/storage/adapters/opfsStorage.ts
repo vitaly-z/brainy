@@ -2028,15 +2028,35 @@ export class OPFSStorage extends BaseStorage {
     return noun ? noun.vector : null
   }
 
+  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // Browser environments are single-threaded but async operations can still interleave
+  private hnswLocks = new Map<string, Promise<void>>()
+
   /**
    * Save HNSW graph data for a noun
    * Storage path: nouns/hnsw/{shard}/{id}.json
+   *
+   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions during concurrent HNSW updates
+   * Browser is single-threaded but async operations can interleave - mutex prevents this
+   * Prevents data corruption when multiple entities connect to same neighbor simultaneously
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
     await this.ensureInitialized()
+
+    const lockKey = `hnsw/${nounId}`
+
+    // MUTEX LOCK: Wait for any pending operations on this entity
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
     try {
       // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
@@ -2070,6 +2090,10 @@ export class OPFSStorage extends BaseStorage {
     } catch (error) {
       console.error(`Failed to save HNSW data for ${nounId}:`, error)
       throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+    } finally {
+      // Release lock
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
@@ -2111,12 +2135,26 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    * Storage path: index/hnsw-system.json
+   *
+   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
     maxLevel: number
   }): Promise<void> {
     await this.ensureInitialized()
+
+    const lockKey = 'system/hnsw-system'
+
+    // MUTEX LOCK: Wait for any pending operations
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
     try {
       // Create or get the file in the index directory
@@ -2129,6 +2167,10 @@ export class OPFSStorage extends BaseStorage {
     } catch (error) {
       console.error('Failed to save HNSW system data:', error)
       throw new Error(`Failed to save HNSW system data: ${error}`)
+    } finally {
+      // Release lock
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 

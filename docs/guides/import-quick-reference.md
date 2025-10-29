@@ -91,6 +91,44 @@ await brain.import(file, {
 })
 ```
 
+### Import Tracking (v4.10.0+)
+
+Track and organize imports by project:
+
+```typescript
+await brain.import(file, {
+  projectId: 'worldbuilding',        // Group related imports
+  importId: 'import-001',            // Custom ID (auto-generated if not provided)
+  customMetadata: {                  // Additional metadata
+    campaign: 'fall-2024',
+    author: 'gamemaster'
+  }
+})
+
+// Query all entities in a project
+const entities = await brain.find({
+  where: { projectId: 'worldbuilding' }
+})
+
+// Query entities from specific import
+const importedEntities = await brain.find({
+  where: { importIds: { $includes: 'import-001' } }
+})
+
+// Exclude a project from search
+const results = await brain.find({
+  query: 'dragon',
+  where: { projectId: { $ne: 'archived-project' } }
+})
+```
+
+**All created items (entities, relationships, VFS files) are automatically tagged with:**
+- `importIds: string[]` - Import operation IDs
+- `projectId: string` - Project identifier
+- `importedAt: number` - Timestamp
+- `importFormat: string` - Format type ('excel', 'csv', etc.)
+- `importSource: string` - Source filename/URL
+
 ### VFS Organization
 
 ```typescript

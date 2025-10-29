@@ -13,6 +13,7 @@ import * as path from 'path'
 import { VirtualFileSystem } from '../VirtualFileSystem.js'
 import { Brainy } from '../../brainy.js'
 import { NounType } from '../../types/graphTypes.js'
+import { v4 as uuidv4 } from '../../universal/uuid.js'
 
 export interface ImportOptions {
   targetPath?: string       // VFS target path (default: '/')
@@ -24,6 +25,11 @@ export interface ImportOptions {
   extractMetadata?: boolean // Extract metadata (default: true)
   showProgress?: boolean    // Log progress (default: false)
   filter?: (path: string) => boolean // Custom filter function
+
+  // v4.10.0: Import tracking
+  importId?: string          // Unique import identifier (auto-generated if not provided)
+  projectId?: string         // Project identifier grouping related imports
+  customMetadata?: Record<string, any> // Custom metadata to attach
 }
 
 export interface ImportResult {
@@ -58,6 +64,21 @@ export class DirectoryImporter {
    */
   async import(sourcePath: string, options: ImportOptions = {}): Promise<ImportResult> {
     const startTime = Date.now()
+
+    // v4.10.0: Generate tracking metadata
+    const importId = options.importId || uuidv4()
+    const projectId = options.projectId || this.deriveProjectId(options.targetPath || '/')
+    const trackingMetadata = {
+      importIds: [importId],
+      projectId,
+      importedAt: Date.now(),
+      importSource: sourcePath,
+      ...(options.customMetadata || {})
+    }
+
+    // Store tracking metadata in options for use in helper methods
+    const enhancedOptions = { ...options, _trackingMetadata: trackingMetadata }
+
     const result: ImportResult = {
       imported: [],
       failed: [],
@@ -74,7 +95,7 @@ export class DirectoryImporter {
       if (stats.isFile()) {
         await this.importFile(sourcePath, options.targetPath || '/', result)
       } else if (stats.isDirectory()) {
-        await this.importDirectory(sourcePath, options, result)
+        await this.importDirectory(sourcePath, enhancedOptions as any, result)
       }
     } catch (error) {
       result.failed.push({
@@ -85,6 +106,14 @@ export class DirectoryImporter {
 
     result.duration = Date.now() - startTime
     return result
+  }
+
+  /**
+   * Derive project ID from target path
+   */
+  private deriveProjectId(targetPath: string): string {
+    const segments = targetPath.split('/').filter(s => s.length > 0)
+    return segments.length > 0 ? segments[0] : 'default_project'
   }
 
   /**
@@ -190,9 +219,13 @@ export class DirectoryImporter {
     await collectDirs(sourcePath, targetPath)
 
     // Create all directories
+    const trackingMetadata = (options as any)._trackingMetadata || {}
     for (const dirPath of dirsToCreate) {
       try {
-        await this.vfs.mkdir(dirPath, { recursive: true })
+        await this.vfs.mkdir(dirPath, {
+          recursive: true,
+          metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        })
         result.directoriesCreated++
       } catch (error: any) {
         if (error.code !== 'EEXIST') {
@@ -290,14 +323,15 @@ export class DirectoryImporter {
     }
 
     // Write to VFS
+    const trackingMetadata = (options as any)._trackingMetadata || {}
     await this.vfs.writeFile(vfsPath, content, {
       generateEmbedding: options.generateEmbeddings,
       extractMetadata: options.extractMetadata,
       metadata: {
         originalPath: filePath,
-        importedAt: Date.now(),
         originalSize: stats.size,
-        originalModified: stats.mtime.getTime()
+        originalModified: stats.mtime.getTime(),
+        ...trackingMetadata  // v4.10.0: Add tracking metadata
       }
     })
 

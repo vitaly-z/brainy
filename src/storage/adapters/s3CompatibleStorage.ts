@@ -3929,57 +3929,85 @@ export class S3CompatibleStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      const { PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3')
+    const { PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3')
 
-      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
+    // Previous implementation overwrote the entire file, destroying vector data
+    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
 
+    // CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
+    // Uses S3 IfMatch preconditions - retries with exponential backoff on conflicts
+    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+
+    const shard = getShardIdFromUuid(nounId)
+    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // Read existing node data
-        const getResponse = await this.s3Client!.send(
-          new GetObjectCommand({
-            Bucket: this.bucketName,
-            Key: key
-          })
-        )
-        const existingData = await getResponse.Body!.transformToString()
-        const existingNode = JSON.parse(existingData)
+        // Get current ETag and data
+        let currentETag: string | undefined
+        let existingNode: any = {}
+
+        try {
+          const getResponse = await this.s3Client!.send(
+            new GetObjectCommand({
+              Bucket: this.bucketName,
+              Key: key
+            })
+          )
+          const existingData = await getResponse.Body!.transformToString()
+          existingNode = JSON.parse(existingData)
+          currentETag = getResponse.ETag
+        } catch (error: any) {
+          // File doesn't exist yet - will create new
+          if (error.name !== 'NoSuchKey' && error.Code !== 'NoSuchKey') {
+            throw error
+          }
+        }
 
         // Preserve id and vector, update only HNSW graph metadata
         const updatedNode = {
-          ...existingNode,
+          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
           level: hnswData.level,
           connections: hnswData.connections
         }
 
+        // ATOMIC WRITE: Use ETag precondition
+        // If currentETag exists, only write if ETag matches (no concurrent modification)
+        // If no ETag, only write if file doesn't exist (IfNoneMatch: *)
         await this.s3Client!.send(
           new PutObjectCommand({
             Bucket: this.bucketName,
             Key: key,
             Body: JSON.stringify(updatedNode, null, 2),
-            ContentType: 'application/json'
+            ContentType: 'application/json',
+            ...(currentETag
+              ? { IfMatch: currentETag }
+              : { IfNoneMatch: '*' }) // Only create if doesn't exist
           })
         )
+
+        // Success! Exit retry loop
+        return
       } catch (error: any) {
-        // If node doesn't exist yet, create it with just HNSW data
-        if (error.name === 'NoSuchKey' || error.Code === 'NoSuchKey') {
-          await this.s3Client!.send(
-            new PutObjectCommand({
-              Bucket: this.bucketName,
-              Key: key,
-              Body: JSON.stringify(hnswData, null, 2),
-              ContentType: 'application/json'
-            })
-          )
-        } else {
-          throw error
+        // Precondition failed - concurrent modification detected
+        if (error.name === 'PreconditionFailed' || error.Code === 'PreconditionFailed') {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
+            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
+          }
+
+          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
         }
+
+        // Other error - rethrow
+        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
+        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
       }
-    } catch (error) {
-      this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
     }
   }
 
@@ -4029,6 +4057,8 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    * Storage path: system/hnsw-system.json
+   *
+   * CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -4036,22 +4066,63 @@ export class S3CompatibleStorage extends BaseStorage {
   }): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+    const { PutObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3')
 
-      const key = `${this.systemPrefix}hnsw-system.json`
+    const key = `${this.systemPrefix}hnsw-system.json`
 
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: key,
-          Body: JSON.stringify(systemData, null, 2),
-          ContentType: 'application/json'
-        })
-      )
-    } catch (error) {
-      this.logger.error('Failed to save HNSW system data:', error)
-      throw new Error(`Failed to save HNSW system data: ${error}`)
+    const maxRetries = 5
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Get current ETag (use HEAD to avoid downloading data)
+        let currentETag: string | undefined
+
+        try {
+          const headResponse = await this.s3Client!.send(
+            new HeadObjectCommand({
+              Bucket: this.bucketName,
+              Key: key
+            })
+          )
+          currentETag = headResponse.ETag
+        } catch (error: any) {
+          // File doesn't exist yet
+          if (error.name !== 'NotFound' && error.name !== 'NoSuchKey' && error.Code !== 'NoSuchKey') {
+            throw error
+          }
+        }
+
+        // ATOMIC WRITE: Use ETag precondition
+        await this.s3Client!.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+            Body: JSON.stringify(systemData, null, 2),
+            ContentType: 'application/json',
+            ...(currentETag
+              ? { IfMatch: currentETag }
+              : { IfNoneMatch: '*' })
+          })
+        )
+
+        // Success!
+        return
+      } catch (error: any) {
+        // Precondition failed - concurrent modification
+        if (error.name === 'PreconditionFailed' || error.Code === 'PreconditionFailed') {
+          if (attempt === maxRetries - 1) {
+            this.logger.error(`Max retries (${maxRetries}) exceeded for HNSW system data`)
+            throw new Error('Failed to save HNSW system data: max retries exceeded due to concurrent modifications')
+          }
+
+          const backoffMs = 50 * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, backoffMs))
+          continue
+        }
+
+        // Other error - rethrow
+        this.logger.error('Failed to save HNSW system data:', error)
+        throw new Error(`Failed to save HNSW system data: ${error}`)
+      }
     }
   }
 
