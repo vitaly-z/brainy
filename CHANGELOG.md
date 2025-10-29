@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.9.1](https://github.com/soulcraftlabs/brainy/compare/v4.9.0...v4.9.1) (2025-10-29)
+
+### 📚 Documentation
+
+* **vfs**: Fix NO FAKE CODE policy violations in VFS documentation
+  - **Removed**: 9 undocumented feature sections (~242 lines) from VFS docs
+    - Version History, Distributed Filesystem, AI Auto-Organization
+    - Security & Permissions, Smart Collections, Express.js middleware
+    - VSCode extension, Production Metrics, Backup & Recovery
+  - **Added**: Status labels (✅ Production, ⚠️ Beta, 🧪 Experimental) to all VFS features
+  - **Updated**: Performance claims with MEASURED vs PROJECTED labels
+  - **Created**: `docs/vfs/ROADMAP.md` for planned features (preserves vision without misleading)
+  - **Fixed**: Storage adapter list to show only 8 built-in adapters (removed Redis, PostgreSQL, ChromaDB)
+  - **Impact**: VFS documentation now 100% compliant with NO FAKE CODE policy
+
+### Files Modified
+- `docs/vfs/README.md`: Removed 9 fake feature sections, updated performance claims
+- `docs/vfs/SEMANTIC_VFS.md`: Added status labels, updated scale testing tables
+- `docs/vfs/VFS_API_GUIDE.md`: Fixed storage adapter compatibility list
+- `docs/vfs/ROADMAP.md`: New file organizing planned features by version
+
 ## [4.9.0](https://github.com/soulcraftlabs/brainy/compare/v4.8.6...v4.9.0) (2025-10-28)
 
 **UNIVERSAL RELATIONSHIP EXTRACTION - Knowledge Graph Builder**
