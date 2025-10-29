@@ -55,7 +55,7 @@ interface DynamicParameters {
  * Optimized HNSW Index with dynamic parameter tuning for large datasets
  */
 export class OptimizedHNSWIndex extends HNSWIndex {
-  private optimizedConfig: Required<OptimizedHNSWConfig>
+  private optimizedConfig: Required<Omit<OptimizedHNSWConfig, 'maxConcurrentNeighborWrites'>> & { maxConcurrentNeighborWrites?: number }
   private performanceMetrics: PerformanceMetrics
   private dynamicParams: DynamicParameters
   private searchHistory: Array<{ latency: number; k: number; timestamp: number }> = []
@@ -66,7 +66,7 @@ export class OptimizedHNSWIndex extends HNSWIndex {
     distanceFunction: DistanceFunction = euclideanDistance
   ) {
     // Set optimized defaults for large scale
-    const defaultConfig: Required<OptimizedHNSWConfig> = {
+    const defaultConfig: Required<Omit<OptimizedHNSWConfig, 'maxConcurrentNeighborWrites'>> = {
       M: 32, // Higher connectivity for better recall
       efConstruction: 400, // Better build quality
       efSearch: 100, // Dynamic - will be tuned
@@ -84,6 +84,7 @@ export class OptimizedHNSWIndex extends HNSWIndex {
       levelMultiplier: 16,
       seedConnections: 8,
       pruningStrategy: 'hybrid'
+      // maxConcurrentNeighborWrites intentionally omitted - optional property from parent HNSWConfig (v4.10.0+)
     }
 
     const mergedConfig = { ...defaultConfig, ...config }

@@ -308,6 +308,7 @@ export interface HNSWConfig {
   efSearch: number // Size of the dynamic candidate list during search
   ml: number // Maximum level
   useDiskBasedIndex?: boolean // Whether to use disk-based index
+  maxConcurrentNeighborWrites?: number // Maximum concurrent neighbor updates during insert (v4.10.0+). Default: unlimited (full concurrency)
 }
 
 /**
