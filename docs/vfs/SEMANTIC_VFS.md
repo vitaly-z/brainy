@@ -81,13 +81,15 @@ const experiments = await vfs.readdir('/by-tag/experimental')
 
 ## Supported Semantic Dimensions
 
-### 1. Traditional Path (Hierarchical)
+### 1. Traditional Path (Hierarchical) ✅ **Production**
 ```typescript
 await vfs.readFile('/src/auth/login.ts')
 // Works exactly like a normal filesystem
 ```
 
-### 2. By Concept (Semantic)
+**Status:** ✅ Fully implemented and tested
+
+### 2. By Concept (Semantic) ⚠️ **Beta**
 ```typescript
 await vfs.readdir('/by-concept/authentication')
 // Returns all files about authentication
@@ -98,7 +100,9 @@ await vfs.readFile('/by-concept/authentication/login.ts')
 
 **How it works:** Uses `brain.extractConcepts()` with NeuralEntityExtractor to extract concepts from file content using embeddings and the NounType taxonomy. Indexes concept names for O(log n) queries. See [Neural Extraction API](./NEURAL_EXTRACTION.md) for details.
 
-### 3. By Author (Ownership)
+**Status:** ⚠️ Beta - Requires NeuralEntityExtractor setup, tested at <1K file scale
+
+### 3. By Author (Ownership) ✅ **Production**
 ```typescript
 await vfs.readdir('/by-author/alice')
 // All files owned/modified by alice
@@ -109,7 +113,9 @@ await vfs.stat('/by-author/alice/config.ts')
 
 **How it works:** Tracks owner metadata on every file. Indexed by MetadataIndexManager.
 
-### 4. By Time (Temporal)
+**Status:** ✅ Fully implemented and tested at 10K file scale
+
+### 4. By Time (Temporal) ✅ **Production**
 ```typescript
 await vfs.readdir('/as-of/2024-03-15')
 // Files modified on March 15, 2024
@@ -120,7 +126,9 @@ await vfs.readFile('/as-of/2024-03-15/src/auth.ts')
 
 **How it works:** Tracks `modified` timestamp. Uses B-tree range queries (`greaterEqual`/`lessEqual`) for O(log n) performance.
 
-### 5. By Relationship (Graph)
+**Status:** ✅ Fully implemented and tested at 10K file scale
+
+### 5. By Relationship (Graph) ✅ **Production**
 ```typescript
 await vfs.readdir('/related-to/src/auth.ts/depth-2')
 // Files within 2 relationship hops
@@ -131,7 +139,9 @@ await vfs.readdir('/related-to/src/auth.ts/depth-2/types-contains,references')
 
 **How it works:** Uses GraphAdjacencyIndex for O(1) graph traversal. Supports depth limits and relationship type filtering.
 
-### 6. By Similarity (Vector)
+**Status:** ✅ Fully implemented and tested at 10K node scale
+
+### 6. By Similarity (Vector) ✅ **Production**
 ```typescript
 await vfs.readdir('/similar-to/src/auth.ts/threshold-0.8')
 // Files with 80%+ similarity to auth.ts
@@ -142,7 +152,9 @@ await vfs.similar('/src/auth.ts', { threshold: 0.9, limit: 10 })
 
 **How it works:** Uses HNSW vector index for O(log n) nearest neighbor search. Based on content embeddings.
 
-### 7. By Tag (Classification)
+**Status:** ✅ Fully implemented and tested at 100K vector scale
+
+### 7. By Tag (Classification) ✅ **Production**
 ```typescript
 await vfs.readdir('/by-tag/security')
 // All security-tagged files
@@ -155,25 +167,27 @@ await vfs.writeFile('/src/admin.ts', code, {
 
 **How it works:** Stores tags in metadata. Indexed for fast queries.
 
+**Status:** ✅ Fully implemented and tested at 10K file scale
+
 ---
 
 ## Performance Characteristics
 
-### Scalability to Millions of Files
+### Tested Performance at Scale
 
 All semantic paths use **indexed data structures** for optimal performance:
 
-| Dimension | Data Structure | Time Complexity | Million-Scale Ready |
-|-----------|---------------|-----------------|---------------------|
-| Traditional | PathCache + Graph | O(path depth) | ✅ Yes |
-| Concept | MetadataIndex (B-tree) | O(log n) | ✅ Yes* |
-| Author | MetadataIndex (B-tree) | O(log n) | ✅ Yes |
-| Time | MetadataIndex (B-tree) | O(log n) | ✅ Yes |
-| Relationship | GraphAdjacency | O(depth) | ✅ Yes |
-| Similarity | HNSW Index | O(log n) | ✅ Yes |
-| Tag | MetadataIndex (B-tree) | O(log n) | ✅ Yes* |
+| Dimension | Data Structure | Time Complexity | Tested Scale | Production Ready |
+|-----------|---------------|-----------------|--------------|------------------|
+| Traditional | PathCache + Graph | O(path depth) | Up to 10K files | ✅ Yes |
+| Concept | MetadataIndex (B-tree) | O(log n) | Up to 1K files | ⚠️ Beta |
+| Author | MetadataIndex (B-tree) | O(log n) | Up to 10K files | ✅ Yes |
+| Time | MetadataIndex (B-tree) | O(log n) | Up to 10K files | ✅ Yes |
+| Relationship | GraphAdjacency | O(depth) | Up to 10K nodes | ✅ Yes |
+| Similarity | HNSW Index | O(log n) | Up to 100K vectors | ✅ Yes |
+| Tag | MetadataIndex (B-tree) | O(log n) | Up to 10K files | ✅ Yes |
 
-\* *Requires concept/tag flattening (automatic in future versions)*
+**Note:** Million-scale performance is PROJECTED based on underlying index complexity. VFS-specific testing conducted at 1K-100K scale. See `tests/vfs/` for measured performance.
 
 ### Cache Strategy
 
@@ -301,7 +315,11 @@ console.log(id1 === id2 && id2 === id3)  // true
 
 ---
 
-## Extending with Custom Projections
+## Extending with Custom Projections 🧪 **Experimental**
+
+**Status:** 🧪 Experimental - API subject to change
+
+**Warning:** This API uses internal VFS interfaces that are not yet officially exposed. The registration mechanism will change in a future release to provide a stable public API.
 
 Create your own semantic dimensions:
 
@@ -334,12 +352,12 @@ class PriorityProjection extends BaseProjectionStrategy {
   }
 }
 
-// Register custom projection
+// Register custom projection (experimental - uses internal API)
 const brain = new Brainy()
 await brain.init()
 const vfs = brain.vfs()
 
-// Access via VFS internals (will be exposed in future API)
+// ⚠️ Internal API - will be replaced with public registration method
 vfs.projectionRegistry.register(new PriorityProjection())
 
 // Now use it!
@@ -347,6 +365,8 @@ const highPriority = await vfs.readdir('/by-priority/high')
 ```
 
 See [PROJECTION_STRATEGY_API.md](./PROJECTION_STRATEGY_API.md) for full guide.
+
+**Roadmap:** Public projection registration API coming in v1.2 (see [VFS ROADMAP](./ROADMAP.md))
 
 ---
 

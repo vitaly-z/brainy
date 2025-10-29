@@ -626,39 +626,67 @@ try {
 
 ### Storage Compatibility
 
-VFS works with **all** Brainy storage adapters:
+VFS works with all built-in Brainy storage adapters:
 
 ```typescript
-// Memory (testing)
+// Memory (testing/development)
 const brain = new Brainy({ storage: { type: 'memory' } })
 
-// Redis (development)
+// Filesystem (local development)
 const brain = new Brainy({
   storage: {
-    type: 'redis',
-    url: 'redis://localhost:6379'
+    type: 'filesystem',
+    path: './brainy-data'
   }
 })
 
-// PostgreSQL (production)
+// S3-compatible storage (production)
 const brain = new Brainy({
   storage: {
-    type: 'postgresql',
-    connectionString: 'postgresql://user:pass@localhost/db'
+    type: 's3',
+    bucket: 'my-bucket',
+    region: 'us-east-1'
   }
 })
 
-// ChromaDB (vector-optimized)
+// Cloudflare R2 (production)
 const brain = new Brainy({
   storage: {
-    type: 'chroma',
-    url: 'http://localhost:8000'
+    type: 'r2',
+    accountId: 'your-account-id',
+    bucket: 'my-bucket'
   }
 })
+
+// Google Cloud Storage (production)
+const brain = new Brainy({
+  storage: {
+    type: 'gcs',
+    bucket: 'my-bucket',
+    projectId: 'my-project'
+  }
+})
+
+// Azure Blob Storage (production)
+const brain = new Brainy({
+  storage: {
+    type: 'azure',
+    accountName: 'myaccount',
+    containerName: 'my-container'
+  }
+})
+
+// OPFS (browser-native persistence)
+const brain = new Brainy({ storage: { type: 'opfs' } })
+
+// TypeAware storage (optimized for entity types)
+const brain = new Brainy({ storage: { type: 'typeaware' } })
 
 // All work identically with VFS
 const vfs = new VirtualFileSystem(brain)
 ```
+
+**Custom Storage Adapters:** Redis, PostgreSQL, and other databases can be added via the [extension system](../api/EXTENSIBILITY.md). See `src/config/extensibleConfig.ts` for examples.
 
 ### Best Practices
 

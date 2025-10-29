@@ -163,27 +163,31 @@ const parisPhotos = await vfs.search('', {
 })
 ```
 
-### 🎯 Smart Collections
+### 🎯 Semantic Path Access
 
-Virtual directories based on queries:
+Access files through semantic dimensions (see [Semantic VFS](./SEMANTIC_VFS.md)):
 
 ```javascript
-// Create a smart folder that auto-updates
-await vfs.createVirtualDirectory('/smart/recent-docs', {
-  query: 'type:document modified:last-7-days'
+// Query-based path access (current functionality)
+const authFiles = await vfs.search('', {
+  where: { concepts: { contains: 'authentication' }}
 })
 
-// Create a collection based on similarity
-await vfs.createVirtualDirectory('/smart/like-this', {
-  similar: '/examples/good-code.js',
+// Find files by custom metadata
+const recent = await vfs.search('', {
+  where: {
+    type: 'document',
+    modified: { greaterThan: Date.now() - 7*24*60*60*1000 }
+  }
+})
+
+// Find similar files
+const similar = await vfs.findSimilar('/examples/good-code.js', {
   threshold: 0.7
 })
-
-// Tag-based collections
-await vfs.createVirtualDirectory('/smart/important', {
-  where: { tags: 'important' }
-})
 ```
+
+> **Note:** Virtual directories (persistent query-based folders) are planned for v2.0. See [ROADMAP](./ROADMAP.md).
 
 ## Real-World Examples
 
@@ -314,150 +318,28 @@ const urgent = await vfs.search('', {
 
 ## Advanced Features
 
-### 🔄 Version History
+> **Note:** See [VFS ROADMAP](./ROADMAP.md) for planned advanced features like version history, distributed filesystem, and more.
 
-```javascript
-// Enable versioning for a file
-await vfs.enableVersioning('/important/contract.pdf')
+## Integration Possibilities
 
-// Write updates - automatically creates versions
-await vfs.writeFile('/important/contract.pdf', newVersion)
+VFS can be integrated with existing applications. See [VFS ROADMAP](./ROADMAP.md) for planned integrations like Express.js middleware, VSCode extensions, and more.
 
-// Get version history
-const versions = await vfs.getVersions('/important/contract.pdf')
-// Returns: [{version: 1, date: ..., size: ...}, {version: 2, ...}]
+**Current approach:** Use VFS directly via API for custom integrations.
 
-// Restore a previous version
-await vfs.restoreVersion('/important/contract.pdf', 1)
-
-// Compare versions
-const diff = await vfs.diffVersions('/important/contract.pdf', 1, 2)
-```
-
-### 🌐 Distributed Filesystem
-
-```javascript
-// Mount remote Brainy instances
-await vfs.mount('/remote/server2', {
-  host: 'brainy.server2.com',
-  credentials: { ... }
-})
-
-// Federated search across all mounted systems
-const results = await vfs.search('project documentation', {
-  distributed: true
-})
-
-// Sync directories across instances
-await vfs.sync('/projects', '/remote/server2/backup/projects')
-```
-
-### 🤖 AI-Powered Automation
-
-```javascript
-// Auto-organize downloads folder
-await vfs.autoOrganize('/downloads', {
-  rules: [
-    { pattern: '*.pdf', destination: '/documents' },
-    { pattern: '*.{jpg,png}', destination: '/images' },
-    { semantic: 'code files', destination: '/code' }
-  ]
-})
-
-// Smart deduplication
-const duplicates = await vfs.detectDuplicates('/photos')
-await vfs.deduplicateFiles(duplicates, {
-  strategy: 'keep-highest-quality'
-})
-
-// Content-aware compression
-await vfs.optimizeStorage('/archives', {
-  compress: true,
-  deduplicate: true,
-  indexContent: true
-})
-```
-
-### 🔐 Security & Permissions
-
-```javascript
-// Set access control
-await vfs.setACL('/private', {
-  owner: 'user123',
-  permissions: {
-    owner: 'rwx',
-    group: 'r-x',
-    others: '---'
-  }
-})
-
-// Encryption at rest
-await vfs.encrypt('/sensitive', {
-  algorithm: 'AES-256',
-  key: encryptionKey
-})
-
-// Audit trail
-const audit = await vfs.getAuditLog('/financial/reports')
-// Returns: who accessed what and when
-```
-
-## Integration Examples
-
-### Node.js fs Compatibility
-
-```javascript
-// Drop-in replacement for fs module
-import { promises as fs } from '@soulcraft/brainy/vfs/fs'
-
-// Works with existing code!
-const data = await fs.readFile('/config.json', 'utf8')
-const config = JSON.parse(data)
-
-await fs.writeFile('/output.txt', 'Hello VFS!')
-const stats = await fs.stat('/output.txt')
-```
-
-### Express.js Static Files
-
-```javascript
-import express from 'express'
-import { createStaticMiddleware } from '@soulcraft/brainy/vfs/express'
-
-const app = express()
-
-// Serve files from VFS
-app.use('/static', createStaticMiddleware('/public', {
-  intelligentCaching: true,  // Cache based on access patterns
-  autoCompress: true          // Compress on the fly
-}))
-```
-
-### VSCode Extension
-
-```javascript
-// Open VFS in VSCode
-import { workspace } from 'vscode'
-import { VFSProvider } from '@soulcraft/brainy/vfs/vscode'
-
-// Register VFS as a filesystem provider
-workspace.registerFileSystemProvider('brainy', new VFSProvider(), {
-  isCaseSensitive: true,
-  isReadonly: false
-})
-
-// Now you can open: brainy:///projects/my-app
-```
-
-## Performance
+## Performance Characteristics
 
 Brainy VFS is designed for speed and scale:
 
-- **Sub-10ms latency** for basic operations
-- **Intelligent caching** reduces repeated reads to <1ms
-- **Vector search** returns results in <100ms for millions of files
-- **Streaming support** for files of any size
-- **Distributed sharding** for billions of files
+**Tested at 1K-10K file scale:**
+- **Sub-10ms latency** for basic operations (measured)
+- **Intelligent caching** reduces repeated reads to <5ms (measured)
+
+**PROJECTED at larger scales (not yet tested):**
+- **Vector search** <100ms for millions of files (projected)
+- **Streaming support** for files of any size (architecture supports, see [limitations in ROADMAP](./ROADMAP.md))
+- **Distributed sharding** for billions of files (architecture supports, not tested at scale)
+
+See tests in `tests/vfs/` for actual measured performance.
 
 ## Triple Intelligence Power 🧠⚡
 
@@ -736,54 +618,11 @@ const assigned = await vfs.search('', {
 })
 ```
 
-### Monitoring & Operations
+### Monitoring & Operations (Planned)
 
-#### **Production Metrics**
+> **Note:** Production monitoring features are planned for v1.1. See [ROADMAP](./ROADMAP.md).
 
-```javascript
-// Get VFS statistics
-const stats = vfs.getStatistics()
-console.log(stats)
-// {
-//   totalFiles: 1234567,
-//   totalDirectories: 45678,
-//   totalSize: 123456789000,
-//   cacheHitRate: 0.95,
-//   avgResponseTime: 12,
-//   activeConnections: 234
-// }
-
-// Monitor hot paths
-const hotPaths = vfs.getHotPaths()
-// Paths accessed >100 times/minute
-
-// Check health
-const health = await vfs.healthCheck()
-// {
-//   status: 'healthy',
-//   latency: { p50: 10, p99: 100 },
-//   errors: { rate: 0.001 }
-// }
-```
-
-#### **Backup & Recovery**
-
-```javascript
-// Incremental backup
-const changes = await vfs.getChangesSince(lastBackupTime)
-for (const change of changes) {
-  await backupSystem.store(change)
-}
-
-// Point-in-time recovery
-await vfs.restoreToTime(timestamp)
-
-// Verify integrity
-const corrupted = await vfs.verifyIntegrity()
-if (corrupted.length > 0) {
-  await vfs.repair(corrupted)
-}
-```
+> **Note:** Backup & Recovery features are planned for v1.2. See [ROADMAP](./ROADMAP.md).
 
 ### Deployment Options
 
@@ -827,12 +666,15 @@ await vfs.init({
 })
 ```
 
-## Coming Soon
+## Roadmap & Future Features
 
-- **Version 1.1**: Full streaming support, FUSE driver
-- **Version 1.2**: Distributed transactions, global replication
-- **Version 1.3**: Time-travel queries, branching
-- **Version 2.0**: Quantum-resistant encryption, neural interfaces
+See [VFS ROADMAP](./ROADMAP.md) for planned features including:
+- Enhanced streaming support (v1.1)
+- Version history (v1.2)
+- Distributed filesystem (v1.2)
+- AI-powered automation (v2.0)
+- FUSE driver (v2.0 research)
+- And more community-requested features
 
 ## Contributing
 
