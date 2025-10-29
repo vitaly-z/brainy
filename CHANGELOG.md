@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.10.1](https://github.com/soulcraftlabs/brainy/compare/v4.10.0...v4.10.1) (2025-10-29)
+
+- fix: add mutex locks to FileSystemStorage for HNSW concurrency (CRITICAL) (ff86e88)
+
+
 ### [4.10.0](https://github.com/soulcraftlabs/brainy/compare/v4.9.2...v4.10.0) (2025-10-29)
 
 - perf: 48-64× faster HNSW bulk imports via concurrent neighbor updates (4038afd)
