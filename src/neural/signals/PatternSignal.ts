@@ -121,6 +121,12 @@ export class PatternSignal {
       /\b(?:street|avenue|road|boulevard|lane|drive)\b/i
     ])
 
+    // Location patterns - MEDIUM PRIORITY (city/country format - requires more context)
+    // v4.11.2: Lower priority to avoid matching person names with commas
+    this.addPatterns(NounType.Location, 0.75, [
+      /\b[A-Z][a-z]+,\s*(?:Japan|China|France|Germany|Italy|Spain|Canada|Mexico|Brazil|India|Australia|Russia|UK|USA)\b/
+    ])
+
     // Event patterns - HIGH PRIORITY (specific event keywords)
     this.addPatterns(NounType.Event, 0.84, [
       /\b(?:conference|summit|symposium|workshop|seminar|webinar)\b/i,
@@ -163,7 +169,8 @@ export class PatternSignal {
 
     // Technology patterns (Thing type)
     this.addPatterns(NounType.Thing, 0.82, [
-      /\b(?:JavaScript|TypeScript|Python|Java|C\+\+|Go|Rust|Swift|Kotlin)\b/,
+      /\b(?:JavaScript|TypeScript|Python|Java|Go|Rust|Swift|Kotlin)\b/,
+      /\bC\+\+(?!\w)/, // v4.11.2: Special handling for C++ (word boundary doesn't work with +)
       /\b(?:React|Vue|Angular|Node|Express|Django|Flask|Rails)\b/,
       /\b(?:AWS|Azure|GCP|Docker|Kubernetes|Git|GitHub|GitLab)\b/,
       /\b(?:API|SDK|CLI|IDE|framework|library|package|module)\b/i,
