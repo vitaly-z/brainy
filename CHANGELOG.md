@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [4.11.2](https://github.com/soulcraftlabs/brainy/compare/v4.11.1...v4.11.2) (2025-10-30)
+
+- fix: resolve 13 neural test failures (C++ regex, location patterns, test assertions) (feb3dea)
+
+
 ## [4.11.2](https://github.com/soulcraftlabs/brainy/compare/v4.11.1...v4.11.2) (2025-10-30)
 
 ### 🐛 Bug Fixes - Neural Test Suite (13 failures → 0 failures)
