@@ -90,15 +90,10 @@ export class VFSStructureGenerator {
     // Get brain's cached VFS instance (creates if doesn't exist)
     this.vfs = this.brain.vfs()
 
-    // Initialize if not already initialized
-    // VFS.init() is idempotent (safe to call multiple times)
-    try {
-      // Check if already initialized
-      await this.vfs.stat('/')
-    } catch (error) {
-      // Not initialized, initialize now
-      await this.vfs.init()
-    }
+    // CRITICAL FIX (v4.10.2): Always call vfs.init() explicitly
+    // The previous code tried to check if initialized via stat('/') but this was unreliable
+    // vfs.init() is idempotent, so calling it multiple times is safe
+    await this.vfs.init()
   }
 
   /**
