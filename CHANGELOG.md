@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.11.0](https://github.com/soulcraftlabs/brainy/compare/v4.10.4...v4.11.0) (2025-10-30)
+
+### 🚨 CRITICAL BUG FIX
+
+**DataAPI.restore() Complete Data Loss Bug Fixed**
+
+Previous versions (v4.10.4 and earlier) had a critical bug where `DataAPI.restore()` did NOT persist data to storage, causing complete data loss after instance restart or cache clear. **If you used backup/restore in v4.10.4 or earlier, your restored data was NOT saved.**
+
+### 🔧 What Was Fixed
+
+* **fix(api)**: DataAPI.restore() now properly persists data to all storage adapters
+  - **Root Cause**: restore() called `storage.saveNoun()` directly, bypassing all indexes and proper persistence
+  - **Fix**: Now uses `brain.addMany()` and `brain.relateMany()` (proper persistence path)
+  - **Result**: Data now survives instance restart and is fully indexed/searchable
+
+### ✨ Improvements
+
+* **feat(api)**: Enhanced restore() with progress reporting and error tracking
+  - **New Return Type**: Returns `{ entitiesRestored, relationshipsRestored, errors }` instead of `void`
+  - **Progress Callback**: Optional `onProgress(completed, total)` parameter for UI updates
+  - **Error Details**: Returns array of failed entities/relations with error messages
+  - **Verification**: Automatically verifies first entity is retrievable after restore
+
+* **feat(api)**: Cross-storage restore support
+  - Backup from any storage adapter, restore to any other
+  - Example: Backup from GCS → Restore to Filesystem
+  - Automatically uses target storage's optimal batch configuration
+
+* **perf(api)**: Storage-aware batching for restore operations
+  - Leverages v4.10.4's storage-aware batching (10-100x faster on cloud storage)
+  - Automatic backpressure management prevents circuit breaker activation
+  - Separate read/write circuit breakers (backup can run during restore throttling)
+
+### 📊 What's Now Guaranteed
+
+| Feature | v4.10.4 | v4.11.0 |
+|---------|---------|---------|
+| Data Persists to Storage | ❌ No | ✅ Yes |
+| Data Survives Restart | ❌ No | ✅ Yes |
+| HNSW Index Updated | ❌ No | ✅ Yes |
+| Metadata Index Updated | ❌ No | ✅ Yes |
+| Searchable After Restore | ❌ No | ✅ Yes |
+| Progress Reporting | ❌ No | ✅ Yes |
+| Error Tracking | ❌ Silent | ✅ Detailed |
+| Cross-Storage Support | ❌ No | ✅ Yes |
+
+### 🔄 Migration Guide
+
+**No code changes required!** The fix is backward compatible:
+
+```typescript
+// Old code (still works)
+await brain.data().restore({ backup, overwrite: true })
+
+// New code (with progress tracking)
+const result = await brain.data().restore({
+  backup,
+  overwrite: true,
+  onProgress: (done, total) => {
+    console.log(`Restoring... ${done}/${total}`)
+  }
+})
+
+console.log(`✅ Restored ${result.entitiesRestored} entities`)
+if (result.errors.length > 0) {
+  console.warn(`⚠️ ${result.errors.length} failures`)
+}
+```
+
+### ⚠️ Breaking Changes (Minor API Change)
+
+* **DataAPI.restore()** return type changed from `Promise<void>` to `Promise<{ entitiesRestored, relationshipsRestored, errors }>`
+  - Impact: Minimal - most code doesn't use the return value
+  - Fix: Remove explicit `Promise<void>` type annotations if present
+
+### 📝 Files Modified
+
+* `src/api/DataAPI.ts` - Complete rewrite of restore() method (lines 161-338)
+
+### [4.10.4](https://github.com/soulcraftlabs/brainy/compare/v4.10.3...v4.10.4) (2025-10-30)
+
+* fix: prevent circuit breaker activation and data loss during bulk imports
+  - Storage-aware batching system prevents rate limiting on cloud storage (GCS, S3, R2, Azure)
+  - Separate read/write circuit breakers prevent read lockouts during write throttling
+  - ImportCoordinator uses addMany()/relateMany() for 10-100x performance improvement
+  - Fixes silent data loss and 30+ second lockouts on 1000+ row imports
+
+### [4.10.3](https://github.com/soulcraftlabs/brainy/compare/v4.10.2...v4.10.3) (2025-10-29)
+
+* fix: add atomic writes to ALL file operations to prevent concurrent write corruption
+
+### [4.10.2](https://github.com/soulcraftlabs/brainy/compare/v4.10.1...v4.10.2) (2025-10-29)
+
+* fix: VFS not initialized during Excel import, causing 0 files accessible
+
 ### [4.10.1](https://github.com/soulcraftlabs/brainy/compare/v4.10.0...v4.10.1) (2025-10-29)
 
 - fix: add mutex locks to FileSystemStorage for HNSW concurrency (CRITICAL) (ff86e88)
