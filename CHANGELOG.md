@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [4.11.1](https://github.com/soulcraftlabs/brainy/compare/v4.11.0...v4.11.1) (2025-10-30)
+
+### 🐛 Bug Fixes
+
+* **fix(api)**: DataAPI.restore() now filters orphaned relationships (P0 Critical)
+  - **Issue**: restore() created relationships to entities that failed to restore, causing "Entity not found" errors
+  - **Root Cause**: Relationships were not filtered based on successfully restored entities
+  - **Fix**: Now builds Set of successful entity IDs and filters relationships accordingly
+  - **New Tracking**: Added `relationshipsSkipped` to return type for visibility
+  - **Impact**: Prevents complete data corruption when some entities fail to restore
+
+* **fix(import)**: VFS creation now reports progress during import (P1 High)
+  - **Issue**: 3-5 minute VFS creation showed no progress (stuck at 0%), causing users to think import froze
+  - **Root Cause**: VFSStructureGenerator.generate() had no progress callback parameter
+  - **Fix**: Added onProgress callback to VFSStructureOptions interface
+  - **Progress Stages**: Reports 'directories', 'entities', 'metadata' with detailed messages
+  - **Frequency**: Reports every 10 entity files to avoid excessive updates
+  - **Integration**: Wired through ImportCoordinator to main progress callback
+
+### 📝 Files Modified
+
+* `src/api/DataAPI.ts` (lines 173-350) - Added orphaned relationship filtering
+* `src/importers/VFSStructureGenerator.ts` (lines 18-53, 110-347) - Added progress callback
+* `src/import/ImportCoordinator.ts` (lines 438-459) - Wired progress callback
+
 ## [4.11.0](https://github.com/soulcraftlabs/brainy/compare/v4.10.4...v4.11.0) (2025-10-30)
 
 ### 🚨 CRITICAL BUG FIX

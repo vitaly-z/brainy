@@ -179,6 +179,7 @@ export class DataAPI {
   }): Promise<{
     entitiesRestored: number
     relationshipsRestored: number
+    relationshipsSkipped: number
     errors: Array<{ type: 'entity' | 'relation'; id: string; error: string }>
   }> {
     const { backup, merge = false, overwrite = false, validate = true, onProgress } = params
@@ -186,6 +187,7 @@ export class DataAPI {
     const result = {
       entitiesRestored: 0,
       relationshipsRestored: 0,
+      relationshipsSkipped: 0,
       errors: [] as Array<{ type: 'entity' | 'relation'; id: string; error: string }>
     }
 
@@ -244,6 +246,9 @@ export class DataAPI {
       })
 
     // Restore entities in batches using storage-aware batching (v4.11.0)
+    // v4.11.1: Track successful entity IDs to prevent orphaned relationships
+    const successfulEntityIds = new Set<string>()
+
     if (entityParams.length > 0) {
       try {
         const addResult = await this.brain.addMany({
@@ -255,6 +260,11 @@ export class DataAPI {
         })
 
         result.entitiesRestored = addResult.successful.length
+
+        // Build Set of successfully restored entity IDs (v4.11.1 Bug Fix)
+        addResult.successful.forEach((entityId: string) => {
+          successfulEntityIds.add(entityId)
+        })
 
         // Track errors
         addResult.failed.forEach((failure: any) => {
@@ -271,10 +281,10 @@ export class DataAPI {
 
     // ============================================
     // Phase 2: Restore relationships using relateMany()
-    // v4.11.1: Uses proper persistence path through brain.relateMany()
+    // v4.11.1: CRITICAL FIX - Filter orphaned relationships
     // ============================================
 
-    // Prepare relationship parameters for relateMany()
+    // Prepare relationship parameters - filter out orphaned references
     const relationParams = backup.relations
       .filter(relation => {
         // Skip existing relations when merging without overwrite
@@ -282,6 +292,27 @@ export class DataAPI {
           // Note: We'll rely on relateMany's internal duplicate handling
           return true
         }
+
+        // v4.11.1 CRITICAL BUG FIX: Skip relationships where source or target entity failed to restore
+        // This prevents creating orphaned references that cause "Entity not found" errors
+        const sourceExists = successfulEntityIds.has(relation.from)
+        const targetExists = successfulEntityIds.has(relation.to)
+
+        if (!sourceExists || !targetExists) {
+          // Track skipped relationship
+          result.relationshipsSkipped++
+
+          // Optionally log for debugging (can be removed in production)
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug(
+              `Skipping orphaned relationship: ${relation.from} -> ${relation.to} ` +
+              `(${!sourceExists ? 'missing source' : 'missing target'})`
+            )
+          }
+
+          return false
+        }
+
         return true
       })
       .map(relation => ({

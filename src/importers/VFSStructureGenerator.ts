@@ -42,6 +42,14 @@ export interface VFSStructureOptions {
 
   /** Import tracking context (v4.10.0) */
   trackingContext?: TrackingContext
+
+  /** Progress callback (v4.11.1) - Reports VFS creation progress */
+  onProgress?: (progress: {
+    stage: 'directories' | 'entities' | 'metadata'
+    message: string
+    processed: number
+    total: number
+  }) => void
 }
 
 export interface VFSStructureResult {
@@ -115,6 +123,30 @@ export class VFSStructureGenerator {
     // Ensure VFS is initialized
     await this.init()
 
+    // v4.11.1: Calculate total operations for progress tracking
+    const groups = this.groupEntities(importResult, options)
+    const totalEntities = Array.from(groups.values()).reduce((sum, entities) => sum + entities.length, 0)
+    const totalOperations =
+      1 + // root directory
+      (options.preserveSource ? 1 : 0) + // source file
+      groups.size + // group directories
+      totalEntities + // entity files
+      (options.createRelationshipFile !== false ? 1 : 0) + // relationships file
+      (options.createMetadataFile !== false ? 1 : 0) // metadata file
+
+    let completedOperations = 0
+
+    // Helper to report progress
+    const reportProgress = (stage: 'directories' | 'entities' | 'metadata', message: string) => {
+      completedOperations++
+      options.onProgress?.({
+        stage,
+        message,
+        processed: completedOperations,
+        total: totalOperations
+      })
+    }
+
     // Extract tracking metadata if provided
     const trackingMetadata = options.trackingContext ? {
       importIds: [options.trackingContext.importId],
@@ -133,12 +165,14 @@ export class VFSStructureGenerator {
       })
       result.directories.push(options.rootPath)
       result.operations++
+      reportProgress('directories', `Created root directory: ${options.rootPath}`)
     } catch (error: any) {
       // Directory might already exist, that's fine
       if (error.code !== 'EEXIST') {
         throw error
       }
       result.directories.push(options.rootPath)
+      reportProgress('directories', `Root directory exists: ${options.rootPath}`)
     }
 
     // Preserve source file if requested
@@ -152,10 +186,11 @@ export class VFSStructureGenerator {
         type: 'source'
       })
       result.operations++
+      reportProgress('metadata', `Preserved source file: ${options.sourceFilename}`)
     }
 
-    // Group entities
-    const groups = this.groupEntities(importResult, options)
+    // Note: groups already calculated above for progress tracking
+    // const groups = this.groupEntities(importResult, options)
 
     // Create directories and files for each group
     for (const [groupName, entities] of groups.entries()) {
@@ -169,16 +204,20 @@ export class VFSStructureGenerator {
         })
         result.directories.push(groupPath)
         result.operations++
+        reportProgress('directories', `Created directory: ${groupName} (${entities.length} entities)`)
       } catch (error: any) {
         // Directory might already exist
         if (error.code !== 'EEXIST') {
           throw error
         }
         result.directories.push(groupPath)
+        reportProgress('directories', `Directory exists: ${groupName}`)
       }
 
       // Create entity files
+      let entityCount = 0
       for (const extracted of entities) {
+        entityCount++
         const sanitizedName = this.sanitizeFilename(extracted.entity.name)
         const entityPath = `${groupPath}/${sanitizedName}.json`
 
@@ -213,6 +252,11 @@ export class VFSStructureGenerator {
           type: 'entity'
         })
         result.operations++
+
+        // v4.11.1: Report progress every 10 entities (or on last entity)
+        if (entityCount % 10 === 0 || entityCount === entities.length) {
+          reportProgress('entities', `Created ${entityCount}/${entities.length} ${groupName} files`)
+        }
       }
     }
 
@@ -243,6 +287,7 @@ export class VFSStructureGenerator {
         type: 'relationships'
       })
       result.operations++
+      reportProgress('metadata', `Created relationships file (${allRelationships.length} relationships)`)
     }
 
     // Create metadata file
@@ -284,6 +329,17 @@ export class VFSStructureGenerator {
         type: 'metadata'
       })
       result.operations++
+      reportProgress('metadata', 'Created metadata file')
+    }
+
+    // v4.11.1: Final progress update
+    if (options.onProgress) {
+      options.onProgress({
+        stage: 'metadata',
+        message: `VFS structure created successfully (${result.files.length} files, ${result.directories.length} directories)`,
+        processed: totalOperations,
+        total: totalOperations
+      })
     }
 
     result.duration = Date.now() - startTime

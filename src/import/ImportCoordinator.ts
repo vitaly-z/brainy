@@ -445,7 +445,16 @@ export class ImportCoordinator {
       sourceFilename: normalizedSource.filename || `import.${detection.format}`,
       createRelationshipFile: true,
       createMetadataFile: true,
-      trackingContext  // v4.10.0: Pass tracking metadata to VFS
+      trackingContext,  // v4.10.0: Pass tracking metadata to VFS
+      // v4.11.1: Pass progress callback for VFS creation updates
+      onProgress: (vfsProgress) => {
+        options.onProgress?.({
+          stage: 'storing-vfs',
+          message: vfsProgress.message,
+          processed: vfsProgress.processed,
+          total: vfsProgress.total
+        })
+      }
     })
 
     // Report graph storage stage
