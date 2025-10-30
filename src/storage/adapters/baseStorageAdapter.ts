@@ -14,6 +14,7 @@ import {
   NounMetadata,
   VerbMetadata
 } from '../../coreTypes.js'
+import { StorageBatchConfig } from '../baseStorage.js'
 import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/fieldNameTracking.js'
 import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
@@ -89,6 +90,33 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     quota: number | null
     details?: Record<string, any>
   }>
+
+  /**
+   * Get optimal batch configuration for this storage adapter
+   * Override in subclasses to provide storage-specific optimization
+   *
+   * This method allows each storage adapter to declare its optimal batch behavior
+   * for rate limiting and performance. The configuration is used by addMany(),
+   * relateMany(), and import operations to automatically adapt to storage capabilities.
+   *
+   * @returns Batch configuration optimized for this storage type
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    // Conservative defaults that work safely across all storage types
+    // Cloud storage adapters should override with higher throughput values
+    // Local storage adapters should override with no delays
+    return {
+      maxBatchSize: 50,
+      batchDelayMs: 100,
+      maxConcurrent: 50,
+      supportsParallelWrites: false,
+      rateLimit: {
+        operationsPerSecond: 100,
+        burstCapacity: 200
+      }
+    }
+  }
 
   // NOTE: getAllNouns and getAllVerbs have been removed to prevent expensive full scans.
   // Use getNouns() and getVerbs() with pagination instead.

@@ -18,6 +18,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   NOUNS_DIR,
   VERBS_DIR,
   METADATA_DIR,
@@ -208,6 +209,32 @@ export class S3CompatibleStorage extends BaseStorage {
     // Initialize cache managers
     this.nounCacheManager = new CacheManager<HNSWNode>(options.cacheConfig)
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
+  }
+
+  /**
+   * Get S3-optimized batch configuration
+   *
+   * S3 has higher throughput than GCS and handles parallel writes efficiently:
+   * - Larger batch sizes (100 items)
+   * - Parallel processing supported
+   * - Shorter delays between batches (50ms)
+   *
+   * S3 can handle ~3500 operations/second per bucket with good performance
+   *
+   * @returns S3-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 100,
+      batchDelayMs: 50,
+      maxConcurrent: 100,
+      supportsParallelWrites: true,  // S3 handles parallel writes efficiently
+      rateLimit: {
+        operationsPerSecond: 3500,  // S3 is more permissive than GCS
+        burstCapacity: 1000
+      }
+    }
   }
 
   /**

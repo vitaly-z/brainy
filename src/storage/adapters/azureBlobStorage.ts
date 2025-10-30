@@ -25,6 +25,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   NOUNS_DIR,
   VERBS_DIR,
   METADATA_DIR,
@@ -159,6 +160,32 @@ export class AzureBlobStorage extends BaseStorage {
       this.forceHighVolumeMode = true
       this.highVolumeMode = true
       prodLog.info('🚀 High-volume mode FORCED via BRAINY_FORCE_HIGH_VOLUME environment variable')
+    }
+  }
+
+  /**
+   * Get Azure Blob-optimized batch configuration
+   *
+   * Azure Blob Storage has moderate rate limits between GCS and S3:
+   * - Medium batch sizes (75 items)
+   * - Parallel processing supported
+   * - Moderate delays (75ms)
+   *
+   * Azure can handle ~2000 operations/second with good performance
+   *
+   * @returns Azure Blob-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 75,
+      batchDelayMs: 75,
+      maxConcurrent: 75,
+      supportsParallelWrites: true,  // Azure handles parallel reasonably
+      rateLimit: {
+        operationsPerSecond: 2000,  // Moderate limits
+        burstCapacity: 500
+      }
     }
   }
 

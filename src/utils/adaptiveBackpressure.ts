@@ -63,12 +63,24 @@ export class AdaptiveBackpressure {
     optimal: number
   }> = []
   
-  // Circuit breaker state
-  private circuitState: 'closed' | 'open' | 'half-open' = 'closed'
-  private circuitOpenTime = 0
-  private circuitFailures = 0
-  private circuitThreshold = 5
-  private circuitTimeout = 30000  // 30 seconds
+  // Separate circuit breakers for read vs write operations
+  // This allows reads to continue even when writes are throttled
+  private circuits = {
+    read: {
+      state: 'closed' as 'closed' | 'open' | 'half-open',
+      failures: 0,
+      openTime: 0,
+      threshold: 10,  // More lenient for reads
+      timeout: 30000
+    },
+    write: {
+      state: 'closed' as 'closed' | 'open' | 'half-open',
+      failures: 0,
+      openTime: 0,
+      threshold: 5,   // Stricter for writes
+      timeout: 30000
+    }
+  }
   
   // Performance tracking
   private operationTimes = new Map<string, number>()
@@ -78,14 +90,30 @@ export class AdaptiveBackpressure {
   
   /**
    * Request permission to proceed with an operation
+   * @param operationId Unique ID for this operation
+   * @param priority Priority level (higher = more important)
+   * @param operationType Type of operation (read or write) for circuit breaker isolation
    */
   public async requestPermission(
     operationId: string,
-    priority: number = 1
+    priority: number = 1,
+    operationType: 'read' | 'write' = 'write'
   ): Promise<void> {
-    // Check circuit breaker
-    if (this.isCircuitOpen()) {
-      throw new Error('Circuit breaker is open - system is recovering')
+    const circuit = this.circuits[operationType]
+
+    // Check circuit breaker for this operation type
+    if (this.isCircuitOpen(circuit)) {
+      // KEY: Allow reads even if write circuit is open
+      if (operationType === 'read' && this.circuits.write.state === 'open') {
+        // Write circuit is open but read circuit is fine - allow read
+        this.activeOperations.add(operationId)
+        this.operationTimes.set(operationId, Date.now())
+        return
+      }
+
+      throw new Error(
+        `Circuit breaker is open for ${operationType} operations - system is recovering`
+      )
     }
     
     // Fast path for low load
@@ -126,8 +154,15 @@ export class AdaptiveBackpressure {
   
   /**
    * Release permission after operation completes
+   * @param operationId Unique ID for this operation
+   * @param success Whether the operation succeeded
+   * @param operationType Type of operation (read or write) for circuit breaker tracking
    */
-  public releasePermission(operationId: string, success: boolean = true): void {
+  public releasePermission(
+    operationId: string,
+    success: boolean = true,
+    operationType: 'read' | 'write' = 'write'
+  ): void {
     // Remove from active operations
     this.activeOperations.delete(operationId)
     
@@ -144,19 +179,21 @@ export class AdaptiveBackpressure {
       }
     }
     
-    // Track errors for circuit breaker
+    // Track errors for circuit breaker per operation type
+    const circuit = this.circuits[operationType]
+
     if (!success) {
       this.errorOps++
-      this.circuitFailures++
-      
-      // Check if we should open circuit
-      if (this.circuitFailures >= this.circuitThreshold) {
-        this.openCircuit()
+      circuit.failures++
+
+      // Check if we should open circuit for this operation type
+      if (circuit.failures >= circuit.threshold) {
+        this.openCircuit(circuit, operationType)
       }
     } else {
       // Reset circuit failures on success
-      if (this.circuitState === 'half-open') {
-        this.closeCircuit()
+      if (circuit.state === 'half-open') {
+        this.closeCircuit(circuit, operationType)
       }
     }
     
@@ -178,13 +215,14 @@ export class AdaptiveBackpressure {
   }
   
   /**
-   * Check if circuit breaker is open
+   * Check if circuit breaker is open for a specific operation type
+   * @param circuit The circuit to check (read or write)
    */
-  private isCircuitOpen(): boolean {
-    if (this.circuitState === 'open') {
+  private isCircuitOpen(circuit: typeof this.circuits.read): boolean {
+    if (circuit.state === 'open') {
       // Check if timeout has passed
-      if (Date.now() - this.circuitOpenTime > this.circuitTimeout) {
-        this.circuitState = 'half-open'
+      if (Date.now() - circuit.openTime > circuit.timeout) {
+        circuit.state = 'half-open'
         this.logger.info('Circuit breaker entering half-open state')
         return false
       }
@@ -192,31 +230,45 @@ export class AdaptiveBackpressure {
     }
     return false
   }
-  
+
   /**
-   * Open the circuit breaker
+   * Open the circuit breaker for a specific operation type
+   * @param circuit The circuit to open (read or write)
+   * @param operationType The operation type name for logging
    */
-  private openCircuit(): void {
-    if (this.circuitState !== 'open') {
-      this.circuitState = 'open'
-      this.circuitOpenTime = Date.now()
-      this.logger.warn('Circuit breaker opened due to high error rate')
-      
-      // Reduce load immediately
-      this.maxConcurrent = Math.max(10, Math.floor(this.maxConcurrent * 0.3))
+  private openCircuit(
+    circuit: typeof this.circuits.read,
+    operationType: string
+  ): void {
+    if (circuit.state !== 'open') {
+      circuit.state = 'open'
+      circuit.openTime = Date.now()
+      this.logger.warn(`Circuit breaker opened for ${operationType} operations due to high error rate`)
+
+      // Reduce load immediately for write operations
+      if (operationType === 'write') {
+        this.maxConcurrent = Math.max(10, Math.floor(this.maxConcurrent * 0.3))
+      }
     }
   }
-  
+
   /**
-   * Close the circuit breaker
+   * Close the circuit breaker for a specific operation type
+   * @param circuit The circuit to close (read or write)
+   * @param operationType The operation type name for logging
    */
-  private closeCircuit(): void {
-    this.circuitState = 'closed'
-    this.circuitFailures = 0
-    this.logger.info('Circuit breaker closed - system recovered')
-    
-    // Gradually increase capacity
-    this.maxConcurrent = Math.min(500, Math.floor(this.maxConcurrent * 1.5))
+  private closeCircuit(
+    circuit: typeof this.circuits.read,
+    operationType: string
+  ): void {
+    circuit.state = 'closed'
+    circuit.failures = 0
+    this.logger.info(`Circuit breaker closed for ${operationType} - system recovered`)
+
+    // Gradually increase capacity for write operations
+    if (operationType === 'write') {
+      this.maxConcurrent = Math.min(500, Math.floor(this.maxConcurrent * 1.5))
+    }
   }
   
   /**
@@ -345,13 +397,9 @@ export class AdaptiveBackpressure {
         Math.min(10000, Math.floor(this.metrics.throughput * 10))
       )
     }
-    
-    // Adapt circuit breaker threshold based on error patterns
-    if (this.metrics.errorRate < 0.01 && this.circuitThreshold > 5) {
-      this.circuitThreshold = Math.max(5, this.circuitThreshold - 1)
-    } else if (this.metrics.errorRate > 0.05 && this.circuitThreshold < 20) {
-      this.circuitThreshold = Math.min(20, this.circuitThreshold + 1)
-    }
+
+    // Note: Circuit breaker thresholds are now fixed per operation type (read/write)
+    // and do not adapt dynamically to maintain predictable behavior
   }
   
   /**
@@ -401,10 +449,22 @@ export class AdaptiveBackpressure {
     activeOps: number
     queueLength: number
   } {
+    // Combined circuit status for backward compatibility
+    let circuitStatus = 'closed'
+    if (this.circuits.read.state === 'open' && this.circuits.write.state === 'open') {
+      circuitStatus = 'open'
+    } else if (this.circuits.write.state === 'open') {
+      circuitStatus = 'write-circuit-open'
+    } else if (this.circuits.read.state === 'open') {
+      circuitStatus = 'read-circuit-open'
+    } else if (this.circuits.read.state === 'half-open' || this.circuits.write.state === 'half-open') {
+      circuitStatus = 'half-open'
+    }
+
     return {
       config: { ...this.config },
       metrics: { ...this.metrics },
-      circuit: this.circuitState,
+      circuit: circuitStatus,
       maxConcurrent: this.maxConcurrent,
       activeOps: this.activeOperations.size,
       queueLength: this.queue.length
@@ -421,10 +481,18 @@ export class AdaptiveBackpressure {
     this.completedOps = []
     this.errorOps = 0
     this.patterns = []
-    this.circuitState = 'closed'
-    this.circuitFailures = 0
+
+    // Reset both circuit breakers
+    this.circuits.read.state = 'closed'
+    this.circuits.read.failures = 0
+    this.circuits.read.openTime = 0
+
+    this.circuits.write.state = 'closed'
+    this.circuits.write.failures = 0
+    this.circuits.write.openTime = 0
+
     this.maxConcurrent = 100
-    
+
     this.logger.info('Backpressure system reset to defaults')
   }
 }

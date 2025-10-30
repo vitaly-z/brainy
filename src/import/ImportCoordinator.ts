@@ -894,21 +894,124 @@ export class ImportCoordinator {
       console.log(`✅ Document entity created: ${documentEntityId}`)
     }
 
-    // Create entities in graph
-    for (const row of rows) {
-      const entity = row.entity || row
+    // ============================================
+    // v4.11.0: Batch entity creation using addMany()
+    // Replaces entity-by-entity loop for 10-100x performance improvement on cloud storage
+    // ============================================
 
-      // Find corresponding VFS file
-      const vfsFile = vfsResult.files.find((f: any) => f.entityId === entity.id)
+    if (!actuallyEnableDeduplication) {
+      // FAST PATH: Batch creation without deduplication (recommended for imports > 100 entities)
+      const importSource = vfsResult.rootPath
 
-      // Create or merge entity
-      try {
-        const importSource = vfsResult.rootPath
+      // Prepare all entity parameters upfront
+      const entityParams = rows.map((row: any) => {
+        const entity = row.entity || row
+        const vfsFile = vfsResult.files.find((f: any) => f.entityId === entity.id)
 
-        let entityId: string
-        let wasMerged = false
+        return {
+          data: entity.description || entity.name,
+          type: entity.type,
+          metadata: {
+            ...entity.metadata,
+            name: entity.name,
+            confidence: entity.confidence,
+            vfsPath: vfsFile?.path,
+            importedFrom: 'import-coordinator',
+            imports: [importSource],
+            ...(trackingContext && {
+              importIds: [trackingContext.importId],
+              projectId: trackingContext.projectId,
+              importedAt: trackingContext.importedAt,
+              importFormat: trackingContext.importFormat,
+              importSource: trackingContext.importSource,
+              sourceRow: row.rowNumber,
+              sourceSheet: row.sheet,
+              ...trackingContext.customMetadata
+            })
+          }
+        }
+      })
 
-        if (actuallyEnableDeduplication) {
+      // Batch create all entities (storage-aware batching handles rate limits automatically)
+      const addResult = await this.brain.addMany({
+        items: entityParams,
+        continueOnError: true,
+        onProgress: (done, total) => {
+          options.onProgress?.({
+            stage: 'storing-graph',
+            message: `Creating entities: ${done}/${total}`,
+            processed: done,
+            total,
+            entities: done
+          })
+        }
+      })
+
+      // Map results to entities array and update rows with new IDs
+      for (let i = 0; i < addResult.successful.length; i++) {
+        const entityId = addResult.successful[i]
+        const row = rows[i]
+        const entity = row.entity || row
+        const vfsFile = vfsResult.files.find((f: any) => f.entityId === entity.id)
+
+        entity.id = entityId
+        entities.push({
+          id: entityId,
+          name: entity.name,
+          type: entity.type,
+          vfsPath: vfsFile?.path
+        })
+        newCount++
+      }
+
+      // Handle failed entities
+      if (addResult.failed.length > 0) {
+        console.warn(`⚠️  ${addResult.failed.length} entities failed to create`)
+      }
+
+      // Create provenance links in batch
+      if (documentEntityId && options.createProvenanceLinks !== false && entities.length > 0) {
+        const provenanceParams = entities.map((entity, idx) => {
+          const row = rows[idx]
+          return {
+            from: documentEntityId,
+            to: entity.id,
+            type: VerbType.Contains,
+            metadata: {
+              relationshipType: 'provenance',
+              evidence: `Extracted from ${sourceInfo?.sourceFilename}`,
+              sheet: row?.sheet,
+              rowNumber: row?.rowNumber,
+              extractedAt: Date.now(),
+              format: sourceInfo?.format,
+              ...(trackingContext && {
+                importIds: [trackingContext.importId],
+                projectId: trackingContext.projectId,
+                createdAt: Date.now(),
+                importFormat: trackingContext.importFormat,
+                ...trackingContext.customMetadata
+              })
+            }
+          }
+        })
+
+        await this.brain.relateMany({
+          items: provenanceParams,
+          continueOnError: true
+        })
+        provenanceCount = provenanceParams.length
+      }
+    } else {
+      // SLOW PATH: Entity-by-entity with deduplication (only for small imports < 100 entities)
+      for (const row of rows) {
+        const entity = row.entity || row
+        const vfsFile = vfsResult.files.find((f: any) => f.entityId === entity.id)
+
+        try {
+          const importSource = vfsResult.rootPath
+          let entityId: string
+          let wasMerged = false
+
           // Use deduplicator to check for existing entities
           const mergeResult = await this.deduplicator.createOrMerge(
             {
@@ -950,33 +1053,6 @@ export class ImportCoordinator {
           } else {
             newCount++
           }
-        } else {
-          // Direct creation without deduplication
-          entityId = await this.brain.add({
-            data: entity.description || entity.name,
-            type: entity.type,
-            metadata: {
-              ...entity.metadata,
-              name: entity.name,
-              confidence: entity.confidence,
-              vfsPath: vfsFile?.path,
-              importedFrom: 'import-coordinator',
-              imports: [importSource],
-              // v4.10.0: Import tracking metadata
-              ...(trackingContext && {
-                importIds: [trackingContext.importId],
-                projectId: trackingContext.projectId,
-                importedAt: trackingContext.importedAt,
-                importFormat: trackingContext.importFormat,
-                importSource: trackingContext.importSource,
-                sourceRow: row.rowNumber,
-                sourceSheet: row.sheet,
-                ...trackingContext.customMetadata
-              })
-            }
-          })
-          newCount++
-        }
 
         // Update entity ID in extraction result
         entity.id = entityId
@@ -1134,11 +1210,12 @@ export class ImportCoordinator {
             queryable: true  // ← Indexes are flushed, data is queryable!
           })
         }
-      } catch (error) {
-        // Skip entity creation errors (might already exist, etc.)
-        continue
+        } catch (error) {
+          // Skip entity creation errors (might already exist, etc.)
+          continue
+        }
       }
-    }
+    }  // End of deduplication else block
 
     // Final flush for any remaining entities
     if (entitiesSinceFlush > 0) {

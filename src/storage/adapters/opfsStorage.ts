@@ -16,6 +16,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   NOUNS_DIR,
   VERBS_DIR,
   METADATA_DIR,
@@ -78,6 +79,31 @@ export class OPFSStorage extends BaseStorage {
       typeof navigator !== 'undefined' &&
       'storage' in navigator &&
       'getDirectory' in navigator.storage
+  }
+
+  /**
+   * Get OPFS-optimized batch configuration
+   *
+   * OPFS (Origin Private File System) is browser-based storage with moderate performance:
+   * - Moderate batch sizes (100 items)
+   * - Small delays (10ms) for browser event loop
+   * - Limited concurrency (50 operations) - browser constraints
+   * - Sequential processing preferred for stability
+   *
+   * @returns OPFS-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 100,
+      batchDelayMs: 10,
+      maxConcurrent: 50,
+      supportsParallelWrites: false,  // Sequential safer in browser
+      rateLimit: {
+        operationsPerSecond: 1000,
+        burstCapacity: 500
+      }
+    }
   }
 
   /**

@@ -16,6 +16,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   SYSTEM_DIR,
   STATISTICS_KEY
 } from '../baseStorage.js'
@@ -117,6 +118,31 @@ export class FileSystemStorage extends BaseStorage {
     }
 
     // Defer path operations until init() when path module is guaranteed to be loaded
+  }
+
+  /**
+   * Get FileSystem-optimized batch configuration
+   *
+   * File system storage is I/O bound but not rate limited:
+   * - Large batch sizes (500 items)
+   * - No delays needed (0ms)
+   * - Moderate concurrency (100 operations) - limited by I/O threads
+   * - Parallel processing supported
+   *
+   * @returns FileSystem-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 500,
+      batchDelayMs: 0,
+      maxConcurrent: 100,
+      supportsParallelWrites: true,  // Filesystem handles parallel I/O
+      rateLimit: {
+        operationsPerSecond: 5000,  // Depends on disk speed
+        burstCapacity: 2000
+      }
+    }
   }
 
   /**

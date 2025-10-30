@@ -25,6 +25,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   NOUNS_DIR,
   VERBS_DIR,
   METADATA_DIR,
@@ -166,6 +167,35 @@ export class R2Storage extends BaseStorage {
       this.forceHighVolumeMode = true
       this.highVolumeMode = true
       prodLog.info('🚀 R2: High-volume mode FORCED via environment variable')
+    }
+  }
+
+  /**
+   * Get R2-optimized batch configuration
+   *
+   * Cloudflare R2 has S3-compatible characteristics with some advantages:
+   * - Zero egress fees (can cache more aggressively)
+   * - Global edge network
+   * - Similar throughput to S3
+   *
+   * R2 benefits from the same configuration as S3:
+   * - Larger batch sizes (100 items)
+   * - Parallel processing
+   * - Short delays (50ms)
+   *
+   * @returns R2-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 100,
+      batchDelayMs: 50,
+      maxConcurrent: 100,
+      supportsParallelWrites: true,  // R2 handles parallel writes like S3
+      rateLimit: {
+        operationsPerSecond: 3500,  // Similar to S3 throughput
+        burstCapacity: 1000
+      }
     }
   }
 

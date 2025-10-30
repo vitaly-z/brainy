@@ -22,6 +22,7 @@ import {
 } from '../../coreTypes.js'
 import {
   BaseStorage,
+  StorageBatchConfig,
   NOUNS_DIR,
   VERBS_DIR,
   METADATA_DIR,
@@ -172,6 +173,33 @@ export class GcsStorage extends BaseStorage {
       this.forceHighVolumeMode = true
       this.highVolumeMode = true
       prodLog.info('🚀 High-volume mode FORCED via BRAINY_FORCE_HIGH_VOLUME environment variable')
+    }
+  }
+
+  /**
+   * Get GCS-optimized batch configuration
+   *
+   * GCS has strict rate limits (~5000 writes/second per bucket) and benefits from:
+   * - Moderate batch sizes (50 items)
+   * - Sequential processing (not parallel)
+   * - Delays between batches (100ms)
+   *
+   * Note: Each entity write involves 2 operations (vector + metadata),
+   * so 800 ops/sec = ~400 entities/sec = ~2500 actual GCS writes/sec
+   *
+   * @returns GCS-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 50,
+      batchDelayMs: 100,
+      maxConcurrent: 50,
+      supportsParallelWrites: false,  // Sequential is safer for GCS rate limits
+      rateLimit: {
+        operationsPerSecond: 800,  // Conservative estimate for entity operations
+        burstCapacity: 200
+      }
     }
   }
 

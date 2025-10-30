@@ -1740,6 +1740,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async addMany(params: AddManyParams<T>): Promise<BatchResult<string>> {
     await this.ensureInitialized()
 
+    // Get optimal batch configuration from storage adapter (v4.11.0)
+    // This automatically adapts to storage characteristics:
+    // - GCS: 50 batch size, 100ms delay, sequential
+    // - S3/R2: 100 batch size, 50ms delay, parallel
+    // - Memory: 1000 batch size, 0ms delay, parallel
+    const storageConfig = this.storage.getBatchConfig()
+
+    // Use storage preferences (allow explicit user override)
+    const batchSize = params.chunkSize ?? storageConfig.maxBatchSize
+    const parallel = params.parallel ?? storageConfig.supportsParallelWrites
+    const delayMs = storageConfig.batchDelayMs
+
     const result: BatchResult<string> = {
       successful: [],
       failed: [],
@@ -1748,11 +1760,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     const startTime = Date.now()
-    const chunkSize = params.chunkSize || 100
+    let lastBatchTime = Date.now()
 
-    // Process in chunks
-    for (let i = 0; i < params.items.length; i += chunkSize) {
-      const chunk = params.items.slice(i, i + chunkSize)
+    // Process in batches
+    for (let i = 0; i < params.items.length; i += batchSize) {
+      const chunk = params.items.slice(i, i + batchSize)
 
       const promises = chunk.map(async (item) => {
         try {
@@ -1769,20 +1781,36 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
       })
 
-      if (params.parallel !== false) {
+      // Parallel vs Sequential based on storage preference
+      if (parallel) {
         await Promise.allSettled(promises)
       } else {
+        // Sequential processing for rate-limited storage
         for (const promise of promises) {
           await promise
         }
       }
 
-      // Report progress
+      // Progress callback
       if (params.onProgress) {
         params.onProgress(
           result.successful.length + result.failed.length,
           result.total
         )
+      }
+
+      // Adaptive delay between batches
+      if (i + batchSize < params.items.length && delayMs > 0) {
+        const batchDuration = Date.now() - lastBatchTime
+
+        // If batch was too fast, add delay to respect rate limits
+        if (batchDuration < delayMs) {
+          await new Promise(resolve =>
+            setTimeout(resolve, delayMs - batchDuration)
+          )
+        }
+
+        lastBatchTime = Date.now()
       }
     }
 
@@ -1911,6 +1939,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async relateMany(params: RelateManyParams<T>): Promise<string[]> {
     await this.ensureInitialized()
 
+    // Get optimal batch configuration from storage adapter (v4.11.0)
+    // Automatically adapts to storage characteristics
+    const storageConfig = this.storage.getBatchConfig()
+
+    // Use storage preferences (allow explicit user override)
+    const batchSize = params.chunkSize ?? storageConfig.maxBatchSize
+    const parallel = params.parallel ?? storageConfig.supportsParallelWrites
+    const delayMs = storageConfig.batchDelayMs
+
     const result: BatchResult<string> = {
       successful: [],
       failed: [],
@@ -1919,13 +1956,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     const startTime = Date.now()
-    const chunkSize = params.chunkSize || 100
+    let lastBatchTime = Date.now()
 
-    for (let i = 0; i < params.items.length; i += chunkSize) {
-      const chunk = params.items.slice(i, i + chunkSize)
+    for (let i = 0; i < params.items.length; i += batchSize) {
+      const chunk = params.items.slice(i, i + batchSize)
 
-      if (params.parallel) {
-        // Process chunk in parallel
+      if (parallel) {
+        // Parallel processing
         const promises = chunk.map(async (item) => {
           try {
             const relationId = await this.relate(item)
@@ -1940,10 +1977,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
         })
-
-        await Promise.all(promises)
+        await Promise.allSettled(promises)
       } else {
-        // Process chunk sequentially
+        // Sequential processing
         for (const item of chunk) {
           try {
             const relationId = await this.relate(item)
@@ -1960,12 +1996,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
       }
 
-      // Report progress
+      // Progress callback
       if (params.onProgress) {
         params.onProgress(
           result.successful.length + result.failed.length,
           result.total
         )
+      }
+
+      // Adaptive delay
+      if (i + batchSize < params.items.length && delayMs > 0) {
+        const batchDuration = Date.now() - lastBatchTime
+        if (batchDuration < delayMs) {
+          await new Promise(resolve =>
+            setTimeout(resolve, delayMs - batchDuration)
+          )
+        }
+        lastBatchTime = Date.now()
       }
     }
 

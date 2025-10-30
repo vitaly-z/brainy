@@ -14,7 +14,7 @@ import {
   StatisticsData,
   NounType
 } from '../../coreTypes.js'
-import { BaseStorage, STATISTICS_KEY } from '../baseStorage.js'
+import { BaseStorage, StorageBatchConfig, STATISTICS_KEY } from '../baseStorage.js'
 import { PaginatedResult } from '../../types/paginationTypes.js'
 
 // No type aliases needed - using the original types directly
@@ -45,6 +45,31 @@ export class MemoryStorage extends BaseStorage {
 
   constructor() {
     super()
+  }
+
+  /**
+   * Get Memory-optimized batch configuration
+   *
+   * Memory storage has no rate limits and can handle very high throughput:
+   * - Large batch sizes (1000 items)
+   * - No delays needed (0ms)
+   * - High concurrency (1000 operations)
+   * - Parallel processing maximizes throughput
+   *
+   * @returns Memory-optimized batch configuration
+   * @since v4.11.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 1000,
+      batchDelayMs: 0,
+      maxConcurrent: 1000,
+      supportsParallelWrites: true,  // Memory loves parallel operations
+      rateLimit: {
+        operationsPerSecond: 100000,  // Virtually unlimited
+        burstCapacity: 100000
+      }
+    }
   }
 
   /**

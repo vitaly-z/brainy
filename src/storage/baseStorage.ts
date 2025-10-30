@@ -32,6 +32,36 @@ interface StorageKeyInfo {
   fullPath: string
 }
 
+/**
+ * Storage adapter batch configuration profile
+ * Each storage adapter declares its optimal batch behavior for rate limiting
+ * and performance optimization
+ *
+ * @since v4.11.0
+ */
+export interface StorageBatchConfig {
+  /** Maximum items per batch */
+  maxBatchSize: number
+
+  /** Delay between batches in milliseconds (for rate limiting) */
+  batchDelayMs: number
+
+  /** Maximum concurrent operations this storage can handle */
+  maxConcurrent: number
+
+  /** Whether storage can handle parallel writes efficiently */
+  supportsParallelWrites: boolean
+
+  /** Rate limit characteristics of this storage adapter */
+  rateLimit: {
+    /** Approximate operations per second this storage can handle */
+    operationsPerSecond: number
+
+    /** Maximum burst capacity before throttling occurs */
+    burstCapacity: number
+  }
+}
+
 // Clean directory structure (v4.7.2+)
 // All storage adapters use this consistent structure
 export const NOUNS_METADATA_DIR = 'entities/nouns/metadata'
