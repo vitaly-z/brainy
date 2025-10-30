@@ -248,6 +248,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Save a node to storage
+   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
@@ -266,11 +267,25 @@ export class FileSystemStorage extends BaseStorage {
     }
 
     const filePath = this.getNodePath(node.id)
-    await this.ensureDirectoryExists(path.dirname(filePath))
-    await fs.promises.writeFile(
-      filePath,
-      JSON.stringify(serializableNode, null, 2)
-    )
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
+    try {
+      // ATOMIC WRITE SEQUENCE (v4.10.3):
+      // 1. Write to temp file
+      await this.ensureDirectoryExists(path.dirname(tempPath))
+      await fs.promises.writeFile(tempPath, JSON.stringify(serializableNode, null, 2))
+
+      // 2. Atomic rename temp → final (crash-safe, prevents truncation during concurrent writes)
+      await fs.promises.rename(tempPath, filePath)
+    } catch (error: any) {
+      // Clean up temp file on any error
+      try {
+        await fs.promises.unlink(tempPath)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      throw error
+    }
 
     // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
     // This fixes the race condition where metadata didn't exist yet
@@ -442,6 +457,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Save an edge to storage
+   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
@@ -466,11 +482,25 @@ export class FileSystemStorage extends BaseStorage {
     }
 
     const filePath = this.getVerbPath(edge.id)
-    await this.ensureDirectoryExists(path.dirname(filePath))
-    await fs.promises.writeFile(
-      filePath,
-      JSON.stringify(serializableEdge, null, 2)
-    )
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
+    try {
+      // ATOMIC WRITE SEQUENCE (v4.10.3):
+      // 1. Write to temp file
+      await this.ensureDirectoryExists(path.dirname(tempPath))
+      await fs.promises.writeFile(tempPath, JSON.stringify(serializableEdge, null, 2))
+
+      // 2. Atomic rename temp → final (crash-safe, prevents truncation during concurrent writes)
+      await fs.promises.rename(tempPath, filePath)
+    } catch (error: any) {
+      // Clean up temp file on any error
+      try {
+        await fs.promises.unlink(tempPath)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      throw error
+    }
 
     // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
     // This fixes the race condition where metadata didn't exist yet
@@ -634,6 +664,7 @@ export class FileSystemStorage extends BaseStorage {
    * Primitive operation: Write object to path
    * All metadata operations use this internally via base class routing
    * v4.0.0: Supports gzip compression for 60-80% disk savings
+   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async writeObjectToPath(pathStr: string, data: any): Promise<void> {
     await this.ensureInitialized()
@@ -642,16 +673,33 @@ export class FileSystemStorage extends BaseStorage {
     await this.ensureDirectoryExists(path.dirname(fullPath))
 
     if (this.compressionEnabled) {
-      // Write compressed data with .gz extension
+      // Write compressed data with .gz extension using atomic pattern
       const compressedPath = `${fullPath}.gz`
-      const jsonString = JSON.stringify(data, null, 2)
-      const compressed = await new Promise<Buffer>((resolve, reject) => {
-        zlib.gzip(Buffer.from(jsonString, 'utf-8'), { level: this.compressionLevel }, (err: any, result: Buffer) => {
-          if (err) reject(err)
-          else resolve(result)
+      const tempPath = `${compressedPath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
+      try {
+        // ATOMIC WRITE SEQUENCE (v4.10.3):
+        // 1. Compress and write to temp file
+        const jsonString = JSON.stringify(data, null, 2)
+        const compressed = await new Promise<Buffer>((resolve, reject) => {
+          zlib.gzip(Buffer.from(jsonString, 'utf-8'), { level: this.compressionLevel }, (err: any, result: Buffer) => {
+            if (err) reject(err)
+            else resolve(result)
+          })
         })
-      })
-      await fs.promises.writeFile(compressedPath, compressed)
+        await fs.promises.writeFile(tempPath, compressed)
+
+        // 2. Atomic rename temp → final (crash-safe, prevents truncation during concurrent writes)
+        await fs.promises.rename(tempPath, compressedPath)
+      } catch (error: any) {
+        // Clean up temp file on any error
+        try {
+          await fs.promises.unlink(tempPath)
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        throw error
+      }
 
       // Clean up uncompressed file if it exists (migration from uncompressed)
       try {
@@ -663,8 +711,25 @@ export class FileSystemStorage extends BaseStorage {
         }
       }
     } else {
-      // Write uncompressed data
-      await fs.promises.writeFile(fullPath, JSON.stringify(data, null, 2))
+      // Write uncompressed data using atomic pattern
+      const tempPath = `${fullPath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
+
+      try {
+        // ATOMIC WRITE SEQUENCE (v4.10.3):
+        // 1. Write to temp file
+        await fs.promises.writeFile(tempPath, JSON.stringify(data, null, 2))
+
+        // 2. Atomic rename temp → final (crash-safe, prevents truncation during concurrent writes)
+        await fs.promises.rename(tempPath, fullPath)
+      } catch (error: any) {
+        // Clean up temp file on any error
+        try {
+          await fs.promises.unlink(tempPath)
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        throw error
+      }
     }
   }
 
