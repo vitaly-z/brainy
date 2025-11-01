@@ -373,6 +373,164 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
       this.context.log(`[${this.name}] ${message}`, level)
     }
   }
+
+  /**
+   * Get CommitLog for temporal features (v5.0.0+)
+   *
+   * Provides access to commit history for time-travel queries, audit trails,
+   * and branch management. Available after initialize() is called.
+   *
+   * @returns CommitLog instance
+   * @throws Error if called before initialize() or if COW not enabled
+   *
+   * @example
+   * ```typescript
+   * protected async onInitialize() {
+   *   const commitLog = this.getCommitLog()
+   *   const history = await commitLog.getHistory('heads/main', { maxCount: 10 })
+   * }
+   * ```
+   */
+  protected getCommitLog(): any {
+    if (!this.context) {
+      throw new Error(
+        `${this.name}: Cannot access CommitLog before initialize(). ` +
+        `CommitLog is only available after the augmentation has been initialized.`
+      )
+    }
+
+    const storage = this.context.storage as any
+
+    if (!storage.commitLog) {
+      throw new Error(
+        `${this.name}: CommitLog not available. ` +
+        `COW (Copy-on-Write) is not enabled on this storage adapter. ` +
+        `Requires BaseStorage with initializeCOW() called. ` +
+        `This is expected if using a non-COW storage adapter.`
+      )
+    }
+
+    return storage.commitLog
+  }
+
+  /**
+   * Get BlobStorage for content-addressable storage (v5.0.0+)
+   *
+   * Provides access to the underlying blob storage system for storing
+   * and retrieving content-addressed data. Available after initialize() is called.
+   *
+   * @returns BlobStorage instance
+   * @throws Error if called before initialize() or if COW not enabled
+   *
+   * @example
+   * ```typescript
+   * protected async onInitialize() {
+   *   const blobStorage = this.getBlobStorage()
+   *   const hash = await blobStorage.writeBlob(Buffer.from('data'))
+   *   const data = await blobStorage.readBlob(hash)
+   * }
+   * ```
+   */
+  protected getBlobStorage(): any {
+    if (!this.context) {
+      throw new Error(
+        `${this.name}: Cannot access BlobStorage before initialize(). ` +
+        `BlobStorage is only available after the augmentation has been initialized.`
+      )
+    }
+
+    const storage = this.context.storage as any
+
+    if (!storage.blobStorage) {
+      throw new Error(
+        `${this.name}: BlobStorage not available. ` +
+        `COW (Copy-on-Write) is not enabled on this storage adapter. ` +
+        `Requires BaseStorage with initializeCOW() called. ` +
+        `This is expected if using a non-COW storage adapter.`
+      )
+    }
+
+    return storage.blobStorage
+  }
+
+  /**
+   * Get RefManager for branch/ref management (v5.0.0+)
+   *
+   * Provides access to the reference manager for creating, updating,
+   * and managing Git-style branches and refs. Available after initialize() is called.
+   *
+   * @returns RefManager instance
+   * @throws Error if called before initialize() or if COW not enabled
+   *
+   * @example
+   * ```typescript
+   * protected async onInitialize() {
+   *   const refManager = this.getRefManager()
+   *   await refManager.setRef('heads/experiment', commitHash, {
+   *     author: 'system',
+   *     message: 'Create experiment branch'
+   *   })
+   * }
+   * ```
+   */
+  protected getRefManager(): any {
+    if (!this.context) {
+      throw new Error(
+        `${this.name}: Cannot access RefManager before initialize(). ` +
+        `RefManager is only available after the augmentation has been initialized.`
+      )
+    }
+
+    const storage = this.context.storage as any
+
+    if (!storage.refManager) {
+      throw new Error(
+        `${this.name}: RefManager not available. ` +
+        `COW (Copy-on-Write) is not enabled on this storage adapter. ` +
+        `Requires BaseStorage with initializeCOW() called. ` +
+        `This is expected if using a non-COW storage adapter.`
+      )
+    }
+
+    return storage.refManager
+  }
+
+  /**
+   * Get current branch name (v5.0.0+)
+   *
+   * Convenience helper for getting the current branch from the Brainy instance.
+   * Available after initialize() is called.
+   *
+   * @returns Current branch name (e.g., 'main')
+   * @throws Error if called before initialize()
+   *
+   * @example
+   * ```typescript
+   * protected async onInitialize() {
+   *   const branch = await this.getCurrentBranch()
+   *   console.log(`Current branch: ${branch}`)
+   * }
+   * ```
+   */
+  protected async getCurrentBranch(): Promise<string> {
+    if (!this.context) {
+      throw new Error(
+        `${this.name}: Cannot access Brainy instance before initialize(). ` +
+        `getCurrentBranch() is only available after the augmentation has been initialized.`
+      )
+    }
+
+    const brain = this.context.brain as any
+
+    if (typeof brain.getCurrentBranch !== 'function') {
+      throw new Error(
+        `${this.name}: getCurrentBranch() not available on Brainy instance. ` +
+        `This method requires Brainy v5.0.0+.`
+      )
+    }
+
+    return brain.getCurrentBranch()
+  }
 }
 
 /**

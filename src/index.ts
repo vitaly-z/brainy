@@ -203,6 +203,24 @@ export {
 // FileSystemStorage is exported separately to avoid browser build issues
 export { FileSystemStorage } from './storage/adapters/fileSystemStorage.js'
 
+// Export COW (Copy-on-Write) infrastructure for v5.0.0
+// Enables premium augmentations to implement temporal features
+import { CommitLog } from './storage/cow/CommitLog.js'
+import { CommitObject, CommitBuilder } from './storage/cow/CommitObject.js'
+import { BlobStorage } from './storage/cow/BlobStorage.js'
+import { RefManager } from './storage/cow/RefManager.js'
+import { TreeObject } from './storage/cow/TreeObject.js'
+
+export {
+  // COW infrastructure
+  CommitLog,
+  CommitObject,
+  CommitBuilder,
+  BlobStorage,
+  RefManager,
+  TreeObject
+}
+
 // Export unified pipeline
 import {
   Pipeline,
