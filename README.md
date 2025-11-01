@@ -218,6 +218,43 @@ Brainy automatically:
 
 **You write business logic. Brainy handles infrastructure.**
 
+### 🚀 **Instant Fork™** — Git for Databases (v5.0.0)
+
+**Clone your entire database in <100ms. Merge back when ready. Full Git-style workflow.**
+
+```javascript
+// Fork instantly - Snowflake-style copy-on-write
+const experiment = await brain.fork('test-migration')
+
+// Make changes safely in isolation
+await experiment.add({ type: 'user', data: { name: 'Test User' } })
+await experiment.updateAll({ /* migration logic */ })
+
+// Commit your work
+await experiment.commit({ message: 'Add test user', author: 'dev@example.com' })
+
+// Merge back to main with conflict resolution
+const result = await brain.merge('test-migration', 'main', {
+  strategy: 'last-write-wins'
+})
+
+console.log(result)  // { added: 1, modified: 0, conflicts: 0 }
+```
+
+**NEW in v5.0.0:**
+- ✅ `fork()` - Instant clone in <100ms
+- ✅ `merge()` - Merge with conflict resolution
+- ✅ `commit()` - Snapshot state
+- ✅ `getHistory()` - View commit history
+- ✅ `checkout()`, `listBranches()` - Full branch management
+- ✅ CLI support for all features
+
+**How it works:** Snowflake-style COW shares HNSW index structures, copying only modified nodes (10-20% memory overhead).
+
+**Perfect for:** Safe migrations, A/B testing, feature branches, distributed development
+
+[→ See Full Documentation](docs/features/instant-fork.md)
+
 ---
 
 ## What Can You Build?

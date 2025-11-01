@@ -17,6 +17,7 @@ import { storageCommands } from './commands/storage.js'
 import { nlpCommands } from './commands/nlp.js'
 import { insightsCommands } from './commands/insights.js'
 import { importCommands } from './commands/import.js'
+import { cowCommands } from './commands/cow.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -618,6 +619,66 @@ program
   .option('--operations <ops>', 'Operations to benchmark', 'all')
   .option('--iterations <n>', 'Number of iterations', '100')
   .action(utilityCommands.benchmark)
+
+// ===== COW Commands (v5.0.0) - Instant Fork & Branching =====
+
+program
+  .command('fork [name]')
+  .description('🚀 Fork the brain (instant clone in 1-2 seconds)')
+  .option('--message <msg>', 'Commit message')
+  .option('--author <name>', 'Author name')
+  .action(cowCommands.fork)
+
+program
+  .command('branch')
+  .description('🌿 Branch management')
+  .addCommand(
+    new Command('list')
+      .alias('ls')
+      .description('List all branches/forks')
+      .action((options) => {
+        cowCommands.branchList(options)
+      })
+  )
+  .addCommand(
+    new Command('delete')
+      .alias('rm')
+      .argument('[name]', 'Branch name to delete')
+      .description('Delete a branch/fork')
+      .option('-f, --force', 'Skip confirmation')
+      .action((name, options) => {
+        cowCommands.branchDelete(name, options)
+      })
+  )
+
+program
+  .command('checkout [branch]')
+  .alias('co')
+  .description('Switch to a different branch')
+  .action(cowCommands.checkout)
+
+program
+  .command('merge [source] [target]')
+  .description('Merge a fork/branch into another branch')
+  .option('--strategy <type>', 'Merge strategy (last-write-wins|custom)', 'last-write-wins')
+  .option('-f, --force', 'Force merge on conflicts')
+  .action(cowCommands.merge)
+
+program
+  .command('history')
+  .alias('log')
+  .description('Show commit history')
+  .option('-l, --limit <number>', 'Number of commits to show', '10')
+  .action(cowCommands.history)
+
+program
+  .command('migrate')
+  .description('🔄 Migrate from v4.x to v5.0.0 (one-time)')
+  .option('--from <path>', 'Old Brainy data path (v4.x)')
+  .option('--to <path>', 'New Brainy data path (v5.0.0)')
+  .option('--backup', 'Create backup before migration')
+  .option('--dry-run', 'Show migration plan without executing')
+  .action(cowCommands.migrate)
 
 // ===== Interactive Mode =====
 

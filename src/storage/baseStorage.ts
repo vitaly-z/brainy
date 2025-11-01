@@ -19,6 +19,9 @@ import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
 import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { getShardIdFromUuid } from './sharding.js'
+import { RefManager } from './cow/RefManager.js'
+import { BlobStorage, type COWStorageAdapter } from './cow/BlobStorage.js'
+import { CommitLog } from './cow/CommitLog.js'
 
 /**
  * Storage key analysis result
@@ -93,6 +96,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected isInitialized = false
   protected graphIndex?: GraphAdjacencyIndex
   protected readOnly = false
+
+  // COW (Copy-on-Write) support - v5.0.0
+  public refManager?: RefManager
+  public blobStorage?: BlobStorage
+  public commitLog?: CommitLog
+  public currentBranch: string = 'main'
+  protected cowEnabled: boolean = false
 
   /**
    * Analyze a storage key to determine its routing and path
@@ -184,6 +194,119 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     if (!this.isInitialized) {
       await this.init()
     }
+  }
+
+  /**
+   * Initialize COW (Copy-on-Write) support
+   * Creates RefManager and BlobStorage for instant fork() capability
+   *
+   * @param options - COW initialization options
+   * @param options.branch - Initial branch name (default: 'main')
+   * @param options.enableCompression - Enable zstd compression for blobs (default: true)
+   * @returns Promise that resolves when COW is initialized
+   */
+  protected async initializeCOW(options?: {
+    branch?: string
+    enableCompression?: boolean
+  }): Promise<void> {
+    if (this.cowEnabled) {
+      // Already initialized
+      return
+    }
+
+    // Set current branch
+    this.currentBranch = options?.branch || 'main'
+
+    // Create COWStorageAdapter bridge
+    // This adapts BaseStorage's methods to the simple key-value interface
+    const cowAdapter: COWStorageAdapter = {
+      get: async (key: string): Promise<Buffer | undefined> => {
+        try {
+          const data = await this.readObjectFromPath(`_cow/${key}`)
+          if (data === null) {
+            return undefined
+          }
+          // Convert to Buffer
+          if (Buffer.isBuffer(data)) {
+            return data
+          }
+          return Buffer.from(JSON.stringify(data))
+        } catch (error) {
+          return undefined
+        }
+      },
+
+      put: async (key: string, data: Buffer): Promise<void> => {
+        // Store as Buffer (for blob data) or parse JSON (for metadata)
+        let obj: any
+        try {
+          // Try to parse as JSON first (for metadata)
+          obj = JSON.parse(data.toString())
+        } catch {
+          // Not JSON, store as binary (base64 encoded for JSON storage)
+          obj = { _binary: true, data: data.toString('base64') }
+        }
+        await this.writeObjectToPath(`_cow/${key}`, obj)
+      },
+
+      delete: async (key: string): Promise<void> => {
+        try {
+          await this.deleteObjectFromPath(`_cow/${key}`)
+        } catch (error) {
+          // Ignore if doesn't exist
+        }
+      },
+
+      list: async (prefix: string): Promise<string[]> => {
+        try {
+          const paths = await this.listObjectsUnderPath(`_cow/${prefix}`)
+          // Remove _cow/ prefix and return relative keys
+          return paths.map(p => p.replace(/^_cow\//, ''))
+        } catch (error) {
+          return []
+        }
+      }
+    }
+
+    // Initialize RefManager
+    this.refManager = new RefManager(cowAdapter)
+
+    // Initialize BlobStorage
+    this.blobStorage = new BlobStorage(cowAdapter, {
+      enableCompression: options?.enableCompression !== false
+    })
+
+    // Initialize CommitLog
+    this.commitLog = new CommitLog(this.blobStorage, this.refManager)
+
+    // Check if main branch exists, create if not
+    const mainRef = await this.refManager.getRef('main')
+    if (!mainRef) {
+      // Create initial commit (empty tree)
+      const emptyTreeHash = '0000000000000000000000000000000000000000000000000000000000000000'
+      await this.refManager.createBranch('main', emptyTreeHash, {
+        description: 'Initial branch',
+        author: 'system'
+      })
+    }
+
+    // Set HEAD to current branch
+    const currentRef = await this.refManager.getRef(this.currentBranch)
+    if (currentRef) {
+      await this.refManager.setHead(this.currentBranch)
+    } else {
+      // Branch doesn't exist, create it from main
+      const mainCommit = await this.refManager.resolveRef('main')
+      if (mainCommit) {
+        await this.refManager.createBranch(this.currentBranch, mainCommit, {
+          description: `Branch created from main`,
+          author: 'system'
+        })
+        await this.refManager.setHead(this.currentBranch)
+      }
+    }
+
+    this.cowEnabled = true
   }
 
   /**

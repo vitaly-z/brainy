@@ -90,6 +90,31 @@ export class TypeAwareHNSWIndex {
   }
 
   /**
+   * Enable COW (Copy-on-Write) mode - Instant fork via shallow copy
+   *
+   * Propagates enableCOW() to all underlying type-specific HNSW indexes.
+   * Each index performs O(1) shallow copy of its own data structures.
+   *
+   * @param parent - Parent TypeAwareHNSWIndex to copy from
+   */
+  public enableCOW(parent: TypeAwareHNSWIndex): void {
+    // Shallow copy indexes Map
+    this.indexes = new Map(parent.indexes)
+
+    // Enable COW on each underlying type-specific index
+    for (const [type, parentIndex] of parent.indexes.entries()) {
+      const childIndex = new HNSWIndex(this.config, this.distanceFunction, {
+        useParallelization: this.useParallelization,
+        storage: this.storage || undefined
+      })
+      childIndex.enableCOW(parentIndex)
+      this.indexes.set(type, childIndex)
+    }
+
+    prodLog.info(`TypeAwareHNSWIndex COW enabled: ${parent.indexes.size} type-specific indexes shallow copied`)
+  }
+
+  /**
    * Get or create HNSW index for a specific type (lazy initialization)
    *
    * Indexes are created on-demand to save memory.
