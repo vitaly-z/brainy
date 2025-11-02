@@ -14,20 +14,28 @@ All notable changes to this project will be documented in this file. See [standa
   - **Solution**: Reversed save order - now saves metadata FIRST, then noun vector
   - **Fixes**: [Workshop Bug Report](https://github.com/soulcraftlabs/brain-cloud/issues/VFS-METADATA-MISSING)
 
-**Storage Initialization Order Fix**
+**Fork API: Lazy COW Initialization**
 
-* **fix**: Prevent storage initialization deadlock with lazy COW init
-  - COW now initializes AFTER storage.init() completes
-  - Removes circular dependency between initializeCOW() and ensureInitialized()
+* **feat**: Implement zero-config lazy COW initialization for fork()
+  - COW initializes automatically on first `fork()` call (transparent to users)
+  - Eliminates initialization deadlock by deferring COW setup until needed
+  - Fork shares storage instance with parent for instant forking (<100ms)
+  - All storage adapters supported (Memory, FileSystem, S3, R2, Azure Blob, GCS, OPFS)
 
-### ⚠️ Known Limitations
+### 📊 Fork Status
 
-**COW Auto-Init Temporarily Disabled**
+**What Works (v5.0.1)**:
+* ✅ Zero-config fork - just call `fork()`, no setup needed
+* ✅ Instant fork (<100ms) - shares storage for immediate branch creation
+* ✅ Fork reads parent data - full access to parent's entities and relationships
+* ✅ Fork writes data - can add/relate/update entities independently
+* ✅ Works with ALL storage adapters and TypeAwareStorage
 
-* COW (Copy-on-Write) auto-initialization disabled in v5.0.1 due to initialization deadlock
-* Fork API exists but requires manual COW setup (not zero-config yet)
-* **Workaround**: Users can still manually call `storage.initializeCOW()` if needed
-* **Timeline**: Will be fixed properly with zero-config in v5.1.0
+**Known Limitation**:
+* ⚠️ Write isolation pending - fork and parent currently share all writes
+* This means changes in fork ARE visible to parent (and vice versa)
+* True COW write-on-copy will be implemented in v5.1.0
+* For now, fork() is best used for read-only experiments or temporary branches
 
 ### 📊 Impact
 

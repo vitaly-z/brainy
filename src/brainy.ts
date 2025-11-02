@@ -177,17 +177,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.storage = await this.setupStorage()
       await this.storage.init()
 
-      // v5.0.1: COW auto-init DISABLED due to initialization deadlock
-      // COW is still available but requires manual initialization
-      // Will be fixed properly in v5.1.0
-      // if (typeof (this.storage as any).initializeCOW === 'function') {
-      //   const cowOptions = (this.storage as any)._cowOptions || {
-      //     branch: 'main',
-      //     enableCompression: true
-      //   }
-      //   await (this.storage as any).initializeCOW(cowOptions)
-      // }
-
       // Setup index now that we have storage
       this.index = this.setupIndex()
 
@@ -2118,13 +2107,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.augmentationRegistry.execute('fork', { branch, options }, async () => {
       const branchName = branch || `fork-${Date.now()}`
 
-      // Check if storage has RefManager (COW enabled)
-      if (!('refManager' in this.storage)) {
-        throw new Error(
-          'Fork requires COW-enabled storage. ' +
-          'This storage adapter does not support branching. ' +
-          'Please use v5.0.0+ storage adapters.'
-        )
+      // v5.0.1: Lazy COW initialization - enable automatically on first fork()
+      // This is zero-config and transparent to users
+      if (!('refManager' in this.storage) || !(this.storage as any).refManager) {
+        // Storage supports COW but isn't initialized yet - initialize now
+        if (typeof (this.storage as any).initializeCOW === 'function') {
+          await (this.storage as any).initializeCOW({
+            branch: (this.config.storage as any)?.branch || 'main',
+            enableCompression: true
+          })
+        } else {
+          // Storage adapter doesn't support COW at all
+          throw new Error(
+            'Fork requires COW-enabled storage. ' +
+            'This storage adapter does not support branching. ' +
+            'Please use v5.0.0+ storage adapters.'
+          )
+        }
       }
 
       const refManager = (this.storage as any).refManager
@@ -2144,10 +2143,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       const clone = new Brainy<T>(forkConfig)
 
-      // Step 3: Create NEW storage instance pointing to fork branch
-      // This ensures proper data isolation between parent and fork
-      clone.storage = await clone.setupStorage()
-      await clone.storage.init()
+      // Step 3: SHARE parent's storage instance (enables data access)
+      // Fork shares same underlying storage but with different currentBranch
+      // This provides instant fork with read access to parent data
+      clone.storage = this.storage
+
+      // Update COW currentBranch to fork branch
+      if ('currentBranch' in clone.storage) {
+        (clone.storage as any).currentBranch = branchName
+      }
 
       // Shallow copy HNSW index (INSTANT - just copies Map references)
       clone.index = this.setupIndex()
