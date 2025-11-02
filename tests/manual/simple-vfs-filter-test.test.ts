@@ -47,7 +47,7 @@ describe('Simple VFS Filter Test', () => {
 
     // 2. Create VFS file
     console.log('\n2. Creating VFS file...')
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.writeFile('/test.txt', 'VFS file')
     console.log('   VFS file created')

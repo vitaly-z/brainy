@@ -21,7 +21,7 @@ describe('VFS Bug Fixes', () => {
       embeddingModel: 'Q8'
     })
     await brain.init()
-    vfs = brain.vfs()
+    vfs = brain.vfs
     await vfs.init()
   })
 

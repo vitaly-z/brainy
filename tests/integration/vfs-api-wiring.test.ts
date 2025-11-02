@@ -47,7 +47,7 @@ describe('VFS API Wiring Verification', () => {
     })
 
     // Create VFS file
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.writeFile('/typescript.md', 'TypeScript programming guide')
 
@@ -81,7 +81,7 @@ describe('VFS API Wiring Verification', () => {
   it('should verify vfs.search() finds VFS files', async () => {
     console.log('\n📋 Test 2: vfs.search() finds VFS files')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()  // Required before using VFS operations
 
     // Create test files
@@ -111,7 +111,7 @@ describe('VFS API Wiring Verification', () => {
   it('should verify vfs.findSimilar() finds similar VFS files', async () => {
     console.log('\n📋 Test 3: vfs.findSimilar() finds similar VFS files')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()  // Required before using VFS operations
 
     // Create similar files
@@ -143,7 +143,7 @@ describe('VFS API Wiring Verification', () => {
   it('should verify vfs.searchEntities() finds VFS entities', async () => {
     console.log('\n📋 Test 4: vfs.searchEntities() finds VFS entities')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()  // Required before using VFS operations
 
     // Create entity in VFS (if supported)
@@ -164,7 +164,7 @@ describe('VFS API Wiring Verification', () => {
   it('should verify VFS semantic projections work', async () => {
     console.log('\n📋 Test 5: VFS semantic projections')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()  // Required before using VFS operations
 
     // Create files with metadata for projections
@@ -282,7 +282,7 @@ describe('VFS API Wiring Verification', () => {
   it('should verify production scale performance', async () => {
     console.log('\n📋 Test 8: Production scale performance')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()  // Required before using VFS operations
 
     // Create batch of files

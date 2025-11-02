@@ -42,7 +42,7 @@ describe('VFS-Knowledge Separation (Option 3C)', () => {
 
   it('should exclude VFS entities from brain.find() by default', async () => {
     // Create VFS file entity
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.mkdir('/docs', { recursive: true })
     await vfs.writeFile('/docs/readme.md', '# Hello World')

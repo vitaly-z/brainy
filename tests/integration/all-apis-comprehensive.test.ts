@@ -224,7 +224,7 @@ describe('Comprehensive All-APIs Test', () => {
     let vfs: any
 
     it('vfs.init() - should initialize VFS', async () => {
-      vfs = brain.vfs()
+      vfs = brain.vfs
       await vfs.init()
 
       expect(vfs).toBeDefined()

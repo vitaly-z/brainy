@@ -33,7 +33,7 @@ describe('VFS Search Debug', () => {
   })
 
   it('should debug vfs.search() results', async () => {
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.writeFile('/test.txt', 'Hello world test content')
 

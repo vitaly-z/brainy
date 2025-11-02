@@ -39,7 +39,7 @@ describe('Workshop VFS Diagnostic', () => {
     // Step 2: Use VFS to create files
     console.log('2️⃣  Creating VFS files...\n')
 
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.mkdir('/test', { recursive: true })
 

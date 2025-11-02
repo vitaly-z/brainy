@@ -23,7 +23,7 @@ describe('VirtualFileSystem - Production Tests', () => {
     await brain.init()
 
     // Create VFS on top of Brainy
-    vfs = brain.vfs()
+    vfs = brain.vfs
     await vfs.init()
   })
 

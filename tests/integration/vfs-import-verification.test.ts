@@ -100,7 +100,7 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
     console.log('\n📂 Step 3: Initialize VFS and query...')
 
     // Get VFS instance
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     console.log('   - Got VFS instance')
 
     // Initialize VFS
@@ -180,10 +180,10 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
     })
 
     console.log('📂 Get VFS (should be initialized by import)...')
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
 
     // AFTER REFACTOR: This should work without calling vfs.init()
-    // Because VFSStructureGenerator uses brain.vfs() which caches the instance
+    // Because VFSStructureGenerator uses brain.vfs which caches the instance
     console.log('🔍 Query root (without manual init)...')
 
     try {
@@ -238,7 +238,7 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
 
     // Workshop team's check: Initialize VFS
     console.log('\n📂 Initializing VFS (Workshop fix)...')
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
 
     // Workshop team's check: Query root

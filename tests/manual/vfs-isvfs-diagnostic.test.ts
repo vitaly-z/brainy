@@ -35,7 +35,7 @@ describe('isVFS Flag Diagnostic', () => {
 
   it('should show what entities are created', async () => {
     // Create VFS file
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
     await vfs.writeFile('/test.txt', 'Hello World')
 

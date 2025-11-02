@@ -14,7 +14,7 @@ describe('VFS Debug', () => {
     console.log('✅ Brain initialized')
 
     // Get VFS and initialize
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
 
     console.log('✅ VFS initialized')

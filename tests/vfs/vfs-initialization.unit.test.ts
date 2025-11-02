@@ -1,7 +1,7 @@
 /**
  * VFS Initialization Tests
  *
- * Tests proper VFS initialization patterns to prevent common errors
+ * Tests v5.1.0+ auto-initialization behavior
  */
 
 import { describe, it, expect } from 'vitest'
@@ -10,97 +10,55 @@ import { Brainy } from '../../src/brainy.js'
 
 describe('VFS Initialization', () => {
 
-  describe('Common Initialization Errors', () => {
-    it('should fail if VFS is not initialized before use', async () => {
+  describe('Auto-Initialization (v5.1.0+)', () => {
+    it('should auto-initialize VFS during brain.init()', async () => {
       const brain = new Brainy({
         storage: { type: 'memory' },
         silent: true
       })
       await brain.init()
 
-      const vfs = brain.vfs()
-      // Attempting to use VFS without calling init()
+      const vfs = brain.vfs
 
-      await expect(vfs.writeFile('/test.txt', 'Hello'))
-        .rejects.toThrow('VFS not initialized')
-
-      await expect(vfs.readdir('/'))
-        .rejects.toThrow('VFS not initialized')
-    })
-  })
-
-  describe('Correct Initialization Pattern', () => {
-    it('should work when VFS is properly initialized', async () => {
-      // Step 1: Initialize Brainy
-      const brain = new Brainy({
-        storage: { type: 'memory' },
-        silent: true
-      })
-      await brain.init()
-
-      // Step 2: Get VFS instance
-      const vfs = brain.vfs()
-
-      // Step 3: Initialize VFS - this creates the root directory
-      await vfs.init()
-
-      // Now VFS operations work correctly
+      // VFS is ready to use immediately after brain.init()
       await vfs.writeFile('/test.txt', 'Hello World')
-      await vfs.writeFile('/data.json', '{"key": "value"}')
+      const content = await vfs.readFile('/test.txt')
+      expect(content.toString()).toBe('Hello World')
 
-      // Root directory can be listed
-      const entries = await vfs.readdir('/')
-      expect(entries).toContain('test.txt')
-      expect(entries).toContain('data.json')
-
-      // Root directory stats are available
-      const stats = await vfs.stat('/')
-      expect(stats.isDirectory()).toBe(true)
-
-      // Cleanup
-      await vfs.close()
       await brain.close()
     })
 
-    it('should automatically create root directory on init', async () => {
+    it('should automatically create root directory on brain.init()', async () => {
       const brain = new Brainy({
         storage: { type: 'memory' },
         silent: true
       })
       await brain.init()
 
-      const vfs = brain.vfs()
+      const vfs = brain.vfs
 
-      // Before init, operations fail
-      await expect(vfs.exists('/'))
-        .rejects.toThrow('VFS not initialized')
-
-      // After init, root exists
-      await vfs.init()
+      // Root directory exists after brain.init()
       expect(await vfs.exists('/')).toBe(true)
 
       // Root is a directory
       const stats = await vfs.stat('/')
       expect(stats.isDirectory()).toBe(true)
 
-      // Can list empty root
+      // Can list root directory
       const entries = await vfs.readdir('/')
       expect(Array.isArray(entries)).toBe(true)
-      expect(entries).toEqual([])
 
-      await vfs.close()
       await brain.close()
     })
 
-    it('should handle nested directories after initialization', async () => {
+    it('should handle nested directories after brain.init()', async () => {
       const brain = new Brainy({
         storage: { type: 'memory' },
         silent: true
       })
       await brain.init()
 
-      const vfs = brain.vfs()
-      await vfs.init()
+      const vfs = brain.vfs
 
       // Create nested structure
       await vfs.mkdir('/documents')
@@ -119,7 +77,29 @@ describe('VFS Initialization', () => {
       const reportEntries = await vfs.readdir('/documents/reports')
       expect(reportEntries).toContain('q1.txt')
 
-      await vfs.close()
+      await brain.close()
+    })
+
+    it('should work with VFS operations immediately', async () => {
+      const brain = new Brainy({
+        storage: { type: 'memory' },
+        silent: true
+      })
+      await brain.init()
+
+      const vfs = brain.vfs
+
+      // All VFS operations work immediately
+      await vfs.writeFile('/test.txt', 'Hello')
+      await vfs.writeFile('/data.json', '{"key": "value"}')
+
+      const entries = await vfs.readdir('/')
+      expect(entries).toContain('test.txt')
+      expect(entries).toContain('data.json')
+
+      const testContent = await vfs.readFile('/test.txt')
+      expect(testContent.toString()).toBe('Hello')
+
       await brain.close()
     })
   })

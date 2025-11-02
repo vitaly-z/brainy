@@ -44,7 +44,7 @@ describe('VFS Multiple Init Diagnostic', () => {
   })
 
   it('should not create duplicate roots when calling vfs.init() multiple times on SAME instance', async () => {
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
 
     // Call init multiple times
     await vfs.init()
@@ -74,10 +74,10 @@ describe('VFS Multiple Init Diagnostic', () => {
 
   it('should not create duplicate roots when creating MULTIPLE VFS instances (Workshop scenario)', async () => {
     // Simulate Workshop's scenario: Getting VFS on multiple requests
-    // brain.vfs() returns cached instance, so this should be safe
-    const vfs1 = brain.vfs()
-    const vfs2 = brain.vfs()
-    const vfs3 = brain.vfs()
+    // brain.vfs returns cached instance, so this should be safe
+    const vfs1 = brain.vfs
+    const vfs2 = brain.vfs
+    const vfs3 = brain.vfs
 
     await vfs1.init()
     await vfs2.init()
@@ -142,7 +142,7 @@ describe('VFS Multiple Init Diagnostic', () => {
 
   it('should verify readdir works after multiple inits', async () => {
     // Create a test directory
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.mkdir('/test-dir', { recursive: true })
     await vfs.writeFile('/test-dir/test.txt', 'Hello')
 
@@ -170,7 +170,7 @@ describe('VFS Multiple Init Diagnostic', () => {
   })
 
   it('should show if Contains relationships are created', async () => {
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
 
     // Get root entity ID using workaround
     const collections = await brain.find({

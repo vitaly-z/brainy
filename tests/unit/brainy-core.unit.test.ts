@@ -89,16 +89,17 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
     })
 
     it('should handle non-existent IDs according to API contract', async () => {
-      const fakeId = 'non-existent-id'
-      
+      // Use valid UUID format (stricter validation in v5.1.0)
+      const fakeId = '00000000-0000-0000-0000-000000000000'
+
       expect(await brain.get(fakeId)).toBeNull()
-      
+
       // update should handle non-existent ID gracefully
-      await expect(brain.update({ 
-        id: fakeId, 
-        data: { test: 'data' } 
+      await expect(brain.update({
+        id: fakeId,
+        data: { test: 'data' }
       })).rejects.toThrow()
-      
+
       // delete should not throw for non-existent ID
       await expect(brain.delete(fakeId)).resolves.not.toThrow()
     })

@@ -89,7 +89,7 @@ describe('VFS + Graph Entities Integration Test', () => {
     console.log('='.repeat(80))
 
     // Initialize VFS
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
 
     // ASSERTION 4: VFS directory structure exists

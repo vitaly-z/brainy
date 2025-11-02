@@ -121,7 +121,7 @@ Carol,35,Manager`
       expect(result.stats.vfsFilesCreated).toBeGreaterThan(0)
 
       // Verify VFS file was created
-      const vfs = brain.vfs()
+      const vfs = brain.vfs
       await vfs.init()
       const exists = await vfs.exists('/imports/test-data.csv')
       expect(exists).toBe(true)
@@ -173,7 +173,7 @@ Gadget,20`
     let vfs: any
 
     beforeAll(async () => {
-      vfs = brain.vfs()
+      vfs = brain.vfs
       await vfs.init()
     })
 
@@ -348,7 +348,7 @@ Gadget,20`
       console.log('\n📋 Test: neural.clusters() VFS filtering')
 
       // Create VFS files
-      const vfs = brain.vfs()
+      const vfs = brain.vfs
       await vfs.writeFile('/cluster-test1.txt', 'VFS file content')
       await vfs.writeFile('/cluster-test2.txt', 'Another VFS file')
 
@@ -416,7 +416,7 @@ Gadget,20`
     it('should handle VFS file operations at scale', async () => {
       console.log('\n📋 Test: VFS operations at scale')
 
-      const vfs = brain.vfs()
+      const vfs = brain.vfs
       const start = Date.now()
 
       // Create 20 files

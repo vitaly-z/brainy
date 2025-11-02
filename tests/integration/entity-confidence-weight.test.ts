@@ -308,7 +308,7 @@ describe('Entity Confidence & Weight Exposure', () => {
 
   describe('VFS integration', () => {
     it('should expose confidence/weight for VFS entities', async () => {
-      const vfs = brain.vfs()
+      const vfs = brain.vfs
       await vfs.init()
 
       await vfs.writeFile('/test.txt', 'VFS test content')

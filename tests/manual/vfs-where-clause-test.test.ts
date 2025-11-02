@@ -37,7 +37,7 @@ describe('VFS Where Clause Diagnostic', () => {
   })
 
   it('should find root entity using where clause', async () => {
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.init()
 
     // Method 1: Where clause (FIXED in v4.3.3!)
@@ -84,7 +84,7 @@ describe('VFS Where Clause Diagnostic', () => {
   })
 
   it('should find regular VFS files using where clause', async () => {
-    const vfs = brain.vfs()
+    const vfs = brain.vfs
     await vfs.mkdir('/test', { recursive: true })
     await vfs.writeFile('/test/hello.txt', 'Hello World')
 

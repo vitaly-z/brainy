@@ -96,9 +96,17 @@ describe('Type Filtering (Workshop Team Issue)', () => {
     await brain.add({ data: 'Location 1', type: NounType.Location })
     await brain.add({ data: 'Concept 1', type: NounType.Concept })
 
+    // v5.1.0: VFS auto-initialization creates root directory
+    // So we now have 4 entities: 3 added + 1 root directory
     const results = await brain.find({ limit: 100 })
 
-    expect(results.length).toBe(3)
+    expect(results.length).toBeGreaterThanOrEqual(3)
+
+    // Verify our entities are included
+    const types = results.map(r => r.type)
+    expect(types).toContain('person')
+    expect(types).toContain('location')
+    expect(types).toContain('concept')
   })
 
   it('should verify entity type is set correctly', async () => {
