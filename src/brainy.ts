@@ -177,6 +177,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.storage = await this.setupStorage()
       await this.storage.init()
 
+      // v5.0.1: COW auto-init DISABLED due to initialization deadlock
+      // COW is still available but requires manual initialization
+      // Will be fixed properly in v5.1.0
+      // if (typeof (this.storage as any).initializeCOW === 'function') {
+      //   const cowOptions = (this.storage as any)._cowOptions || {
+      //     branch: 'main',
+      //     enableCompression: true
+      //   }
+      //   await (this.storage as any).initializeCOW(cowOptions)
+      // }
+
       // Setup index now that we have storage
       this.index = this.setupIndex()
 
@@ -406,15 +417,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.createdBy && { createdBy: params.createdBy })
       }
 
-      // v4.0.0: Save vector and metadata separately
+      // v5.0.1: Save metadata FIRST so TypeAwareStorage can cache the type
+      // This prevents the race condition where saveNoun() defaults to 'thing'
+      await this.storage.saveNounMetadata(id, storageMetadata)
+
+      // Then save vector
       await this.storage.saveNoun({
         id,
         vector,
         connections: new Map(),
         level: 0
       })
-
-      await this.storage.saveNounMetadata(id, storageMetadata)
 
       // v4.8.0: Build entity structure for indexing (NEW - with top-level fields)
       const entityForIndexing = {
@@ -2131,9 +2144,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       const clone = new Brainy<T>(forkConfig)
 
-      // Step 3: TRUE INSTANT FORK - Shallow copy indexes (O(1), <10ms)
-      // Share storage reference (already COW-enabled)
-      clone.storage = this.storage
+      // Step 3: Create NEW storage instance pointing to fork branch
+      // This ensures proper data isolation between parent and fork
+      clone.storage = await clone.setupStorage()
+      await clone.storage.init()
 
       // Shallow copy HNSW index (INSTANT - just copies Map references)
       clone.index = this.setupIndex()

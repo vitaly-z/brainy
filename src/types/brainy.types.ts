@@ -572,7 +572,6 @@ export interface BrainyConfig {
     type: 'auto' | 'memory' | 'filesystem' | 's3' | 'r2' | 'opfs' | 'gcs'
     options?: any
     branch?: string              // COW branch name (default: 'main')
-    enableCOW?: boolean         // Enable Copy-on-Write support (default: false for v5.0.0)
   }
   
   // Model configuration

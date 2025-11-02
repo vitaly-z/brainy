@@ -345,10 +345,9 @@ export interface StorageOptions {
 
   /**
    * COW (Copy-on-Write) configuration for instant fork() capability
-   * v5.0.0+
+   * v5.0.1: COW is now always enabled (automatic, zero-config)
    */
   branch?: string              // Current branch name (default: 'main')
-  enableCOW?: boolean         // Enable Copy-on-Write support (default: false for v5.0.0)
   enableCompression?: boolean // Enable zstd compression for COW blobs (default: true)
 }
 
@@ -387,12 +386,13 @@ async function wrapWithTypeAware(
     verbose
   }) as any
 
-  // Initialize COW if enabled
-  if (options?.enableCOW && typeof wrapped.initializeCOW === 'function') {
-    await wrapped.initializeCOW({
-      branch: options.branch || 'main',
-      enableCompression: options.enableCompression !== false
-    })
+  // v5.0.1: COW will be initialized AFTER storage.init() in Brainy
+  // Store COW options for later initialization
+  if (typeof wrapped.initializeCOW === 'function') {
+    wrapped._cowOptions = {
+      branch: options?.branch || 'main',
+      enableCompression: options?.enableCompression !== false
+    }
   }
 
   return wrapped

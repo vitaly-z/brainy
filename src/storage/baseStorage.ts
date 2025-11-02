@@ -200,12 +200,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Initialize COW (Copy-on-Write) support
    * Creates RefManager and BlobStorage for instant fork() capability
    *
+   * v5.0.1: Now called automatically by storageFactory (zero-config)
+   *
    * @param options - COW initialization options
    * @param options.branch - Initial branch name (default: 'main')
    * @param options.enableCompression - Enable zstd compression for blobs (default: true)
    * @returns Promise that resolves when COW is initialized
    */
-  protected async initializeCOW(options?: {
+  public async initializeCOW(options?: {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {

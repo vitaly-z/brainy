@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.0.1](https://github.com/soulcraftlabs/brainy/compare/v5.0.0...v5.0.1) (2025-11-02)
+
+### 🐛 Critical Bug Fixes
+
+**URGENT FIX: TypeAwareStorage Metadata Race Condition**
+
+* **fix**: Resolve critical race condition causing VFS failures and entity lookup errors
+  - **Problem**: In v5.0.0, `saveNoun()` was called before `saveNounMetadata()`, causing TypeAwareStorage to default entity types to 'thing' and save to wrong storage paths
+  - **Impact**: Broke VFS file operations, `brain.get()`, `brain.relate()`, and all features depending on entity metadata
+  - **Solution**: Reversed save order - now saves metadata FIRST, then noun vector
+  - **Fixes**: [Workshop Bug Report](https://github.com/soulcraftlabs/brain-cloud/issues/VFS-METADATA-MISSING)
+
+**Storage Initialization Order Fix**
+
+* **fix**: Prevent storage initialization deadlock with lazy COW init
+  - COW now initializes AFTER storage.init() completes
+  - Removes circular dependency between initializeCOW() and ensureInitialized()
+
+### ⚠️ Known Limitations
+
+**COW Auto-Init Temporarily Disabled**
+
+* COW (Copy-on-Write) auto-initialization disabled in v5.0.1 due to initialization deadlock
+* Fork API exists but requires manual COW setup (not zero-config yet)
+* **Workaround**: Users can still manually call `storage.initializeCOW()` if needed
+* **Timeline**: Will be fixed properly with zero-config in v5.1.0
+
+### 📊 Impact
+
+* **Unblocks**: Workshop team and all VFS users
+* **Fixes**: All metadata-dependent features (get, relate, find, VFS)
+* **Maintains**: Full backward compatibility with v4.x data
+
 ## [5.0.0](https://github.com/soulcraftlabs/brainy/compare/v4.11.2...v5.0.0) (2025-11-01)
 
 ### 🚀 Major Features - Git for Databases
