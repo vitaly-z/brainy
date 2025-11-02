@@ -55,6 +55,7 @@ export interface BlobWriteOptions {
 export interface BlobReadOptions {
   skipDecompression?: boolean  // Return compressed data
   skipCache?: boolean          // Don't use cache
+  skipVerification?: boolean   // Skip hash verification (faster, less safe)
 }
 
 /**
@@ -290,12 +291,14 @@ export class BlobStorage {
     }
 
     // Verify hash (optional, expensive)
-    if (!options.skipCache && BlobStorage.hash(finalData) !== hash) {
+    if (!options.skipVerification && BlobStorage.hash(finalData) !== hash) {
       throw new Error(`Blob integrity check failed: ${hash}`)
     }
 
-    // Add to cache
-    this.addToCache(hash, finalData, metadata)
+    // Add to cache (only if not skipped)
+    if (!options.skipCache) {
+      this.addToCache(hash, finalData, metadata)
+    }
 
     return finalData
   }

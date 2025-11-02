@@ -198,9 +198,12 @@ export class CacheAugmentation extends BaseAugmentation {
       case 'update':
       case 'delete':
         // Invalidate cache on data changes
-        if (this.config.invalidateOnWrite) {
+        // Cache the reference to avoid race condition during async operation
+        const cache = this.searchCache
+        if (this.config.invalidateOnWrite && cache) {
           const result = await next()
-          this.searchCache.invalidateOnDataChange(operation as any)
+          // Use cached reference - searchCache might have been nulled during await
+          cache.invalidateOnDataChange(operation as any)
           this.log(`Cache invalidated due to ${operation} operation`)
           return result
         }
@@ -209,8 +212,10 @@ export class CacheAugmentation extends BaseAugmentation {
       case 'clear':
         // Clear cache when all data is cleared
         const result = await next()
-        this.searchCache.clear()
-        this.log('Cache cleared due to clear operation')
+        if (this.searchCache) {
+          this.searchCache.clear()
+          this.log('Cache cleared due to clear operation')
+        }
         return result
       
       default:
