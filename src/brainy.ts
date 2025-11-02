@@ -177,6 +177,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.storage = await this.setupStorage()
       await this.storage.init()
 
+      // Enable COW immediately after storage init (v5.0.1)
+      // This ensures ALL data is stored in branch-scoped paths from the start
+      // Lightweight: just sets cowEnabled=true and currentBranch, no RefManager/BlobStorage yet
+      if (typeof (this.storage as any).enableCOWLightweight === 'function') {
+        (this.storage as any).enableCOWLightweight((this.config.storage as any)?.branch || 'main')
+      }
+
       // Setup index now that we have storage
       this.index = this.setupIndex()
 
@@ -221,7 +228,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         Brainy.shutdownHooksRegisteredGlobally = true
       }
 
+      // Mark as initialized BEFORE VFS init (v5.0.1)
+      // VFS.init() needs brain to be marked initialized to call brain methods
       this.initialized = true
+
+      // Initialize VFS (v5.0.1): Ensure VFS is ready when accessed as property
+      // This eliminates need for separate vfs.init() calls - zero additional complexity
+      this._vfs = new VirtualFileSystem(this)
+      await this._vfs.init()
     } catch (error) {
       throw new Error(`Failed to initialize Brainy: ${error}`)
     }
@@ -2143,15 +2157,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       const clone = new Brainy<T>(forkConfig)
 
-      // Step 3: SHARE parent's storage instance (enables data access)
-      // Fork shares same underlying storage but with different currentBranch
-      // This provides instant fork with read access to parent data
-      clone.storage = this.storage
-
-      // Update COW currentBranch to fork branch
-      if ('currentBranch' in clone.storage) {
-        (clone.storage as any).currentBranch = branchName
-      }
+      // Step 3: Clone storage with separate currentBranch
+      // Share RefManager/BlobStorage/CommitLog but maintain separate branch context
+      clone.storage = Object.create(this.storage)
+      clone.storage.currentBranch = branchName
+      // isInitialized inherited from prototype
 
       // Shallow copy HNSW index (INSTANT - just copies Map references)
       clone.index = this.setupIndex()
@@ -2212,8 +2222,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Filter to branches only (exclude tags)
       return refs
-        .filter((ref: string) => ref.startsWith('heads/'))
-        .map((ref: string) => ref.replace('heads/', ''))
+        .filter((ref: any) => ref.name.startsWith('refs/heads/'))
+        .map((ref: any) => ref.name.replace('refs/heads/', ''))
     })
   }
 
@@ -2538,6 +2548,252 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
 
         return { added, modified, deleted, conflicts }
+      }
+    )
+  }
+
+  /**
+   * Compare differences between two branches (like git diff)
+   * @param sourceBranch - Branch to compare from (defaults to current branch)
+   * @param targetBranch - Branch to compare to (defaults to 'main')
+   * @returns Diff result showing added, modified, and deleted entities/relationships
+   *
+   * @example
+   * ```typescript
+   * // Compare current branch with main
+   * const diff = await brain.diff()
+   *
+   * // Compare two specific branches
+   * const diff = await brain.diff('experiment', 'main')
+   * console.log(diff)
+   * // {
+   * //   entities: { added: 5, modified: 3, deleted: 1 },
+   * //   relationships: { added: 10, modified: 2, deleted: 0 }
+   * // }
+   * ```
+   */
+  async diff(
+    sourceBranch?: string,
+    targetBranch?: string
+  ): Promise<{
+    entities: {
+      added: Array<{ id: string; type: string; data?: any }>
+      modified: Array<{ id: string; type: string; changes: string[] }>
+      deleted: Array<{ id: string; type: string }>
+    }
+    relationships: {
+      added: Array<{ from: string; to: string; type: string }>
+      modified: Array<{ from: string; to: string; type: string; changes: string[] }>
+      deleted: Array<{ from: string; to: string; type: string }>
+    }
+    summary: {
+      entitiesAdded: number
+      entitiesModified: number
+      entitiesDeleted: number
+      relationshipsAdded: number
+      relationshipsModified: number
+      relationshipsDeleted: number
+    }
+  }> {
+    await this.ensureInitialized()
+
+    return this.augmentationRegistry.execute(
+      'diff',
+      { sourceBranch, targetBranch },
+      async () => {
+        // Default branches
+        const source = sourceBranch || (await this.getCurrentBranch())
+        const target = targetBranch || 'main'
+        const currentBranch = await this.getCurrentBranch()
+
+        // If source is current branch, use this instance directly (no fork needed)
+        let sourceFork: Brainy<T>
+        let sourceForkCreated = false
+        if (source === currentBranch) {
+          sourceFork = this
+        } else {
+          sourceFork = await this.fork(`temp-diff-source-${Date.now()}`)
+          sourceForkCreated = true
+          try {
+            await sourceFork.checkout(source)
+          } catch (err) {
+            // If checkout fails, branch may not exist - just use current state
+          }
+        }
+
+        // If target is current branch, use this instance directly (no fork needed)
+        let targetFork: Brainy<T>
+        let targetForkCreated = false
+        if (target === currentBranch) {
+          targetFork = this
+        } else {
+          targetFork = await this.fork(`temp-diff-target-${Date.now()}`)
+          targetForkCreated = true
+          try {
+            await targetFork.checkout(target)
+          } catch (err) {
+            // If checkout fails, branch may not exist - just use current state
+          }
+        }
+
+        try {
+          // Get all entities from both branches
+          const sourceResults = await sourceFork.find({})
+          const targetResults = await targetFork.find({})
+
+          // Create maps for lookup
+          const sourceMap = new Map(sourceResults.map(r => [r.entity.id, r.entity]))
+          const targetMap = new Map(targetResults.map(r => [r.entity.id, r.entity]))
+
+          // Track differences
+          const entitiesAdded: any[] = []
+          const entitiesModified: any[] = []
+          const entitiesDeleted: any[] = []
+
+          // Find added and modified entities
+          for (const [id, sourceEntity] of sourceMap.entries()) {
+            const targetEntity = targetMap.get(id)
+
+            if (!targetEntity) {
+              // Entity exists in source but not target = ADDED
+              entitiesAdded.push({
+                id: sourceEntity.id,
+                type: sourceEntity.type,
+                data: sourceEntity.data
+              })
+            } else {
+              // Entity exists in both - check for modifications
+              const changes: string[] = []
+
+              if (sourceEntity.data !== targetEntity.data) {
+                changes.push('data')
+              }
+              if ((sourceEntity.updatedAt || 0) !== (targetEntity.updatedAt || 0)) {
+                changes.push('updatedAt')
+              }
+
+              if (changes.length > 0) {
+                entitiesModified.push({
+                  id: sourceEntity.id,
+                  type: sourceEntity.type,
+                  changes
+                })
+              }
+            }
+          }
+
+          // Find deleted entities (in target but not in source)
+          for (const [id, targetEntity] of targetMap.entries()) {
+            if (!sourceMap.has(id)) {
+              entitiesDeleted.push({
+                id: targetEntity.id,
+                type: targetEntity.type
+              })
+            }
+          }
+
+          // Compare relationships
+          const sourceVerbsResult = await sourceFork.storage.getVerbs({})
+          const targetVerbsResult = await targetFork.storage.getVerbs({})
+
+          const sourceVerbs = sourceVerbsResult.items || []
+          const targetVerbs = targetVerbsResult.items || []
+
+          const sourceRelMap = new Map(
+            sourceVerbs.map((v: any) => [`${v.sourceId}-${v.verb}-${v.targetId}`, v])
+          )
+          const targetRelMap = new Map(
+            targetVerbs.map((v: any) => [`${v.sourceId}-${v.verb}-${v.targetId}`, v])
+          )
+
+          const relationshipsAdded: any[] = []
+          const relationshipsModified: any[] = []
+          const relationshipsDeleted: any[] = []
+
+          // Find added and modified relationships
+          for (const [key, sourceVerb] of sourceRelMap.entries()) {
+            const targetVerb = targetRelMap.get(key)
+
+            if (!targetVerb) {
+              // Relationship exists in source but not target = ADDED
+              relationshipsAdded.push({
+                from: sourceVerb.sourceId,
+                to: sourceVerb.targetId,
+                type: sourceVerb.verb
+              })
+            } else {
+              // Relationship exists in both - check for modifications
+              const changes: string[] = []
+
+              if ((sourceVerb.weight || 0) !== (targetVerb.weight || 0)) {
+                changes.push('weight')
+              }
+              if (JSON.stringify(sourceVerb.metadata) !== JSON.stringify(targetVerb.metadata)) {
+                changes.push('metadata')
+              }
+
+              if (changes.length > 0) {
+                relationshipsModified.push({
+                  from: sourceVerb.sourceId,
+                  to: sourceVerb.targetId,
+                  type: sourceVerb.verb,
+                  changes
+                })
+              }
+            }
+          }
+
+          // Find deleted relationships
+          for (const [key, targetVerb] of targetRelMap.entries()) {
+            if (!sourceRelMap.has(key)) {
+              relationshipsDeleted.push({
+                from: targetVerb.sourceId,
+                to: targetVerb.targetId,
+                type: targetVerb.verb
+              })
+            }
+          }
+
+          return {
+            entities: {
+              added: entitiesAdded,
+              modified: entitiesModified,
+              deleted: entitiesDeleted
+            },
+            relationships: {
+              added: relationshipsAdded,
+              modified: relationshipsModified,
+              deleted: relationshipsDeleted
+            },
+            summary: {
+              entitiesAdded: entitiesAdded.length,
+              entitiesModified: entitiesModified.length,
+              entitiesDeleted: entitiesDeleted.length,
+              relationshipsAdded: relationshipsAdded.length,
+              relationshipsModified: relationshipsModified.length,
+              relationshipsDeleted: relationshipsDeleted.length
+            }
+          }
+        } finally {
+          // Clean up temporary forks (only if we created them)
+          try {
+            const branches = await this.listBranches()
+            if (sourceForkCreated && sourceFork !== this) {
+              const sourceBranchName = await sourceFork.getCurrentBranch()
+              if (branches.includes(sourceBranchName)) {
+                await this.deleteBranch(sourceBranchName)
+              }
+            }
+            if (targetForkCreated && targetFork !== this) {
+              const targetBranchName = await targetFork.getCurrentBranch()
+              if (branches.includes(targetBranchName)) {
+                await this.deleteBranch(targetBranchName)
+              }
+            }
+          } catch (err) {
+            // Ignore cleanup errors
+          }
+        }
       }
     )
   }
@@ -2874,36 +3130,46 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Virtual File System API - Knowledge Operating System
+   * Virtual File System API - Knowledge Operating System (v5.0.1+)
    *
-   * Returns a cached VFS instance. You must call vfs.init() before use:
+   * Returns a cached VFS instance that is auto-initialized during brain.init().
+   * No separate initialization needed!
    *
    * @example After import
    * ```typescript
    * await brain.import('./data.xlsx', { vfsPath: '/imports/data' })
-   *
-   * const vfs = brain.vfs()
-   * await vfs.init()  // Required! (safe to call multiple times)
-   * const files = await vfs.readdir('/imports/data')
+   * // VFS ready immediately - no init() call needed!
+   * const files = await brain.vfs.readdir('/imports/data')
    * ```
    *
    * @example Direct VFS usage
    * ```typescript
-   * const vfs = brain.vfs()
-   * await vfs.init()  // Always required before first use
-   * await vfs.writeFile('/docs/readme.md', 'Hello World')
-   * const content = await vfs.readFile('/docs/readme.md')
+   * await brain.init()  // VFS auto-initialized here!
+   * await brain.vfs.writeFile('/docs/readme.md', 'Hello World')
+   * const content = await brain.vfs.readFile('/docs/readme.md')
    * ```
    *
-   * **Note:** brain.import() automatically initializes the VFS, so after
-   * an import you can call vfs.init() again (it's idempotent) and immediately
-   * query the imported files.
+   * @example With fork (COW isolation)
+   * ```typescript
+   * await brain.init()
+   * await brain.vfs.writeFile('/config.json', '{"v": 1}')
    *
-   * **Pattern:** The VFS instance is cached, so multiple calls to brain.vfs()
+   * const fork = await brain.fork('experiment')
+   * // Fork inherits parent's files
+   * const config = await fork.vfs.readFile('/config.json')
+   * // Fork modifications are isolated
+   * await fork.vfs.writeFile('/test.txt', 'Fork only')
+   * ```
+   *
+   * **Pattern:** The VFS instance is cached, so multiple calls to brain.vfs
    * return the same instance. This ensures import and user code share state.
+   *
+   * @since v5.0.1 - Auto-initialization during brain.init()
    */
-  vfs(): VirtualFileSystem {
+  get vfs(): VirtualFileSystem {
     if (!this._vfs) {
+      // VFS is initialized during brain.init() (v5.0.1)
+      // If not initialized yet, create instance but user should call brain.init() first
       this._vfs = new VirtualFileSystem(this)
     }
     return this._vfs

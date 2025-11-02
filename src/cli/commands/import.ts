@@ -473,7 +473,7 @@ export const importCommands = {
       const brain = getBrainy()
 
       // Get VFS
-      const vfs = await brain.vfs()
+      const vfs = await brain.vfs
 
       // Load DirectoryImporter
       const { DirectoryImporter } = await import('../../vfs/importers/DirectoryImporter.js')

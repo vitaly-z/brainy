@@ -281,4 +281,3 @@ While powerful, the NLP system has some limitations:
 
 - [Triple Intelligence Architecture](../architecture/triple-intelligence.md)
 - [API Reference](../api/README.md)
-- [Getting Started Guide](./getting-started.md)

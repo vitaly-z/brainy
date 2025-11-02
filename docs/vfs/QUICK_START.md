@@ -28,11 +28,7 @@ const brain = new Brainy({
   }
 })
 
-await brain.init()
-
-// ✅ CORRECT: Initialize VFS
-const vfs = brain.vfs()
-await vfs.init()
+await brain.init()  // VFS auto-initialized!
 
 console.log('🎉 VFS ready!')
 ```
@@ -50,9 +46,9 @@ const badItems = allNodes.filter(node => node.path.startsWith(dirPath))
 **✅ CORRECT - Use tree-aware methods:**
 ```typescript
 // ✅ Method 1: Get direct children (recommended for UI)
-async function loadDirectoryContents(path: string) {
+async function loadDirectoryContents(brain: Brainy, path: string) {
   try {
-    const children = await vfs.getDirectChildren(path)
+    const children = await brain.vfs.getDirectChildren(path)
 
     // Sort directories first, then files
     return children.sort((a, b) => {
@@ -67,8 +63,8 @@ async function loadDirectoryContents(path: string) {
 }
 
 // ✅ Method 2: Get complete tree structure (for full trees)
-async function loadFullTree(path: string) {
-  const tree = await vfs.getTreeStructure(path, {
+async function loadFullTree(brain: Brainy, path: string) {
+  const tree = await brain.vfs.getTreeStructure(path, {
     maxDepth: 3,          // Prevent deep recursion
     includeHidden: false, // Skip hidden files
     sort: 'name'
@@ -77,8 +73,8 @@ async function loadFullTree(path: string) {
 }
 
 // ✅ Method 3: Get detailed path info
-async function inspectPath(path: string) {
-  const info = await vfs.inspect(path)
+async function inspectPath(brain: Brainy, path: string) {
+  const info = await brain.vfs.inspect(path)
   return {
     isDirectory: info.node.metadata.vfsType === 'directory',
     children: info.children,
@@ -92,8 +88,8 @@ async function inspectPath(path: string) {
 
 ```typescript
 // ✅ Find files by content, not just filename
-async function searchFiles(query: string, basePath: string = '/') {
-  const results = await vfs.search(query, {
+async function searchFiles(brain: Brainy, query: string, basePath: string = '/') {
+  const results = await brain.vfs.search(query, {
     path: basePath,     // Limit search to specific directory
     limit: 50,         // Reasonable limit
     type: 'file'       // Only search files, not directories
@@ -122,37 +118,34 @@ import React, { useState, useEffect } from 'react'
 import { Brainy } from '@soulcraft/brainy'
 
 export function FileExplorer() {
-  const [vfs, setVfs] = useState(null)
+  const [brain, setBrain] = useState(null)
   const [currentPath, setCurrentPath] = useState('/')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Initialize VFS
+  // Initialize Brainy (VFS auto-initialized!)
   useEffect(() => {
-    async function initVFS() {
-      const brain = new Brainy({
+    async function initBrainy() {
+      const brainInstance = new Brainy({
         storage: { type: 'filesystem', path: './brainy-data' }
       })
-      await brain.init()
+      await brainInstance.init()  // VFS ready after this!
 
-      const vfsInstance = brain.vfs()
-      await vfsInstance.init()
-
-      setVfs(vfsInstance)
+      setBrain(brainInstance)
       setLoading(false)
     }
-    initVFS()
+    initBrainy()
   }, [])
 
   // Load directory contents
   const loadDirectory = async (path: string) => {
-    if (!vfs) return
+    if (!brain) return
 
     setLoading(true)
     try {
       // ✅ CORRECT: Use getDirectChildren to prevent recursion
-      const children = await vfs.getDirectChildren(path)
+      const children = await brain.vfs.getDirectChildren(path)
 
       // Sort directories first
       const sorted = children.sort((a, b) => {
@@ -173,14 +166,14 @@ export function FileExplorer() {
 
   // Search files
   const handleSearch = async () => {
-    if (!vfs || !searchQuery.trim()) {
+    if (!brain || !searchQuery.trim()) {
       loadDirectory(currentPath)
       return
     }
 
     setLoading(true)
     try {
-      const results = await vfs.search(searchQuery, {
+      const results = await brain.vfs.search(searchQuery, {
         path: currentPath,
         limit: 100
       })
@@ -194,13 +187,13 @@ export function FileExplorer() {
 
   // Initial load
   useEffect(() => {
-    if (vfs) {
+    if (brain) {
       loadDirectory('/')
     }
-  }, [vfs])
+  }, [brain])
 
-  if (loading && !vfs) {
-    return <div>Initializing VFS...</div>
+  if (loading && !brain) {
+    return <div>Initializing Brainy...</div>
   }
 
   return (
@@ -301,16 +294,16 @@ npm install @soulcraft/brainy@latest  # Update if needed
 
 ### "VFS not initialized" errors
 ```typescript
-// Always await both init() calls
+// v5.1.0+: Just await brain.init() - VFS is auto-initialized!
 await brain.init()
-const vfs = brain.vfs()
-await vfs.init()  // Don't forget this!
+// VFS ready - use brain.vfs directly
+await brain.vfs.writeFile('/test.txt', 'data')
 ```
 
 ### Slow directory loading
 ```typescript
 // Add pagination for large directories
-const children = await vfs.getDirectChildren(path, {
+const children = await brain.vfs.getDirectChildren(path, {
   limit: 100,      // Load only first 100 items
   offset: 0        // Start from beginning
 })
@@ -319,7 +312,7 @@ const children = await vfs.getDirectChildren(path, {
 ### Search not finding files
 ```typescript
 // Make sure files are imported into VFS first
-await vfs.importDirectory('./my-files', {
+await brain.vfs.importDirectory('./my-files', {
   recursive: true,
   extractMetadata: true  // Enable content understanding
 })

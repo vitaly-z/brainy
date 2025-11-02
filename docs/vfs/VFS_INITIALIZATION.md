@@ -1,69 +1,79 @@
-# VFS Initialization Guide
+# VFS Initialization Guide (v5.1.0+)
 
 ## Quick Start
 
-The Brainy VFS requires proper initialization before use. Here's the correct pattern:
+The Brainy VFS is automatically initialized during `brain.init()`. No separate initialization needed!
 
 ```javascript
 import { Brainy } from '@soulcraft/brainy'
 
-// Step 1: Create and initialize Brainy
+// Create and initialize Brainy
 const brain = new Brainy({
   storage: { type: 'filesystem', path: './data' }
 })
+await brain.init()  // VFS is auto-initialized here!
+
+// Use VFS immediately - it's a property, not a method!
+await brain.vfs.writeFile('/test.txt', 'Hello World')
+const files = await brain.vfs.readdir('/')
+```
+
+## What Changed in v5.1.0?
+
+### Before (v4.x and early v5.0.0):
+```javascript
+const brain = new Brainy(...)
 await brain.init()
 
-// Step 2: Get VFS instance (it's a METHOD, not a property!)
-const vfs = brain.vfs()  // ✅ Correct: method call with ()
-
-// Step 3: Initialize VFS (THIS IS REQUIRED!)
-await vfs.init()  // Creates the root directory
-
-// Now you can use VFS
-await vfs.writeFile('/test.txt', 'Hello World')
-const files = await vfs.readdir('/')
+const vfs = brain.vfs()     // ❌ Method call
+await vfs.init()             // ❌ Separate initialization
+await vfs.writeFile(...)
 ```
 
-## Common Mistakes
-
-### ❌ Mistake 1: Accessing VFS as Property
+### After (v5.1.0+):
 ```javascript
-// WRONG - vfs is a method, not a property
-const vfs = brain.vfs  // Missing parentheses!
+const brain = new Brainy(...)
+await brain.init()           // VFS auto-initialized!
+
+await brain.vfs.writeFile(...)  // ✅ Property access, just works!
 ```
 
-### ❌ Mistake 2: Forgetting to Initialize VFS
-```javascript
-const vfs = brain.vfs()
-// Missing: await vfs.init()
-await vfs.writeFile('/test.txt', 'data')  // Error: VFS not initialized
-```
+### Key Changes:
+1. **`vfs()` → `vfs`**: Method call becomes property access
+2. **Auto-initialization**: VFS initialized during `brain.init()`
+3. **Zero complexity**: No separate `vfs.init()` call needed
+4. **Consistent pattern**: VFS treated like any other brain API
 
-### ❌ Mistake 3: Not Waiting for Initialization
+## Migration from v4.x/v5.0.0
+
+### Old Pattern (DEPRECATED):
 ```javascript
 const vfs = brain.vfs()
-vfs.init()  // Missing await!
-await vfs.readdir('/')  // Error: VFS not initialized (init still running)
+await vfs.init()
+await vfs.writeFile('/test.txt', 'data')
 ```
 
-## Why Initialization is Required
+### New Pattern (v5.1.0+):
+```javascript
+// Just remove the () and init() call
+await brain.vfs.writeFile('/test.txt', 'data')
+```
 
-The VFS `init()` method performs critical setup:
+## Why Auto-Initialization?
 
-1. **Creates the root directory entity** in Brainy's graph database
-2. **Initializes the PathResolver** for efficient path lookups
-3. **Sets up caching layers** for performance
-4. **Starts background tasks** for maintenance
-5. **Configures storage adapters** based on your settings
+VFS stores files as entities and relationships in the same graph as everything else. There's no reason to treat it differently! Auto-initialization:
 
-Without initialization, the root directory (`/`) doesn't exist, which is why operations fail with "Not a directory: /" errors.
+- ✅ **Simpler API**: One less step to remember
+- ✅ **Fewer errors**: Can't forget to initialize
+- ✅ **More intuitive**: Property access feels natural
+- ✅ **Consistent**: Matches how other brain APIs work
 
 ## Complete Example
 
 ```javascript
 import { Brainy } from '@soulcraft/brainy'
 
-async function setupVFS() {
+async function useVFS() {
   // Initialize Brainy
   const brain = new Brainy({
     storage: {
@@ -71,43 +81,21 @@ async function setupVFS() {
       path: './brainy-data'
     }
   })
-  await brain.init()
+  await brain.init()  // VFS ready after this!
 
-  // Get and initialize VFS
-  const vfs = brain.vfs()
-  await vfs.init()
+  // Use VFS immediately
+  await brain.vfs.writeFile('/readme.txt', 'Welcome to VFS!')
+  await brain.vfs.mkdir('/documents')
 
-  // Verify initialization
-  const rootExists = await vfs.exists('/')
-  console.log('Root directory exists:', rootExists)  // true
+  const files = await brain.vfs.readdir('/')
+  console.log('Files in root:', files.map(f => f.name))
 
-  const stats = await vfs.stat('/')
-  console.log('Root is directory:', stats.isDirectory())  // true
-
-  // Now use VFS normally
-  await vfs.writeFile('/readme.txt', 'Welcome to VFS!')
-  await vfs.mkdir('/documents')
-
-  const files = await vfs.readdir('/')
-  console.log('Files in root:', files)  // ['readme.txt', 'documents']
-
-  return vfs
+  const content = await brain.vfs.readFile('/readme.txt')
+  console.log('File content:', content.toString())
 }
 
-setupVFS().catch(console.error)
+useVFS().catch(console.error)
 ```
-
-## Error Messages
-
-If you see this error:
-```
-VFS not initialized. You must call await vfs.init() after getting the VFS instance.
-Example:
-  const vfs = brain.vfs()  // Note: vfs() is a method, not a property
-  await vfs.init()         // This creates the root directory
-```
-
-It means you forgot to initialize VFS. Follow the example in the error message.
 
 ## TypeScript Usage
 
@@ -116,87 +104,87 @@ import { Brainy, VirtualFileSystem } from '@soulcraft/brainy'
 
 class FileManager {
   private brain: Brainy
-  private vfs: VirtualFileSystem | null = null
 
   async initialize(): Promise<void> {
-    // Initialize Brainy
     this.brain = new Brainy({
       storage: { type: 'filesystem' }
     })
     await this.brain.init()
-
-    // Initialize VFS
-    this.vfs = this.brain.vfs()
-    await this.vfs.init()
+    // VFS is ready! No separate initialization needed
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    if (!this.vfs) {
+    if (!this.brain) {
       throw new Error('FileManager not initialized. Call initialize() first.')
     }
-    await this.vfs.writeFile(path, content)
+    // Use VFS as property
+    await this.brain.vfs.writeFile(path, content)
+  }
+
+  async listFiles(path: string): Promise<string[]> {
+    const entries = await this.brain.vfs.readdir(path)
+    return entries.map(e => e.name)
   }
 }
 ```
 
-## Auto-Initialization Pattern (Optional)
+## Error Messages
 
-If you want VFS to auto-initialize on first use:
+If you see this error:
+```
+Brainy not initialized. Call init() first.
+```
+
+It means you tried to use VFS before calling `brain.init()`. Always initialize Brainy first:
 
 ```javascript
-class AutoInitVFS {
-  constructor(config) {
-    this.brain = new Brainy(config)
-    this.vfs = null
-    this.initPromise = null
-  }
+await brain.init()  // Required!
+await brain.vfs.writeFile(...)  // Now this works
+```
 
-  async ensureInit() {
-    if (!this.initPromise) {
-      this.initPromise = this._initialize()
-    }
-    await this.initPromise
-  }
+## Fork Support (v5.0.0+)
 
-  async _initialize() {
-    await this.brain.init()
-    this.vfs = this.brain.vfs()
-    await this.vfs.init()
-  }
+VFS works seamlessly with Brainy's Copy-on-Write (COW) fork feature:
 
-  // Wrap all VFS methods
-  async writeFile(path, data) {
-    await this.ensureInit()
-    return this.vfs.writeFile(path, data)
-  }
+```javascript
+const brain = new Brainy({ storage: { type: 'memory' } })
+await brain.init()
 
-  async readdir(path) {
-    await this.ensureInit()
-    return this.vfs.readdir(path)
-  }
-}
+// Create files in parent
+await brain.vfs.writeFile('/config.json', '{"version": 1}')
 
-// Usage - no explicit init needed
-const vfs = new AutoInitVFS({ storage: { type: 'memory' } })
-await vfs.writeFile('/test.txt', 'Auto-init works!')
+// Fork inherits parent's files
+const fork = await brain.fork('experiment')
+const files = await fork.vfs.readdir('/')  // Sees parent's config.json!
+
+// Fork modifications are isolated
+await fork.vfs.writeFile('/test.txt', 'Fork only')
+await brain.vfs.readdir('/')  // Parent doesn't see test.txt
 ```
 
 ## FAQ
 
-### Q: Why doesn't VFS auto-initialize?
-A: Explicit initialization gives you control over when the root directory is created and when background tasks start. This prevents unexpected side effects and makes the initialization cost visible.
+### Q: Do I need to call `vfs.init()` anymore?
+**A:** No! VFS is automatically initialized during `brain.init()` in v5.1.0+.
 
-### Q: Can I reinitialize VFS?
-A: No, VFS can only be initialized once per instance. If you need to reset, create a new Brainy instance.
+### Q: Why did the API change from `vfs()` to `vfs`?
+**A:** VFS uses the same entity/relationship graph as everything else. There's no reason to treat it differently from other brain APIs.
 
-### Q: What happens if Brainy isn't initialized?
-A: VFS initialization will fail. Always initialize Brainy first with `await brain.init()`.
+### Q: Will my old code break?
+**A:** If you're using `brain.vfs()` or `await vfs.init()`, you'll need to update to the new pattern. The migration is simple - just remove the `()` and `init()` calls.
 
-### Q: Is the initialization pattern the same for all storage types?
-A: Yes, whether using memory, filesystem, S3, or R2 storage, the initialization pattern is identical.
+### Q: Can I still configure VFS?
+**A:** Yes, VFS configuration is passed through `brain.init()` config. The VFS-specific options are applied during auto-initialization.
+
+### Q: Does this work with all storage adapters?
+**A:** Yes! VFS auto-initialization works with all storage adapters: Memory, FileSystem, OPFS, S3, R2, Azure Blob, and Google Cloud Storage.
+
+### Q: What if I need multiple VFS instances?
+**A:** Each Brainy instance has its own VFS. Create multiple Brainy instances if you need multiple VFS instances.
 
 ## Related Documentation
 
 - [VFS Quick Start](./QUICK_START.md) - 5-minute setup guide
 - [VFS API Guide](./VFS_API_GUIDE.md) - Complete API reference
 - [Common Patterns](./COMMON_PATTERNS.md) - Best practices and patterns
+- [Instant Fork](../features/instant-fork.md) - VFS + Copy-on-Write

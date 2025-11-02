@@ -82,7 +82,7 @@ export class VFSStructureGenerator {
 
   constructor(brain: Brainy) {
     this.brain = brain
-    // CRITICAL FIX: Use brain.vfs() instead of creating separate instance
+    // CRITICAL FIX: Use brain.vfs instead of creating separate instance
     // This ensures VFSStructureGenerator and user code share the same VFS instance
     // Before: Created separate instance that wasn't accessible to users
     // After: Uses brain's cached instance, making VFS queryable after import
@@ -92,11 +92,11 @@ export class VFSStructureGenerator {
    * Initialize the generator
    *
    * CRITICAL: Gets brain's VFS instance and initializes it if needed.
-   * This ensures that after import, brain.vfs() returns an initialized instance.
+   * This ensures that after import, brain.vfs returns an initialized instance.
    */
   async init(): Promise<void> {
     // Get brain's cached VFS instance (creates if doesn't exist)
-    this.vfs = this.brain.vfs()
+    this.vfs = this.brain.vfs
 
     // CRITICAL FIX (v4.10.2): Always call vfs.init() explicitly
     // The previous code tried to check if initialized via stat('/') but this was unreliable

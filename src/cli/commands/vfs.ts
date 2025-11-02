@@ -18,9 +18,10 @@ interface VFSOptions {
 
 let brainyInstance: Brainy | null = null
 
-const getBrainy = (): Brainy => {
+const getBrainy = async (): Promise<Brainy> => {
   if (!brainyInstance) {
     brainyInstance = new Brainy()
+    await brainyInstance.init()  // v5.0.1: Initialize brain (VFS auto-initialized here!)
   }
   return brainyInstance
 }
@@ -51,11 +52,9 @@ export const vfsCommands = {
     const spinner = ora('Reading file...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
-
-      const buffer = await vfs.readFile(path, {
+      const brain = await getBrainy()  // v5.0.1: Await async getBrainy
+      // v5.0.1: VFS auto-initialized, no need for vfs.init()
+      const buffer = await brain.vfs.readFile(path, {
         encoding: options.encoding as any
       })
 
@@ -85,9 +84,7 @@ export const vfsCommands = {
     const spinner = ora('Writing file...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
       let data: string
       if (options.file) {
@@ -100,7 +97,7 @@ export const vfsCommands = {
         process.exit(1)
       }
 
-      await vfs.writeFile(path, data, {
+      await brain.vfs.writeFile(path, data, {
         encoding: options.encoding as any
       })
 
@@ -126,11 +123,9 @@ export const vfsCommands = {
     const spinner = ora('Listing directory...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const entries = await vfs.readdir(path, { withFileTypes: true })
+      const entries = await brain.vfs.readdir(path, { withFileTypes: true })
 
       spinner.succeed(`Found ${Array.isArray(entries) ? entries.length : 0} items`)
 
@@ -150,7 +145,7 @@ export const vfsCommands = {
           for (const entry of entries as any[]) {
             if (!options.all && entry.name.startsWith('.')) continue
 
-            const stat = await vfs.stat(`${path}/${entry.name}`)
+            const stat = await brain.vfs.stat(`${path}/${entry.name}`)
             table.push([
               entry.isDirectory() ? chalk.blue('DIR') : 'FILE',
               entry.isDirectory() ? '-' : formatBytes(stat.size),
@@ -190,11 +185,9 @@ export const vfsCommands = {
     const spinner = ora('Getting file stats...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const stats = await vfs.stat(path)
+      const stats = await brain.vfs.stat(path)
 
       spinner.succeed('Stats retrieved')
 
@@ -223,11 +216,9 @@ export const vfsCommands = {
     const spinner = ora('Creating directory...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      await vfs.mkdir(path, { recursive: options.parents })
+      await brain.vfs.mkdir(path, { recursive: options.parents })
 
       spinner.succeed('Directory created')
 
@@ -250,16 +241,14 @@ export const vfsCommands = {
     const spinner = ora('Removing...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const stats = await vfs.stat(path)
+      const stats = await brain.vfs.stat(path)
 
       if (stats.isDirectory()) {
-        await vfs.rmdir(path, { recursive: options.recursive })
+        await brain.vfs.rmdir(path, { recursive: options.recursive })
       } else {
-        await vfs.unlink(path)
+        await brain.vfs.unlink(path)
       }
 
       spinner.succeed('Removed successfully')
@@ -285,11 +274,9 @@ export const vfsCommands = {
     const spinner = ora('Searching files...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const results = await vfs.search(query, {
+      const results = await brain.vfs.search(query, {
         path: options.path,
         limit: options.limit ? parseInt(options.limit) : 10
       })
@@ -330,11 +317,9 @@ export const vfsCommands = {
     const spinner = ora('Finding similar files...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const results = await vfs.findSimilar(path, {
+      const results = await brain.vfs.findSimilar(path, {
         limit: options.limit ? parseInt(options.limit) : 10,
         threshold: options.threshold ? parseFloat(options.threshold) : 0.7
       })
@@ -372,11 +357,9 @@ export const vfsCommands = {
     const spinner = ora('Building tree...').start()
 
     try {
-      const brain = getBrainy()
-      const vfs = brain.vfs()
-      await vfs.init()
+      const brain = await getBrainy()
 
-      const tree = await vfs.getTreeStructure(path, {
+      const tree = await brain.vfs.getTreeStructure(path, {
         maxDepth: options.depth ? parseInt(options.depth) : 3
       })
 

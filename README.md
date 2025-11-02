@@ -568,7 +568,7 @@ brainy search "programming"
 ## Documentation
 
 ### 🚀 Getting Started
-- **[Getting Started Guide](docs/guides/getting-started.md)** — Your first steps with Brainy
+- **[API Reference](docs/api/README.md)** — Complete API documentation for all features
 - **[v4.0.0 Migration Guide](docs/MIGRATION-V3-TO-V4.md)** — Upgrade from v3 (backward compatible)
 
 ### 🧠 Core Concepts

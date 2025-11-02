@@ -99,10 +99,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     // Merge config with defaults
     this.config = { ...this.getDefaultConfig(), ...config }
 
-    // Initialize Brainy if needed
-    if (!this.brain.isInitialized) {
-      await this.brain.init()
-    }
+    // v5.0.1: VFS is now auto-initialized during brain.init()
+    // Brain is guaranteed to be initialized when this is called
+    // Removed brain.init() check to prevent infinite recursion
 
     // Create or find root entity
     this.rootEntityId = await this.initializeRoot()
@@ -1040,11 +1039,11 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         'VFS not initialized. Call await vfs.init() before using VFS operations.\n\n' +
         '✅ After brain.import():\n' +
         '  await brain.import(file, { vfsPath: "/imports/data" })\n' +
-        '  const vfs = brain.vfs()\n' +
+        '  const vfs = brain.vfs\n' +
         '  await vfs.init()  // ← Required! Safe to call multiple times\n' +
         '  const files = await vfs.readdir("/imports/data")\n\n' +
         '✅ Direct VFS usage:\n' +
-        '  const vfs = brain.vfs()\n' +
+        '  const vfs = brain.vfs\n' +
         '  await vfs.init()  // ← Always required before first use\n' +
         '  await vfs.writeFile("/docs/readme.md", "Hello")\n\n' +
         '📖 Docs: https://github.com/soulcraftlabs/brainy/blob/main/docs/vfs/QUICK_START.md',

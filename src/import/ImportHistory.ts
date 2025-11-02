@@ -82,7 +82,7 @@ export class ImportHistory {
    */
   async init(): Promise<void> {
     try {
-      const vfs = this.brain.vfs()
+      const vfs = this.brain.vfs
       await vfs.init()
 
       // Try to load existing history
@@ -174,7 +174,7 @@ export class ImportHistory {
 
     // Delete VFS files
     try {
-      const vfs = this.brain.vfs()
+      const vfs = this.brain.vfs
       await vfs.init()
 
       for (const vfsPath of entry.vfsPaths) {
@@ -244,7 +244,7 @@ export class ImportHistory {
    */
   private async persist(): Promise<void> {
     try {
-      const vfs = this.brain.vfs()
+      const vfs = this.brain.vfs
       await vfs.init()
 
       // Ensure directory exists

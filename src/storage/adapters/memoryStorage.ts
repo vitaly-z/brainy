@@ -82,6 +82,7 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Save a noun to storage (v4.0.0: pure vector only, no metadata)
+   * v5.0.1: COW-aware - uses branch-prefixed paths for fork isolation
    */
   protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
     const isNew = !this.nouns.has(noun.id)
@@ -102,7 +103,13 @@ export class MemoryStorage extends BaseStorage {
       nounCopy.connections.set(level, new Set(connections))
     }
 
-    // Save the noun directly in the nouns map
+    // v5.0.1: COW-aware write using branch-prefixed path
+    // Use synthetic path for vector storage (nouns don't have types in standalone mode)
+    const path = `hnsw/nouns/${noun.id}.json`
+    await this.writeObjectToBranch(path, nounCopy)
+
+    // ALSO store in nouns Map for fast iteration (getNouns, initializeCounts)
+    // This is redundant but maintains backward compatibility
     this.nouns.set(noun.id, nounCopy)
 
     // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
@@ -112,10 +119,12 @@ export class MemoryStorage extends BaseStorage {
   /**
    * Get a noun from storage (v4.0.0: returns pure vector only)
    * Base class handles combining with metadata
+   * v5.0.1: COW-aware - reads from branch-prefixed paths with inheritance
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // Get the noun directly from the nouns map
-    const noun = this.nouns.get(id)
+    // v5.0.1: COW-aware read using branch-prefixed path with inheritance
+    const path = `hnsw/nouns/${id}.json`
+    const noun = await this.readWithInheritance(path)
 
     // If not found, return null
     if (!noun) {
@@ -132,9 +141,10 @@ export class MemoryStorage extends BaseStorage {
       // ✅ NO metadata field in v4.0.0
     }
 
-    // Copy connections
-    for (const [level, connections] of noun.connections.entries()) {
-      nounCopy.connections.set(level, new Set(connections))
+    // Copy connections (handle both Map and plain object from JSON)
+    const connections = noun.connections instanceof Map ? noun.connections : new Map(Object.entries(noun.connections || {}))
+    for (const [level, conns] of connections.entries()) {
+      nounCopy.connections.set(Number(level), new Set(conns))
     }
 
     return nounCopy
@@ -320,6 +330,7 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Delete a noun from storage (v4.0.0)
+   * v5.0.1: COW-aware - deletes from branch-prefixed paths
    */
   protected async deleteNoun_internal(id: string): Promise<void> {
     // v4.0.0: Get type from separate metadata storage
@@ -328,11 +339,18 @@ export class MemoryStorage extends BaseStorage {
       const type = metadata.noun || 'default'
       this.decrementEntityCount(type)
     }
+
+    // v5.0.1: COW-aware delete using branch-prefixed path
+    const path = `hnsw/nouns/${id}.json`
+    await this.deleteObjectFromBranch(path)
+
+    // Also remove from nouns Map for fast iteration
     this.nouns.delete(id)
   }
 
   /**
    * Save a verb to storage (v4.0.0: pure vector + core fields, no metadata)
+   * v5.0.1: COW-aware - uses branch-prefixed paths for fork isolation
    */
   protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
     const isNew = !this.verbs.has(verb.id)
@@ -356,7 +374,11 @@ export class MemoryStorage extends BaseStorage {
       verbCopy.connections.set(level, new Set(connections))
     }
 
-    // Save the verb directly in the verbs map
+    // v5.0.1: COW-aware write using branch-prefixed path
+    const path = `hnsw/verbs/${verb.id}.json`
+    await this.writeObjectToBranch(path, verbCopy)
+
+    // ALSO store in verbs Map for fast iteration (getVerbs, initializeCounts)
     this.verbs.set(verb.id, verbCopy)
 
     // Note: Count tracking happens in saveVerbMetadata since metadata is separate
@@ -365,10 +387,12 @@ export class MemoryStorage extends BaseStorage {
   /**
    * Get a verb from storage (v4.0.0: returns pure vector + core fields)
    * Base class handles combining with metadata
+   * v5.0.1: COW-aware - reads from branch-prefixed paths with inheritance
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // Get the verb directly from the verbs map
-    const verb = this.verbs.get(id)
+    // v5.0.1: COW-aware read using branch-prefixed path with inheritance
+    const path = `hnsw/verbs/${id}.json`
+    const verb = await this.readWithInheritance(path)
 
     // If not found, return null
     if (!verb) {
@@ -389,9 +413,10 @@ export class MemoryStorage extends BaseStorage {
       // ✅ NO metadata field in v4.0.0
     }
 
-    // Copy connections
-    for (const [level, connections] of verb.connections.entries()) {
-      verbCopy.connections.set(level, new Set(connections))
+    // Copy connections (handle both Map and plain object from JSON)
+    const connections = verb.connections instanceof Map ? verb.connections : new Map(Object.entries(verb.connections || {}))
+    for (const [level, conns] of connections.entries()) {
+      verbCopy.connections.set(Number(level), new Set(conns))
     }
 
     return verbCopy
@@ -595,11 +620,9 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Delete a verb from storage
+   * v5.0.1: COW-aware - deletes from branch-prefixed paths
    */
   protected async deleteVerb_internal(id: string): Promise<void> {
-    // Delete the HNSWVerb from the verbs map
-    this.verbs.delete(id)
-
     // CRITICAL: Also delete verb metadata - this is what getVerbs() uses to find verbs
     // Without this, getVerbsBySource() will still find "deleted" verbs via their metadata
     const metadata = await this.getVerbMetadata(id)
@@ -610,6 +633,13 @@ export class MemoryStorage extends BaseStorage {
       // Delete the metadata using the base storage method
       await this.deleteVerbMetadata(id)
     }
+
+    // v5.0.1: COW-aware delete using branch-prefixed path
+    const path = `hnsw/verbs/${id}.json`
+    await this.deleteObjectFromBranch(path)
+
+    // Also remove from verbs Map for fast iteration
+    this.verbs.delete(id)
   }
 
   /**

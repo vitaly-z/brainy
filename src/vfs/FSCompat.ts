@@ -6,7 +6,7 @@
  *
  * Usage:
  *   import { FSCompat } from '@soulcraft/brainy/vfs'
- *   const fs = new FSCompat(brain.vfs())
+ *   const fs = new FSCompat(brain.vfs)
  *
  *   // Now use like Node's fs
  *   await fs.promises.readFile('/path')

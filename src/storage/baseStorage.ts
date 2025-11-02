@@ -197,6 +197,21 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Lightweight COW enablement - just enables branch-scoped paths
+   * Called during init() to ensure all data is stored with branch prefixes from the start
+   * RefManager/BlobStorage/CommitLog are lazy-initialized on first fork()
+   * @param branch - Branch name to use (default: 'main')
+   */
+  public enableCOWLightweight(branch: string = 'main'): void {
+    if (this.cowEnabled) {
+      return
+    }
+    this.currentBranch = branch
+    this.cowEnabled = true
+    // RefManager/BlobStorage/CommitLog remain undefined until first fork()
+  }
+
+  /**
    * Initialize COW (Copy-on-Write) support
    * Creates RefManager and BlobStorage for instant fork() capability
    *
@@ -211,13 +226,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {
-    if (this.cowEnabled) {
-      // Already initialized
+    // Check if RefManager already initialized (full COW setup complete)
+    if (this.refManager) {
       return
     }
 
-    // Set current branch
-    this.currentBranch = options?.branch || 'main'
+    // Enable lightweight COW if not already enabled
+    if (!this.cowEnabled) {
+      this.currentBranch = options?.branch || 'main'
+      this.cowEnabled = true
+    }
 
     // Create COWStorageAdapter bridge
     // This adapts BaseStorage's methods to the simple key-value interface
@@ -309,6 +327,138 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     this.cowEnabled = true
+  }
+
+  /**
+   * Resolve branch-scoped path for COW isolation
+   * @protected - Available to subclasses for COW implementation
+   */
+  protected resolveBranchPath(basePath: string, branch?: string): string {
+    if (!this.cowEnabled) {
+      return basePath  // COW disabled, use direct path
+    }
+
+    const targetBranch = branch || this.currentBranch || 'main'
+
+    // Branch-scoped path: branches/<branch>/<basePath>
+    return `branches/${targetBranch}/${basePath}`
+  }
+
+  /**
+   * Write object to branch-specific path (COW layer)
+   * @protected - Available to subclasses for COW implementation
+   */
+  protected async writeObjectToBranch(path: string, data: any, branch?: string): Promise<void> {
+    const branchPath = this.resolveBranchPath(path, branch)
+    return this.writeObjectToPath(branchPath, data)
+  }
+
+  /**
+   * Read object with inheritance from parent branches (COW layer)
+   * Tries current branch first, then walks commit history
+   * @protected - Available to subclasses for COW implementation
+   */
+  protected async readWithInheritance(path: string, branch?: string): Promise<any | null> {
+    if (!this.cowEnabled) {
+      // COW disabled, direct read
+      return this.readObjectFromPath(path)
+    }
+
+    const targetBranch = branch || this.currentBranch || 'main'
+
+    // Try current branch first
+    const branchPath = this.resolveBranchPath(path, targetBranch)
+    let data = await this.readObjectFromPath(branchPath)
+
+    if (data !== null) {
+      return data  // Found in current branch
+    }
+
+    // Not in branch, check if we're on main (no inheritance needed)
+    if (targetBranch === 'main') {
+      return null
+    }
+
+    // Not in branch, walk commit history to find in parent
+    if (this.refManager && this.commitLog) {
+      try {
+        const commitHash = await this.refManager.resolveRef(targetBranch)
+        if (commitHash) {
+          // Walk parent commits until we find the data
+          for await (const commit of this.commitLog.walk(commitHash)) {
+            // Try reading from parent's branch path
+            const parentBranch = commit.metadata?.branch || 'main'
+            if (parentBranch === targetBranch) continue  // Skip self
+
+            const parentPath = this.resolveBranchPath(path, parentBranch)
+            data = await this.readObjectFromPath(parentPath)
+            if (data !== null) {
+              return data  // Found in ancestor
+            }
+          }
+        }
+      } catch (error) {
+        // Commit walk failed, fall back to main
+        const mainPath = this.resolveBranchPath(path, 'main')
+        return this.readObjectFromPath(mainPath)
+      }
+    }
+
+    // Last fallback: try main branch
+    const mainPath = this.resolveBranchPath(path, 'main')
+    return this.readObjectFromPath(mainPath)
+  }
+
+  /**
+   * Delete object from branch-specific path (COW layer)
+   * @protected - Available to subclasses for COW implementation
+   */
+  protected async deleteObjectFromBranch(path: string, branch?: string): Promise<void> {
+    const branchPath = this.resolveBranchPath(path, branch)
+    return this.deleteObjectFromPath(branchPath)
+  }
+
+  /**
+   * List objects under path in branch (COW layer)
+   * @protected - Available to subclasses for COW implementation
+   */
+  protected async listObjectsInBranch(prefix: string, branch?: string): Promise<string[]> {
+    const branchPrefix = this.resolveBranchPath(prefix, branch)
+    const paths = await this.listObjectsUnderPath(branchPrefix)
+
+    // Remove branch prefix from results
+    const targetBranch = branch || this.currentBranch || 'main'
+    const prefixToRemove = `branches/${targetBranch}/`
+
+    return paths.map(p => p.startsWith(prefixToRemove) ? p.substring(prefixToRemove.length) : p)
+  }
+
+  /**
+   * List objects with inheritance (v5.0.1)
+   * Lists objects from current branch AND main branch, returns unique paths
+   * This enables fork to see parent's data in pagination operations
+   *
+   * Simplified approach: All branches inherit from main
+   */
+  protected async listObjectsWithInheritance(prefix: string, branch?: string): Promise<string[]> {
+    if (!this.cowEnabled) {
+      return this.listObjectsInBranch(prefix, branch)
+    }
+
+    const targetBranch = branch || this.currentBranch || 'main'
+
+    // Collect paths from current branch
+    const pathsSet = new Set<string>()
+    const currentBranchPaths = await this.listObjectsInBranch(prefix, targetBranch)
+    currentBranchPaths.forEach(p => pathsSet.add(p))
+
+    // If not on main, also list from main (all branches inherit from main)
+    if (targetBranch !== 'main') {
+      const mainPaths = await this.listObjectsInBranch(prefix, 'main')
+      mainPaths.forEach(p => pathsSet.add(p))
+    }
+
+    return Array.from(pathsSet)
   }
 
   /**
@@ -1113,7 +1263,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async saveMetadata(id: string, metadata: NounMetadata): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'system')
-    return this.writeObjectToPath(keyInfo.fullPath, metadata)
+    return this.writeObjectToBranch(keyInfo.fullPath, metadata)
   }
 
   /**
@@ -1123,7 +1273,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'system')
-    return this.readObjectFromPath(keyInfo.fullPath)
+    return this.readWithInheritance(keyInfo.fullPath)
   }
 
   /**
@@ -1151,11 +1301,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Determine if this is a new entity by checking if metadata already exists
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
-    const existingMetadata = await this.readObjectFromPath(keyInfo.fullPath)
+    const existingMetadata = await this.readWithInheritance(keyInfo.fullPath)
     const isNew = !existingMetadata
 
-    // Save the metadata
-    await this.writeObjectToPath(keyInfo.fullPath, metadata)
+    // Save the metadata (COW-aware - writes to branch-specific path)
+    await this.writeObjectToBranch(keyInfo.fullPath, metadata)
 
     // CRITICAL FIX (v4.1.2): Increment count for new entities
     // This runs AFTER metadata is saved, guaranteeing type information is available
@@ -1177,7 +1327,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getNounMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
-    return this.readObjectFromPath(keyInfo.fullPath)
+    return this.readWithInheritance(keyInfo.fullPath)
   }
 
   /**
@@ -1187,7 +1337,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async deleteNounMetadata(id: string): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'noun-metadata')
-    return this.deleteObjectFromPath(keyInfo.fullPath)
+    return this.deleteObjectFromBranch(keyInfo.fullPath)
   }
 
   /**
@@ -1216,11 +1366,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Determine if this is a new verb by checking if metadata already exists
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
-    const existingMetadata = await this.readObjectFromPath(keyInfo.fullPath)
+    const existingMetadata = await this.readWithInheritance(keyInfo.fullPath)
     const isNew = !existingMetadata
 
-    // Save the metadata
-    await this.writeObjectToPath(keyInfo.fullPath, metadata)
+    // Save the metadata (COW-aware - writes to branch-specific path)
+    await this.writeObjectToBranch(keyInfo.fullPath, metadata)
 
     // CRITICAL FIX (v4.1.2): Increment verb count for new relationships
     // This runs AFTER metadata is saved
@@ -1243,7 +1393,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getVerbMetadata(id: string): Promise<VerbMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
-    return this.readObjectFromPath(keyInfo.fullPath)
+    return this.readWithInheritance(keyInfo.fullPath)
   }
 
   /**
@@ -1253,7 +1403,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async deleteVerbMetadata(id: string): Promise<void> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'verb-metadata')
-    return this.deleteObjectFromPath(keyInfo.fullPath)
+    return this.deleteObjectFromBranch(keyInfo.fullPath)
   }
 
   /**

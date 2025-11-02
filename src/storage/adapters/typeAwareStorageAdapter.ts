@@ -41,6 +41,7 @@ import {
   GraphVerb,
   HNSWNoun,
   HNSWVerb,
+  HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
   NounMetadata,
   VerbMetadata,
@@ -262,8 +263,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     this.nounCountsByType[typeIndex]++
     this.nounTypeCache.set(noun.id, type)
 
-    // Delegate to underlying storage
-    await this.u.writeObjectToPath(path, noun)
+    // COW-aware write (v5.0.1): Use COW helper for branch isolation
+    await this.writeObjectToBranch(path, noun)
 
     // Periodically save statistics (every 100 saves)
     if (this.nounCountsByType[typeIndex] % 100 === 0) {
@@ -279,7 +280,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.nounTypeCache.get(id)
     if (cachedType) {
       const path = getNounVectorPath(cachedType, id)
-      return await this.u.readObjectFromPath(path)
+      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      return await this.readWithInheritance(path)
     }
 
     // Need to search across all types (expensive, but cached after first access)
@@ -288,7 +290,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getNounVectorPath(type, id)
 
       try {
-        const noun = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const noun = await this.readWithInheritance(path)
         if (noun) {
           // Cache the type for next time
           this.nounTypeCache.set(id, type)
@@ -309,14 +312,15 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const type = nounType as NounType
     const prefix = `entities/nouns/${type}/vectors/`
 
-    // List all files under this type's directory
-    const paths = await this.u.listObjectsUnderPath(prefix)
+    // COW-aware list (v5.0.1): Use COW helper for branch isolation
+    const paths = await this.listObjectsInBranch(prefix)
 
     // Load all nouns of this type
     const nouns: HNSWNoun[] = []
     for (const path of paths) {
       try {
-        const noun = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const noun = await this.readWithInheritance(path)
         if (noun) {
           nouns.push(noun)
           // Cache the type
@@ -338,7 +342,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.nounTypeCache.get(id)
     if (cachedType) {
       const path = getNounVectorPath(cachedType, id)
-      await this.u.deleteObjectFromPath(path)
+      // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+      await this.deleteObjectFromBranch(path)
 
       // Update counts
       const typeIndex = TypeUtils.getNounIndex(cachedType)
@@ -355,7 +360,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getNounVectorPath(type, id)
 
       try {
-        await this.u.deleteObjectFromPath(path)
+        // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+        await this.deleteObjectFromBranch(path)
 
         // Update counts
         if (this.nounCountsByType[i] > 0) {
@@ -385,8 +391,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     this.verbCountsByType[typeIndex]++
     this.verbTypeCache.set(verb.id, type)
 
-    // Delegate to underlying storage
-    await this.u.writeObjectToPath(path, verb)
+    // COW-aware write (v5.0.1): Use COW helper for branch isolation
+    await this.writeObjectToBranch(path, verb)
 
     // Periodically save statistics
     if (this.verbCountsByType[typeIndex] % 100 === 0) {
@@ -405,7 +411,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.verbTypeCache.get(id)
     if (cachedType) {
       const path = getVerbVectorPath(cachedType, id)
-      const verb = await this.u.readObjectFromPath(path)
+      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      const verb = await this.readWithInheritance(path)
       return verb
     }
 
@@ -415,7 +422,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getVerbVectorPath(type, id)
 
       try {
-        const verb = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const verb = await this.readWithInheritance(path)
         if (verb) {
           // Cache the type for next time (read from verb.verb field)
           this.verbTypeCache.set(id, verb.verb as VerbType)
@@ -433,29 +441,39 @@ export class TypeAwareStorageAdapter extends BaseStorage {
    * Get verbs by source
    */
   protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // v4.8.1 PERFORMANCE FIX: Delegate to underlying storage instead of scanning all files
-    // Previous implementation was O(total_verbs) - scanned ALL 40 verb types and ALL verb files
-    // This was the root cause of the 11-version VFS bug (timeouts/zero results)
+    // v5.0.1 COW FIX: Use getVerbsWithPagination which is COW-aware
+    // Previous v4.8.1 implementation delegated to underlying storage, which bypasses COW!
+    // The underlying storage delegates to GraphAdjacencyIndex, which is shared between forks.
+    // This caused getRelations() to return 0 results for fork-created relationships.
     //
-    // Underlying storage adapters have optimized implementations:
-    // - FileSystemStorage: Uses getVerbsWithPagination with sourceId filter
-    // - GcsStorage: Uses batch queries with prefix filtering
-    // - S3Storage: Uses listObjects with sourceId-based filtering
+    // Now we use getVerbsWithPagination with sourceId filter, which:
+    // - Searches across all verb types using COW-aware listObjectsInBranch()
+    // - Reads verbs using COW-aware readWithInheritance()
+    // - Properly isolates fork data from parent
     //
-    // Phase 1b TODO: Add graph adjacency index query for O(1) lookups:
-    // const verbIds = await this.graphIndex?.getOutgoingEdges(sourceId) || []
-    // return Promise.all(verbIds.map(id => this.getVerb(id)))
+    // Performance: Still efficient because sourceId filter reduces iteration
+    const result = await this.getVerbsWithPagination({
+      limit: 10000, // High limit to get all verbs for this source
+      offset: 0,
+      filter: { sourceId }
+    })
 
-    return this.underlying.getVerbsBySource(sourceId)
+    return result.items
   }
 
   /**
    * Get verbs by target
    */
   protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // v4.8.1 PERFORMANCE FIX: Delegate to underlying storage (same as getVerbsBySource fix)
-    // Previous implementation was O(total_verbs) - scanned ALL 40 verb types and ALL verb files
-    return this.underlying.getVerbsByTarget(targetId)
+    // v5.0.1 COW FIX: Use getVerbsWithPagination which is COW-aware
+    // Same fix as getVerbsBySource_internal - delegating to underlying bypasses COW
+    const result = await this.getVerbsWithPagination({
+      limit: 10000, // High limit to get all verbs for this target
+      offset: 0,
+      filter: { targetId }
+    })
+
+    return result.items
   }
 
   /**
@@ -467,12 +485,14 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const type = verbType as VerbType
     const prefix = `entities/verbs/${type}/vectors/`
 
-    const paths = await this.u.listObjectsUnderPath(prefix)
+    // COW-aware list (v5.0.1): Use COW helper for branch isolation
+    const paths = await this.listObjectsInBranch(prefix)
     const verbs: HNSWVerbWithMetadata[] = []
 
     for (const path of paths) {
       try {
-        const hnswVerb = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const hnswVerb = await this.readWithInheritance(path)
         if (!hnswVerb) continue
 
         // Cache type from HNSWVerb for future O(1) retrievals
@@ -529,7 +549,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.verbTypeCache.get(id)
     if (cachedType) {
       const path = getVerbVectorPath(cachedType, id)
-      await this.u.deleteObjectFromPath(path)
+      // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+      await this.deleteObjectFromBranch(path)
 
       const typeIndex = TypeUtils.getVerbIndex(cachedType)
       if (this.verbCountsByType[typeIndex] > 0) {
@@ -545,7 +566,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getVerbVectorPath(type, id)
 
       try {
-        await this.u.deleteObjectFromPath(path)
+        // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+        await this.deleteObjectFromBranch(path)
 
         if (this.verbCountsByType[i] > 0) {
           this.verbCountsByType[i]--
@@ -568,9 +590,9 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const type = (metadata.noun || 'thing') as NounType
     this.nounTypeCache.set(id, type)
 
-    // Save to type-aware path
+    // COW-aware write (v5.0.1): Use COW helper for branch isolation
     const path = getNounMetadataPath(type, id)
-    await this.u.writeObjectToPath(path, metadata)
+    await this.writeObjectToBranch(path, metadata)
   }
 
   /**
@@ -581,7 +603,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.nounTypeCache.get(id)
     if (cachedType) {
       const path = getNounMetadataPath(cachedType, id)
-      return await this.u.readObjectFromPath(path)
+      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      return await this.readWithInheritance(path)
     }
 
     // Search across all types
@@ -590,7 +613,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getNounMetadataPath(type, id)
 
       try {
-        const metadata = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const metadata = await this.readWithInheritance(path)
         if (metadata) {
           // Cache the type for next time
           const metadataType = (metadata.noun || 'thing') as NounType
@@ -612,7 +636,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.nounTypeCache.get(id)
     if (cachedType) {
       const path = getNounMetadataPath(cachedType, id)
-      await this.u.deleteObjectFromPath(path)
+      // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+      await this.deleteObjectFromBranch(path)
       return
     }
 
@@ -622,7 +647,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getNounMetadataPath(type, id)
 
       try {
-        await this.u.deleteObjectFromPath(path)
+        // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+        await this.deleteObjectFromBranch(path)
         return
       } catch (error) {
         // Not in this type, continue
@@ -653,7 +679,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
 
     // Save to type-aware path
     const path = getVerbMetadataPath(type, id)
-    await this.u.writeObjectToPath(path, metadata)
+    // COW-aware write (v5.0.1): Use COW helper for branch isolation
+    await this.writeObjectToBranch(path, metadata)
   }
 
   /**
@@ -664,7 +691,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.verbTypeCache.get(id)
     if (cachedType) {
       const path = getVerbMetadataPath(cachedType, id)
-      return await this.u.readObjectFromPath(path)
+      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      return await this.readWithInheritance(path)
     }
 
     // Search across all types
@@ -673,7 +701,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getVerbMetadataPath(type, id)
 
       try {
-        const metadata = await this.u.readObjectFromPath(path)
+        // COW-aware read (v5.0.1): Use COW helper for branch isolation
+        const metadata = await this.readWithInheritance(path)
         if (metadata) {
           // Cache the type for next time
           this.verbTypeCache.set(id, type)
@@ -694,7 +723,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     const cachedType = this.verbTypeCache.get(id)
     if (cachedType) {
       const path = getVerbMetadataPath(cachedType, id)
-      await this.u.deleteObjectFromPath(path)
+      // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+      await this.deleteObjectFromBranch(path)
       return
     }
 
@@ -704,7 +734,8 @@ export class TypeAwareStorageAdapter extends BaseStorage {
       const path = getVerbMetadataPath(type, id)
 
       try {
-        await this.u.deleteObjectFromPath(path)
+        // COW-aware delete (v5.0.1): Use COW helper for branch isolation
+        await this.deleteObjectFromBranch(path)
         return
       } catch (error) {
         // Not in this type, continue
@@ -883,6 +914,245 @@ export class TypeAwareStorageAdapter extends BaseStorage {
     }
 
     return null
+  }
+
+  /**
+   * Get nouns with pagination (v5.0.1: COW-aware)
+   * Required for find() to work with TypeAwareStorage
+   */
+  async getNounsWithPagination(options: {
+    limit?: number
+    offset?: number
+    cursor?: string
+    filter?: any
+  }): Promise<{
+    items: HNSWNounWithMetadata[]
+    totalCount: number
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    const limit = options.limit || 100
+    const offset = options.offset || 0
+    const filter = options.filter || {}
+
+    // Determine which types to search
+    let typesToSearch: NounType[]
+    if (filter.nounType) {
+      typesToSearch = Array.isArray(filter.nounType) ? filter.nounType : [filter.nounType]
+    } else {
+      // Search all 31 types
+      typesToSearch = []
+      for (let i = 0; i < NOUN_TYPE_COUNT; i++) {
+        const type = TypeUtils.getNounFromIndex(i)
+        typesToSearch.push(type)
+      }
+    }
+
+    // Collect all matching nouns across types (COW-aware!)
+    const allNouns: HNSWNounWithMetadata[] = []
+
+    for (const type of typesToSearch) {
+      const prefix = `entities/nouns/${type}/vectors/`
+
+      // COW-aware list with inheritance (v5.0.1): Fork sees parent's nouns too!
+      const paths = await this.listObjectsWithInheritance(prefix)
+
+      for (const path of paths) {
+        try {
+          // COW-aware read with inheritance
+          const noun = await this.readWithInheritance(path)
+          if (!noun) continue
+
+          // Get metadata separately
+          const metadata = await this.getNounMetadata(noun.id)
+          if (!metadata) continue
+
+          // Filter by service if specified
+          if (filter.service && metadata.service !== filter.service) continue
+
+          // Filter by custom metadata if specified
+          if (filter.metadata) {
+            let matches = true
+            for (const [key, value] of Object.entries(filter.metadata)) {
+              if ((metadata as any)[key] !== value) {
+                matches = false
+                break
+              }
+            }
+            if (!matches) continue
+          }
+
+          // Extract standard fields from metadata
+          const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata as any
+
+          // Create HNSWNounWithMetadata (v4.8.0 format)
+          const nounWithMetadata: HNSWNounWithMetadata = {
+            id: noun.id,
+            vector: noun.vector,
+            connections: noun.connections,
+            level: noun.level || 0,
+            type: (nounType as NounType) || NounType.Thing,
+            createdAt: (createdAt as number) || Date.now(),
+            updatedAt: (updatedAt as number) || Date.now(),
+            confidence,
+            weight,
+            service,
+            data,
+            createdBy,
+            metadata: customMetadata
+          }
+
+          allNouns.push(nounWithMetadata)
+        } catch (error) {
+          // Skip entities with errors
+          continue
+        }
+      }
+    }
+
+    // Apply pagination
+    const totalCount = allNouns.length
+    const paginatedNouns = allNouns.slice(offset, offset + limit)
+    const hasMore = offset + limit < totalCount
+
+    // Generate cursor if more results exist
+    let nextCursor: string | undefined
+    if (hasMore && paginatedNouns.length > 0) {
+      nextCursor = paginatedNouns[paginatedNouns.length - 1].id
+    }
+
+    return {
+      items: paginatedNouns,
+      totalCount,
+      hasMore,
+      nextCursor
+    }
+  }
+
+  /**
+   * Get verbs with pagination (v5.0.1: COW-aware)
+   * Required for GraphAdjacencyIndex rebuild and find() to work
+   */
+  async getVerbsWithPagination(options: {
+    limit?: number
+    offset?: number
+    cursor?: string
+    filter?: any
+  }): Promise<{
+    items: HNSWVerbWithMetadata[]
+    totalCount: number
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    const limit = options.limit || 100
+    const offset = options.offset || 0
+    const filter = options.filter || {}
+
+    // Determine which types to search
+    let typesToSearch: VerbType[]
+    if (filter.verbType) {
+      typesToSearch = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
+    } else {
+      // Search all 40 verb types
+      typesToSearch = []
+      for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+        const type = TypeUtils.getVerbFromIndex(i)
+        typesToSearch.push(type)
+      }
+    }
+
+    // Collect all matching verbs across types (COW-aware!)
+    const allVerbs: HNSWVerbWithMetadata[] = []
+
+    for (const type of typesToSearch) {
+      const prefix = `entities/verbs/${type}/vectors/`
+
+      // COW-aware list with inheritance (v5.0.1): Fork sees parent's verbs too!
+      const paths = await this.listObjectsWithInheritance(prefix)
+
+      for (const path of paths) {
+        try {
+          // COW-aware read with inheritance
+          const verb = await this.readWithInheritance(path)
+          if (!verb) continue
+
+          // Filter by sourceId if specified
+          if (filter.sourceId) {
+            const sourceIds = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
+            if (!sourceIds.includes(verb.sourceId)) continue
+          }
+
+          // Filter by targetId if specified
+          if (filter.targetId) {
+            const targetIds = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
+            if (!targetIds.includes(verb.targetId)) continue
+          }
+
+          // Get metadata separately
+          const metadata = await this.getVerbMetadata(verb.id)
+
+          // Filter by service if specified
+          if (filter.service && metadata && metadata.service !== filter.service) continue
+
+          // Filter by custom metadata if specified
+          if (filter.metadata && metadata) {
+            let matches = true
+            for (const [key, value] of Object.entries(filter.metadata)) {
+              if ((metadata as any)[key] !== value) {
+                matches = false
+                break
+              }
+            }
+            if (!matches) continue
+          }
+
+          // Extract standard fields from metadata
+          const metadataObj = metadata || {}
+          const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj as any
+
+          // Create HNSWVerbWithMetadata (v4.8.0 format)
+          const verbWithMetadata: HNSWVerbWithMetadata = {
+            id: verb.id,
+            vector: verb.vector,
+            connections: verb.connections,
+            verb: verb.verb,
+            sourceId: verb.sourceId,
+            targetId: verb.targetId,
+            createdAt: (createdAt as number) || Date.now(),
+            updatedAt: (updatedAt as number) || Date.now(),
+            confidence,
+            weight,
+            service,
+            data,
+            createdBy,
+            metadata: customMetadata
+          }
+
+          allVerbs.push(verbWithMetadata)
+        } catch (error) {
+          // Skip verbs with errors
+          continue
+        }
+      }
+    }
+
+    // Apply pagination
+    const totalCount = allVerbs.length
+    const paginatedVerbs = allVerbs.slice(offset, offset + limit)
+    const hasMore = offset + limit < totalCount
+
+    // Generate cursor if more results exist
+    let nextCursor: string | undefined
+    if (hasMore && paginatedVerbs.length > 0) {
+      nextCursor = paginatedVerbs[paginatedVerbs.length - 1].id
+    }
+
+    return {
+      items: paginatedVerbs,
+      totalCount,
+      hasMore,
+      nextCursor
+    }
   }
 
   /**

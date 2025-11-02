@@ -26,7 +26,7 @@ Welcome to the comprehensive documentation for Brainy, the multi-dimensional AI 
 ## Quick Links
 
 ### Getting Started
-- [Quick Start Guide](./guides/getting-started.md) - Get up and running in minutes
+- [API Reference](./api/README.md) - Complete API documentation (start here!)
 - [Enterprise for Everyone](./guides/enterprise-for-everyone.md) - **No limits, no tiers, everything free**
 - [Natural Language Queries](./guides/natural-language.md) - Query with plain English
 
@@ -111,9 +111,8 @@ const results = await brain.find("highly rated technology articles by researcher
 
 | Document | Description |
 |----------|-------------|
-| [Getting Started](./guides/getting-started.md) | 5-minute setup guide - install, configure, first query |
+| [API Reference](./api/README.md) | **START HERE** - Complete API documentation with examples |
 | [VFS Quick Start](./vfs/QUICK_START.md) | Virtual filesystem in 30 seconds |
-| [Quick Start](./QUICK-START.md) | Alternative quick start guide |
 
 ### 🆕 v4.0.0 Migration & Optimization
 
@@ -259,7 +258,6 @@ docs/
 ├── MIGRATION-V3-TO-V4.md          # v4.0.0 migration guide
 │
 ├── guides/                        # User guides
-│   ├── getting-started.md
 │   ├── natural-language.md
 │   ├── neural-api.md
 │   ├── import-anything.md

@@ -442,4 +442,4 @@ Brainy is more than software—it's a movement to democratize enterprise technol
 - [Zero Configuration](../architecture/zero-config.md)
 - [Augmentations System](../architecture/augmentations.md)
 - [Architecture Overview](../architecture/overview.md)
-- [Getting Started](./getting-started.md)
+- [API Reference](../api/README.md)
