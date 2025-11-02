@@ -371,7 +371,7 @@ describe('Brainy.update()', () => {
     
     it('should preserve entity ID during update', async () => {
       // Arrange
-      const customId = 'preserve-me-123'
+      const customId = '00000000-0000-0000-0000-000000000002'
       await brain.add(createAddParams({
         id: customId,
         data: 'Test',

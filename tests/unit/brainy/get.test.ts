@@ -148,32 +148,32 @@ describe('Brainy.get()', () => {
   
   describe('error paths', () => {
     it('should return null for non-existent ID', async () => {
-      // Arrange
-      const fakeId = 'non-existent-entity-12345'
-      
+      // v5.1.0: Use valid UUID format
+      const fakeId = '00000000-0000-0000-0000-999999999999'
+
       // Act
       const entity = await brain.get(fakeId)
-      
+
       // Assert
       expect(entity).toBeNull()
     })
-    
+
     it('should handle invalid ID formats gracefully', async () => {
-      // Arrange
+      // v5.1.0: Invalid formats now throw errors instead of returning null
       const invalidIds = [
         '',            // Empty string
-        null as any,   // Null
-        undefined as any, // Undefined
-        123 as any,    // Number
-        {} as any,     // Object
-        [] as any,     // Array
+        'not-a-uuid',  // Invalid format
+        '12345',       // Too short
       ]
-      
-      // Act & Assert
+
+      // Act & Assert - expect errors for invalid formats
       for (const invalidId of invalidIds) {
-        const entity = await brain.get(invalidId)
-        expect(entity).toBeNull()
+        await expect(brain.get(invalidId)).rejects.toThrow()
       }
+
+      // Null/undefined should also throw
+      await expect(brain.get(null as any)).rejects.toThrow()
+      await expect(brain.get(undefined as any)).rejects.toThrow()
     })
     
     it('should handle deleted entities', async () => {
@@ -215,29 +215,26 @@ describe('Brainy.get()', () => {
   
   describe('edge cases', () => {
     it('should handle very long IDs', async () => {
-      // Arrange
+      // v5.1.0: Stricter UUID validation - invalid IDs throw errors
       const longId = 'x'.repeat(1000)
-      
-      // Act
-      const entity = await brain.get(longId)
-      
-      // Assert
-      expect(entity).toBeNull()
+
+      // Expect error for invalid UUID format
+      await expect(brain.get(longId)).rejects.toThrow('Invalid UUID format')
     })
     
     it('should handle special characters in IDs', async () => {
-      // Arrange
-      const specialId = 'entity-!@#$%^&*()_+-=[]{}|;:,.<>?'
+      // v5.1.0: Use valid UUID format
+      const specialId = '00000000-0000-0000-0000-000000000004'
       const params = createAddParams({
         id: specialId,
         data: 'Special ID test',
         type: 'thing'
       })
       await brain.add(params)
-      
+
       // Act
       const entity = await brain.get(specialId)
-      
+
       // Assert
       expect(entity).not.toBeNull()
       expect(entity!.id).toBe(specialId)
@@ -245,7 +242,7 @@ describe('Brainy.get()', () => {
     
     it('should handle unicode characters in IDs', async () => {
       // Arrange
-      const unicodeId = 'entity-你好-مرحبا-🚀'
+      const unicodeId = '00000000-0000-0000-0000-000000000003'
       const params = createAddParams({
         id: unicodeId,
         data: 'Unicode ID test',
