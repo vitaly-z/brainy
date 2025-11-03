@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.2.0](https://github.com/soulcraftlabs/brainy/compare/v5.1.2...v5.2.0) (2025-11-03)
+
+- fix: update VFS test for v5.2.0 BlobStorage architecture (b3e3e5c)
+- feat: add ImageHandler with EXIF extraction and comprehensive MIME detection (v5.2.0) (1874b77)
+
+
 ## [5.2.0](https://github.com/soulcraftlabs/brainy/compare/v5.1.0...v5.2.0) (2025-11-03)
 
 ### ✨ Features
