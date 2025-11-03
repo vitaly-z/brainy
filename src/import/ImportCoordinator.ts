@@ -441,7 +441,8 @@ export class ImportCoordinator {
       groupBy: opts.groupBy,
       customGrouping: opts.customGrouping,
       preserveSource: opts.preserveSource,
-      sourceBuffer: normalizedSource.type === 'buffer' ? normalizedSource.data as Buffer : undefined,
+      // v5.1.2: Fix sourceBuffer for file paths - type is 'path' not 'buffer' from normalizeSource()
+      sourceBuffer: Buffer.isBuffer(normalizedSource.data) ? normalizedSource.data as Buffer : undefined,
       sourceFilename: normalizedSource.filename || `import.${detection.format}`,
       createRelationshipFile: true,
       createMetadataFile: true,
