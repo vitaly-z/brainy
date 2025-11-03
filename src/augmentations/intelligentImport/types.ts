@@ -168,6 +168,9 @@ export interface IntelligentImportConfig {
   /** Enable PDF handler */
   enablePDF: boolean
 
+  /** Enable Image handler (v5.2.0) */
+  enableImage: boolean
+
   /** Default options for CSV */
   csvDefaults?: Partial<FormatHandlerOptions>
 
@@ -176,6 +179,9 @@ export interface IntelligentImportConfig {
 
   /** Default options for PDF */
   pdfDefaults?: Partial<FormatHandlerOptions>
+
+  /** Default options for Image (v5.2.0) */
+  imageDefaults?: Partial<FormatHandlerOptions>
 
   /** Maximum file size to process (bytes) */
   maxFileSize?: number

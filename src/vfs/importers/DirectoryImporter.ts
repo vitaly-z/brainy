@@ -14,6 +14,7 @@ import { VirtualFileSystem } from '../VirtualFileSystem.js'
 import { Brainy } from '../../brainy.js'
 import { NounType } from '../../types/graphTypes.js'
 import { v4 as uuidv4 } from '../../universal/uuid.js'
+import { mimeDetector } from '../MimeTypeDetector.js'
 
 export interface ImportOptions {
   targetPath?: string       // VFS target path (default: '/')
@@ -381,46 +382,6 @@ export class DirectoryImporter {
     return false
   }
 
-  /**
-   * Detect MIME type from file content and extension
-   */
-  private detectMimeType(filePath: string, content?: Buffer): string {
-    const ext = path.extname(filePath).toLowerCase()
-
-    // Common extensions
-    const mimeTypes: Record<string, string> = {
-      '.js': 'application/javascript',
-      '.ts': 'application/typescript',
-      '.jsx': 'application/javascript',
-      '.tsx': 'application/typescript',
-      '.json': 'application/json',
-      '.md': 'text/markdown',
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.py': 'text/x-python',
-      '.go': 'text/x-go',
-      '.rs': 'text/x-rust',
-      '.java': 'text/x-java',
-      '.cpp': 'text/x-c++',
-      '.c': 'text/x-c',
-      '.h': 'text/x-c',
-      '.txt': 'text/plain',
-      '.xml': 'application/xml',
-      '.yaml': 'text/yaml',
-      '.yml': 'text/yaml',
-      '.toml': 'text/toml',
-      '.sh': 'text/x-shellscript',
-      '.pdf': 'application/pdf',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.mp3': 'audio/mpeg',
-      '.mp4': 'video/mp4',
-      '.zip': 'application/zip'
-    }
-
-    return mimeTypes[ext] || 'application/octet-stream'
-  }
+  // v5.2.0: MIME detection moved to MimeTypeDetector service
+  // Removed detectMimeType() - now using mimeDetector singleton
 }

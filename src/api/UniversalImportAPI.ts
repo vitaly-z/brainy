@@ -1,12 +1,12 @@
 /**
  * Universal Neural Import API
- * 
+ *
  * ALWAYS uses neural matching to map ANY data to our strict NounTypes and VerbTypes
  * Never falls back to rules - neural matching is MANDATORY
- * 
+ *
  * Handles:
  * - Strings (text, JSON, CSV, YAML, Markdown)
- * - Files (local paths, any format)
+ * - Files (local paths, any format) - uses MimeTypeDetector for 2000+ types
  * - URLs (web pages, APIs, documents)
  * - Objects (structured data)
  * - Binary data (images, PDFs via extraction)
@@ -18,6 +18,7 @@ import type { Brainy } from '../brainy.js'
 import type { Entity, Relation } from '../types/brainy.types.js'
 import { BrainyTypes, getBrainyTypes } from '../augmentations/typeMatching/brainyTypes.js'
 import { NeuralImportAugmentation } from '../augmentations/neuralImport.js'
+import { mimeDetector } from '../vfs/MimeTypeDetector.js'
 
 export interface ImportSource {
   type: 'string' | 'file' | 'url' | 'object' | 'binary'
@@ -157,21 +158,27 @@ export class UniversalImportAPI {
   /**
    * Import from file - reads and processes
    * Note: In browser environment, use File API instead
+   *
+   * Uses MimeTypeDetector for comprehensive format detection (2000+ types)
    */
   async importFromFile(filePath: string): Promise<NeuralImportResult> {
     // Read the actual file content
     const { readFileSync } = await import('node:fs')
+
+    // Use MimeTypeDetector for comprehensive format detection
+    const mimeType = mimeDetector.detectMimeType(filePath)
     const ext = filePath.split('.').pop()?.toLowerCase() || 'txt'
-    
+
     try {
       const fileContent = readFileSync(filePath, 'utf-8')
-      
+
       return this.import({
         type: 'file',
         data: fileContent,  // Actual file content
-        format: ext,
-        metadata: { 
+        format: ext,  // Keep ext for backward compatibility
+        metadata: {
           path: filePath,
+          mimeType,  // Add detected MIME type
           importedAt: Date.now(),
           fileSize: fileContent.length
         }

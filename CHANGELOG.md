@@ -2,6 +2,120 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.2.0](https://github.com/soulcraftlabs/brainy/compare/v5.1.0...v5.2.0) (2025-11-03)
+
+### ✨ Features
+
+**Format Handler Infrastructure** - Enables developers to create handlers for ANY file type
+
+* **feat**: Pluggable format handler system with FormatHandlerRegistry
+  - MIME-based automatic format detection and routing
+  - Lazy loading support for performance optimization
+  - Register handlers dynamically at runtime
+  - Type-safe with full TypeScript support
+  - Reference: `src/augmentations/intelligentImport/FormatHandlerRegistry.ts:1`
+
+* **feat**: Comprehensive MIME type detection with MimeTypeDetector
+  - Industry-standard `mime` library integration (2000+ IANA types)
+  - 90+ custom developer-specific MIME types (shell scripts, configs, modern languages)
+  - Replaces 70+ lines of hardcoded MIME types
+  - Single source of truth: `mimeDetector.detectMimeType()`, `mimeDetector.isTextFile()`
+  - Reference: `src/vfs/MimeTypeDetector.ts:1`
+
+* **feat**: ImageHandler with EXIF extraction (reference implementation)
+  - Extract image metadata (dimensions, format, color space, channels)
+  - Extract EXIF data (camera, GPS, timestamps, lens, exposure)
+  - Supports JPEG, PNG, WebP, GIF, TIFF, BMP, SVG, HEIC, AVIF
+  - Magic byte detection for format identification
+  - Reference: `src/augmentations/intelligentImport/handlers/imageHandler.ts:1`
+
+**Enhanced BaseFormatHandler**
+
+* **feat**: Added MIME helper methods to BaseFormatHandler
+  - `getMimeType()` - Detect MIME type from filename or buffer
+  - `mimeTypeMatches()` - Check MIME type against patterns with wildcard support
+  - Reference: `src/augmentations/intelligentImport/handlers/base.ts:39`
+
+### 📚 Documentation
+
+* **docs**: Comprehensive format handler documentation
+  - [FORMAT_HANDLERS.md](docs/augmentations/FORMAT_HANDLERS.md) - Creating custom format handlers
+  - [EXAMPLES.md](docs/augmentations/EXAMPLES.md) - End-to-end workflows (import + store + export)
+  - Real-world examples: CAD files, video metadata, Git repos, database schemas, React analyzers
+  - Premium augmentation packaging guide
+
+### 🏗️ What This Enables
+
+**Custom Format Handlers:**
+- Import ANY file type into knowledge graph (CAD, video, databases, etc.)
+- Automatic MIME-based routing
+- Example: CAD files, Git repos, database schemas
+
+**Premium Augmentations:**
+- Package handlers as paid npm products
+- Import + storage + export workflows
+- License-key validation
+- Example: React analyzer, Python project analyzer
+
+### 📦 Dependencies
+
+* **added**: `mime@4.1.0` - Industry-standard MIME detection
+* **added**: `sharp@0.33.5` - High-performance image processing
+* **added**: `exifr@7.1.3` - EXIF metadata extraction
+
+### 🔧 Technical Details
+
+**Test Coverage:**
+- ✅ 26 MIME detection tests (all passing)
+- ✅ 30 FormatHandlerRegistry tests (all passing)
+- ✅ 27 ImageHandler tests (all passing)
+- ✅ Total: 83/83 tests passing
+
+**Modified Files:**
+- `src/vfs/VirtualFileSystem.ts` - Integrated mimeDetector, removed 70 lines of hardcoded MIME types
+- `src/vfs/importers/DirectoryImporter.ts` - Removed duplicate MIME detection
+- `src/import/FormatDetector.ts` - Integrated mimeDetector
+- `src/augmentations/intelligentImport/handlers/base.ts` - Added MIME helpers
+- `src/api/UniversalImportAPI.ts` - Added MIME detection
+- `src/vfs/index.ts` - Exported mimeDetector for augmentations
+
+### 🔄 Backward Compatibility
+
+**100% backward compatible** - No breaking changes.
+
+- ✅ All existing import flows work unchanged
+- ✅ Existing handlers (CSV, Excel, PDF) unchanged
+- ✅ New functionality is opt-in
+
+### 🚀 Usage
+
+```typescript
+// Register custom handler
+import {
+  BaseFormatHandler,
+  globalHandlerRegistry
+} from '@soulcraft/brainy/augmentations/intelligentImport'
+
+class MyHandler extends BaseFormatHandler {
+  readonly format = 'myformat'
+  canHandle(data) { return this.mimeTypeMatches(this.getMimeType(data), ['application/x-myformat']) }
+  async process(data, options) { /* Parse and return structured data */ }
+}
+
+globalHandlerRegistry.registerHandler({
+  name: 'myformat',
+  mimeTypes: ['application/x-myformat'],
+  extensions: ['.myf'],
+  loader: async () => new MyHandler()
+})
+
+// Now brain.import() automatically handles .myf files!
+```
+
+See [v5.2.0 Summary](.strategy/v5.2.0-SUMMARY.md) for complete details.
+
+---
+
 ## [5.1.0](https://github.com/soulcraftlabs/brainy/compare/v5.0.0...v5.1.0) (2025-11-02)
 
 ### ✨ Features

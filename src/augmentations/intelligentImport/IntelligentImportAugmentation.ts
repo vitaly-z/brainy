@@ -13,6 +13,7 @@ import { FormatHandler, IntelligentImportConfig, ProcessedData } from './types.j
 import { CSVHandler } from './handlers/csvHandler.js'
 import { ExcelHandler } from './handlers/excelHandler.js'
 import { PDFHandler } from './handlers/pdfHandler.js'
+import { ImageHandler } from './handlers/imageHandler.js'
 
 export class IntelligentImportAugmentation extends BaseAugmentation {
   readonly name = 'intelligent-import'
@@ -34,6 +35,7 @@ export class IntelligentImportAugmentation extends BaseAugmentation {
       enableCSV: true,
       enableExcel: true,
       enablePDF: true,
+      enableImage: true, // v5.2.0: Image handler enabled by default
       maxFileSize: 100 * 1024 * 1024, // 100MB default
       enableCache: true,
       cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
@@ -55,8 +57,12 @@ export class IntelligentImportAugmentation extends BaseAugmentation {
       this.handlers.set('pdf', new PDFHandler())
     }
 
+    if (this.config.enableImage) {
+      this.handlers.set('image', new ImageHandler())
+    }
+
     this.initialized = true
-    this.log(`Initialized with ${this.handlers.size} format handlers (CSV: ${this.config.enableCSV}, Excel: ${this.config.enableExcel}, PDF: ${this.config.enablePDF})`)
+    this.log(`Initialized with ${this.handlers.size} format handlers (CSV: ${this.config.enableCSV}, Excel: ${this.config.enableExcel}, PDF: ${this.config.enablePDF}, Image: ${this.config.enableImage})`)
   }
 
   async execute<T = any>(
@@ -98,6 +104,7 @@ export class IntelligentImportAugmentation extends BaseAugmentation {
         ...this.config.csvDefaults,
         ...this.config.excelDefaults,
         ...this.config.pdfDefaults,
+        ...this.config.imageDefaults,
         ...params.options
       })
 

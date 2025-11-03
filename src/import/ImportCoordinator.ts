@@ -722,6 +722,38 @@ export class ImportCoordinator {
     format: SupportedFormat,
     options: ImportOptions
   ): Promise<any> {
+    // v5.2.0: Check if IntelligentImportAugmentation already extracted data
+    if ((options as any)._intelligentImport && (options as any)._extractedData) {
+      const extractedData = (options as any)._extractedData
+      // Convert extracted data to ExtractedRow format
+      const rows = extractedData.map((item: any) => ({
+        entity: {
+          id: item.id || `entity-${Date.now()}-${Math.random()}`,
+          name: item.name || item.type || 'Unnamed',
+          type: item.type || 'unknown',
+          description: item.description || '',
+          confidence: 1.0,
+          metadata: item.metadata || {}
+        },
+        relatedEntities: [],
+        relationships: []
+      }))
+      return {
+        rows,
+        entities: extractedData,
+        relationships: [],
+        metadata: (options as any)._metadata?.intelligentImport || {},
+        stats: {
+          byType: {},
+          byConfidence: {}
+        },
+        rowsProcessed: extractedData.length,
+        entitiesExtracted: extractedData.length,
+        relationshipsInferred: 0,
+        processingTime: 0
+      }
+    }
+
     const extractOptions = {
       enableNeuralExtraction: options.enableNeuralExtraction !== false,
       enableRelationshipInference: options.enableRelationshipInference !== false,
@@ -792,6 +824,42 @@ export class ImportCoordinator {
           : Buffer.from(JSON.stringify(source.data))
         return await this.docxImporter.extract(docxBuffer, extractOptions)
 
+      case 'image':
+        // v5.2.0: Images are handled by IntelligentImportAugmentation
+        // If we reach here, augmentation didn't process it - return minimal result
+        const imageName = source.filename || 'image'
+        const imageId = `image-${Date.now()}`
+        return {
+          rows: [{
+            entity: {
+              id: imageId,
+              name: imageName,
+              type: 'media' as any,
+              description: '',
+              confidence: 1.0,
+              metadata: { subtype: 'image' }
+            },
+            relatedEntities: [],
+            relationships: []
+          }],
+          entities: [{
+            id: imageId,
+            name: imageName,
+            type: 'media',
+            metadata: { subtype: 'image' }
+          }],
+          relationships: [],
+          metadata: {},
+          stats: {
+            byType: { media: 1 },
+            byConfidence: { high: 1 }
+          },
+          rowsProcessed: 1,
+          entitiesExtracted: 1,
+          relationshipsInferred: 0,
+          processingTime: 0
+        }
+
       default:
         throw new Error(`Unsupported format: ${format}`)
     }
@@ -811,14 +879,14 @@ export class ImportCoordinator {
     },
     trackingContext?: TrackingContext  // v4.10.0: Import/project tracking
   ): Promise<{
-    entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string }>
+    entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string; metadata?: Record<string, any> }>
     relationships: Array<{ id: string; from: string; to: string; type: VerbType }>
     merged: number
     newEntities: number
     documentEntity?: string
     provenanceCount?: number
   }> {
-    const entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string }> = []
+    const entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string; metadata?: Record<string, any> }> = []
     const relationships: Array<{ id: string; from: string; to: string; type: VerbType }> = []
     let mergedCount = 0
     let newCount = 0
@@ -969,7 +1037,8 @@ export class ImportCoordinator {
           id: entityId,
           name: entity.name,
           type: entity.type,
-          vfsPath: vfsFile?.path
+          vfsPath: vfsFile?.path,
+          metadata: entity.metadata  // v5.2.0: Include metadata in return (for ImageHandler, etc)
         })
         newCount++
       }
@@ -1071,7 +1140,8 @@ export class ImportCoordinator {
           id: entityId,
           name: entity.name,
           type: entity.type,
-          vfsPath: vfsFile?.path
+          vfsPath: vfsFile?.path,
+          metadata: entity.metadata  // v5.2.0: Include metadata in return (for ImageHandler, etc)
         })
 
         // ============================================

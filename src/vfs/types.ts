@@ -49,12 +49,12 @@ export interface VFSMetadata {
   accessed: number               // Last access timestamp (ms)
   modified: number               // Last modification timestamp (ms)
 
-  // Content storage strategy
+  // Content storage strategy (v5.2.0: unified blob storage)
   storage?: {
-    type: 'inline' | 'reference' | 'chunked'
-    key?: string                 // S3/storage key for reference type
-    chunks?: string[]            // Chunk keys for chunked type
-    compressed?: boolean         // Whether content is compressed
+    type: 'blob'                 // All files now use BlobStorage (was 'inline'|'reference'|'chunked')
+    hash: string                 // SHA-256 content hash from BlobStorage
+    size: number                 // Size in bytes
+    compressed?: boolean         // Whether content is compressed (zstd)
   }
 
   // Extended attributes

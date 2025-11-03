@@ -2,14 +2,17 @@
  * Format Detector
  *
  * Unified format detection for all import types using:
+ * - MIME type detection (via MimeTypeDetector service)
  * - Magic byte signatures (PDF, Excel, images)
- * - File extensions
+ * - File extensions (via MimeTypeDetector)
  * - Content analysis (JSON, Markdown, CSV)
  *
  * NO MOCKS - Production-ready implementation
  */
 
-export type SupportedFormat = 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx'
+import { mimeDetector } from '../vfs/MimeTypeDetector.js'
+
+export type SupportedFormat = 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx' | 'image'
 
 export interface DetectionResult {
   format: SupportedFormat
@@ -38,31 +41,79 @@ export class FormatDetector {
 
   /**
    * Detect format from file path
+   *
+   * Uses MimeTypeDetector (2000+ types) and maps to SupportedFormat
    */
   detectFromPath(path: string): DetectionResult | null {
-    const ext = this.getExtension(path).toLowerCase()
+    // Get MIME type from MimeTypeDetector
+    const mimeType = mimeDetector.detectMimeType(path)
 
-    const extensionMap: Record<string, SupportedFormat> = {
-      '.xlsx': 'excel',
-      '.xls': 'excel',
-      '.pdf': 'pdf',
-      '.csv': 'csv',
-      '.json': 'json',
-      '.md': 'markdown',
-      '.markdown': 'markdown',
-      '.yaml': 'yaml',
-      '.yml': 'yaml',
-      '.docx': 'docx',
-      '.doc': 'docx'
-    }
-
-    const format = extensionMap[ext]
+    // Map MIME type to SupportedFormat
+    const format = this.mimeTypeToFormat(mimeType)
     if (format) {
+      const ext = this.getExtension(path)
       return {
         format,
         confidence: 0.9,
-        evidence: [`File extension: ${ext}`]
+        evidence: [`MIME type: ${mimeType}`, `File extension: ${ext}`]
       }
+    }
+
+    return null
+  }
+
+  /**
+   * Map MIME type to SupportedFormat
+   *
+   * Supports all variations of Excel, PDF, CSV, JSON, Markdown, YAML, DOCX
+   */
+  private mimeTypeToFormat(mimeType: string): SupportedFormat | null {
+    // Excel formats (Office Open XML + legacy)
+    if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.ms-excel' ||
+      mimeType === 'application/vnd.ms-excel.sheet.macroEnabled.12' ||
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.template'
+    ) {
+      return 'excel'
+    }
+
+    // PDF
+    if (mimeType === 'application/pdf') {
+      return 'pdf'
+    }
+
+    // CSV
+    if (mimeType === 'text/csv') {
+      return 'csv'
+    }
+
+    // JSON
+    if (mimeType === 'application/json') {
+      return 'json'
+    }
+
+    // Markdown
+    if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown') {
+      return 'markdown'
+    }
+
+    // YAML
+    if (mimeType === 'text/yaml' || mimeType === 'text/x-yaml' || mimeType === 'application/x-yaml') {
+      return 'yaml'
+    }
+
+    // Word documents (Office Open XML)
+    if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mimeType === 'application/msword'
+    ) {
+      return 'docx'
+    }
+
+    // Images (v5.2.0: ImageHandler support)
+    if (mimeType.startsWith('image/')) {
+      return 'image'
     }
 
     return null
@@ -151,6 +202,55 @@ export class FormatDetector {
           format: 'excel',
           confidence: 1.0,
           evidence: ['ZIP magic bytes: PK', 'Contains Office Open XML structure']
+        }
+      }
+    }
+
+    // Image formats (v5.2.0)
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+      return {
+        format: 'image',
+        confidence: 1.0,
+        evidence: ['JPEG magic bytes: FF D8 FF']
+      }
+    }
+
+    // PNG: 89 50 4E 47
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+      return {
+        format: 'image',
+        confidence: 1.0,
+        evidence: ['PNG magic bytes: 89 50 4E 47']
+      }
+    }
+
+    // GIF: 47 49 46 38
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
+      return {
+        format: 'image',
+        confidence: 1.0,
+        evidence: ['GIF magic bytes: GIF8']
+      }
+    }
+
+    // BMP: 42 4D
+    if (buffer[0] === 0x42 && buffer[1] === 0x4D) {
+      return {
+        format: 'image',
+        confidence: 1.0,
+        evidence: ['BMP magic bytes: BM']
+      }
+    }
+
+    // WebP: RIFF....WEBP
+    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 && buffer.length >= 12) {
+      const webpCheck = buffer.toString('utf8', 8, 12)
+      if (webpCheck === 'WEBP') {
+        return {
+          format: 'image',
+          confidence: 1.0,
+          evidence: ['WebP magic bytes: RIFF...WEBP']
         }
       }
     }

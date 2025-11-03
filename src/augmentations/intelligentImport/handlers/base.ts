@@ -1,9 +1,12 @@
 /**
  * Base Format Handler
  * Abstract class providing common functionality for all format handlers
+ *
+ * Uses MimeTypeDetector for comprehensive file type detection (2000+ types)
  */
 
 import { FormatHandler, FormatHandlerOptions, ProcessedData } from '../types.js'
+import { mimeDetector } from '../../../vfs/MimeTypeDetector.js'
 
 export abstract class BaseFormatHandler implements FormatHandler {
   abstract readonly format: string
@@ -31,6 +34,38 @@ export abstract class BaseFormatHandler implements FormatHandler {
   protected getExtension(filename: string): string {
     const match = filename.match(/\.([^.]+)$/)
     return match ? match[1].toLowerCase() : ''
+  }
+
+  /**
+   * Get MIME type using MimeTypeDetector
+   *
+   * Supports 2000+ file types via mime library + custom developer types
+   */
+  protected getMimeType(data: Buffer | string | { filename?: string }): string {
+    if (typeof data === 'object' && 'filename' in data && data.filename) {
+      return mimeDetector.detectMimeType(data.filename)
+    }
+    if (Buffer.isBuffer(data)) {
+      // For buffers, we don't have a filename, so return generic
+      return 'application/octet-stream'
+    }
+    return 'text/plain'
+  }
+
+  /**
+   * Check if MIME type matches expected format
+   *
+   * @param mimeType - MIME type to check
+   * @param patterns - Patterns to match (e.g., ['text/csv', 'application/vnd.ms-excel'])
+   */
+  protected mimeTypeMatches(mimeType: string, patterns: string[]): boolean {
+    return patterns.some(pattern => {
+      if (pattern.endsWith('/*')) {
+        const prefix = pattern.slice(0, -2)
+        return mimeType.startsWith(prefix)
+      }
+      return mimeType === pattern
+    })
   }
 
   /**

@@ -12,6 +12,7 @@ import { Brainy } from '../brainy.js'
 import { Entity, AddParams, RelateParams, FindParams, Relation } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import { PathResolver } from './PathResolver.js'
+import { mimeDetector } from './MimeTypeDetector.js'
 import {
   SemanticPathResolver,
   ProjectionRegistry,
@@ -88,6 +89,18 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Default configuration (will be overridden in init)
     this.config = this.getDefaultConfig()
+  }
+
+  /**
+   * v5.2.0: Access to BlobStorage for unified file storage
+   */
+  private get blobStorage() {
+    // TypeScript doesn't know about blobStorage on storage, use type assertion
+    const storage = this.brain['storage'] as any
+    if (!storage || !('blobStorage' in storage)) {
+      throw new Error('BlobStorage not available. Requires COW-enabled storage adapter.')
+    }
+    return storage.blobStorage
   }
 
   /**
@@ -257,42 +270,18 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       throw new VFSError(VFSErrorCode.EISDIR, `Is a directory: ${path}`, path, 'readFile')
     }
 
-    // Get content based on storage type
-    let content: Buffer
-    let isCompressed = false
-
-    if (!entity.metadata.storage || entity.metadata.storage.type === 'inline') {
-      // Content stored in metadata for new files, or try entity data for compatibility
-      if (entity.metadata.rawData) {
-        // rawData is ALWAYS stored uncompressed as base64
-        content = Buffer.from(entity.metadata.rawData, 'base64')
-        isCompressed = false  // rawData is never compressed
-      } else if (!entity.data) {
-        content = Buffer.alloc(0)
-      } else if (Buffer.isBuffer(entity.data)) {
-        content = entity.data
-        isCompressed = entity.metadata.storage?.compressed || false
-      } else if (typeof entity.data === 'string') {
-        content = Buffer.from(entity.data)
-      } else {
-        content = Buffer.from(JSON.stringify(entity.data))
-      }
-    } else if (entity.metadata.storage.type === 'reference') {
-      // Content stored in external storage
-      content = await this.readExternalContent(entity.metadata.storage.key!)
-      isCompressed = entity.metadata.storage.compressed || false
-    } else if (entity.metadata.storage.type === 'chunked') {
-      // Content stored in chunks
-      content = await this.readChunkedContent(entity.metadata.storage.chunks!)
-      isCompressed = entity.metadata.storage.compressed || false
-    } else {
-      throw new VFSError(VFSErrorCode.EIO, `Unknown storage type: ${entity.metadata.storage.type}`, path, 'readFile')
+    // v5.2.0: Unified blob storage - ONE path only
+    if (!entity.metadata.storage?.type || entity.metadata.storage.type !== 'blob') {
+      throw new VFSError(
+        VFSErrorCode.EIO,
+        `File has no blob storage: ${path}. Requires v5.2.0+ storage format.`,
+        path,
+        'readFile'
+      )
     }
 
-    // Decompress if needed (but NOT for rawData which is never compressed)
-    if (isCompressed && options?.decompress !== false) {
-      content = await this.decompress(content)
-    }
+    // Read from BlobStorage (handles decompression automatically)
+    const content = await this.blobStorage.read(entity.metadata.storage.hash)
 
     // Update access time
     await this.updateAccessTime(entityId)
@@ -345,37 +334,22 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       existingId = null
     }
 
-    // Determine storage strategy based on size
-    let storageStrategy: VFSMetadata['storage']
-    let entityData: Buffer | null = null
+    // v5.2.0: Unified blob storage for ALL files (no size-based branching)
+    // Store in BlobStorage (content-addressable, auto-deduplication, streaming)
+    const blobHash = await this.blobStorage.write(buffer)
 
-    if (buffer.length <= (this.config.storage?.inline?.maxSize || 100_000)) {
-      // Store inline for small files
-      storageStrategy = { type: 'inline' }
-      entityData = buffer
-    } else if (buffer.length <= 10_000_000) {
-      // Store as reference for medium files
-      const key = await this.storeExternalContent(buffer)
-      storageStrategy = { type: 'reference', key }
-    } else {
-      // Store as chunks for large files
-      const chunks = await this.storeChunkedContent(buffer)
-      storageStrategy = { type: 'chunked', chunks }
+    // Get blob metadata (size, compression info)
+    const blobMetadata = await this.blobStorage.getMetadata(blobHash)
+
+    const storageStrategy: VFSMetadata['storage'] = {
+      type: 'blob',
+      hash: blobHash,
+      size: buffer.length,
+      compressed: blobMetadata?.compressed
     }
 
-    // Compress if beneficial
-    if (this.shouldCompress(buffer) && options?.compress !== false) {
-      const compressed = await this.compress(buffer)
-      if (compressed.length < buffer.length * 0.9) {  // Only if >10% savings
-        storageStrategy.compressed = true
-        if (storageStrategy.type === 'inline') {
-          entityData = compressed
-        }
-      }
-    }
-
-    // Detect MIME type
-    const mimeType = this.detectMimeType(name, buffer)
+    // Detect MIME type (v5.2.0: using comprehensive MimeTypeDetector)
+    const mimeType = mimeDetector.detectMimeType(name, buffer)
 
     // Create metadata
     const metadata: VFSMetadata = {
@@ -392,9 +366,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       group: 'users',
       accessed: Date.now(),
       modified: Date.now(),
-      storage: storageStrategy,
-      // Store raw buffer data for retrieval
-      rawData: buffer.toString('base64')  // Store as base64 for safe serialization
+      storage: storageStrategy
+      // v5.2.0: No rawData - content is in BlobStorage
+      // Backward compatibility: readFile() checks for rawData for legacy files
     }
 
     // Extract additional metadata if enabled
@@ -404,9 +378,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     if (existingId) {
       // Update existing file
+      // v5.2.0: No entity.data - content is in BlobStorage
       await this.brain.update({
         id: existingId,
-        data: entityData,
         metadata
       })
 
@@ -429,7 +403,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     } else {
       // Create new file entity
       // For embedding: use text content, for storage: use raw data
-      const embeddingData = this.isTextFile(mimeType) ? buffer.toString('utf-8') : `File: ${name} (${mimeType}, ${buffer.length} bytes)`
+      const embeddingData = mimeDetector.isTextFile(mimeType) ? buffer.toString('utf-8') : `File: ${name} (${mimeType}, ${buffer.length} bytes)`
 
       const entity = await this.brain.add({
         data: embeddingData,  // Always provide string for embeddings
@@ -497,13 +471,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       throw new VFSError(VFSErrorCode.EISDIR, `Is a directory: ${path}`, path, 'unlink')
     }
 
-    // Delete external content if needed
-    if (entity.metadata.storage) {
-      if (entity.metadata.storage.type === 'reference') {
-        await this.deleteExternalContent(entity.metadata.storage.key!)
-      } else if (entity.metadata.storage.type === 'chunked') {
-        await this.deleteChunkedContent(entity.metadata.storage.chunks!)
-      }
+    // v5.2.0: Delete blob from BlobStorage (decrements ref count)
+    if (entity.metadata.storage?.type === 'blob') {
+      await this.blobStorage.delete(entity.metadata.storage.hash)
     }
 
     // Delete the entity
@@ -1140,37 +1110,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return filename.substring(lastDot + 1).toLowerCase()
   }
 
-  private detectMimeType(filename: string, content: Buffer): string {
-    const ext = this.getExtension(filename)
-
-    // Common MIME types by extension
-    const mimeTypes: Record<string, string> = {
-      txt: 'text/plain',
-      html: 'text/html',
-      css: 'text/css',
-      js: 'application/javascript',
-      json: 'application/json',
-      pdf: 'application/pdf',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      gif: 'image/gif',
-      mp3: 'audio/mpeg',
-      mp4: 'video/mp4',
-      zip: 'application/zip'
-    }
-
-    return mimeTypes[ext || ''] || 'application/octet-stream'
-  }
-
-  private isTextFile(mimeType: string): boolean {
-    return mimeType.startsWith('text/') ||
-           mimeType.includes('json') ||
-           mimeType.includes('javascript') ||
-           mimeType.includes('xml') ||
-           mimeType.includes('yaml') ||
-           mimeType === 'application/json'
-  }
+  // v5.2.0: MIME detection moved to MimeTypeDetector service
+  // Removed detectMimeType() and isTextFile() - now using mimeDetector singleton
 
   private getFileNounType(mimeType: string): NounType {
     if (mimeType.startsWith('text/') || mimeType.includes('json')) {
@@ -1182,140 +1123,14 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return NounType.File
   }
 
-  private shouldCompress(buffer: Buffer): boolean {
-    if (!this.config.storage?.compression?.enabled) return false
-    if (buffer.length < (this.config.storage.compression.minSize || 10_000)) return false
-
-    // Don't compress already compressed formats
-    const firstBytes = buffer.slice(0, 4).toString('hex')
-    const compressedSignatures = [
-      '504b0304',  // ZIP
-      '1f8b',      // GZIP
-      '425a',      // BZIP2
-      '89504e47',  // PNG
-      'ffd8ff'     // JPEG
-    ]
-
-    return !compressedSignatures.some(sig => firstBytes.startsWith(sig))
-  }
-
-  // External storage methods - leverages Brainy's storage adapters (memory, file, S3, R2)
-  private async readExternalContent(key: string): Promise<Buffer> {
-    // Read from Brainy - Brainy's storage adapter handles retrieval
-    const entity = await this.brain.get(key)
-    if (!entity) {
-      throw new Error(`External content not found: ${key}`)
-    }
-
-    // Content is stored in the data field
-    // Brainy handles storage/retrieval through its adapters (memory, file, S3, R2)
-    return Buffer.isBuffer(entity.data) ? entity.data : Buffer.from(entity.data)
-  }
-
-  private async storeExternalContent(buffer: Buffer): Promise<string> {
-    // Store as Brainy entity - let Brainy's storage adapter handle it
-    // Brainy automatically handles large data through its storage adapters (memory, file, S3, R2)
-    const entityId = await this.brain.add({
-      data: buffer,  // Store actual buffer - Brainy will handle it efficiently
-      type: NounType.File,
-      metadata: {
-        vfsType: 'external-storage',
-        size: buffer.length,
-        created: Date.now()
-      }
-    })
-
-    return entityId
-  }
-
-  private async deleteExternalContent(key: string): Promise<void> {
-    // Delete the external storage entity
-    try {
-      await this.brain.delete(key)
-    } catch (error) {
-      console.debug('Failed to delete external content:', key, error)
-    }
-  }
-
-  private async readChunkedContent(chunks: string[]): Promise<Buffer> {
-    // Read all chunk entities and combine
-    const buffers: Buffer[] = []
-
-    for (const chunkId of chunks) {
-      const entity = await this.brain.get(chunkId)
-      if (!entity) {
-        throw new Error(`Chunk not found: ${chunkId}`)
-      }
-      // Read actual data from entity - Brainy handles storage
-      const chunkBuffer = Buffer.isBuffer(entity.data) ? entity.data : Buffer.from(entity.data)
-      buffers.push(chunkBuffer)
-    }
-
-    return Buffer.concat(buffers)
-  }
-
-  private async storeChunkedContent(buffer: Buffer): Promise<string[]> {
-    const chunkSize = this.config.storage?.chunking?.chunkSize || 5_000_000 // 5MB chunks
-    const chunks: string[] = []
-
-    for (let i = 0; i < buffer.length; i += chunkSize) {
-      const chunk = buffer.slice(i, Math.min(i + chunkSize, buffer.length))
-
-      // Store each chunk as a separate entity
-      // Let Brainy handle the chunk data efficiently
-      const chunkId = await this.brain.add({
-        data: chunk,  // Store actual chunk - Brainy handles it
-        type: NounType.File,
-        metadata: {
-          vfsType: 'chunk',
-          chunkIndex: chunks.length,
-          size: chunk.length,
-          created: Date.now()
-        }
-      })
-
-      chunks.push(chunkId)
-    }
-
-    return chunks
-  }
-
-  private async deleteChunkedContent(chunks: string[]): Promise<void> {
-    // Delete all chunk entities
-    await Promise.all(
-      chunks.map(chunkId =>
-        this.brain.delete(chunkId).catch(err =>
-          console.debug('Failed to delete chunk:', chunkId, err)
-        )
-      )
-    )
-  }
-
-  private async compress(buffer: Buffer): Promise<Buffer> {
-    const zlib = await import('zlib')
-    return new Promise((resolve, reject) => {
-      zlib.gzip(buffer, (err, compressed) => {
-        if (err) reject(err)
-        else resolve(compressed)
-      })
-    })
-  }
-
-  private async decompress(buffer: Buffer): Promise<Buffer> {
-    const zlib = await import('zlib')
-    return new Promise((resolve, reject) => {
-      zlib.gunzip(buffer, (err, decompressed) => {
-        if (err) reject(err)
-        else resolve(decompressed)
-      })
-    })
-  }
+  // v5.2.0: Removed compression methods (shouldCompress, compress, decompress)
+  // BlobStorage handles all compression automatically with zstd
 
   private async generateEmbedding(buffer: Buffer, mimeType: string): Promise<number[] | undefined> {
     try {
       // Use text content for text files, description for binary
       let content: string
-      if (this.isTextFile(mimeType)) {
+      if (mimeDetector.isTextFile(mimeType)) {
         // Use first 10KB for embedding
         content = buffer.toString('utf8', 0, Math.min(10240, buffer.length))
       } else {
@@ -1347,7 +1162,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const metadata: Partial<VFSMetadata> = {}
 
     // Extract basic metadata based on content type
-    if (this.isTextFile(mimeType)) {
+    if (mimeDetector.isTextFile(mimeType)) {
       const text = buffer.toString('utf8')
       metadata.lineCount = text.split('\n').length
       metadata.wordCount = text.split(/\s+/).filter(w => w).length

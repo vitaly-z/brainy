@@ -228,6 +228,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         Brainy.shutdownHooksRegisteredGlobally = true
       }
 
+      // v5.2.0: Initialize COW (BlobStorage) before VFS
+      // VFS now requires BlobStorage for unified file storage
+      if (typeof (this.storage as any).initializeCOW === 'function') {
+        await (this.storage as any).initializeCOW({
+          branch: (this.config.storage as any)?.branch || 'main',
+          enableCompression: true
+        })
+      }
+
       // Mark as initialized BEFORE VFS init (v5.0.1)
       // VFS.init() needs brain to be marked initialized to call brain methods
       this.initialized = true
@@ -3103,7 +3112,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async import(
     source: Buffer | string | object,
     options?: {
-      format?: 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx'
+      format?: 'excel' | 'pdf' | 'csv' | 'json' | 'markdown' | 'yaml' | 'docx' | 'image'
       vfsPath?: string
       groupBy?: 'type' | 'sheet' | 'flat' | 'custom'
       customGrouping?: (entity: any) => string
@@ -3128,12 +3137,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }) => void
     }
   ) {
-    // Lazy load ImportCoordinator
-    const { ImportCoordinator } = await import('./import/ImportCoordinator.js')
-    const coordinator = new ImportCoordinator(this)
-    await coordinator.init()
+    // Execute through augmentation pipeline (v5.2.0: Enables IntelligentImportAugmentation)
+    // If source is an ImportSource object (not a Buffer), spread it so augmentations can access properties
+    const params = typeof source === 'object' && !Buffer.isBuffer(source)
+      ? { ...source as object, ...options }  // Spread ImportSource: { type, data, filename, ...options }
+      : { source, ...options }               // Wrap Buffer/string: { source, ...options }
 
-    return await coordinator.import(source, options)
+    return this.augmentationRegistry.execute('import', params, async () => {
+      // Lazy load ImportCoordinator
+      const { ImportCoordinator } = await import('./import/ImportCoordinator.js')
+      const coordinator = new ImportCoordinator(this)
+      await coordinator.init()
+
+      // Pass augmentation-modified params (contains _intelligentImport, _extractedData, etc)
+      return await coordinator.import(source, { ...options, ...params })
+    })
   }
 
   /**
