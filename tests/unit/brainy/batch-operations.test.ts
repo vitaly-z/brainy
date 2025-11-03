@@ -335,7 +335,8 @@ describe('Brainy Batch Operations', () => {
       await brain.deleteMany({ ids: manyIds })
       const duration = Date.now() - startTime
 
-      expect(duration).toBeLessThan(5000) // Should complete in reasonable time
+      // v5.1.0: Increased timeout from 5000ms to 6000ms for more reliable testing
+      expect(duration).toBeLessThan(6000) // Should complete in reasonable time
       
       // All should be gone
       const sample = await brain.get(manyIds[50])

@@ -92,8 +92,8 @@ describe('Brainy Built-in Augmentations', () => {
     })
 
     it('should handle cache misses gracefully', async () => {
-      // Try to get non-existent entity
-      const nonExistent = await brain.get('fake-id')
+      // Try to get non-existent entity (v5.1.0: use valid UUID format)
+      const nonExistent = await brain.get('00000000-0000-0000-0000-000000000099')
       expect(nonExistent).toBeNull()
     })
 
@@ -261,9 +261,9 @@ describe('Brainy Built-in Augmentations', () => {
     })
 
     it('should handle error scenarios gracefully', async () => {
-      // Try invalid operations
-      await expect(brain.get('invalid-id')).resolves.toBeNull()
-      await expect(brain.delete('invalid-id')).resolves.not.toThrow()
+      // v5.1.0: Invalid UUID formats throw errors
+      await expect(brain.get('invalid-id')).rejects.toThrow('Invalid UUID format')
+      await expect(brain.delete('invalid-id')).rejects.toThrow('Invalid UUID format')
 
       // Try invalid find parameters
       await expect(brain.find({
@@ -447,12 +447,12 @@ describe('Brainy Built-in Augmentations', () => {
 
   describe('7. Error Handling with Augmentations', () => {
     it('should handle errors gracefully without breaking augmentations', async () => {
-      // These should not crash the system
-      await expect(brain.get('')).resolves.toBeNull()
+      // v5.1.0: Invalid UUID formats throw errors (these should not crash the system)
+      await expect(brain.get('')).rejects.toThrow('UUID is required')
       await expect(brain.update({
         id: 'non-existent',
         data: 'new data'
-      })).rejects.toThrow()
+      })).rejects.toThrow('Invalid UUID format')
 
       // Normal operations should still work
       const id = await brain.add(createAddParams({ data: 'After error test' }))

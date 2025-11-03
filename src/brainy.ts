@@ -629,15 +629,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         throw new Error(`Entity ${params.id} not found`)
       }
 
-      // Update vector if data changed
+      // Update vector if data changed OR if type changed (need to re-index with new type)
       let vector = existing.vector
-      if (params.data) {
-        vector = params.vector || (await this.embed(params.data))
+      const newType = params.type || existing.type
+      if (params.data || params.type) {
+        if (params.data) {
+          vector = params.vector || (await this.embed(params.data))
+        }
         // Update in index (remove and re-add since no update method)
         // Phase 2: pass type for TypeAwareHNSWIndex
         if (this.index instanceof TypeAwareHNSWIndex) {
           await this.index.removeItem(params.id, existing.type as any)
-          await this.index.addItem({ id: params.id, vector }, existing.type as any)
+          await this.index.addItem({ id: params.id, vector }, newType as any) // v5.1.0: use new type
         } else {
           await this.index.removeItem(params.id)
           await this.index.addItem({ id: params.id, vector })
@@ -670,15 +673,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight })
       }
 
-      // v4.0.0: Save vector and metadata separately
+      // v4.0.0: Save metadata FIRST (v5.1.0 fix: updates type cache for TypeAwareStorage)
+      // v5.1.0: saveNounMetadata must be called before saveNoun so that the type cache
+      // is updated before determining the shard path. Otherwise type changes cause
+      // entities to be saved in the wrong shard and become unfindable.
+      await this.storage.saveNounMetadata(params.id, updatedMetadata)
+
+      // Then save vector (will use updated type cache)
       await this.storage.saveNoun({
         id: params.id,
         vector,
         connections: new Map(),
         level: 0
       })
-
-      await this.storage.saveNounMetadata(params.id, updatedMetadata)
 
       // v4.8.0: Build entity structure for metadata index (with top-level fields)
       const entityForIndexing = {

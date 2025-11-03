@@ -75,8 +75,8 @@ describe('Brainy.add()', () => {
     })
     
     it('should add an entity with custom ID', async () => {
-      // Arrange
-      const customId = 'custom-entity-123'
+      // Arrange (v5.1.0: use valid UUID format)
+      const customId = '00000000-0000-0000-0000-000000000123'
       const params = createAddParams({
         id: customId,
         data: 'Entity with custom ID',
@@ -262,8 +262,8 @@ describe('Brainy.add()', () => {
     })
     
     it('should allow duplicate custom ID (overwrites)', async () => {
-      // Arrange
-      const duplicateId = 'duplicate-123'
+      // Arrange (v5.1.0: use valid UUID format)
+      const duplicateId = '00000000-0000-0000-0000-111111111111'
       const params1 = createAddParams({
         id: duplicateId,
         data: 'First entity',
@@ -500,9 +500,9 @@ describe('Brainy.add()', () => {
   
   describe('caching behavior', () => {
     it('should retrieve consistent entities', async () => {
-      // Arrange
+      // Arrange (v5.1.0: use valid UUID format)
       const params = createAddParams({
-        id: 'cached-entity',
+        id: '00000000-0000-0000-0000-cacacacacaca',
         data: 'Cached content',
         type: 'thing',
         metadata: { test: 'cache' }

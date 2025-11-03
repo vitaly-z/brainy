@@ -11,8 +11,12 @@ import { NounType } from '../../../src/types/graphTypes'
 describe('Neural API - Production Testing', () => {
   let brain: Brainy<any>
 
+  // v5.1.0: Use memory storage and disable augmentations for faster, reliable tests
   beforeEach(async () => {
-    brain = new Brainy()
+    brain = new Brainy({
+      storage: { type: 'memory' },
+      silent: true
+    })
     await brain.init()
   })
 
