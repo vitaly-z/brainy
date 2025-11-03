@@ -139,8 +139,8 @@ describe('VFS Bug Fixes', () => {
       }
     })
 
-    it('should correctly handle rawData storage without compression', async () => {
-      const content = 'Test content for rawData'
+    it('should correctly handle file storage via BlobStorage (v5.2.0)', async () => {
+      const content = 'Test content for BlobStorage'
 
       // Write file
       await vfs.writeFile('/test.md', content)
@@ -148,14 +148,12 @@ describe('VFS Bug Fixes', () => {
       // Get the entity to inspect storage
       const entity = await vfs.getEntity('/test.md')
 
-      // Should have rawData in metadata
-      expect(entity.metadata.rawData).toBeDefined()
+      // v5.2.0: Content is in BlobStorage, not rawData
+      expect(entity.metadata.storage).toBeDefined()
+      expect(entity.metadata.storage.type).toBe('blob')
+      expect(entity.metadata.size).toBe(content.length)
 
-      // rawData should be base64 encoded
-      const decodedRawData = Buffer.from(entity.metadata.rawData!, 'base64').toString('utf8')
-      expect(decodedRawData).toBe(content)
-
-      // Read should work without decompression issues
+      // Read should work correctly (retrieves from BlobStorage)
       const readContent = await vfs.readFile('/test.md')
       expect(readContent.toString('utf8')).toBe(content)
     })
