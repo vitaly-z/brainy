@@ -209,7 +209,7 @@ export class VersionManager {
       // Get the commit hash that was just created
       const refManager = this.brain.refManager
       const ref = await refManager.getRef(currentBranch)
-      commitHash = ref
+      commitHash = ref.commitHash
     } else {
       // Use current HEAD commit
       const refManager = this.brain.refManager
@@ -219,7 +219,7 @@ export class VersionManager {
           `No commit exists on branch ${currentBranch}. Create a commit first or use createCommit: true`
         )
       }
-      commitHash = ref
+      commitHash = ref.commitHash
     }
 
     // Create version metadata

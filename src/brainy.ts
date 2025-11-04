@@ -2351,7 +2351,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const currentBranch = await this.getCurrentBranch()
 
       // Get current HEAD commit (parent)
-      const currentCommitHash = await refManager.resolveRef(`heads/${currentBranch}`)
+      const currentCommitHash = await refManager.resolveRef(currentBranch)
 
       // Get current state statistics
       const entityCount = await this.getNounCount()
@@ -2853,7 +2853,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       const refManager = (this.storage as any).refManager
-      await refManager.deleteRef(`heads/${branch}`)
+      await refManager.deleteRef(branch)
     })
   }
 
@@ -2892,7 +2892,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const currentBranch = await this.getCurrentBranch()
 
       // Get commit history for current branch
-      const commits = await commitLog.getHistory(`heads/${currentBranch}`, {
+      const commits = await commitLog.getHistory(currentBranch, {
         maxCount: options?.limit || 10
       })
 

@@ -54,22 +54,45 @@ describe('VersionManager', () => {
       },
       getNounMetadata: vi.fn(async (id: string) => {
         const entity = mockIndex.get(id)
-        if (!entity) throw new Error(`Entity ${id} not found`)
+        // Return null for version entities (_version:...) that don't exist
+        // Throw for regular entities that don't exist
+        if (!entity) {
+          if (id.startsWith('_version:')) {
+            return null  // Version doesn't exist - let VersionIndex handle it
+          }
+          throw new Error(`Entity ${id} not found`)
+        }
         return entity
       }),
       saveNounMetadata: vi.fn(async (id: string, data: NounMetadata) => {
         mockIndex.set(id, data)
+      }),
+      deleteNounMetadata: vi.fn(async (id: string) => {
+        mockIndex.delete(id)
       }),
       searchByMetadata: vi.fn(async (query: any) => {
         const results: any[] = []
         for (const [id, entity] of mockIndex.entries()) {
           let matches = true
           for (const [key, value] of Object.entries(query)) {
-            if (key === 'type' && entity.type !== value) {
-              matches = false
-              break
+            // Handle top-level properties (like 'type')
+            if (key === 'type') {
+              if (entity.type !== value) {
+                matches = false
+                break
+              }
+              continue  // Skip metadata check for 'type'
             }
-            if (entity.metadata?.[key] !== value) {
+            // Check metadata properties with glob pattern support
+            const entityValue = entity.metadata?.[key]
+            // Support simple glob patterns (e.g., 'v1.*' matches 'v1.0.0', 'v1.1.0')
+            if (typeof value === 'string' && value.includes('*')) {
+              const pattern = new RegExp('^' + value.replace(/\*/g, '.*') + '$')
+              if (!entityValue || !pattern.test(String(entityValue))) {
+                matches = false
+                break
+              }
+            } else if (entityValue !== value) {
               matches = false
               break
             }
