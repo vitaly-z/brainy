@@ -302,9 +302,23 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Check if main branch exists, create if not
     const mainRef = await this.refManager.getRef('main')
     if (!mainRef) {
-      // Create initial commit (empty tree)
+      // Create initial commit with empty tree
       const emptyTreeHash = '0000000000000000000000000000000000000000000000000000000000000000'
-      await this.refManager.createBranch('main', emptyTreeHash, {
+
+      // Import CommitBuilder
+      const { CommitBuilder } = await import('./cow/CommitObject.js')
+
+      // Create initial commit object
+      const initialCommitHash = await CommitBuilder.create(this.blobStorage)
+        .tree(emptyTreeHash)
+        .parent(null)
+        .message('Initial commit')
+        .author('system')
+        .timestamp(Date.now())
+        .build()
+
+      // Create main branch pointing to initial commit
+      await this.refManager.createBranch('main', initialCommitHash, {
         description: 'Initial branch',
         author: 'system'
       })
