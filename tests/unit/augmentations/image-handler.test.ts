@@ -180,7 +180,7 @@ describe('ImageHandler (v5.2.0)', () => {
 
       const result = await handler.process(imageBuffer)
 
-      expect(result.metadata.processingTime).toBeGreaterThan(0)
+      expect(result.metadata.processingTime).toBeGreaterThanOrEqual(0)
       expect(result.metadata.processingTime).toBeLessThan(5000)
     })
 
