@@ -119,6 +119,7 @@ export class RefManager {
     // Check if ref exists
     const existing = await this.getRef(fullName)
 
+
     // Handle createOnly
     if (options.createOnly && existing) {
       throw new Error(`Ref already exists: ${fullName}`)

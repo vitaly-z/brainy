@@ -209,7 +209,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
             path: '/',
             name: '',
             vfsType: 'directory',
-            isVFS: true,  // v4.3.3: Mark as VFS entity
+            isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
+            isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
             size: 0,
             permissions: 0o755,
             owner: 'root',
@@ -231,7 +232,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         path: '/',
         name: '',
         vfsType: 'directory',
-        isVFS: true,  // v4.3.3: Mark as VFS entity
+        isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
+        isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
         size: 0,
         permissions: 0o755,
         owner: 'root',
@@ -357,7 +359,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       name,
       parent: parentId,
       vfsType: 'file',
-      isVFS: true,  // v4.3.3: Mark as VFS entity
+      isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
+      isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
       size: buffer.length,
       mimeType,
       extension: this.getExtension(name),
@@ -713,7 +716,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         name,
         parent: parentId,
         vfsType: 'directory',
-        isVFS: true,  // v4.3.3: Mark as VFS entity
+        isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
+        isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
         size: 0,
         permissions: options?.mode || this.config.permissions?.defaultDirectory || 0o755,
         owner: 'user',

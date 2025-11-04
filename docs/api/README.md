@@ -1,9 +1,9 @@
 # 🧠 Brainy v5.0+ API Reference
 
 > **Complete API documentation for Brainy v5.0+**
-> Zero Configuration • Triple Intelligence • Git-Style Branching
+> Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning
 
-**Updated:** 2025-11-02 for v5.1.0
+**Updated:** 2025-11-04 for v5.3.0
 **All APIs verified against actual code**
 
 ---
@@ -34,6 +34,11 @@ const results = await brain.find({
 const experiment = await brain.fork('test-feature')
 await experiment.add({ data: 'test', type: NounType.Content })
 await experiment.commit({ message: 'Add test data' })
+
+// Entity versioning (v5.3.0+)
+await brain.versions.save(id, { tag: 'v1.0', description: 'Initial version' })
+await brain.update(id, { category: 'AI' })
+await brain.versions.save(id, { tag: 'v2.0' })
 ```
 
 ---
@@ -52,6 +57,9 @@ Vector search + Graph traversal + Metadata filtering in one unified query.
 ### 🌳 Git-Style Branching (v5.0.0+)
 Fork, experiment, commit, and merge - Snowflake-style copy-on-write isolation.
 
+### 📜 Entity Versioning (v5.3.0+)
+Time-travel and history tracking for individual entities - Git-like version control with content-addressable storage.
+
 ---
 
 ## Table of Contents
@@ -61,6 +69,7 @@ Fork, experiment, commit, and merge - Snowflake-style copy-on-write isolation.
 - [Relationships](#relationships)
 - [Batch Operations](#batch-operations)
 - [Branch Management (v5.0+)](#branch-management-v50)
+- [Entity Versioning (v5.3.0+)](#entity-versioning-v530)
 - [Virtual Filesystem (VFS)](#virtual-filesystem-vfs)
 - [Neural API](#neural-api)
 - [Import & Export](#import--export)
@@ -468,9 +477,426 @@ const history = await brain.getHistory({
 
 ---
 
+## Entity Versioning (v5.3.0+)
+
+**NEW in v5.3.0:** Git-style versioning for individual entities with content-addressable storage.
+
+### Overview
+
+Entity Versioning provides time-travel and history tracking for individual entities:
+
+- **Content-Addressable Storage** - Deduplication via SHA-256 hashing
+- **Zero-Config** - Lazy initialization, uses existing indexes
+- **Branch-Isolated** - Versions isolated per branch
+- **Selective Auto-Versioning** - Optional augmentation for automatic version creation
+- **Production-Scale** - Designed for billions of entities
+
+---
+
+### `versions.save(entityId, options?)` → `Promise<EntityVersion>`
+
+Save a new version of an entity.
+
+```typescript
+// Save version with tag
+const version = await brain.versions.save('user-123', {
+  tag: 'v1.0',
+  description: 'Initial user profile',
+  metadata: { author: 'dev@example.com' }
+})
+
+console.log(version.version)      // 1
+console.log(version.contentHash)  // SHA-256 hash
+console.log(version.createdAt)    // Timestamp
+```
+
+**Parameters:**
+- `entityId`: `string` - Entity ID to version
+- `options?`: `object`
+  - `tag?`: `string` - Version tag (e.g., 'v1.0', 'beta')
+  - `description?`: `string` - Version description
+  - `metadata?`: `object` - Additional version metadata
+
+**Returns:** `Promise<EntityVersion>` - Created version
+
+**Features:**
+- Automatic deduplication (identical content = same version)
+- Sequential version numbering (1, 2, 3, ...)
+- Content-addressable storage (SHA-256)
+
+---
+
+### `versions.list(entityId, options?)` → `Promise<EntityVersion[]>`
+
+List all versions of an entity.
+
+```typescript
+const versions = await brain.versions.list('user-123', {
+  limit: 10,
+  offset: 0
+})
+
+versions.forEach(v => {
+  console.log(`Version ${v.version}: ${v.tag} - ${v.description}`)
+})
+```
+
+**Parameters:**
+- `entityId`: `string` - Entity ID
+- `options?`: `object`
+  - `limit?`: `number` - Max versions to return
+  - `offset?`: `number` - Skip versions
+
+**Returns:** `Promise<EntityVersion[]>` - Versions (newest first)
+
+---
+
+### `versions.restore(entityId, versionOrTag)` → `Promise<void>`
+
+Restore entity to a previous version.
+
+```typescript
+// Restore by version number
+await brain.versions.restore('user-123', 1)
+
+// Restore by tag
+await brain.versions.restore('user-123', 'beta')
+```
+
+**Parameters:**
+- `entityId`: `string` - Entity ID
+- `versionOrTag`: `number | string` - Version number or tag
+
+---
+
+### `versions.compare(entityId, version1, version2)` → `Promise<VersionDiff>`
+
+Compare two versions.
+
+```typescript
+const diff = await brain.versions.compare('user-123', 1, 2)
+
+console.log(diff.totalChanges)    // Total changes
+console.log(diff.modified)        // Modified fields
+console.log(diff.added)           // Added fields
+console.log(diff.removed)         // Removed fields
+
+// Check specific changes
+const nameChange = diff.modified.find(c => c.path === 'metadata.name')
+console.log(`${nameChange.oldValue} → ${nameChange.newValue}`)
+```
+
+**Returns:** `Promise<VersionDiff>` - Detailed diff with field-level changes
+
+---
+
+### `versions.getContent(entityId, versionOrTag)` → `Promise<EntitySnapshot>`
+
+Get version content without restoring.
+
+```typescript
+// View old version without changing current state
+const v1Content = await brain.versions.getContent('user-123', 1)
+console.log(v1Content.metadata.name)  // Old name
+
+// Current state unchanged
+const current = await brain.get('user-123')
+console.log(current.metadata.name)  // Current name
+```
+
+---
+
+### `versions.undo(entityId)` → `Promise<void>`
+
+Undo to previous version (shorthand for restore to latest-1).
+
+```typescript
+// Make a bad change
+await brain.update('user-123', { status: 'deleted' })
+
+// Undo immediately
+await brain.versions.undo('user-123')
+```
+
+**Alias:** `versions.revert(entityId)`
+
+---
+
+### `versions.prune(entityId, options)` → `Promise<PruneResult>`
+
+Clean up old versions.
+
+```typescript
+const result = await brain.versions.prune('user-123', {
+  keepRecent: 10,      // Keep 10 most recent
+  keepTagged: true,    // Always keep tagged versions
+  olderThan: Date.now() - 30 * 24 * 60 * 60 * 1000  // Older than 30 days
+})
+
+console.log(`Deleted ${result.deleted}, kept ${result.kept}`)
+```
+
+**Parameters:**
+- `keepRecent?`: `number` - Keep N most recent versions
+- `keepTagged?`: `boolean` - Always keep tagged versions (default: true)
+- `olderThan?`: `number` - Only prune versions older than timestamp
+
+---
+
+### `versions.getLatest(entityId)` → `Promise<EntityVersion | null>`
+
+Get latest version.
+
+```typescript
+const latest = await brain.versions.getLatest('user-123')
+if (latest) {
+  console.log(`Latest: v${latest.version} (${latest.tag})`)
+}
+```
+
+---
+
+### `versions.getVersionByTag(entityId, tag)` → `Promise<EntityVersion | null>`
+
+Get version by tag.
+
+```typescript
+const beta = await brain.versions.getVersionByTag('user-123', 'beta')
+```
+
+---
+
+### `versions.count(entityId)` → `Promise<number>`
+
+Count versions for an entity.
+
+```typescript
+const count = await brain.versions.count('user-123')
+console.log(`${count} versions saved`)
+```
+
+---
+
+### `versions.hasVersions(entityId)` → `Promise<boolean>`
+
+Check if entity has versions.
+
+```typescript
+if (await brain.versions.hasVersions('user-123')) {
+  console.log('Entity has version history')
+}
+```
+
+---
+
+### Auto-Versioning Augmentation
+
+Automatically create versions on entity updates.
+
+```typescript
+import { VersioningAugmentation } from '@soulcraft/brainy'
+
+// Configure auto-versioning
+const versioning = new VersioningAugmentation({
+  enabled: true,
+  onUpdate: true,           // Version on update()
+  onDelete: false,          // Don't version on delete
+  entities: ['user-*'],     // Only version users
+  excludeEntities: ['temp-*'],
+  excludeTypes: ['temporary'],
+  keepRecent: 50,           // Auto-prune old versions
+  keepTagged: true
+})
+
+// Apply augmentation
+brain.augment(versioning)
+
+// Now updates auto-create versions
+await brain.update('user-123', { name: 'New Name' })
+
+// Version automatically created!
+const versions = await brain.versions.list('user-123')
+console.log(`Auto-created version: ${versions[0].version}`)
+```
+
+**Configuration:**
+- `enabled`: `boolean` - Enable/disable augmentation
+- `onUpdate`: `boolean` - Version on entity updates
+- `onDelete`: `boolean` - Version before deletion
+- `entities`: `string[]` - Entity ID patterns (glob-style)
+- `excludeEntities`: `string[]` - Exclusion patterns
+- `types`: `string[]` - Entity types to version
+- `excludeTypes`: `string[]` - Types to exclude
+- `keepRecent`: `number` - Auto-prune to keep N versions
+- `keepTagged`: `boolean` - Always keep tagged versions
+
+**Pattern Matching:**
+- `['*']` - All entities
+- `['user-*']` - All IDs starting with "user-"
+- `['*-prod']` - All IDs ending with "-prod"
+- `['user-*', 'account-*']` - Multiple patterns
+
+---
+
+### Branch Isolation
+
+Versions are isolated per branch.
+
+```typescript
+// Save version on main
+await brain.versions.save('doc-1', { tag: 'main-v1' })
+
+// Fork and create version
+const feature = await brain.fork('feature')
+await feature.update('doc-1', { content: 'Feature update' })
+await feature.versions.save('doc-1', { tag: 'feature-v1' })
+
+// Versions are isolated
+const mainVersions = await brain.versions.list('doc-1')
+const featureVersions = await feature.versions.list('doc-1')
+
+console.log(mainVersions.length !== featureVersions.length)  // true
+```
+
+---
+
+### Architecture
+
+**Content-Addressable Storage:**
+- SHA-256 hashing for deduplication
+- Identical content = single storage blob
+- Efficient for entities with few changes
+
+**Metadata Indexing:**
+- Leverages existing MetadataIndexManager
+- Fast lookups by entity ID
+- Version number indexing
+
+**Storage Structure:**
+```
+_version:{entityId}:{versionNum}:{branch}  // Version metadata
+_version_blob:{contentHash}                // Content blob (deduplicated)
+```
+
+**Performance:**
+- Version save: O(1) if duplicate, O(log N) for index update
+- Version list: O(K) where K = version count
+- Version restore: O(log N) lookup + O(1) restore
+- Pruning: O(K) where K = versions pruned
+
+---
+
+### Examples
+
+#### Basic Versioning Workflow
+
+```typescript
+// Create entity
+await brain.add({
+  data: 'User profile',
+  id: 'user-123',
+  type: 'user',
+  metadata: { name: 'Alice', email: 'alice@example.com' }
+})
+
+// Save v1
+await brain.versions.save('user-123', { tag: 'v1.0' })
+
+// Make changes
+await brain.update('user-123', { name: 'Alice Smith' })
+
+// Save v2
+await brain.versions.save('user-123', { tag: 'v2.0' })
+
+// Compare versions
+const diff = await brain.versions.compare('user-123', 1, 2)
+
+// Restore to v1 if needed
+await brain.versions.restore('user-123', 'v1.0')
+```
+
+#### Release Management
+
+```typescript
+// Development workflow
+await brain.update('app-config', { version: '1.0.0-alpha' })
+await brain.versions.save('app-config', { tag: 'alpha' })
+
+await brain.update('app-config', { version: '1.0.0-beta' })
+await brain.versions.save('app-config', { tag: 'beta' })
+
+await brain.update('app-config', { version: '1.0.0' })
+await brain.versions.save('app-config', { tag: 'release' })
+
+// Rollback to beta if issues found
+await brain.versions.restore('app-config', 'beta')
+```
+
+#### Audit Trail
+
+```typescript
+// Track all changes
+const versioning = new VersioningAugmentation({
+  enabled: true,
+  onUpdate: true,
+  entities: ['audit-*'],
+  keepRecent: 100  // Keep 100 versions for audit
+})
+
+brain.augment(versioning)
+
+// All updates now tracked
+await brain.update('audit-record-1', { status: 'modified' })
+await brain.update('audit-record-1', { status: 'approved' })
+
+// View complete history
+const versions = await brain.versions.list('audit-record-1')
+versions.forEach(v => {
+  console.log(`${v.createdAt}: ${v.description}`)
+})
+```
+
+---
+
+**[📖 Complete Versioning Guide →](../features/entity-versioning.md)**
+
+---
+
 ## Virtual Filesystem (VFS)
 
 **Auto-initialized in v5.1.0!** Access via `brain.vfs` (property, not method).
+
+### Filtering VFS Entities
+
+**NEW in v5.3.0:** All VFS entities (files/folders) have `metadata.isVFSEntity: true` set automatically.
+
+Use this to filter VFS entities from semantic search results:
+
+```typescript
+// Exclude VFS entities from semantic search
+const semanticOnly = await brain.find({
+  query: 'artificial intelligence',
+  where: {
+    isVFSEntity: { notEquals: true }  // Only semantic entities
+  }
+})
+
+// Or filter to ONLY VFS entities
+const vfsOnly = await brain.find({
+  where: {
+    isVFSEntity: { equals: true }  // Only VFS files/folders
+  }
+})
+
+// Check if an entity is a VFS entity
+if (entity.metadata.isVFSEntity === true) {
+  console.log('This is a VFS file or folder')
+}
+```
+
+**Why this matters:** Without filtering, VFS files/folders can appear in concept explorers and semantic search results where they don't belong.
+
+---
 
 ### Basic File Operations
 
@@ -1253,7 +1679,17 @@ const tree = await brain.vfs.getTreeStructure('/projects', {
 
 ## What's New in v5.0
 
-### v5.1.0 (Latest)
+### v5.3.0 (Latest)
+
+- ✅ **Entity Versioning** - Git-style versioning for individual entities
+- ✅ **Content-Addressable Storage** - SHA-256 deduplication for versions
+- ✅ **Auto-Versioning Augmentation** - Automatic version creation on updates
+- ✅ **Branch-Isolated Versions** - Versions isolated per branch
+- ✅ **VFS Entity Filtering** - All VFS entities now have `isVFSEntity: true` flag
+- ✅ **CRITICAL FIX:** commit() now updates branch refs correctly (brainy.ts:2385)
+- ✅ **CRITICAL FIX:** VFS entities now properly flagged for filtering
+
+### v5.1.0
 
 - ✅ **VFS Auto-Initialization** - No more separate `vfs.init()` calls
 - ✅ **VFS Property Access** - Use `brain.vfs.method()` instead of `brain.vfs().method()`

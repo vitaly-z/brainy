@@ -24,6 +24,7 @@ import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { NeuralEntityExtractor, ExtractedEntity } from './neural/entityExtractor.js'
 import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { VirtualFileSystem } from './vfs/VirtualFileSystem.js'
+import { VersioningAPI } from './versioning/VersioningAPI.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
 import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
 import { CommitBuilder } from './storage/cow/CommitObject.js'
@@ -95,6 +96,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _nlp?: NaturalLanguageProcessor
   private _extractor?: NeuralEntityExtractor
   private _tripleIntelligence?: TripleIntelligenceSystem
+  private _versions?: VersioningAPI
   private _vfs?: VirtualFileSystem
 
   // State
@@ -2380,7 +2382,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const commitHash = await builder.build()
 
       // Update branch ref to point to new commit
-      await refManager.setRef(`heads/${currentBranch}`, commitHash, {
+      await refManager.setRef(currentBranch, commitHash, {
         author: options?.author || 'unknown',
         message: options?.message || 'Snapshot commit'
       })
@@ -2935,6 +2937,38 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._neural = new ImprovedNeuralAPI(this as any)
     }
     return this._neural
+  }
+
+  /**
+   * Versioning API - Entity version control (v5.3.0)
+   *
+   * Provides entity-level versioning with:
+   * - save() - Create version of entity
+   * - restore() - Restore entity to specific version
+   * - list() - List all versions of entity
+   * - compare() - Deep diff between versions
+   * - prune() - Remove old versions (retention policies)
+   *
+   * @example
+   * ```typescript
+   * // Save current state
+   * const version = await brain.versions.save('user-123', { tag: 'v1.0' })
+   *
+   * // List versions
+   * const versions = await brain.versions.list('user-123')
+   *
+   * // Restore to previous version
+   * await brain.versions.restore('user-123', 5)
+   *
+   * // Compare versions
+   * const diff = await brain.versions.compare('user-123', 2, 5)
+   * ```
+   */
+  get versions(): VersioningAPI {
+    if (!this._versions) {
+      this._versions = new VersioningAPI(this as any)
+    }
+    return this._versions
   }
 
   /**
