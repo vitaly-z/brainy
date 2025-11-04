@@ -303,7 +303,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const mainRef = await this.refManager.getRef('main')
     if (!mainRef) {
       // Create initial commit with empty tree
-      const emptyTreeHash = '0000000000000000000000000000000000000000000000000000000000000000'
+      // v5.3.4: Use NULL_HASH constant instead of hardcoded string
+      const { NULL_HASH } = await import('./cow/constants.js')
+      const emptyTreeHash = NULL_HASH
 
       // Import CommitBuilder
       const { CommitBuilder } = await import('./cow/CommitObject.js')

@@ -2357,9 +2357,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const entityCount = await this.getNounCount()
       const relationshipCount = await this.getVerbCount()
 
+      // v5.3.4: Import NULL_HASH constant
+      const { NULL_HASH } = await import('./storage/cow/constants.js')
+
       // Build commit object using builder pattern
       const builder = CommitBuilder.create(blobStorage)
-        .tree('0000000000000000000000000000000000000000000000000000000000000000') // Empty tree hash for now
+        .tree(NULL_HASH) // Empty tree hash (sentinel value)
         .message(options?.message || 'Snapshot commit')
         .author(options?.author || 'unknown')
         .timestamp(Date.now())

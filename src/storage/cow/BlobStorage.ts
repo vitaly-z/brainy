@@ -15,6 +15,7 @@
  */
 
 import { createHash } from 'crypto'
+import { NULL_HASH, isNullHash } from './constants.js'
 
 /**
  * Simple key-value storage interface for COW primitives
@@ -257,6 +258,18 @@ export class BlobStorage {
    * @returns Blob data
    */
   async read(hash: string, options: BlobReadOptions = {}): Promise<Buffer> {
+    // v5.3.4 fix: Guard against NULL hash (sentinel value)
+    // NULL_HASH ('0000...0000') is used as a sentinel for "no parent" or "empty tree"
+    // It should NEVER be read as actual blob data
+    if (isNullHash(hash)) {
+      throw new Error(
+        `Cannot read NULL hash (${NULL_HASH}): ` +
+        `This is a sentinel value indicating "no parent commit" or "empty tree". ` +
+        `If you're seeing this error from CommitObject.walk(), there's a bug in commit traversal logic. ` +
+        `If you're seeing this from TreeObject operations, there's a bug in tree handling.`
+      )
+    }
+
     // Check cache first
     if (!options.skipCache) {
       const cached = this.getFromCache(hash)
