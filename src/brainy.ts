@@ -2163,9 +2163,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const currentRef = await refManager.getRef(currentBranch)
       if (!currentRef) {
         // Auto-create initial commit if none exists
-        await this.commit(`Initial commit on ${currentBranch}`, {
+        await this.commit({
+          message: `Initial commit on ${currentBranch}`,
           author: options?.author || 'Brainy',
-          timestamp: Date.now()
+          metadata: { timestamp: Date.now() }
         })
         if (!this.config.silent) {
           console.log(`📝 Auto-created initial commit on ${currentBranch} (required for fork)`)
@@ -4368,9 +4369,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return
       }
 
-      // BUG FIX: If disableAutoRebuild === true, skip rebuild even if indexes are empty
+      // BUG FIX: If disableAutoRebuild is truthy, skip rebuild even if indexes are empty
       // Indexes will load lazily on first query
-      if (this.config.disableAutoRebuild === true) {
+      if (this.config.disableAutoRebuild) {
         if (!this.config.silent) {
           console.log('⚡ Indexes empty but auto-rebuild disabled - using lazy loading')
         }
