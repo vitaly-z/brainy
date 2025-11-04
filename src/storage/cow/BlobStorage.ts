@@ -222,11 +222,13 @@ export class BlobStorage {
       await this.writeMultipart(hash, finalData, metadata)
     } else {
       // Small blob: single write
-      await this.adapter.put(`blob:${hash}`, finalData)
+      const prefix = options.type || 'blob'
+      await this.adapter.put(`${prefix}:${hash}`, finalData)
     }
 
     // Write metadata
-    await this.adapter.put(`blob-meta:${hash}`, Buffer.from(JSON.stringify(metadata)))
+    const prefix = options.type || 'blob'
+    await this.adapter.put(`${prefix}-meta:${hash}`, Buffer.from(JSON.stringify(metadata)))
 
     // Update cache (write-through)
     this.addToCache(hash, data, metadata)
@@ -265,20 +267,31 @@ export class BlobStorage {
       this.stats.cacheMisses++
     }
 
-    // Read from storage
-    const data = await this.adapter.get(`blob:${hash}`)
+    // Try to read metadata to determine type (for backward compatibility)
+    // Try commit, tree, then blob prefixes
+    let prefix: string | null = null
+    let metadataBuffer: Buffer | undefined
+    let metadata: BlobMetadata | undefined
+
+    for (const tryPrefix of ['commit', 'tree', 'blob']) {
+      metadataBuffer = await this.adapter.get(`${tryPrefix}-meta:${hash}`)
+      if (metadataBuffer) {
+        prefix = tryPrefix
+        metadata = JSON.parse(metadataBuffer.toString())
+        break
+      }
+    }
+
+    if (!prefix || !metadata) {
+      throw new Error(`Blob metadata not found: ${hash}`)
+    }
+
+    // Read from storage using determined prefix
+    const data = await this.adapter.get(`${prefix}:${hash}`)
 
     if (!data) {
       throw new Error(`Blob not found: ${hash}`)
     }
-
-    // Read metadata
-    const metadataBuffer = await this.adapter.get(`blob-meta:${hash}`)
-    if (!metadataBuffer) {
-      throw new Error(`Blob metadata not found: ${hash}`)
-    }
-
-    const metadata: BlobMetadata = JSON.parse(metadataBuffer.toString())
 
     // Decompress if needed
     let finalData = data
@@ -315,9 +328,15 @@ export class BlobStorage {
       return true
     }
 
-    // Check storage
-    const exists = await this.adapter.get(`blob:${hash}`)
-    return exists !== undefined
+    // Check storage - try all prefixes for backward compatibility
+    for (const prefix of ['commit', 'tree', 'blob']) {
+      const exists = await this.adapter.get(`${prefix}:${hash}`)
+      if (exists !== undefined) {
+        return true
+      }
+    }
+
+    return false
   }
 
   /**
@@ -339,11 +358,21 @@ export class BlobStorage {
       return
     }
 
+    // Determine prefix by checking which one exists
+    let prefix = 'blob'
+    for (const tryPrefix of ['commit', 'tree', 'blob']) {
+      const exists = await this.adapter.get(`${tryPrefix}:${hash}`)
+      if (exists !== undefined) {
+        prefix = tryPrefix
+        break
+      }
+    }
+
     // Delete blob data
-    await this.adapter.delete(`blob:${hash}`)
+    await this.adapter.delete(`${prefix}:${hash}`)
 
     // Delete metadata
-    await this.adapter.delete(`blob-meta:${hash}`)
+    await this.adapter.delete(`${prefix}-meta:${hash}`)
 
     // Remove from cache
     this.removeFromCache(hash)
@@ -359,11 +388,16 @@ export class BlobStorage {
    * @returns Blob metadata
    */
   async getMetadata(hash: string): Promise<BlobMetadata | undefined> {
-    const data = await this.adapter.get(`blob-meta:${hash}`)
-    if (!data) {
-      return undefined
+    // Try to read metadata with type-aware prefix (backward compatible)
+    // Try commit, tree, then blob prefixes
+    for (const prefix of ['commit', 'tree', 'blob']) {
+      const data = await this.adapter.get(`${prefix}-meta:${hash}`)
+      if (data) {
+        return JSON.parse(data.toString())
+      }
     }
-    return JSON.parse(data.toString())
+
+    return undefined
   }
 
   /**
@@ -397,8 +431,18 @@ export class BlobStorage {
    * @returns Array of blob hashes
    */
   async listBlobs(): Promise<string[]> {
-    const keys = await this.adapter.list('blob:')
-    return keys.map((key: string) => key.replace(/^blob:/, ''))
+    // List all types of blobs
+    const hashes = new Set<string>()
+
+    for (const prefix of ['commit', 'tree', 'blob']) {
+      const keys = await this.adapter.list(`${prefix}:`)
+      keys.forEach((key: string) => {
+        const hash = key.replace(new RegExp(`^${prefix}:`), '')
+        hashes.add(hash)
+      })
+    }
+
+    return Array.from(hashes)
   }
 
   /**
@@ -489,7 +533,8 @@ export class BlobStorage {
   ): Promise<void> {
     // For now, just write as single blob
     // TODO: Implement actual multipart upload for S3/R2/GCS
-    await this.adapter.put(`blob:${hash}`, data)
+    const prefix = metadata.type || 'blob'
+    await this.adapter.put(`${prefix}:${hash}`, data)
   }
 
   /**
@@ -503,8 +548,9 @@ export class BlobStorage {
 
     metadata.refCount++
 
+    const prefix = metadata.type || 'blob'
     await this.adapter.put(
-      `blob-meta:${hash}`,
+      `${prefix}-meta:${hash}`,
       Buffer.from(JSON.stringify(metadata))
     )
 
@@ -522,8 +568,9 @@ export class BlobStorage {
 
     metadata.refCount = Math.max(0, metadata.refCount - 1)
 
+    const prefix = metadata.type || 'blob'
     await this.adapter.put(
-      `blob-meta:${hash}`,
+      `${prefix}-meta:${hash}`,
       Buffer.from(JSON.stringify(metadata))
     )
 
