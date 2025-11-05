@@ -2308,15 +2308,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Update storage currentBranch
       (this.storage as any).currentBranch = branch
 
-      // Reload from new branch
-      // Clear indexes and reload
+      // v5.3.5 fix: Reload indexes from new branch WITHOUT recreating storage
+      // Previous implementation called init() which recreated storage, losing currentBranch
       this.index = this.setupIndex()
       this.metadataIndex = new (MetadataIndexManager as any)(this.storage)
+      await this.metadataIndex.init()
       this.graphIndex = new GraphAdjacencyIndex(this.storage)
 
-      // Re-initialize
-      this.initialized = false
-      await this.init()
+      // Rebuild indexes from new branch data
+      await this.rebuildIndexesIfNeeded()
+
+      // Re-initialize VFS for new branch
+      if (this._vfs) {
+        this._vfs = new VirtualFileSystem(this)
+        await this._vfs.init()
+      }
     })
   }
 

@@ -870,9 +870,21 @@ export class FileSystemStorage extends BaseStorage {
 
       for (const entry of entries) {
         if (entry.isFile()) {
-          // Handle both .json and .json.gz files
+          // v5.3.5: Handle multiple compression formats for broad compatibility
+          // - .json.gz: Standard entity/metadata files (JSON compressed)
+          // - .gz: COW files (refs, blobs, commits - raw compressed)
+          // - .json: Uncompressed JSON files
           if (entry.name.endsWith('.json.gz')) {
             // Strip .gz extension and add the .json path
+            const normalizedName = entry.name.slice(0, -3) // Remove .gz
+            const normalizedPath = path.join(prefix, normalizedName)
+            if (!seen.has(normalizedPath)) {
+              paths.push(normalizedPath)
+              seen.add(normalizedPath)
+            }
+          } else if (entry.name.endsWith('.gz')) {
+            // v5.3.5 fix: COW files stored as .gz (not .json.gz)
+            // Strip .gz extension and return path
             const normalizedName = entry.name.slice(0, -3) // Remove .gz
             const normalizedPath = path.join(prefix, normalizedName)
             if (!seen.has(normalizedPath)) {
@@ -887,7 +899,8 @@ export class FileSystemStorage extends BaseStorage {
             }
           }
         } else if (entry.isDirectory()) {
-          const subdirPaths = await this.listObjectsUnderPath(path.join(prefix, entry.name))
+          const subpath = path.join(prefix, entry.name)
+          const subdirPaths = await this.listObjectsUnderPath(subpath)
           paths.push(...subdirPaths)
         }
       }

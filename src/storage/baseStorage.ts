@@ -279,10 +279,22 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       list: async (prefix: string): Promise<string[]> => {
         try {
-          const paths = await this.listObjectsUnderPath(`_cow/${prefix}`)
+          // v5.3.5 fix: Handle file prefixes, not just directory paths
+          // Refs are stored as files like: _cow/ref:refs/heads/main
+          // So list('ref:') should find all files starting with '_cow/ref:'
+
+          // List the _cow directory and filter by prefix
+          const allPaths = await this.listObjectsUnderPath('_cow/')
+          const filteredPaths = allPaths.filter(p => {
+            // Remove _cow/ prefix to get the key
+            const key = p.replace(/^_cow\//, '')
+            return key.startsWith(prefix)
+          })
+
           // Remove _cow/ prefix and return relative keys
-          return paths.map(p => p.replace(/^_cow\//, ''))
-        } catch (error) {
+          return filteredPaths.map(p => p.replace(/^_cow\//, ''))
+        } catch (error: any) {
+          // If _cow directory doesn't exist yet, return empty array
           return []
         }
       }
