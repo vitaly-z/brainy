@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.5](https://github.com/soulcraftlabs/brainy/compare/v5.3.4...v5.3.5) (2025-11-05)
+
+
+### 🐛 Bug Fixes
+
+* resolve fork + checkout workflow with COW file listing and branch persistence ([189b1b0](https://github.com/soulcraftlabs/brainy/commit/189b1b05dec4daad28a9ce7e0840ffaaf675ecfa))
+
 ### [5.3.0](https://github.com/soulcraftlabs/brainy/compare/v5.2.1...v5.3.0) (2025-11-04)
 
 - feat: add entity versioning system with critical bug fixes (v5.3.0) (c488fa8)
