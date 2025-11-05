@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.3.6](https://github.com/soulcraftlabs/brainy/compare/v5.3.5...v5.3.6) (2025-11-05)
+
+
+### 🐛 Bug Fixes
+
+* resolve fork() silent failure on cloud storage adapters ([7977132](https://github.com/soulcraftlabs/brainy/commit/7977132e9f7160af1cb1b9dd1f16f623aa1010f0))
+
 ### [5.3.5](https://github.com/soulcraftlabs/brainy/compare/v5.3.4...v5.3.5) (2025-11-05)
 
 
