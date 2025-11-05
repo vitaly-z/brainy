@@ -452,9 +452,10 @@ describe('BlobStorage', () => {
 
   describe('Error Handling', () => {
     it('should throw on reading non-existent blob', async () => {
+      // Use 'f' instead of '0' to avoid NULL_HASH sentinel value
       await expect(
-        blobStorage.read('0'.repeat(64))
-      ).rejects.toThrow('Blob not found')
+        blobStorage.read('f'.repeat(64))
+      ).rejects.toThrow('Blob metadata not found')
     })
 
     it('should throw on reading blob with missing metadata', async () => {

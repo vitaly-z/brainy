@@ -36,7 +36,7 @@ export interface BlobMetadata {
   size: number           // Original size in bytes
   compressedSize: number // Compressed size in bytes
   compression: 'none' | 'zstd'
-  type: 'vector' | 'metadata' | 'tree' | 'commit' | 'raw'
+  type: 'vector' | 'metadata' | 'tree' | 'commit' | 'blob' | 'raw'
   createdAt: number      // Timestamp
   refCount: number       // How many objects reference this blob
 }
@@ -46,7 +46,7 @@ export interface BlobMetadata {
  */
 export interface BlobWriteOptions {
   compression?: 'none' | 'zstd' | 'auto'  // Auto chooses based on type
-  type?: 'vector' | 'metadata' | 'tree' | 'commit' | 'raw'
+  type?: 'vector' | 'metadata' | 'tree' | 'commit' | 'blob' | 'raw'
   skipVerification?: boolean  // Skip hash verification (faster, less safe)
 }
 
@@ -212,7 +212,7 @@ export class BlobStorage {
       size: data.length,
       compressedSize,
       compression,
-      type: options.type || 'raw',
+      type: options.type || 'blob',  // CRITICAL FIX: Use 'blob' default to match storage prefix
       createdAt: Date.now(),
       refCount: 1
     }
@@ -373,7 +373,7 @@ export class BlobStorage {
 
     // Determine prefix by checking which one exists
     let prefix = 'blob'
-    for (const tryPrefix of ['commit', 'tree', 'blob']) {
+    for (const tryPrefix of ['commit', 'tree', 'blob', 'metadata', 'vector', 'raw']) {
       const exists = await this.adapter.get(`${tryPrefix}:${hash}`)
       if (exists !== undefined) {
         prefix = tryPrefix
@@ -402,8 +402,8 @@ export class BlobStorage {
    */
   async getMetadata(hash: string): Promise<BlobMetadata | undefined> {
     // Try to read metadata with type-aware prefix (backward compatible)
-    // Try commit, tree, then blob prefixes
-    for (const prefix of ['commit', 'tree', 'blob']) {
+    // Check all valid blob types: commit, tree, blob, metadata, vector, raw
+    for (const prefix of ['commit', 'tree', 'blob', 'metadata', 'vector', 'raw']) {
       const data = await this.adapter.get(`${prefix}-meta:${hash}`)
       if (data) {
         return JSON.parse(data.toString())
