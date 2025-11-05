@@ -2178,7 +2178,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Step 2: Copy storage ref (COW layer - instant!)
       await refManager.copyRef(currentBranch, branchName)
 
-      // Step 2: Create new Brainy instance pointing to fork branch
+      // CRITICAL FIX (v5.3.6): Verify branch was actually created to prevent silent failures
+      // Without this check, fork() could complete successfully but branch wouldn't exist,
+      // causing subsequent checkout() calls to fail (see Workshop bug report).
+      const verifyBranch = await refManager.getRef(branchName)
+      if (!verifyBranch) {
+        throw new Error(
+          `Fork failed: Branch '${branchName}' was not created. ` +
+          `This indicates a storage adapter configuration issue. Please report this bug.`
+        )
+      }
+
+      // Step 3: Create new Brainy instance pointing to fork branch
       const forkConfig = {
         ...this.config,
         storage: {
