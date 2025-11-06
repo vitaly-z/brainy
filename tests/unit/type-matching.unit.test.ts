@@ -162,10 +162,10 @@ describe('Intelligent Type Matching', () => {
   })
   
   describe('Type Coverage', () => {
-    it('should have embeddings for all 31 noun types', async () => {
+    it('should have embeddings for all 42 noun types', async () => {
       const nounTypes = Object.values(NounType)
-      expect(nounTypes.length).toBe(31)
-      
+      expect(nounTypes.length).toBe(42)
+
       // Test that each type can be matched
       for (const nounType of nounTypes) {
         const result = await matcher.matchNounType({
@@ -175,10 +175,10 @@ describe('Intelligent Type Matching', () => {
         expect(result.type).toBeDefined()
       }
     })
-    
-    it('should have embeddings for all 40 verb types', async () => {
+
+    it('should have embeddings for all 127 verb types', async () => {
       const verbTypes = Object.values(VerbType)
-      expect(verbTypes.length).toBe(40)
+      expect(verbTypes.length).toBe(127)
       
       // Test that each type can be matched
       for (const verbType of verbTypes) {

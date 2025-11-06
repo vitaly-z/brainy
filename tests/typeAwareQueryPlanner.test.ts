@@ -31,7 +31,7 @@ describe('TypeAwareQueryPlanner', () => {
       expect(plan.targetTypes.length).toBe(1)
       expect(plan.targetTypes[0]).toBe(NounType.Person)
       expect(plan.confidence).toBeGreaterThanOrEqual(0.8)
-      expect(plan.estimatedSpeedup).toBeGreaterThan(10) // 31/1 types
+      expect(plan.estimatedSpeedup).toBeGreaterThan(10) // 42/1 types
     })
 
     it('should use multi-type routing for multiple high-confidence types', () => {
@@ -45,14 +45,14 @@ describe('TypeAwareQueryPlanner', () => {
       expect(plan.targetTypes).toContain(NounType.Organization)
 
       expect(plan.estimatedSpeedup).toBeGreaterThan(1)
-      expect(plan.estimatedSpeedup).toBeLessThanOrEqual(31)
+      expect(plan.estimatedSpeedup).toBeLessThanOrEqual(42)
     })
 
     it('should use all-types routing for low confidence queries', () => {
       const plan = planner.planQuery('show me stuff')
 
       expect(plan.routing).toBe('all-types')
-      expect(plan.targetTypes.length).toBe(31) // All noun types
+      expect(plan.targetTypes.length).toBe(42) // All noun types
       expect(plan.estimatedSpeedup).toBe(1.0) // No speedup
       expect(plan.confidence).toBeLessThan(0.6)
     })
@@ -61,7 +61,7 @@ describe('TypeAwareQueryPlanner', () => {
       const plan = planner.planQuery('')
 
       expect(plan.routing).toBe('all-types')
-      expect(plan.targetTypes.length).toBe(31)
+      expect(plan.targetTypes.length).toBe(42)
       expect(plan.estimatedSpeedup).toBe(1.0)
       expect(plan.reasoning).toContain('Empty query')
     })
@@ -91,14 +91,14 @@ describe('TypeAwareQueryPlanner', () => {
       const multiType = planner.planQuery('engineers at companies')
       const allTypes = planner.planQuery('show everything')
 
-      // Single-type: 31/1 = 31x
-      expect(singleType.estimatedSpeedup).toBeCloseTo(31, 0)
+      // Single-type: 42/1 = 42x
+      expect(singleType.estimatedSpeedup).toBeCloseTo(42, 0)
 
-      // Multi-type: 31/N where N = 2-5
+      // Multi-type: 42/N where N = 2-5
       expect(multiType.estimatedSpeedup).toBeGreaterThan(1)
-      expect(multiType.estimatedSpeedup).toBeLessThan(31)
+      expect(multiType.estimatedSpeedup).toBeLessThan(42)
 
-      // All-types: 31/31 = 1x
+      // All-types: 42/42 = 1x
       expect(allTypes.estimatedSpeedup).toBe(1.0)
     })
 

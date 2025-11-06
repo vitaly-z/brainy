@@ -8,7 +8,7 @@
 
 Brainy's **Noun-Verb Taxonomy** achieves **universal coverage** of all human knowledge through **infinite expressiveness**:
 
-- **31 Noun Types × 40 Verb Types = 1,240 Base Combinations**
+- **42 Noun Types × 127 Verb Types = 5,334 Base Combinations**
 - **Unlimited Metadata Fields = ∞ Domain Specificity**  
 - **Multi-hop Graph Traversals = ∞ Relationship Complexity**
 - **Result: Can Model ANY Data in ANY Industry**
@@ -95,7 +95,7 @@ await brain.sync.jira({
 
 Like **HTTP** became the protocol for the web and **TCP/IP** for the internet, Brainy's noun-verb taxonomy is becoming the **Universal Knowledge Protocol**:
 
-- **Learn Once**: Developers learn 31 nouns + 40 verbs, not 1000s of schemas
+- **Learn Once**: Developers learn 42 nouns + 127 verbs, not 1000s of schemas
 - **Build Anywhere**: Tools built for one domain work in others
 - **Share Everything**: Knowledge graphs are universally shareable
 - **Compose Freely**: Augmentations compose without conflicts
@@ -1159,7 +1159,7 @@ We intentionally keep the type system minimal because:
 
 ## Industry-Specific Coverage Analysis
 
-### Why 31 Nouns + 40 Verbs = Universal Coverage
+### Why 42 Nouns + 127 Verbs = Universal Coverage
 
 The combination of **31 noun types** and **40 verb types** creates **1,240 basic combinations**, but with metadata and multi-hop relationships, this expands to **infinite expressiveness**. Here's how it covers every industry:
 

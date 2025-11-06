@@ -3901,7 +3901,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       },
 
       // Phase 1b: O(1) count by type enum (Uint32Array-based, more efficient)
-      // Uses fixed-size type tracking: 284 bytes vs ~35KB with Maps (99.2% reduction)
+      // Uses fixed-size type tracking: 676 bytes vs ~35KB with Maps (98.1% reduction)
       byTypeEnum: (type: NounType) => {
         return this.metadataIndex.getEntityCountByTypeEnum(type)
       },

@@ -279,7 +279,7 @@ function buildExpandedKeywordList(): KeywordDefinition[] {
   add(['resource', 'asset', 'capacity'], NounType.Resource, 0.80, true)
 
   // ==================== VERB TYPES ====================
-  // Now add all 40 VerbTypes with keywords and synonyms
+  // Now add all 127 VerbTypes with keywords and synonyms
 
   console.log('\n  Adding verb keywords...')
 

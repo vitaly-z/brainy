@@ -35,8 +35,8 @@ describe('MetadataIndexManager - Phase 1b: Type-Aware Features', () => {
       expect(managerAny.verbCountsByTypeFixed.length).toBe(VERB_TYPE_COUNT)
     })
 
-    it('should have 99.76% memory reduction vs Maps', () => {
-      // Fixed-size arrays: 31 × 4 bytes + 40 × 4 bytes = 284 bytes
+    it('should have 99.44% memory reduction vs Maps', () => {
+      // Fixed-size arrays: 42 × 4 bytes + 127 × 4 bytes = 676 bytes
       const fixedSize = (NOUN_TYPE_COUNT + VERB_TYPE_COUNT) * 4
 
       // Map overhead: ~120KB for string keys, pointers, hash table
@@ -44,8 +44,8 @@ describe('MetadataIndexManager - Phase 1b: Type-Aware Features', () => {
 
       const reduction = ((mapSize - fixedSize) / mapSize) * 100
 
-      expect(fixedSize).toBe(284)
-      expect(reduction).toBeGreaterThan(99.7)
+      expect(fixedSize).toBe(676)
+      expect(reduction).toBeGreaterThan(99.4)
     })
 
     it('should track entity counts in Uint32Arrays when adding entities', async () => {
@@ -309,8 +309,8 @@ describe('MetadataIndexManager - Phase 1b: Type-Aware Features', () => {
       const verbArraySize = managerAny.verbCountsByTypeFixed.byteLength
       const totalFixedSize = nounArraySize + verbArraySize
 
-      // Should be exactly 284 bytes
-      expect(totalFixedSize).toBe(284)
+      // Should be exactly 676 bytes
+      expect(totalFixedSize).toBe(676)
     })
   })
 

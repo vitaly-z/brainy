@@ -1,8 +1,8 @@
 /**
  * IntelligentTypeMatcher - Wrapper around BrainyTypes for testing
- * 
+ *
  * Provides intelligent type detection using semantic embeddings
- * for matching data to our 31 noun types and 40 verb types.
+ * for matching data to our 42 noun types and 127 verb types.
  */
 
 import { NounType, VerbType } from '../../types/graphTypes.js'

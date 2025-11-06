@@ -185,7 +185,7 @@ Brainy automatically detects what TYPE of data you're importing:
 { latitude: 37.7, longitude: -122.4, city: 'SF' }
 ```
 
-**31 noun types** and **40 verb types** cover EVERYTHING!
+**42 noun types and 127 verb types** cover EVERYTHING!
 
 ## Relationship Detection
 
@@ -382,7 +382,7 @@ await brain.find('posts by users following Alice with >10 comments')
 
 **Zero Configuration**: Works perfectly out of the box
 **Maximum Intelligence**: AI understands your data's meaning
-**Universal Protocol**: 31 nouns × 40 verbs = ANY data model
+**Universal Protocol**: 42 nouns × 127 verbs = ANY data model
 **Delightful DX**: Simple, clean, modern API
 
 ## The ONE Method Philosophy

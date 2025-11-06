@@ -12,14 +12,14 @@ import {
 
 describe('Type System Foundation', () => {
   describe('Type Counts', () => {
-    test('should have exactly 31 noun types', () => {
-      expect(NOUN_TYPE_COUNT).toBe(31)
-      expect(Object.keys(NounTypeEnum).length / 2).toBe(31) // Enums have reverse mapping
+    test('should have exactly 42 noun types', () => {
+      expect(NOUN_TYPE_COUNT).toBe(42)
+      expect(Object.keys(NounTypeEnum).length / 2).toBe(42) // Enums have reverse mapping
     })
 
-    test('should have exactly 40 verb types', () => {
-      expect(VERB_TYPE_COUNT).toBe(40)
-      expect(Object.keys(VerbTypeEnum).length / 2).toBe(40) // Enums have reverse mapping
+    test('should have exactly 127 verb types', () => {
+      expect(VERB_TYPE_COUNT).toBe(127)
+      expect(Object.keys(VerbTypeEnum).length / 2).toBe(127) // Enums have reverse mapping
     })
   })
 
@@ -28,32 +28,32 @@ describe('Type System Foundation', () => {
       expect(NounTypeEnum.person).toBe(0)
     })
 
-    test('should map resource to index 30', () => {
-      expect(NounTypeEnum.resource).toBe(30)
+    test('should map resource to index 34', () => {
+      expect(NounTypeEnum.resource).toBe(34)
     })
 
-    test('should have contiguous indices from 0 to 30', () => {
+    test('should have contiguous indices from 0 to 41', () => {
       const indices = Object.values(NounTypeEnum).filter(v => typeof v === 'number')
-      expect(indices).toHaveLength(31)
+      expect(indices).toHaveLength(42)
       expect(Math.min(...indices)).toBe(0)
-      expect(Math.max(...indices)).toBe(30)
+      expect(Math.max(...indices)).toBe(41)
     })
   })
 
   describe('VerbTypeEnum', () => {
-    test('should map relatedTo to index 0', () => {
-      expect(VerbTypeEnum.relatedTo).toBe(0)
+    test('should map relatedTo to index 3', () => {
+      expect(VerbTypeEnum.relatedTo).toBe(3)
     })
 
-    test('should map competes to index 39', () => {
-      expect(VerbTypeEnum.competes).toBe(39)
+    test('should map competes to index 50', () => {
+      expect(VerbTypeEnum.competes).toBe(50)
     })
 
-    test('should have contiguous indices from 0 to 39', () => {
+    test('should have contiguous indices from 0 to 126', () => {
       const indices = Object.values(VerbTypeEnum).filter(v => typeof v === 'number')
-      expect(indices).toHaveLength(40)
+      expect(indices).toHaveLength(127)
       expect(Math.min(...indices)).toBe(0)
-      expect(Math.max(...indices)).toBe(39)
+      expect(Math.max(...indices)).toBe(126)
     })
   })
 
@@ -63,46 +63,46 @@ describe('Type System Foundation', () => {
     })
 
     test('should return correct index for document', () => {
-      expect(TypeUtils.getNounIndex(NounType.Document)).toBe(6)
+      expect(TypeUtils.getNounIndex(NounType.Document)).toBe(13)
     })
 
     test('should return correct index for resource', () => {
-      expect(TypeUtils.getNounIndex(NounType.Resource)).toBe(30)
+      expect(TypeUtils.getNounIndex(NounType.Resource)).toBe(34)
     })
 
     test('should work for all noun types', () => {
       const allTypes = Object.values(NounType)
-      expect(allTypes).toHaveLength(31)
+      expect(allTypes).toHaveLength(42)
 
       for (const type of allTypes) {
         const index = TypeUtils.getNounIndex(type)
         expect(index).toBeGreaterThanOrEqual(0)
-        expect(index).toBeLessThanOrEqual(30)
+        expect(index).toBeLessThanOrEqual(41)
       }
     })
   })
 
   describe('TypeUtils.getVerbIndex', () => {
     test('should return correct index for relatedTo', () => {
-      expect(TypeUtils.getVerbIndex(VerbType.RelatedTo)).toBe(0)
+      expect(TypeUtils.getVerbIndex(VerbType.RelatedTo)).toBe(3)
     })
 
     test('should return correct index for creates', () => {
-      expect(TypeUtils.getVerbIndex(VerbType.Creates)).toBe(10)
+      expect(TypeUtils.getVerbIndex(VerbType.Creates)).toBe(17)
     })
 
     test('should return correct index for competes', () => {
-      expect(TypeUtils.getVerbIndex(VerbType.Competes)).toBe(39)
+      expect(TypeUtils.getVerbIndex(VerbType.Competes)).toBe(50)
     })
 
     test('should work for all verb types', () => {
       const allTypes = Object.values(VerbType)
-      expect(allTypes).toHaveLength(40)
+      expect(allTypes).toHaveLength(127)
 
       for (const type of allTypes) {
         const index = TypeUtils.getVerbIndex(type)
         expect(index).toBeGreaterThanOrEqual(0)
-        expect(index).toBeLessThanOrEqual(39)
+        expect(index).toBeLessThanOrEqual(126)
       }
     })
   })
@@ -214,8 +214,8 @@ describe('Type System Foundation', () => {
 
       expect(entityCountsByType[0]).toBe(1000) // person
       expect(entityCountsByType[6]).toBe(500) // document
-      expect(entityCountsByType.length).toBe(31)
-      expect(entityCountsByType.byteLength).toBe(124) // 31 × 4 bytes
+      expect(entityCountsByType.length).toBe(42)
+      expect(entityCountsByType.byteLength).toBe(168) // 42 × 4 bytes
     })
 
     test('should enable O(1) verb tracking with Uint32Array', () => {
@@ -227,8 +227,8 @@ describe('Type System Foundation', () => {
 
       expect(verbCountsByType[0]).toBe(5000) // relatedTo
       expect(verbCountsByType[10]).toBe(2000) // creates
-      expect(verbCountsByType.length).toBe(40)
-      expect(verbCountsByType.byteLength).toBe(160) // 40 × 4 bytes
+      expect(verbCountsByType.length).toBe(127)
+      expect(verbCountsByType.byteLength).toBe(508) // 127 × 4 bytes
     })
   })
 
@@ -238,7 +238,7 @@ describe('Type System Foundation', () => {
       const verbCounts = new Uint32Array(VERB_TYPE_COUNT)
 
       const totalBytes = entityCounts.byteLength + verbCounts.byteLength
-      expect(totalBytes).toBe(284) // 124 + 160 = 284 bytes (vs ~60KB with Maps)
+      expect(totalBytes).toBe(676) // 168 + 508 = 676 bytes (vs ~60KB with Maps)
     })
   })
 })

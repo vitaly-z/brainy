@@ -35,7 +35,7 @@ Brainy's Neural Extraction system uses embeddings and a sophisticated NounType t
 
 ## NounType Taxonomy
 
-Brainy uses a 30+ type taxonomy for entity classification:
+Brainy uses a 42-noun + 127-verb type taxonomy for entity classification:
 
 ### Core Types
 - **Person** - Individual humans

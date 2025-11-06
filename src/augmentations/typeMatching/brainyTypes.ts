@@ -1,9 +1,9 @@
 /**
  * BrainyTypes - Intelligent type detection using semantic embeddings
- * 
+ *
  * This module uses our existing TransformerEmbedding and similarity functions
- * to intelligently match data to our 31 noun types and 40 verb types.
- * 
+ * to intelligently match data to our 42 noun types and 127 verb types.
+ *
  * Features:
  * - Semantic similarity matching using embeddings
  * - Context-aware type detection

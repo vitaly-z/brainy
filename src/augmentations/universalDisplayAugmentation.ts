@@ -1,11 +1,11 @@
 /**
  * Universal Display Augmentation
- * 
+ *
  * 🎨 Provides intelligent display fields for any noun or verb using AI-powered analysis
- * 
+ *
  * Features:
  * - ✅ Leverages existing BrainyTypes for semantic type detection
- * - ✅ Complete icon coverage for all 31 NounTypes + 40+ VerbTypes
+ * - ✅ Complete icon coverage for all 42 NounTypes + 127 VerbTypes
  * - ✅ Zero performance impact with lazy computation and intelligent caching
  * - ✅ Perfect isolation - can be disabled, replaced, or configured
  * - ✅ Clean developer experience with zero conflicts

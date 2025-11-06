@@ -149,9 +149,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   // Type-first indexing support (v5.4.0)
   // Built into all storage adapters for billion-scale efficiency
-  protected nounCountsByType = new Uint32Array(NOUN_TYPE_COUNT) // 124 bytes
-  protected verbCountsByType = new Uint32Array(VERB_TYPE_COUNT) // 160 bytes
-  // Total: 284 bytes (99.76% reduction vs Map-based tracking)
+  protected nounCountsByType = new Uint32Array(NOUN_TYPE_COUNT) // 168 bytes (Stage 3: 42 types)
+  protected verbCountsByType = new Uint32Array(VERB_TYPE_COUNT) // 508 bytes (Stage 3: 127 types)
+  // Total: 676 bytes (99.2% reduction vs Map-based tracking)
 
   // Type cache for O(1) lookups after first access
   protected nounTypeCache = new Map<string, NounType>()

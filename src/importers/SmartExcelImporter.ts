@@ -163,7 +163,7 @@ export class SmartExcelImporter {
       enableRelationshipInference: true,
       // CONCEPT EXTRACTION PRODUCTION-READY (v3.33.0+):
       // Type embeddings are now pre-computed at build time - zero runtime cost!
-      // All 31 noun types + 40 verb types instantly available
+      // All 42 noun types + 127 verb types instantly available
       //
       // Performance profile:
       // - Type embeddings: INSTANT (pre-computed at build time, ~100KB in-memory)

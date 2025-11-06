@@ -22,7 +22,7 @@ Where:
 - `k` = number of results returned
 - `m` = number of patterns to check
 - `f` = number of fields for entity type
-- `t` = number of types (30+ nouns, 40+ verbs)
+- `t` = number of types (42 nouns, 127 verbs)
 
 ## Architecture Deep Dive
 
@@ -140,7 +140,7 @@ The NLP processor uses **zero hardcoded fields** - everything is discovered dyna
 
 ```typescript
 class NaturalLanguageProcessor {
-  // Pre-embedded NounTypes (30+) and VerbTypes (40+) - ONLY hardcoded vocabularies
+  // Pre-embedded NounTypes (42) and VerbTypes (127) - ONLY hardcoded vocabularies
   private nounTypeEmbeddings = new Map<string, Vector>()
   private verbTypeEmbeddings = new Map<string, Vector>()
   
@@ -162,7 +162,7 @@ class NaturalLanguageProcessor {
 5. **Query Optimization**: Process low-cardinality type-specific fields first
 
 **Performance Characteristics:**
-- Type detection: O(t) where t = 70 total types (30 noun + 40 verb)
+- Type detection: O(t) where t = 169 total types (42 noun + 127 verb)
 - Field matching: O(f) where f = fields for detected type (typically 5-15)
 - Validation: O(1) lookup in type-field affinity map
 - No hardcoded assumptions - learns from actual data patterns

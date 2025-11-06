@@ -1,11 +1,11 @@
 /**
  * Universal Display Augmentation - Intelligent Computation Engine
- * 
+ *
  * Leverages existing Brainy AI infrastructure for intelligent field computation:
  * - BrainyTypes for semantic type detection
- * - Neural Import patterns for field analysis  
+ * - Neural Import patterns for field analysis
  * - JSON processing utilities for field extraction
- * - Existing NounType/VerbType taxonomy (31+40 types)
+ * - Existing NounType/VerbType taxonomy (42+127 types)
  */
 
 import type { 

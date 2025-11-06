@@ -6,14 +6,14 @@
  * TypeAwareHNSWIndex graphs.
  *
  * Performance Impact:
- * - Single-type queries: 31x speedup (search 1/31 graphs)
- * - Multi-type queries: 6-15x speedup (search 2-5/31 graphs)
+ * - Single-type queries: 42x speedup (search 1/42 graphs)
+ * - Multi-type queries: 8-21x speedup (search 2-5/42 graphs)
  * - Overall: 40% latency reduction @ 1B scale
  *
  * Examples:
- * - "Find engineers" → single-type → [Person] → 31x speedup
- * - "People at Tesla" → multi-type → [Person, Organization] → 15.5x speedup
- * - "Everything about AI" → all-types → [all 31 types] → no speedup
+ * - "Find engineers" → single-type → [Person] → 42x speedup
+ * - "People at Tesla" → multi-type → [Person, Organization] → 21x speedup
+ * - "Everything about AI" → all-types → [all 42 types] → no speedup
  */
 
 import { NounType, NOUN_TYPE_COUNT } from '../types/graphTypes.js'

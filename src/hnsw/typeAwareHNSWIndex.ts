@@ -7,7 +7,7 @@
  * - Storage: Already type-first from Phase 1a
  *
  * Architecture:
- * - One HNSWIndex per NounType (31 total)
+ * - One HNSWIndex per NounType (42 total)
  * - Lazy initialization (indexes created on first use)
  * - Type routing for optimal performance
  * - Falls back to multi-type search when type unknown
@@ -128,7 +128,7 @@ export class TypeAwareHNSWIndex {
     const typeIndex = TypeUtils.getNounIndex(type)
     if (typeIndex === undefined || typeIndex === null || typeIndex < 0) {
       throw new Error(
-        `Invalid NounType: ${type}. Must be one of the 31 defined types.`
+        `Invalid NounType: ${type}. Must be one of the 42 defined types.`
       )
     }
 
@@ -193,7 +193,7 @@ export class TypeAwareHNSWIndex {
    * **All-types search** (fallback):
    * ```typescript
    * await index.search(queryVector, 10)
-   * // Searches all 31 graphs (slower but comprehensive)
+   * // Searches all 42 graphs (slower but comprehensive)
    * ```
    *
    * @param queryVector Query vector
@@ -393,7 +393,7 @@ export class TypeAwareHNSWIndex {
    * Rebuild HNSW indexes from storage (type-aware)
    *
    * CRITICAL: This implementation uses type-filtered pagination to avoid
-   * loading ALL entities for each type (which would be 31 billion reads @ 1B scale).
+   * loading ALL entities for each type (which would be 42 billion reads @ 1B scale).
    *
    * Can rebuild all types or specific types.
    * Much faster than rebuilding a monolithic index.
@@ -451,7 +451,7 @@ export class TypeAwareHNSWIndex {
     }
 
     // Load ALL nouns ONCE and route to correct type indexes
-    // This is O(N) instead of O(31*N) from the previous parallel approach
+    // This is O(N) instead of O(42*N) from the previous parallel approach
     let cursor: string | undefined = undefined
     let hasMore = true
     let totalLoaded = 0

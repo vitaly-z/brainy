@@ -245,7 +245,7 @@ return results.slice(offset, offset + limit)
 ## Type-Aware NLP Features
 
 ### 1. Dynamic Field Discovery
-- **No Hardcoded Fields**: Only NounType/VerbType taxonomies are fixed (30+ noun, 40+ verb types)
+- **No Hardcoded Fields**: Only NounType/VerbType taxonomies are fixed (42 noun, 127 verb types)
 - **Real Data Learning**: Field affinity learned from actual indexed entities
 - **Semantic Matching**: "by" → "author" via embedding similarity (87% confidence)
 - **Type Context**: Documents have different fields than Persons or Organizations
@@ -287,7 +287,7 @@ return results.slice(offset, offset + limit)
 
 Where:
 - n = number of entities in database
-- t = number of types (70 total: 30 noun + 40 verb)  
+- t = number of types (169 total: 42 noun + 127 verb)  
 - f = number of fields for detected entity type (typically 5-15)
 
 ### Scalability

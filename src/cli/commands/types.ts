@@ -30,7 +30,7 @@ export async function types(options: { json?: boolean, noun?: boolean, verb?: bo
 
     // Display nouns
     if (showNouns) {
-      console.log(chalk.bold.cyan('\n📚 Noun Types (31):\n'))
+      console.log(chalk.bold.cyan('\n📚 Noun Types (42):\n'))
       const nounChunks = []
       for (let i = 0; i < BrainyTypes.nouns.length; i += 3) {
         nounChunks.push(BrainyTypes.nouns.slice(i, i + 3))
@@ -43,7 +43,7 @@ export async function types(options: { json?: boolean, noun?: boolean, verb?: bo
 
     // Display verbs
     if (showVerbs) {
-      console.log(chalk.bold.cyan('\n🔗 Verb Types (40):\n'))
+      console.log(chalk.bold.cyan('\n🔗 Verb Types (127):\n'))
       const verbChunks = []
       for (let i = 0; i < BrainyTypes.verbs.length; i += 3) {
         verbChunks.push(BrainyTypes.verbs.slice(i, i + 3))
