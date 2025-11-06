@@ -45,12 +45,12 @@ export interface TypeAwareQueryPlan {
   routing: QueryRoutingStrategy
 
   /**
-   * Target types to search (1-31 types)
+   * Target types to search (1-42 types)
    */
   targetTypes: NounType[]
 
   /**
-   * Estimated speedup factor (1.0 = no speedup, 31.0 = 31x faster)
+   * Estimated speedup factor (1.0 = no speedup, 42.0 = 42x faster)
    */
   estimatedSpeedup: number
 
@@ -337,7 +337,7 @@ export class TypeAwareQueryPlanner {
 
     // Calculate weighted average speedup
     const avgSpeedup = (
-      (this.stats.singleTypeQueries * 31.0 +
+      (this.stats.singleTypeQueries * 42.0 +
         this.stats.multiTypeQueries * 10.0 +
         this.stats.allTypesQueries * 1.0) /
       total
@@ -345,7 +345,7 @@ export class TypeAwareQueryPlanner {
 
     return `
 Query Statistics (${total} total):
-- Single-type: ${this.stats.singleTypeQueries} (${singlePct}%) - 31x speedup
+- Single-type: ${this.stats.singleTypeQueries} (${singlePct}%) - 42x speedup
 - Multi-type:  ${this.stats.multiTypeQueries} (${multiPct}%) - ~10x speedup
 - All-types:   ${this.stats.allTypesQueries} (${allPct}%) - 1x speedup
 - Avg confidence: ${avgConf}%
