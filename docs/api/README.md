@@ -3,7 +3,7 @@
 > **Complete API documentation for Brainy v5.0+**
 > Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning
 
-**Updated:** 2025-11-05 for v5.4.0
+**Updated:** 2025-11-06 for v5.5.0
 **All APIs verified against actual code**
 
 ---
@@ -19,7 +19,7 @@ await brain.init()          // VFS auto-initialized in v5.1.0!
 // Add data (text auto-embeds!)
 const id = await brain.add({
   data: 'The future of AI is here',
-  type: NounType.Content,
+  type: NounType.Concept,
   metadata: { category: 'technology' }
 })
 
@@ -32,7 +32,7 @@ const results = await brain.find({
 
 // Fork for safe experimentation (v5.0.0+)
 const experiment = await brain.fork('test-feature')
-await experiment.add({ data: 'test', type: NounType.Content })
+await experiment.add({ data: 'test', type: NounType.Document })
 await experiment.commit({ message: 'Add test data' })
 
 // Entity versioning (v5.3.0+)
@@ -76,6 +76,7 @@ Time-travel and history tracking for individual entities - Git-like version cont
 - [Configuration](#configuration)
 - [Storage Adapters](#storage-adapters)
 - [Utility Methods](#utility-methods)
+- [Type System Reference](#type-system-reference)
 
 ---
 
@@ -290,7 +291,7 @@ Add multiple entities in one operation.
 ```typescript
 const result = await brain.addMany({
   items: [
-    { data: 'Entity 1', type: NounType.Content },
+    { data: 'Entity 1', type: NounType.Document },
     { data: 'Entity 2', type: NounType.Concept }
   ]
 })
@@ -358,7 +359,7 @@ Create an instant fork (<100ms) with full isolation.
 const experiment = await brain.fork('test-feature')
 
 // Make changes safely in isolation
-await experiment.add({ data: 'Test entity', type: NounType.Content })
+await experiment.add({ data: 'Test entity', type: NounType.Document })
 await experiment.update({ id: someId, metadata: { modified: true } })
 
 // Parent is unaffected!
@@ -474,6 +475,50 @@ const history = await brain.getHistory({
   limit: 10
 })
 ```
+
+---
+
+### `asOf(commitId, options?)` → `Promise<Brainy>`
+
+Create a read-only snapshot at a specific commit for time-travel queries.
+
+```typescript
+// Get commit ID from history
+const commits = await brain.getHistory({ limit: 1 })
+const commitId = commits[0].id
+
+// Create snapshot (lazy-loading, no eager data loading)
+const snapshot = await brain.asOf(commitId, {
+  cacheSize: 10000  // LRU cache size (default: 10000)
+})
+
+// Query historical state - full Triple Intelligence works!
+const results = await snapshot.find({
+  query: 'AI research',
+  where: { category: 'technology' }
+})
+
+// Get historical relationships
+const related = await snapshot.getRelated(entityId, { depth: 2 })
+
+// MUST close when done to free memory
+await snapshot.close()
+```
+
+**Parameters:**
+- `commitId`: `string` - Commit hash to snapshot from
+- `options?`: `object`
+  - `cacheSize?`: `number` - LRU cache size for lazy-loading (default: 10000)
+
+**Returns:** `Promise<Brainy>` - Read-only Brainy instance with historical state
+
+**Features:**
+- **Lazy-Loading** - Loads entities on-demand, not eagerly
+- **Bounded Memory** - LRU cache prevents memory bloat
+- **Full Query Support** - All find(), getRelated(), etc. work on historical data
+- **Read-Only** - Prevents accidental modifications to history
+
+**Important:** Always call `snapshot.close()` when done to release resources.
 
 ---
 
@@ -1558,7 +1603,7 @@ await brain.shutdown()  // Graceful shutdown, flush caches
 // Create
 const id = await brain.add({
   data: 'Quantum computing breakthrough',
-  type: NounType.Content,
+  type: NounType.Concept,
   metadata: { category: 'tech', year: 2024 }
 })
 
@@ -1635,7 +1680,7 @@ const experiment = await brain.fork('test-migration')
 // Make changes in isolation
 await experiment.add({
   data: 'New feature',
-  type: NounType.Content
+  type: NounType.Document
 })
 
 // Commit your work
@@ -1674,6 +1719,95 @@ const tree = await brain.vfs.getTreeStructure('/projects', {
   maxDepth: 3
 })
 ```
+
+---
+
+## Type System Reference
+
+**NEW in v5.5.0:** Stage 3 CANONICAL taxonomy with 169 types (42 nouns + 127 verbs)
+
+### Noun Types (42)
+
+Brainy uses a comprehensive noun type system covering 96-97% of human knowledge:
+
+**Core Entity Types (7)**
+- `NounType.Person` - Individual human entities
+- `NounType.Organization` - Companies, institutions, collectives
+- `NounType.Location` - Geographic and spatial entities
+- `NounType.Thing` - Physical objects and artifacts
+- `NounType.Concept` - Abstract ideas and principles
+- `NounType.Event` - Temporal occurrences
+- `NounType.Agent` - AI agents, bots, automated systems
+
+**Digital/Content Types (4)**
+- `NounType.Document` - Text-based files and written content
+- `NounType.Media` - Audio, video, images
+- `NounType.File` - Generic digital files
+- `NounType.Message` - Communication content
+
+**Business Types (4)**
+- `NounType.Product` - Commercial products
+- `NounType.Service` - Service offerings
+- `NounType.Task` - Actions, todos, work items
+- `NounType.Project` - Organized initiatives
+
+**Scientific Types (2)**
+- `NounType.Hypothesis` - Theories and propositions
+- `NounType.Experiment` - Studies and investigations
+
+**And 25 more types** including: `Organism`, `Substance`, `Quality`, `TimeInterval`, `Function`, `Proposition`, `Collection`, `Dataset`, `Process`, `State`, `Role`, `Language`, `Currency`, `Measurement`, `Contract`, `Regulation`, `Interface`, `Resource`, `Custom`, `SocialGroup`, `Institution`, `Norm`, `InformationContent`, `InformationBearer`, `Relationship`
+
+### Verb Types (127)
+
+Brainy supports 127 relationship types organized into categories:
+
+**Foundational (7)**
+- `VerbType.InstanceOf`, `VerbType.SubclassOf`, `VerbType.ParticipatesIn`
+- `VerbType.RelatedTo`, `VerbType.Contains`, `VerbType.PartOf`, `VerbType.References`
+
+**Spatial & Temporal (14)**
+- Location: `LocatedAt`, `AdjacentTo`, `ContainsSpatially`, `OverlapsSpatially`, `Above`, `Below`, `Inside`, `Outside`, `Facing`
+- Time: `Precedes`, `During`, `OccursAt`, `Overlaps`, `ImmediatelyAfter`, `SimultaneousWith`
+
+**Causal & Dependency (11)**
+- Direct: `Causes`, `Enables`, `Prevents`, `DependsOn`, `Requires`
+- Modal: `CanCause`, `MustCause`, `WouldCauseIf`, `ProbablyCauses`
+- Variations: `RigidlyDependsOn`, `FunctionallyDependsOn`, `HistoricallyDependsOn`
+
+**Creation & Change (10)**
+- Lifecycle: `Creates`, `Transforms`, `Becomes`, `Modifies`, `Consumes`, `Destroys`
+- Properties: `GainsProperty`, `LosesProperty`, `RemainsSame`, `PersistsThrough`
+
+**Social & Communication (8)**
+- `MemberOf`, `WorksWith`, `FriendOf`, `Follows`, `Likes`, `ReportsTo`, `Mentors`, `Communicates`
+
+**Epistemic & Modal (14)**
+- Knowledge: `Knows`, `Doubts`, `Believes`, `Learns`
+- Mental states: `Desires`, `Intends`, `Fears`, `Loves`, `Hates`, `Hopes`, `Perceives`
+- Modality: `CouldBe`, `MustBe`, `Counterfactual`
+
+**Measurement & Comparison (9)**
+- `Measures`, `MeasuredIn`, `ConvertsTo`, `HasMagnitude`, `GreaterThan`
+- `SimilarityDegree`, `ApproximatelyEquals`, `MoreXThan`, `HasDegree`
+
+**And 54 more specialized verbs** including ownership, composition, uncertainty, deontic relationships (obligations/permissions), context-dependent truth, spatial/temporal variations, information theory, and meta-level relationships.
+
+### Complete Reference
+
+For the full taxonomy with all 169 types and their descriptions, see:
+- **[Stage 3 CANONICAL Taxonomy](../STAGE3-CANONICAL-TAXONOMY.md)** - Complete list with categories
+- **[Noun-Verb Taxonomy Architecture](../architecture/noun-verb-taxonomy.md)** - Design rationale
+
+### Migration from v5.4.0
+
+**Breaking Changes:**
+- `NounType.Content` removed → Use `Document`, `Message`, or `InformationContent`
+- `NounType.User` removed → Use `Person` or `Agent`
+- `NounType.Topic` removed → Use `Concept` or `Category`
+
+**New Types Added:**
+- **+11 noun types**: Agent, Organism, Substance, Quality, TimeInterval, Function, Proposition, Custom, SocialGroup, Institution, Norm, InformationContent, InformationBearer, Relationship
+- **+87 verb types**: Extensive additions across all categories
 
 ---
 
