@@ -83,6 +83,12 @@ type S3Command = any
  * - credentials: GCS credentials (accessKeyId and secretAccessKey)
  * - endpoint: GCS endpoint (e.g., 'https://storage.googleapis.com')
  * - bucketName: GCS bucket name
+ *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
  */
 export class S3CompatibleStorage extends BaseStorage {
   private s3Client: S3Client | null = null
@@ -160,6 +166,9 @@ export class S3CompatibleStorage extends BaseStorage {
   
   // Module logger
   private logger = createModuleLogger('S3Storage')
+
+  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  private hnswLocks = new Map<string, Promise<void>>()
 
   /**
    * Initialize the storage adapter
@@ -975,12 +984,7 @@ export class S3CompatibleStorage extends BaseStorage {
     return this.socketManager.getBatchSize()
   }
 
-  /**
-   * Save a noun to storage (internal implementation)
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    return this.saveNode(noun)
-  }
+  // v5.4.0: Removed 10 *_internal method overrides (lines 984-2069) - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
@@ -1094,21 +1098,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a noun from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector data (no metadata field)
-   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const node = await this.getNode(id)
-    if (!node) {
-      return null
-    }
-
-    // Return pure vector structure
-    return node
-  }
+  // v5.4.0: Removed getNoun_internal override - uses BaseStorage type-first implementation
 
   /**
    * Get a node from storage
@@ -1419,289 +1409,8 @@ export class S3CompatibleStorage extends BaseStorage {
     return nodes
   }
 
-  /**
-   * Get nouns by noun type (internal implementation)
-   * @param nounType The noun type to filter by
-   * @returns Promise that resolves to an array of nouns of the specified noun type
-   */
-  protected async getNounsByNounType_internal(
-    nounType: string
-  ): Promise<HNSWNoun[]> {
-    return this.getNodesByNounType(nounType)
-  }
-
-  /**
-   * Get nodes by noun type
-   * @param nounType The noun type to filter by
-   * @returns Promise that resolves to an array of nodes of the specified noun type
-   */
-  protected async getNodesByNounType(nounType: string): Promise<HNSWNode[]> {
-    await this.ensureInitialized()
-
-    try {
-      const filteredNodes: HNSWNode[] = []
-      let hasMore = true
-      let cursor: string | undefined = undefined
-      
-      // Use pagination to process nodes in batches
-      while (hasMore) {
-        // Get a batch of nodes
-        const result = await this.getNodesWithPagination({
-          limit: 100,
-          cursor,
-          useCache: true
-        })
-        
-        // Filter nodes by noun type using metadata
-        for (const node of result.nodes) {
-          const metadata = await this.getMetadata(node.id)
-          if (metadata && metadata.noun === nounType) {
-            filteredNodes.push(node)
-          }
-        }
-        
-        // Update pagination state
-        hasMore = result.hasMore
-        cursor = result.nextCursor
-        
-        // Safety check to prevent infinite loops
-        if (!cursor && hasMore) {
-          this.logger.warn('No cursor returned but hasMore is true, breaking loop')
-          break
-        }
-      }
-
-      return filteredNodes
-    } catch (error) {
-      this.logger.error(`Failed to get nodes by noun type ${nounType}:`, error)
-      return []
-    }
-  }
-
-  /**
-   * Delete a noun from storage (internal implementation)
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    return this.deleteNode(id)
-  }
-
-  /**
-   * Delete a node from storage
-   */
-  protected async deleteNode(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // Import the DeleteObjectCommand only when needed
-      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
-
-      // Delete the node from S3-compatible storage
-      await this.s3Client!.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucketName,
-          Key: `${this.nounPrefix}${id}.json`
-        })
-      )
-
-      // Log the change for efficient synchronization
-      await this.appendToChangeLog({
-        timestamp: Date.now(),
-        operation: 'delete',
-        entityType: 'noun',
-        entityId: id
-      })
-    } catch (error) {
-      this.logger.error(`Failed to delete node ${id}:`, error)
-      throw new Error(`Failed to delete node ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * Save a verb to storage (internal implementation)
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
-
-  /**
-   * Save an edge to storage
-   */
-  protected async saveEdge(edge: Edge): Promise<void> {
-    await this.ensureInitialized()
-    
-    // ALWAYS check if we should use high-volume mode (critical for detection)
-    this.checkVolumeMode()
-    
-    // Use write buffer in high-volume mode
-    if (this.highVolumeMode && this.verbWriteBuffer) {
-      this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer (high-volume mode active)`)
-      await this.verbWriteBuffer.add(edge.id, edge)
-      return
-    } else if (!this.highVolumeMode) {
-      this.logger.trace(`📝 DIRECT WRITE: Saving verb ${edge.id} directly (high-volume mode inactive)`)
-    }
-
-    // Apply backpressure before starting operation
-    const requestId = await this.applyBackpressure()
-
-    try {
-      // Convert connections Map to a serializable format
-      // CRITICAL: Only save lightweight vector data (no metadata)
-      // Metadata is saved separately via saveVerbMetadata() (2-file system)
-      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
-      const serializableEdge = {
-        id: edge.id,
-        vector: edge.vector,
-        connections: this.mapToObject(edge.connections, (set) =>
-          Array.from(set as Set<string>)
-        ),
-
-        // CORE RELATIONAL DATA (v3.50.1+)
-        verb: edge.verb,
-        sourceId: edge.sourceId,
-        targetId: edge.targetId,
-
-        // NO metadata field - saved separately for scalability
-      }
-
-      // Import the PutObjectCommand only when needed
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-
-      // Save the edge to S3-compatible storage using sharding if available
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: this.getVerbKey(edge.id),
-          Body: JSON.stringify(serializableEdge, null, 2),
-          ContentType: 'application/json'
-        })
-      )
-
-      // Log the change for efficient synchronization
-      await this.appendToChangeLog({
-        timestamp: Date.now(),
-        operation: 'add', // Could be 'update' if we track existing edges
-        entityType: 'verb',
-        entityId: edge.id,
-        data: {
-          vector: edge.vector
-        }
-      })
-
-      // Increment verb count - always increment total, and increment by type if metadata exists
-      this.totalVerbCount++
-      const metadata = await this.getVerbMetadata(edge.id)
-      if (metadata && metadata.type) {
-        const currentCount = this.verbCounts.get(metadata.type as string) || 0
-        this.verbCounts.set(metadata.type as string, currentCount + 1)
-      }
-
-      // Release backpressure on success
-      this.releaseBackpressure(true, requestId)
-    } catch (error) {
-      // Release backpressure on error
-      this.releaseBackpressure(false, requestId)
-      this.logger.error(`Failed to save edge ${edge.id}:`, error)
-      throw new Error(`Failed to save edge ${edge.id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
-
-  /**
-   * Get an edge from storage
-   */
-  protected async getEdge(id: string): Promise<Edge | null> {
-    await this.ensureInitialized()
-
-    try {
-      // Import the GetObjectCommand only when needed
-      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
-
-      const key = this.getVerbKey(id)
-      this.logger.trace(`Getting edge ${id} from key: ${key}`)
-
-      // Try to get the edge from the verbs directory
-      const response = await this.s3Client!.send(
-        new GetObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      // Check if response is null or undefined
-      if (!response || !response.Body) {
-        this.logger.trace(`No edge found for ${id}`)
-        return null
-      }
-
-      // Convert the response body to a string
-      const bodyContents = await response.Body.transformToString()
-      this.logger.trace(`Retrieved edge body for ${id}`)
-
-      // Parse the JSON string
-      try {
-        const parsedEdge = JSON.parse(bodyContents)
-        this.logger.trace(`Parsed edge data for ${id}`)
-
-        // Ensure the parsed edge has the expected properties
-        if (
-          !parsedEdge ||
-          !parsedEdge.id ||
-          !parsedEdge.vector ||
-          !parsedEdge.connections
-        ) {
-          this.logger.warn(`Invalid edge data for ${id}`)
-          return null
-        }
-
-        // Convert serialized connections back to Map<number, Set<string>>
-        const connections = new Map<number, Set<string>>()
-        for (const [level, nodeIds] of Object.entries(parsedEdge.connections)) {
-          connections.set(Number(level), new Set(nodeIds as string[]))
-        }
-
-        // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
-        const edge = {
-          id: parsedEdge.id,
-          vector: parsedEdge.vector,
-          connections,
-
-          // CORE RELATIONAL DATA (read from vector file)
-          verb: parsedEdge.verb,
-          sourceId: parsedEdge.sourceId,
-          targetId: parsedEdge.targetId
-
-          // ✅ NO metadata field in v4.0.0
-          // User metadata retrieved separately via getVerbMetadata()
-        }
-
-        this.logger.trace(`Successfully retrieved edge ${id}`)
-        return edge
-      } catch (parseError) {
-        this.logger.error(`Failed to parse edge data for ${id}:`, parseError)
-        return null
-      }
-    } catch (error) {
-      // Edge not found or other error
-      this.logger.trace(`Edge not found for ${id}`)
-      return null
-    }
-  }
+  // v5.4.0: Removed 4 *_internal method overrides (getNounsByNounType_internal, deleteNoun_internal, saveVerb_internal, getVerb_internal)
+  // Now inherit from BaseStorage's type-first implementation
 
 
   /**
@@ -1881,217 +1590,13 @@ export class S3CompatibleStorage extends BaseStorage {
     return true // Return all edges since filtering requires metadata
   }
   
-  /**
-   * Get verbs with pagination
-   * @param options Pagination options
-   * @returns Promise that resolves to a paginated result of verbs
-   */
-  public async getVerbsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-    
-    // Convert filter to edge filter format
-    const edgeFilter: {
-      sourceId?: string
-      targetId?: string
-      type?: string
-    } = {}
-    
-    if (options.filter) {
-      // Handle sourceId filter
-      if (options.filter.sourceId) {
-        edgeFilter.sourceId = Array.isArray(options.filter.sourceId)
-          ? options.filter.sourceId[0]
-          : options.filter.sourceId
-      }
-      
-      // Handle targetId filter
-      if (options.filter.targetId) {
-        edgeFilter.targetId = Array.isArray(options.filter.targetId)
-          ? options.filter.targetId[0]
-          : options.filter.targetId
-      }
-      
-      // Handle verbType filter
-      if (options.filter.verbType) {
-        edgeFilter.type = Array.isArray(options.filter.verbType)
-          ? options.filter.verbType[0]
-          : options.filter.verbType
-      }
-    }
-    
-    // Get edges with pagination
-    const result = await this.getEdgesWithPagination({
-      limit: options.limit,
-      cursor: options.cursor,
-      useCache: true,
-      filter: edgeFilter
-    })
-    
-    // v4.0.0: Convert HNSWVerbs to HNSWVerbWithMetadata by combining with metadata
-    const verbsWithMetadata: HNSWVerbWithMetadata[] = []
-    for (const hnswVerb of result.edges) {
-      const metadata = await this.getVerbMetadata(hnswVerb.id)
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as VerbMetadata
-      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      const verbWithMetadata: HNSWVerbWithMetadata = {
-        id: hnswVerb.id,
-        vector: [...hnswVerb.vector],
-        connections: new Map(hnswVerb.connections),
-        verb: hnswVerb.verb,
-        sourceId: hnswVerb.sourceId,
-        targetId: hnswVerb.targetId,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      }
-      verbsWithMetadata.push(verbWithMetadata)
-    }
-
-    // Apply filtering at HNSWVerbWithMetadata level
-    // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb, not metadata
-    let filteredVerbs = verbsWithMetadata
-    if (options.filter) {
-      filteredVerbs = verbsWithMetadata.filter((verbWithMetadata) => {
-        // Filter by sourceId
-        if (options.filter!.sourceId) {
-          const sourceIds = Array.isArray(options.filter!.sourceId)
-            ? options.filter!.sourceId
-            : [options.filter!.sourceId]
-          if (!verbWithMetadata.sourceId || !sourceIds.includes(verbWithMetadata.sourceId)) {
-            return false
-          }
-        }
-
-        // Filter by targetId
-        if (options.filter!.targetId) {
-          const targetIds = Array.isArray(options.filter!.targetId)
-            ? options.filter!.targetId
-            : [options.filter!.targetId]
-          if (!verbWithMetadata.targetId || !targetIds.includes(verbWithMetadata.targetId)) {
-            return false
-          }
-        }
-
-        // Filter by verbType
-        if (options.filter!.verbType) {
-          const verbTypes = Array.isArray(options.filter!.verbType)
-            ? options.filter!.verbType
-            : [options.filter!.verbType]
-          if (!verbWithMetadata.verb || !verbTypes.includes(verbWithMetadata.verb)) {
-            return false
-          }
-        }
-
-        return true
-      })
-    }
-
-    return {
-      items: filteredVerbs,
-      totalCount: this.totalVerbCount,  // Use pre-calculated count from init()
-      hasMore: result.hasMore,
-      nextCursor: result.nextCursor
-    }
-  }
+  // v5.4.0: Removed getVerbsWithPagination override - use BaseStorage's type-first implementation
 
 
 
 
-  /**
-   * Get verbs by source (internal implementation)
-   */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { sourceId: [sourceId] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Get verbs by target (internal implementation)
-   */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { targetId: [targetId] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Get verbs by type (internal implementation)
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { verbType: [type] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Delete a verb from storage (internal implementation)
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    return this.deleteEdge(id)
-  }
-
-  /**
-   * Delete an edge from storage
-   */
-  protected async deleteEdge(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // Import the DeleteObjectCommand only when needed
-      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
-
-      // Delete the edge from S3-compatible storage
-      await this.s3Client!.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucketName,
-          Key: `${this.verbPrefix}${id}.json`
-        })
-      )
-
-      // Log the change for efficient synchronization
-      await this.appendToChangeLog({
-        timestamp: Date.now(),
-        operation: 'delete',
-        entityType: 'verb',
-        entityId: id
-      })
-    } catch (error) {
-      this.logger.error(`Failed to delete edge ${id}:`, error)
-      throw new Error(`Failed to delete edge ${id}: ${error}`)
-    }
-  }
+  // v5.4.0: Removed 4 more *_internal method overrides (getVerbsBySource, getVerbsByTarget, getVerbsByType, deleteVerb)
+  // Total: 8 *_internal methods removed - all now inherit from BaseStorage's type-first implementation
 
   /**
    * Primitive operation: Write object to path
@@ -3687,110 +3192,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get nouns with pagination support
-   * @param options Pagination options
-   * @returns Promise that resolves to a paginated result of nouns
-   */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-    
-    const limit = options.limit || 100
-    const cursor = options.cursor
-    
-    // Get paginated nodes
-    const result = await this.getNodesWithPagination({
-      limit,
-      cursor,
-      useCache: true
-    })
-
-    // v4.0.0: Combine nodes with metadata to create HNSWNounWithMetadata[]
-    const nounsWithMetadata: HNSWNounWithMetadata[] = []
-
-    for (const node of result.nodes) {
-      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-      const metadata = await this.getNounMetadata(node.id)
-
-      // Apply filters if provided
-      if (options.filter && metadata) {
-        // Filter by noun type
-        if (options.filter.nounType) {
-          const nounTypes = Array.isArray(options.filter.nounType)
-            ? options.filter.nounType
-            : [options.filter.nounType]
-
-          const nounType = (metadata.type || metadata.noun) as string
-          if (!nounType || !nounTypes.includes(nounType)) {
-            continue
-          }
-        }
-
-        // Filter by service
-        if (options.filter.service) {
-          const services = Array.isArray(options.filter.service)
-            ? options.filter.service
-            : [options.filter.service]
-
-          if (!metadata.service || !services.includes(metadata.service as string)) {
-            continue
-          }
-        }
-
-        // Filter by metadata fields
-        if (options.filter.metadata) {
-          const metadataFilter = options.filter.metadata
-          const matches = Object.entries(metadataFilter).every(
-            ([key, value]) => metadata[key] === value
-          )
-          if (!matches) {
-            continue
-          }
-        }
-      }
-
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as NounMetadata
-      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      const nounWithMetadata: HNSWNounWithMetadata = {
-        id: node.id,
-        vector: [...node.vector],
-        connections: new Map(node.connections),
-        level: node.level || 0,
-        type: (nounType as NounType) || NounType.Thing,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      }
-      nounsWithMetadata.push(nounWithMetadata)
-    }
-
-    return {
-      items: nounsWithMetadata,
-      totalCount: this.totalNounCount,  // Use pre-calculated count from init()
-      hasMore: result.hasMore,
-      nextCursor: result.nextCursor
-    }
-  }
+  // v5.4.0: Removed getNounsWithPagination override - use BaseStorage's type-first implementation
 
   /**
    * Estimate total noun count by listing objects across all shards
@@ -3939,145 +3341,101 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get a noun's vector for HNSW rebuild
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-    const noun = await this.getNode(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
   /**
    * Save HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   *
+   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
+    const lockKey = `hnsw/${nounId}`
 
-    const { PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3')
+    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // Problem: Without mutex, concurrent operations can:
+    //   1. Thread A reads noun (connections: [1,2,3])
+    //   2. Thread B reads noun (connections: [1,2,3])
+    //   3. Thread A adds connection 4, writes [1,2,3,4]
+    //   4. Thread B adds connection 5, writes [1,2,3,5] ← Connection 4 LOST!
+    // Solution: Mutex serializes operations per entity (like FileSystem/OPFS adapters)
+    // Production scale: Prevents corruption at 1000+ concurrent operations
 
-    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-    // Previous implementation overwrote the entire file, destroying vector data
-    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+    // Wait for any pending operations on this entity
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
 
-    // CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
-    // Uses S3 IfMatch preconditions - retries with exponential backoff on conflicts
-    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
-    const shard = getShardIdFromUuid(nounId)
-    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    try {
+      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Read existing noun data (if exists)
+      const existingNoun = await this.getNoun(nounId)
 
-    const maxRetries = 5
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Get current ETag and data
-        let currentETag: string | undefined
-        let existingNode: any = {}
-
-        try {
-          const getResponse = await this.s3Client!.send(
-            new GetObjectCommand({
-              Bucket: this.bucketName,
-              Key: key
-            })
-          )
-          const existingData = await getResponse.Body!.transformToString()
-          existingNode = JSON.parse(existingData)
-          currentETag = getResponse.ETag
-        } catch (error: any) {
-          // File doesn't exist yet - will create new
-          if (error.name !== 'NoSuchKey' && error.Code !== 'NoSuchKey') {
-            throw error
-          }
-        }
-
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-
-        // ATOMIC WRITE: Use ETag precondition
-        // If currentETag exists, only write if ETag matches (no concurrent modification)
-        // If no ETag, only write if file doesn't exist (IfNoneMatch: *)
-        await this.s3Client!.send(
-          new PutObjectCommand({
-            Bucket: this.bucketName,
-            Key: key,
-            Body: JSON.stringify(updatedNode, null, 2),
-            ContentType: 'application/json',
-            ...(currentETag
-              ? { IfMatch: currentETag }
-              : { IfNoneMatch: '*' }) // Only create if doesn't exist
-          })
-        )
-
-        // Success! Exit retry loop
-        return
-      } catch (error: any) {
-        // Precondition failed - concurrent modification detected
-        if (error.name === 'PreconditionFailed' || error.Code === 'PreconditionFailed') {
-          if (attempt === maxRetries - 1) {
-            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
-            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
-          }
-
-          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
-          const backoffMs = 50 * Math.pow(2, attempt)
-          await new Promise(resolve => setTimeout(resolve, backoffMs))
-          continue
-        }
-
-        // Other error - rethrow
-        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+      if (!existingNoun) {
+        // Noun doesn't exist - cannot update HNSW data for non-existent noun
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
+
+      // Convert connections from Record to Map format for storage
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      await this.saveNoun(updatedNoun)
+    } finally {
+      // Release lock (ALWAYS runs, even if error thrown)
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
   /**
    * Get HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    try {
-      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+    if (!noun) {
+      return null
+    }
 
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-
-      const response = await this.s3Client!.send(
-        new GetObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      if (!response || !response.Body) {
-        return null
+    // Convert connections from Map to Record format
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
       }
+    }
 
-      const bodyContents = await response.Body.transformToString()
-      return JSON.parse(bodyContents)
-    } catch (error: any) {
-      if (
-        error.name === 'NoSuchKey' ||
-        error.message?.includes('NoSuchKey') ||
-        error.message?.includes('not found')
-      ) {
-        return null
-      }
-
-      this.logger.error(`Failed to get HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
     }
   }
 

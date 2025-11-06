@@ -58,6 +58,12 @@ try {
 /**
  * File system storage adapter for Node.js environments
  * Uses the file system to store data in the specified directory structure
+ *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
  */
 export class FileSystemStorage extends BaseStorage {
   // FileSystem-specific count persistence
@@ -959,139 +965,7 @@ export class FileSystemStorage extends BaseStorage {
    * Get nouns with pagination support
    * @param options Pagination options
    */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: any
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-    
-    const limit = options.limit || 100
-    const cursor = options.cursor
-    
-    try {
-      // Get all noun files (handles sharding properly)
-      const nounFiles = await this.getAllShardedFiles(this.nounsDir)
-      
-      // Sort for consistent pagination
-      nounFiles.sort()
-      
-      // Find starting position - prioritize offset for O(1) operation
-      let startIndex = 0
-      const offset = (options as any).offset  // Cast to any since offset might not be in type
-      if (offset !== undefined) {
-        // Direct offset - O(1) operation
-        startIndex = offset
-      } else if (cursor) {
-        // Cursor-based pagination
-        startIndex = nounFiles.findIndex((f: string) => f.replace('.json', '') > cursor)
-        if (startIndex === -1) startIndex = nounFiles.length
-      }
-      
-      // Get page of files
-      const pageFiles = nounFiles.slice(startIndex, startIndex + limit)
-
-      // v4.0.0: Load nouns and combine with metadata
-      const items: HNSWNounWithMetadata[] = []
-      let successfullyLoaded = 0
-      let totalValidFiles = 0
-
-      // Use persisted counts - O(1) operation!
-      totalValidFiles = this.totalNounCount
-
-      // No need to count files anymore - we maintain accurate counts
-      // This eliminates the O(n) operation completely
-
-      // Second pass: load the current page with metadata
-      for (const file of pageFiles) {
-        try {
-          const id = file.replace('.json', '')
-          const data = await fs.promises.readFile(
-            this.getNodePath(id),
-            'utf-8'
-          )
-          const parsedNoun = JSON.parse(data)
-
-          // v4.0.0: Load metadata from separate storage
-          // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-          const metadata = await this.getNounMetadata(id)
-
-          // Apply filter if provided
-          if (options.filter && metadata) {
-            let matches = true
-            for (const [key, value] of Object.entries(options.filter)) {
-              if (metadata[key] !== value) {
-                matches = false
-                break
-              }
-            }
-            if (!matches) continue
-          }
-
-          // Convert connections if needed
-          let connections = parsedNoun.connections
-          if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
-            const connectionsMap = new Map<number, Set<string>>()
-            for (const [level, nodeIds] of Object.entries(connections)) {
-              connectionsMap.set(Number(level), new Set(nodeIds as string[]))
-            }
-            connections = connectionsMap
-          }
-
-          // v4.8.0: Extract standard fields from metadata to top-level
-          const metadataObj = (metadata || {}) as NounMetadata
-          const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data: dataField, createdBy, ...customMetadata } = metadataObj
-
-          const nounWithMetadata: HNSWNounWithMetadata = {
-            id: parsedNoun.id,
-            vector: parsedNoun.vector,
-            connections: connections,
-            level: parsedNoun.level || 0,
-            type: (nounType as NounType) || NounType.Thing,
-            createdAt: (createdAt as number) || Date.now(),
-            updatedAt: (updatedAt as number) || Date.now(),
-            confidence: confidence as number | undefined,
-            weight: weight as number | undefined,
-            service: service as string | undefined,
-            data: dataField as Record<string, any> | undefined,
-            createdBy,
-            metadata: customMetadata
-          }
-
-          items.push(nounWithMetadata)
-          successfullyLoaded++
-        } catch (error) {
-          console.warn(`Failed to read noun file ${file}:`, error)
-        }
-      }
-
-      // CRITICAL FIX: hasMore should be based on actual valid files, not just file count
-      // Also check if we actually loaded any items from this page
-      const hasMore = (startIndex + limit < totalValidFiles) && (successfullyLoaded > 0 || startIndex === 0)
-      const nextCursor = hasMore && pageFiles.length > 0
-        ? pageFiles[pageFiles.length - 1].replace('.json', '')
-        : undefined
-
-      return {
-        items,
-        totalCount: totalValidFiles, // Use actual valid file count, not all files
-        hasMore,
-        nextCursor
-      }
-    } catch (error) {
-      console.error('Error getting nouns with pagination:', error)
-      return {
-        items: [],
-        totalCount: 0,
-        hasMore: false
-      }
-    }
-  }
+  // v5.4.0: Removed getNounsWithPagination override - now uses BaseStorage's type-first implementation
 
   /**
    * Clear all data from storage
@@ -1306,288 +1180,8 @@ export class FileSystemStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Implementation of abstract methods from BaseStorage
-   */
-
-  /**
-   * Save a noun to storage
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    return this.saveNode(noun)
-  }
-
-  /**
-   * Get a noun from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector data (no metadata field)
-   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const node = await this.getNode(id)
-    if (!node) {
-      return null
-    }
-
-    // Return pure vector structure
-    return node
-  }
-
-
-  /**
-   * Get nouns by noun type
-   */
-  protected async getNounsByNounType_internal(
-    nounType: string
-  ): Promise<HNSWNoun[]> {
-    return this.getNodesByNounType(nounType)
-  }
-
-  /**
-   * Delete a noun from storage
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    return this.deleteNode(id)
-  }
-
-  /**
-   * Save a verb to storage
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
-
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
-
-
-  /**
-   * Get verbs by source
-   */
-  protected async getVerbsBySource_internal(
-    sourceId: string
-  ): Promise<HNSWVerbWithMetadata[]> {
-    // Use the working pagination method with source filter
-    const result = await this.getVerbsWithPagination({
-      limit: 10000,
-      filter: { sourceId: [sourceId] }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by target
-   */
-  protected async getVerbsByTarget_internal(
-    targetId: string
-  ): Promise<HNSWVerbWithMetadata[]> {
-    // Use the working pagination method with target filter
-    const result = await this.getVerbsWithPagination({
-      limit: 10000,
-      filter: { targetId: [targetId] }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by type
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the working pagination method with type filter
-    const result = await this.getVerbsWithPagination({
-      limit: 10000,
-      filter: { verbType: [type] }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs with pagination
-   * This method reads verb files from the filesystem and returns them with pagination
-   */
-  public async getVerbsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-    
-    const limit = options.limit || 100
-    const startIndex = options.cursor ? parseInt(options.cursor, 10) : 0
-    
-    try {
-      // Get actual verb files first (critical for accuracy)
-      const verbFiles = await this.getAllShardedFiles(this.verbsDir)
-      verbFiles.sort() // Consistent ordering for pagination
-
-      // Use actual file count - don't trust cached totalVerbCount
-      // This prevents accessing undefined array elements
-      const actualFileCount = verbFiles.length
-
-      // For large datasets, warn about performance
-      if (actualFileCount > 1000000) {
-        console.warn(`Very large verb dataset detected (${actualFileCount} verbs). Performance may be degraded. Consider database storage for optimal performance.`)
-      }
-
-      // For production-scale datasets, use streaming approach
-      if (actualFileCount > 50000) {
-        return await this.getVerbsWithPaginationStreaming(options, startIndex, limit)
-      }
-
-      // Calculate pagination bounds using ACTUAL file count
-      const endIndex = Math.min(startIndex + limit, actualFileCount)
-
-      // Load the requested page of verbs
-      const verbs: HNSWVerbWithMetadata[] = []
-      let successfullyLoaded = 0
-
-      for (let i = startIndex; i < endIndex; i++) {
-        const file = verbFiles[i]
-
-        // CRITICAL: Null-safety check for undefined array elements
-        if (!file) {
-          console.warn(`Unexpected undefined file at index ${i}, skipping`)
-          continue
-        }
-
-        const id = file.replace('.json', '')
-        
-        try {
-          // Read the verb data (HNSWVerb stored as edge) - use sharded path
-          const filePath = this.getVerbPath(id)
-          const data = await fs.promises.readFile(filePath, 'utf-8')
-          const edge = JSON.parse(data)
-          
-          // Get metadata which contains the actual verb information
-          const metadata = await this.getVerbMetadata(id)
-
-          // v4.8.1: Don't skip verbs without metadata - metadata is optional
-          // FIX: This was the root cause of the VFS bug (11 versions)
-          // Verbs can exist without metadata files (e.g., from imports/migrations)
-
-          // Convert connections Map to proper format if needed
-          let connections = edge.connections
-          if (connections && typeof connections === 'object' && !(connections instanceof Map)) {
-            const connectionsMap = new Map<number, Set<string>>()
-            for (const [level, nodeIds] of Object.entries(connections)) {
-              connectionsMap.set(Number(level), new Set(nodeIds as string[]))
-            }
-            connections = connectionsMap
-          }
-
-          // v4.8.0: Extract standard fields from metadata to top-level
-          const metadataObj = (metadata || {}) as VerbMetadata
-          const { createdAt, updatedAt, confidence, weight, service, data: dataField, createdBy, ...customMetadata } = metadataObj
-
-          const verbWithMetadata: HNSWVerbWithMetadata = {
-            id: edge.id,
-            vector: edge.vector,
-            connections: connections,
-            verb: edge.verb,
-            sourceId: edge.sourceId,
-            targetId: edge.targetId,
-            createdAt: (createdAt as number) || Date.now(),
-            updatedAt: (updatedAt as number) || Date.now(),
-            confidence: confidence as number | undefined,
-            weight: weight as number | undefined,
-            service: service as string | undefined,
-            data: dataField as Record<string, any> | undefined,
-            createdBy,
-            metadata: customMetadata
-          }
-          
-          // Apply filters if provided
-          if (options.filter) {
-            const filter = options.filter
-
-            // Check verbType filter
-            if (filter.verbType) {
-              const types = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
-              if (!types.includes(verbWithMetadata.verb)) continue
-            }
-
-            // Check sourceId filter
-            if (filter.sourceId) {
-              const sources = Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-              if (!sources.includes(verbWithMetadata.sourceId)) continue
-            }
-
-            // Check targetId filter
-            if (filter.targetId) {
-              const targets = Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
-              if (!targets.includes(verbWithMetadata.targetId)) continue
-            }
-
-            // Check service filter
-            if (filter.service && metadata?.service) {
-              const services = Array.isArray(filter.service) ? filter.service : [filter.service]
-              if (!services.includes(metadata.service)) continue
-            }
-          }
-
-          verbs.push(verbWithMetadata)
-          successfullyLoaded++
-        } catch (error) {
-          console.warn(`Failed to read verb ${id}:`, error)
-        }
-      }
-
-      // CRITICAL FIX: hasMore based on actual file count, not cached totalVerbCount
-      // Also verify we successfully loaded items (prevents infinite loops on corrupted storage)
-      const hasMore = (endIndex < actualFileCount) && (successfullyLoaded > 0 || startIndex === 0)
-
-      return {
-        items: verbs,
-        totalCount: actualFileCount, // Return actual count, not cached value
-        hasMore,
-        nextCursor: hasMore ? String(endIndex) : undefined
-      }
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        // Verbs directory doesn't exist yet
-        return {
-          items: [],
-          totalCount: 0,
-          hasMore: false
-        }
-      }
-      throw error
-    }
-  }
-
-  /**
-   * Delete a verb from storage
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    return this.deleteEdge(id)
-  }
+  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
+  // v5.4.0: Removed 2 pagination methods (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's implementation
 
   /**
    * Acquire a file-based lock for coordinating operations across multiple processes
@@ -2690,30 +2284,29 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get vector for a noun
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-
-    const noun = await this.getNode(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
   /**
    * Save HNSW graph data for a noun
+   *
+   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * CRITICAL: Preserves mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
-
-    const filePath = this.getNodePath(nounId)
     const lockKey = `hnsw/${nounId}`
 
     // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
     // Problem: Without mutex, concurrent operations can:
-    //   1. Thread A reads file (connections: [1,2,3])
-    //   2. Thread B reads file (connections: [1,2,3])
+    //   1. Thread A reads noun (connections: [1,2,3])
+    //   2. Thread B reads noun (connections: [1,2,3])
     //   3. Thread A adds connection 4, writes [1,2,3,4]
     //   4. Thread B adds connection 5, writes [1,2,3,5] ← Connection 4 LOST!
     // Solution: Mutex serializes operations per entity (like Memory/OPFS adapters)
@@ -2730,53 +2323,30 @@ export class FileSystemStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-      // Previous implementation overwrote the entire file, destroying vector data
-      // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Read existing noun data (if exists)
+      const existingNoun = await this.getNoun(nounId)
 
-      // CRITICAL FIX (v4.9.2): Atomic write to prevent torn writes during crashes
-      // Uses temp file + atomic rename strategy (POSIX guarantees rename() atomicity)
-      // Note: Atomic rename alone does NOT prevent concurrent read-modify-write races (needs mutex above)
-
-      const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
-
-      try {
-        // Read existing node data (if exists)
-        let existingNode: any = {}
-        try {
-          const existingData = await fs.promises.readFile(filePath, 'utf-8')
-          existingNode = JSON.parse(existingData)
-        } catch (error: any) {
-          // File doesn't exist yet - will create new
-          if (error.code !== 'ENOENT') {
-            throw error
-          }
-        }
-
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-
-        // ATOMIC WRITE SEQUENCE:
-        // 1. Write to temp file
-        await this.ensureDirectoryExists(path.dirname(tempPath))
-        await fs.promises.writeFile(tempPath, JSON.stringify(updatedNode, null, 2))
-
-        // 2. Atomic rename temp → final (POSIX atomicity guarantee)
-        // This operation is guaranteed atomic by POSIX - either succeeds completely or fails
-        await fs.promises.rename(tempPath, filePath)
-      } catch (error: any) {
-        // Clean up temp file on any error
-        try {
-          await fs.promises.unlink(tempPath)
-        } catch (cleanupError) {
-          // Ignore cleanup errors - temp file may not exist
-        }
-        throw error
+      if (!existingNoun) {
+        // Noun doesn't exist - cannot update HNSW data for non-existent noun
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
+
+      // Convert connections from Record to Map format for storage
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write)
+      await this.saveNoun(updatedNoun)
     } finally {
       // Release lock (ALWAYS runs, even if error thrown)
       this.hnswLocks.delete(lockKey)
@@ -2786,24 +2356,29 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    const shard = nounId.substring(0, 2).toLowerCase()
-    const filePath = path.join(this.rootDir, 'entities', 'nouns', 'hnsw', shard, `${nounId}.json`)
-
-    try {
-      const data = await fs.promises.readFile(filePath, 'utf-8')
-      return JSON.parse(data)
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error reading HNSW data for ${nounId}:`, error)
-      }
+    if (!noun) {
       return null
+    }
+
+    // Convert connections from Map to Record format
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
+      }
+    }
+
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
     }
   }
 

@@ -58,6 +58,12 @@ const MAX_R2_PAGE_SIZE = 1000
  * Dedicated Cloudflare R2 storage adapter
  * Optimized for R2's unique characteristics and global edge network
  *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed getNounsWithPagination override
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
+ *
  * Configuration:
  * ```typescript
  * const r2Storage = new R2Storage({
@@ -118,6 +124,9 @@ export class R2Storage extends BaseStorage {
 
   // Module logger
   private logger = createModuleLogger('R2Storage')
+
+  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  private hnswLocks = new Map<string, Promise<void>>()
 
   /**
    * Initialize the R2 storage adapter
@@ -396,12 +405,6 @@ export class R2Storage extends BaseStorage {
     await Promise.all(writes)
   }
 
-  /**
-   * Save a noun to storage (internal implementation)
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    return this.saveNode(noun)
-  }
 
   /**
    * Save a node to storage
@@ -484,21 +487,6 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a noun from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector data (no metadata field)
-   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const node = await this.getNode(id)
-    if (!node) {
-      return null
-    }
-
-    // Return pure vector structure
-    return node
-  }
 
   /**
    * Get a node from storage
@@ -576,56 +564,6 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  /**
-   * Delete a noun from storage (internal implementation)
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    const requestId = await this.applyBackpressure()
-
-    try {
-      this.logger.trace(`Deleting noun ${id}`)
-
-      const key = this.getNounKey(id)
-
-      // Delete from R2 using S3 DeleteObject
-      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
-      await this.s3Client!.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      // Remove from cache
-      this.nounCacheManager.delete(id)
-
-      // Decrement noun count
-      const metadata = await this.getNounMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementEntityCountSafe(metadata.type as string)
-      }
-
-      this.logger.trace(`Noun ${id} deleted successfully`)
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
-        this.logger.trace(`Noun ${id} not found (already deleted)`)
-        return
-      }
-
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      this.logger.error(`Failed to delete noun ${id}:`, error)
-      throw new Error(`Failed to delete noun ${id}: ${error}`)
-    }
-  }
 
   /**
    * Write an object to a specific path in R2
@@ -747,10 +685,6 @@ export class R2Storage extends BaseStorage {
 
   // Verb storage methods (similar to noun methods - implementing key methods for space)
 
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
-
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
     this.checkVolumeMode()
@@ -818,21 +752,6 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
 
   protected async getEdge(id: string): Promise<Edge | null> {
     await this.ensureInitialized()
@@ -897,45 +816,6 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    const requestId = await this.applyBackpressure()
-
-    try {
-      const key = this.getVerbKey(id)
-
-      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
-      await this.s3Client!.send(
-        new DeleteObjectCommand({
-          Bucket: this.bucketName,
-          Key: key
-        })
-      )
-
-      this.verbCacheManager.delete(id)
-
-      const metadata = await this.getVerbMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementVerbCount(metadata.type as string)
-      }
-
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
-        return
-      }
-
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      throw new Error(`Failed to delete verb ${id}: ${error}`)
-    }
-  }
 
   // Pagination and count management (simplified for space - full implementation similar to GCS)
 
@@ -1022,8 +902,7 @@ export class R2Storage extends BaseStorage {
   // HNSW Index Persistence (Phase 2 support)
 
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-    const noun = await this.getNode(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
@@ -1031,31 +910,39 @@ export class R2Storage extends BaseStorage {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
+    const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-    const shard = getShardIdFromUuid(nounId)
-    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    // Wait for pending operations
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
+
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // Read existing node data
-      const existingNode = await this.readObjectFromPath(key)
-
-      if (existingNode) {
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-        await this.writeObjectToPath(key, updatedNode)
-      } else {
-        // Node doesn't exist yet, create with just HNSW data
-        await this.writeObjectToPath(key, hnswData)
+      const existingNoun = await this.getNoun(nounId)
+      if (!existingNoun) {
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
-    } catch (error) {
-      // If read fails, create with just HNSW data
-      await this.writeObjectToPath(key, hnswData)
+
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      await this.saveNoun(updatedNoun)
+    } finally {
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
@@ -1063,12 +950,23 @@ export class R2Storage extends BaseStorage {
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    const shard = getShardIdFromUuid(nounId)
-    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    if (!noun) {
+      return null
+    }
 
-    return await this.readObjectFromPath(key)
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
+      }
+    }
+
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
+    }
   }
 
   public async saveHNSWSystem(systemData: {
@@ -1178,138 +1076,8 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  // Pagination support (simplified - full implementation would match GCS pattern)
+  // v5.4.0: Removed getNounsWithPagination override - use BaseStorage's type-first implementation
 
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
 
-    // Simplified pagination - full implementation would be similar to GCS
-    const limit = options.limit || 100
-
-    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3')
-    const response = await this.s3Client!.send(
-      new ListObjectsV2Command({
-        Bucket: this.bucketName,
-        Prefix: this.nounPrefix,
-        MaxKeys: limit,
-        ContinuationToken: options.cursor
-      })
-    )
-
-    const items: HNSWNounWithMetadata[] = []
-    const contents = response.Contents || []
-
-    for (const obj of contents) {
-      if (!obj.Key?.endsWith('.json')) continue
-
-      const id = obj.Key.split('/').pop()?.replace('.json', '')
-      if (!id) continue
-
-      const noun = await this.getNoun_internal(id)
-      if (noun) {
-        // v4.0.0: Load metadata and combine with noun to create HNSWNounWithMetadata
-        // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-        const metadata = await this.getNounMetadata(id)
-
-        // Apply filters if provided
-        if (options.filter && metadata) {
-          // Filter by noun type
-          if (options.filter.nounType) {
-            const nounTypes = Array.isArray(options.filter.nounType)
-              ? options.filter.nounType
-              : [options.filter.nounType]
-            if (!nounTypes.includes((metadata.type || metadata.noun) as string)) {
-              continue
-            }
-          }
-
-          // Filter by service
-          if (options.filter.service) {
-            const services = Array.isArray(options.filter.service)
-              ? options.filter.service
-              : [options.filter.service]
-            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
-              continue
-            }
-          }
-
-          // Filter by metadata
-          if (options.filter.metadata) {
-            let matches = true
-            for (const [key, value] of Object.entries(options.filter.metadata)) {
-              if (metadata[key] !== value) {
-                matches = false
-                break
-              }
-            }
-            if (!matches) continue
-          }
-        }
-
-        // v4.8.0: Extract standard fields from metadata to top-level
-        const metadataObj = (metadata || {}) as NounMetadata
-        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-        const nounWithMetadata: HNSWNounWithMetadata = {
-          id: noun.id,
-          vector: [...noun.vector],
-          connections: new Map(noun.connections),
-          level: noun.level || 0,
-          type: (nounType as NounType) || NounType.Thing,
-          createdAt: (createdAt as number) || Date.now(),
-          updatedAt: (updatedAt as number) || Date.now(),
-          confidence: confidence as number | undefined,
-          weight: weight as number | undefined,
-          service: service as string | undefined,
-          data: data as Record<string, any> | undefined,
-          createdBy,
-          metadata: customMetadata
-        }
-
-        items.push(nounWithMetadata)
-      }
-    }
-
-    return {
-      items,
-      totalCount: this.totalNounCount,
-      hasMore: !!response.IsTruncated,
-      nextCursor: response.NextContinuationToken
-    }
-  }
-
-  protected async getNounsByNounType_internal(nounType: string): Promise<HNSWNoun[]> {
-    const result = await this.getNounsWithPagination({
-      limit: 10000,
-      filter: { nounType }
-    })
-
-    return result.items
-  }
-
-  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Simplified - full implementation would include proper filtering
-    return []
-  }
-
-  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    return []
-  }
-
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    return []
-  }
+  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
 }

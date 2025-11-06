@@ -24,9 +24,7 @@ import { PaginatedResult } from '../../types/paginationTypes.js'
  * Uses Maps to store data in memory
  */
 export class MemoryStorage extends BaseStorage {
-  // Single map of noun ID to noun
-  private nouns: Map<string, HNSWNoun> = new Map()
-  private verbs: Map<string, HNSWVerb> = new Map()
+  // v5.4.0: Removed redundant Maps (nouns, verbs) - objectStore handles all storage via type-first paths
   private statistics: StatisticsData | null = null
 
   // Unified object store for primitive operations (replaces metadata, nounMetadata, verbMetadata)
@@ -80,75 +78,7 @@ export class MemoryStorage extends BaseStorage {
     this.isInitialized = true
   }
 
-  /**
-   * Save a noun to storage (v4.0.0: pure vector only, no metadata)
-   * v5.0.1: COW-aware - uses branch-prefixed paths for fork isolation
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    const isNew = !this.nouns.has(noun.id)
-
-    // Create a deep copy to avoid reference issues
-    // v4.0.0: Store ONLY vector data (no metadata field)
-    // Metadata is saved separately via saveNounMetadata() by base class
-    const nounCopy: HNSWNoun = {
-      id: noun.id,
-      vector: [...noun.vector],
-      connections: new Map(),
-      level: noun.level || 0
-      // ✅ NO metadata field in v4.0.0
-    }
-
-    // Copy connections
-    for (const [level, connections] of noun.connections.entries()) {
-      nounCopy.connections.set(level, new Set(connections))
-    }
-
-    // v5.0.1: COW-aware write using branch-prefixed path
-    // Use synthetic path for vector storage (nouns don't have types in standalone mode)
-    const path = `hnsw/nouns/${noun.id}.json`
-    await this.writeObjectToBranch(path, nounCopy)
-
-    // ALSO store in nouns Map for fast iteration (getNouns, initializeCounts)
-    // This is redundant but maintains backward compatibility
-    this.nouns.set(noun.id, nounCopy)
-
-    // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
-    // This fixes the race condition where metadata didn't exist yet
-  }
-
-  /**
-   * Get a noun from storage (v4.0.0: returns pure vector only)
-   * Base class handles combining with metadata
-   * v5.0.1: COW-aware - reads from branch-prefixed paths with inheritance
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v5.0.1: COW-aware read using branch-prefixed path with inheritance
-    const path = `hnsw/nouns/${id}.json`
-    const noun = await this.readWithInheritance(path)
-
-    // If not found, return null
-    if (!noun) {
-      return null
-    }
-
-    // Return a deep copy to avoid reference issues
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const nounCopy: HNSWNoun = {
-      id: noun.id,
-      vector: [...noun.vector],
-      connections: new Map(),
-      level: noun.level || 0
-      // ✅ NO metadata field in v4.0.0
-    }
-
-    // Copy connections (handle both Map and plain object from JSON)
-    const connections = noun.connections instanceof Map ? noun.connections : new Map(Object.entries(noun.connections || {}))
-    for (const [level, conns] of connections.entries()) {
-      nounCopy.connections.set(Number(level), new Set(conns))
-    }
-
-    return nounCopy
-  }
+  // v5.4.0: Removed saveNoun_internal and getNoun_internal - using BaseStorage's type-first implementation
 
   /**
    * Get nouns with pagination and filtering
@@ -156,491 +86,13 @@ export class MemoryStorage extends BaseStorage {
    * @param options Pagination and filtering options
    * @returns Promise that resolves to a paginated result of nouns with metadata
    */
-  public async getNouns(options: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{ items: HNSWNounWithMetadata[]; totalCount?: number; hasMore: boolean; nextCursor?: string }> {
-    const pagination = options.pagination || {}
-    const filter = options.filter || {}
-    
-    // Default values
-    const offset = pagination.offset || 0
-    const limit = pagination.limit || 100
-    
-    // Convert string types to arrays for consistent handling
-    const nounTypes = filter.nounType 
-      ? Array.isArray(filter.nounType) ? filter.nounType : [filter.nounType]
-      : undefined
-    
-    const services = filter.service
-      ? Array.isArray(filter.service) ? filter.service : [filter.service]
-      : undefined
-    
-    // First, collect all noun IDs that match the filter criteria
-    const matchingIds: string[] = []
-    
-    // Iterate through all nouns to find matches
-    // v4.0.0: Load metadata from separate storage (no embedded metadata field)
-    for (const [nounId, noun] of this.nouns.entries()) {
-      // Get metadata from separate storage
-      const metadata = await this.getNounMetadata(nounId)
+  // v5.4.0: Removed public method overrides (getNouns, getNounsWithPagination, getVerbs) - using BaseStorage's type-first implementation
 
-      // Skip if no metadata (shouldn't happen in v4.0.0 but be defensive)
-      if (!metadata) {
-        continue
-      }
+  // v5.4.0: Removed getNounsByNounType_internal and deleteNoun_internal - using BaseStorage's type-first implementation
 
-      // Filter by noun type if specified
-      if (nounTypes && metadata.noun && !nounTypes.includes(metadata.noun)) {
-        continue
-      }
+  // v5.4.0: Removed saveVerb_internal and getVerb_internal - using BaseStorage's type-first implementation
 
-      // Filter by service if specified
-      if (services && metadata.service && !services.includes(metadata.service)) {
-        continue
-      }
-
-      // Filter by metadata fields if specified
-      if (filter.metadata) {
-        let metadataMatch = true
-        for (const [key, value] of Object.entries(filter.metadata)) {
-          if (metadata[key] !== value) {
-            metadataMatch = false
-            break
-          }
-        }
-        if (!metadataMatch) continue
-      }
-
-      // If we got here, the noun matches all filters
-      matchingIds.push(nounId)
-    }
-    
-    // Calculate pagination
-    const totalCount = matchingIds.length
-    const paginatedIds = matchingIds.slice(offset, offset + limit)
-    const hasMore = offset + limit < totalCount
-    
-    // Create cursor for next page if there are more results
-    const nextCursor = hasMore ? `${offset + limit}` : undefined
-    
-    // Fetch the actual nouns for the current page
-    // v4.0.0: Return HNSWNounWithMetadata (includes metadata field)
-    const items: HNSWNounWithMetadata[] = []
-    for (const id of paginatedIds) {
-      const noun = this.nouns.get(id)
-      if (!noun) continue
-
-      // Get metadata from separate storage
-      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-      const metadata = await this.getNounMetadata(id)
-
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as NounMetadata
-      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      // v4.8.0: Create HNSWNounWithMetadata with standard fields at top-level
-      const nounWithMetadata: HNSWNounWithMetadata = {
-        id: noun.id,
-        vector: [...noun.vector],
-        connections: new Map(),
-        level: noun.level || 0,
-        // v4.8.0: Standard fields at top-level
-        type: (nounType as NounType) || NounType.Thing,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        // Only custom user fields in metadata
-        metadata: customMetadata
-      }
-
-      // Copy connections
-      for (const [level, connections] of noun.connections.entries()) {
-        nounWithMetadata.connections.set(level, new Set(connections))
-      }
-
-      items.push(nounWithMetadata)
-    }
-    
-    return {
-      items,
-      totalCount,
-      hasMore,
-      nextCursor
-    }
-  }
-
-  /**
-   * Get nouns with pagination - simplified interface for compatibility
-   * v4.0.0: Returns HNSWNounWithMetadata[] (includes metadata field)
-   */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: any
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    // Convert to the getNouns format
-    const result = await this.getNouns({
-      pagination: {
-        offset: options.cursor ? parseInt(options.cursor) : 0,
-        limit: options.limit || 100
-      },
-      filter: options.filter
-    })
-
-    return {
-      items: result.items,
-      totalCount: result.totalCount || 0,
-      hasMore: result.hasMore,
-      nextCursor: result.nextCursor
-    }
-  }
-
-  /**
-   * Get nouns by noun type
-   * @param nounType The noun type to filter by
-   * @returns Promise that resolves to an array of nouns of the specified noun type
-   * @deprecated Use getNouns() with filter.nounType instead
-   */
-  protected async getNounsByNounType_internal(nounType: string): Promise<HNSWNoun[]> {
-    const result = await this.getNouns({
-      filter: {
-        nounType
-      }
-    })
-    return result.items
-  }
-
-  /**
-   * Delete a noun from storage (v4.0.0)
-   * v5.0.1: COW-aware - deletes from branch-prefixed paths
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    // v4.0.0: Get type from separate metadata storage
-    const metadata = await this.getNounMetadata(id)
-    if (metadata) {
-      const type = metadata.noun || 'default'
-      this.decrementEntityCount(type)
-    }
-
-    // v5.0.1: COW-aware delete using branch-prefixed path
-    const path = `hnsw/nouns/${id}.json`
-    await this.deleteObjectFromBranch(path)
-
-    // Also remove from nouns Map for fast iteration
-    this.nouns.delete(id)
-  }
-
-  /**
-   * Save a verb to storage (v4.0.0: pure vector + core fields, no metadata)
-   * v5.0.1: COW-aware - uses branch-prefixed paths for fork isolation
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    const isNew = !this.verbs.has(verb.id)
-
-    // Create a deep copy to avoid reference issues
-    // v4.0.0: Include core relational fields but NO metadata field
-    const verbCopy: HNSWVerb = {
-      id: verb.id,
-      vector: [...verb.vector],
-      connections: new Map(),
-
-      // CORE RELATIONAL DATA (part of HNSWVerb in v4.0.0)
-      verb: verb.verb,
-      sourceId: verb.sourceId,
-      targetId: verb.targetId
-      // ✅ NO metadata field in v4.0.0
-    }
-
-    // Copy connections
-    for (const [level, connections] of verb.connections.entries()) {
-      verbCopy.connections.set(level, new Set(connections))
-    }
-
-    // v5.0.1: COW-aware write using branch-prefixed path
-    const path = `hnsw/verbs/${verb.id}.json`
-    await this.writeObjectToBranch(path, verbCopy)
-
-    // ALSO store in verbs Map for fast iteration (getVerbs, initializeCounts)
-    this.verbs.set(verb.id, verbCopy)
-
-    // Note: Count tracking happens in saveVerbMetadata since metadata is separate
-  }
-
-  /**
-   * Get a verb from storage (v4.0.0: returns pure vector + core fields)
-   * Base class handles combining with metadata
-   * v5.0.1: COW-aware - reads from branch-prefixed paths with inheritance
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v5.0.1: COW-aware read using branch-prefixed path with inheritance
-    const path = `hnsw/verbs/${id}.json`
-    const verb = await this.readWithInheritance(path)
-
-    // If not found, return null
-    if (!verb) {
-      return null
-    }
-
-    // Return a deep copy of the HNSWVerb
-    // v4.0.0: Include core relational fields but NO metadata field
-    const verbCopy: HNSWVerb = {
-      id: verb.id,
-      vector: [...verb.vector],
-      connections: new Map(),
-
-      // CORE RELATIONAL DATA (part of HNSWVerb in v4.0.0)
-      verb: verb.verb,
-      sourceId: verb.sourceId,
-      targetId: verb.targetId
-      // ✅ NO metadata field in v4.0.0
-    }
-
-    // Copy connections (handle both Map and plain object from JSON)
-    const connections = verb.connections instanceof Map ? verb.connections : new Map(Object.entries(verb.connections || {}))
-    for (const [level, conns] of connections.entries()) {
-      verbCopy.connections.set(Number(level), new Set(conns))
-    }
-
-    return verbCopy
-  }
-
-  /**
-   * Get verbs with pagination and filtering
-   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
-   * @param options Pagination and filtering options
-   * @returns Promise that resolves to a paginated result of verbs with metadata
-   */
-  public async getVerbs(options: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{ items: HNSWVerbWithMetadata[]; totalCount?: number; hasMore: boolean; nextCursor?: string }> {
-    const pagination = options.pagination || {}
-    const filter = options.filter || {}
-    
-    // Default values
-    const offset = pagination.offset || 0
-    const limit = pagination.limit || 100
-    
-    // Convert string types to arrays for consistent handling
-    const verbTypes = filter.verbType 
-      ? Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
-      : undefined
-    
-    const sourceIds = filter.sourceId
-      ? Array.isArray(filter.sourceId) ? filter.sourceId : [filter.sourceId]
-      : undefined
-    
-    const targetIds = filter.targetId
-      ? Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId]
-      : undefined
-    
-    const services = filter.service
-      ? Array.isArray(filter.service) ? filter.service : [filter.service]
-      : undefined
-    
-    // First, collect all verb IDs that match the filter criteria
-    const matchingIds: string[] = []
-    
-    // Iterate through all verbs to find matches
-    // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb, not metadata
-    for (const [verbId, hnswVerb] of this.verbs.entries()) {
-      // Get the metadata for service/data filtering
-      const metadata = await this.getVerbMetadata(verbId)
-
-      // Filter by verb type if specified
-      // v4.0.0: verb type is in HNSWVerb.verb
-      if (verbTypes && !verbTypes.includes(hnswVerb.verb || '')) {
-        continue
-      }
-
-      // Filter by source ID if specified
-      // v4.0.0: sourceId is in HNSWVerb.sourceId
-      if (sourceIds && !sourceIds.includes(hnswVerb.sourceId || '')) {
-        continue
-      }
-
-      // Filter by target ID if specified
-      // v4.0.0: targetId is in HNSWVerb.targetId
-      if (targetIds && !targetIds.includes(hnswVerb.targetId || '')) {
-        continue
-      }
-
-      // Filter by metadata fields if specified
-      if (filter.metadata && metadata) {
-        let metadataMatch = true
-        for (const [key, value] of Object.entries(filter.metadata)) {
-          const metadataValue = (metadata as any)[key]
-          if (metadataValue !== value) {
-            metadataMatch = false
-            break
-          }
-        }
-        if (!metadataMatch) continue
-      }
-
-      // Filter by service if specified
-      if (services && metadata && metadata.service && !services.includes(metadata.service)) {
-        continue
-      }
-
-      // If we got here, the verb matches all filters
-      matchingIds.push(verbId)
-    }
-    
-    // Calculate pagination
-    const totalCount = matchingIds.length
-    const paginatedIds = matchingIds.slice(offset, offset + limit)
-    const hasMore = offset + limit < totalCount
-    
-    // Create cursor for next page if there are more results
-    const nextCursor = hasMore ? `${offset + limit}` : undefined
-    
-    // Fetch the actual verbs for the current page
-    // v4.0.0: Return HNSWVerbWithMetadata (includes metadata field)
-    const items: HNSWVerbWithMetadata[] = []
-    for (const id of paginatedIds) {
-      const hnswVerb = this.verbs.get(id)
-      if (!hnswVerb) continue
-
-      // Get metadata from separate storage
-      // FIX v4.7.4: Don't skip verbs without metadata - metadata is optional in v4.0.0
-      // Core fields (verb, sourceId, targetId) are in HNSWVerb itself
-      const metadata = await this.getVerbMetadata(id)
-
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = metadata || {}
-      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      // v4.8.0: Create HNSWVerbWithMetadata with standard fields at top-level
-      const verbWithMetadata: HNSWVerbWithMetadata = {
-        id: hnswVerb.id,
-        vector: [...hnswVerb.vector],
-        connections: new Map(),
-
-        // Core relational fields (part of HNSWVerb)
-        verb: hnswVerb.verb,
-        sourceId: hnswVerb.sourceId,
-        targetId: hnswVerb.targetId,
-
-        // v4.8.0: Standard fields at top-level
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-
-        // Only custom user fields in metadata
-        metadata: customMetadata
-      }
-
-      // Copy connections
-      for (const [level, connections] of hnswVerb.connections.entries()) {
-        verbWithMetadata.connections.set(level, new Set(connections))
-      }
-
-      items.push(verbWithMetadata)
-    }
-    
-    return {
-      items,
-      totalCount,
-      hasMore,
-      nextCursor
-    }
-  }
-
-  /**
-   * Get verbs by source
-   * @deprecated Use getVerbs() with filter.sourceId instead
-   */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    const result = await this.getVerbs({
-      filter: {
-        sourceId
-      }
-    })
-    return result.items
-  }
-
-  /**
-   * Get verbs by target
-   * @deprecated Use getVerbs() with filter.targetId instead
-   */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    const result = await this.getVerbs({
-      filter: {
-        targetId
-      }
-    })
-    return result.items
-  }
-
-  /**
-   * Get verbs by type
-   * @deprecated Use getVerbs() with filter.verbType instead
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    const result = await this.getVerbs({
-      filter: {
-        verbType: type
-      }
-    })
-    return result.items
-  }
-
-  /**
-   * Delete a verb from storage
-   * v5.0.1: COW-aware - deletes from branch-prefixed paths
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    // CRITICAL: Also delete verb metadata - this is what getVerbs() uses to find verbs
-    // Without this, getVerbsBySource() will still find "deleted" verbs via their metadata
-    const metadata = await this.getVerbMetadata(id)
-    if (metadata) {
-      const verbType = metadata.verb || metadata.type || 'default'
-      this.decrementVerbCount(verbType as string)
-
-      // Delete the metadata using the base storage method
-      await this.deleteVerbMetadata(id)
-    }
-
-    // v5.0.1: COW-aware delete using branch-prefixed path
-    const path = `hnsw/verbs/${id}.json`
-    await this.deleteObjectFromBranch(path)
-
-    // Also remove from verbs Map for fast iteration
-    this.verbs.delete(id)
-  }
+  // v5.4.0: Removed verb *_internal method overrides - using BaseStorage's type-first implementation
 
   /**
    * Primitive operation: Write object to path
@@ -707,12 +159,15 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Clear all data from storage
+   * v5.4.0: Clears objectStore (type-first paths)
    */
   public async clear(): Promise<void> {
-    this.nouns.clear()
-    this.verbs.clear()
     this.objectStore.clear()
     this.statistics = null
+    this.totalNounCount = 0
+    this.totalVerbCount = 0
+    this.entityCounts.clear()
+    this.verbCounts.clear()
 
     // Clear the statistics cache
     this.statisticsCache = null
@@ -721,6 +176,7 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Get information about storage usage and capacity
+   * v5.4.0: Uses BaseStorage counts
    */
   public async getStorageStatus(): Promise<{
     type: string
@@ -733,9 +189,9 @@ export class MemoryStorage extends BaseStorage {
       used: 0, // In-memory storage doesn't have a meaningful size
       quota: null, // In-memory storage doesn't have a quota
       details: {
-        nodeCount: this.nouns.size,
-        edgeCount: this.verbs.size,
-        metadataCount: this.objectStore.size
+        nodeCount: this.totalNounCount,
+        edgeCount: this.totalVerbCount,
+        objectStoreSize: this.objectStore.size
       }
     }
   }
@@ -829,33 +285,34 @@ export class MemoryStorage extends BaseStorage {
    * Initialize counts from in-memory storage - O(1) operation (v4.0.0)
    */
   protected async initializeCounts(): Promise<void> {
-    // For memory storage, initialize counts from current in-memory state
-    this.totalNounCount = this.nouns.size
-    this.totalVerbCount = this.verbs.size
-
-    // Initialize type-based counts by scanning metadata storage (v4.0.0)
+    // v5.4.0: Scan objectStore paths (type-first structure) to count entities
     this.entityCounts.clear()
     this.verbCounts.clear()
 
-    // Count nouns by loading metadata for each
-    for (const [nounId, noun] of this.nouns.entries()) {
-      const metadata = await this.getNounMetadata(nounId)
-      if (metadata) {
-        const type = metadata.noun || 'default'
+    let totalNouns = 0
+    let totalVerbs = 0
+
+    // Scan all paths in objectStore
+    for (const path of this.objectStore.keys()) {
+      // Count nouns by type (entities/nouns/{type}/vectors/{shard}/{id}.json)
+      const nounMatch = path.match(/^entities\/nouns\/([^/]+)\/vectors\//)
+      if (nounMatch) {
+        const type = nounMatch[1]
         this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
+        totalNouns++
+      }
+
+      // Count verbs by type (entities/verbs/{type}/vectors/{shard}/{id}.json)
+      const verbMatch = path.match(/^entities\/verbs\/([^/]+)\/vectors\//)
+      if (verbMatch) {
+        const type = verbMatch[1]
+        this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
+        totalVerbs++
       }
     }
 
-    // Count verbs by loading metadata for each
-    for (const [verbId, verb] of this.verbs.entries()) {
-      const metadata = await this.getVerbMetadata(verbId)
-      if (metadata) {
-        // VerbMetadata doesn't have verb type - that's in HNSWVerb now
-        // Use the verb's type from the HNSWVerb itself
-        const type = verb.verb || 'default'
-        this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
-      }
-    }
+    this.totalNounCount = totalNouns
+    this.totalVerbCount = totalVerbs
   }
 
   /**
@@ -872,9 +329,10 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Get vector for a noun
+   * v5.4.0: Uses BaseStorage's type-first implementation
    */
   public async getNounVector(id: string): Promise<number[] | null> {
-    const noun = this.nouns.get(id)
+    const noun = await this.getNoun(id)
     return noun ? [...noun.vector] : null
   }
 

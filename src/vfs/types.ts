@@ -226,6 +226,14 @@ export interface ReaddirOptions {
   order?: 'asc' | 'desc'
 }
 
+export interface StatOptions {
+  // No options currently - reserved for future use
+}
+
+export interface ExistsOptions {
+  // No options currently - reserved for future use
+}
+
 export interface CopyOptions {
   overwrite?: boolean            // Overwrite existing
   preserveTimestamps?: boolean   // Keep original timestamps
@@ -405,9 +413,9 @@ export interface IVirtualFileSystem {
   }>
 
   // Metadata operations
-  stat(path: string): Promise<VFSStats>
+  stat(path: string, options?: StatOptions): Promise<VFSStats>
   lstat(path: string): Promise<VFSStats>
-  exists(path: string): Promise<boolean>
+  exists(path: string, options?: ExistsOptions): Promise<boolean>
   chmod(path: string, mode: number): Promise<void>
   chown(path: string, uid: number, gid: number): Promise<void>
   utimes(path: string, atime: Date, mtime: Date): Promise<void>

@@ -10,7 +10,7 @@ import { S3CompatibleStorage } from './adapters/s3CompatibleStorage.js'
 import { R2Storage } from './adapters/r2Storage.js'
 import { GcsStorage } from './adapters/gcsStorage.js'
 import { AzureBlobStorage } from './adapters/azureBlobStorage.js'
-import { TypeAwareStorageAdapter } from './adapters/typeAwareStorageAdapter.js'
+// TypeAwareStorageAdapter removed in v5.4.0 - type-aware now built into BaseStorage
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
 import { isBrowser } from '../utils/environment.js'
 import { OperationConfig } from '../utils/operationUtils.js'
@@ -367,35 +367,21 @@ function getFileSystemPath(options: StorageOptions): string {
 }
 
 /**
- * Wrap any storage adapter with TypeAwareStorageAdapter
- * v5.0.0: TypeAware is now the standard interface for ALL storage adapters
- * This provides type-first organization, fixed-size type counts, and efficient type queries
+ * Configure COW (Copy-on-Write) options on a storage adapter (v5.4.0)
+ * TypeAware is now built-in to all adapters, no wrapper needed!
  *
- * @param underlying - The base storage adapter (memory, filesystem, S3, etc.)
+ * @param storage - The storage adapter
  * @param options - Storage options (for COW configuration)
- * @param verbose - Optional verbose logging
- * @returns TypeAwareStorageAdapter wrapping the underlying storage
  */
-async function wrapWithTypeAware(
-  underlying: StorageAdapter,
-  options?: StorageOptions,
-  verbose = false
-): Promise<StorageAdapter> {
-  const wrapped = new TypeAwareStorageAdapter({
-    underlyingStorage: underlying as any,
-    verbose
-  }) as any
-
+function configureCOW(storage: any, options?: StorageOptions): void {
   // v5.0.1: COW will be initialized AFTER storage.init() in Brainy
   // Store COW options for later initialization
-  if (typeof wrapped.initializeCOW === 'function') {
-    wrapped._cowOptions = {
+  if (typeof storage.initializeCOW === 'function') {
+    storage._cowOptions = {
       branch: options?.branch || 'main',
       enableCompression: options?.enableCompression !== false
     }
   }
-
-  return wrapped
 }
 
 /**
@@ -408,8 +394,10 @@ export async function createStorage(
 ): Promise<StorageAdapter> {
   // If memory storage is forced, use it regardless of other options
   if (options.forceMemoryStorage) {
-    console.log('Using memory storage (forced) + TypeAware wrapper')
-    return await wrapWithTypeAware(new MemoryStorage(), options)
+    console.log('Using memory storage (forced) with built-in type-aware')
+    const storage = new MemoryStorage()
+    configureCOW(storage, options)
+    return storage
   }
 
   // If file system storage is forced, use it regardless of other options
@@ -418,21 +406,27 @@ export async function createStorage(
       console.warn(
         'FileSystemStorage is not available in browser environments, falling back to memory storage'
       )
-      return await wrapWithTypeAware(new MemoryStorage(), options)
+      const storage = new MemoryStorage()
+      configureCOW(storage, options)
+      return storage
     }
     const fsPath = getFileSystemPath(options)
-    console.log(`Using file system storage (forced): ${fsPath} + TypeAware wrapper`)
+    console.log(`Using file system storage (forced): ${fsPath} with built-in type-aware`)
     try {
       const { FileSystemStorage } = await import(
         './adapters/fileSystemStorage.js'
       )
-      return await wrapWithTypeAware(new FileSystemStorage(fsPath), options)
+      const storage = new FileSystemStorage(fsPath)
+      configureCOW(storage, options)
+      return storage
     } catch (error) {
       console.warn(
         'Failed to load FileSystemStorage, falling back to memory storage:',
         error
       )
-      return await wrapWithTypeAware(new MemoryStorage(), options)
+      const storage = new MemoryStorage()
+      configureCOW(storage, options)
+      return storage
     }
   }
 
@@ -440,14 +434,16 @@ export async function createStorage(
   if (options.type && options.type !== 'auto') {
     switch (options.type) {
       case 'memory':
-        console.log('Using memory storage + TypeAware wrapper')
-        return await wrapWithTypeAware(new MemoryStorage(), options)
+        console.log('Using memory storage with built-in type-aware')
+        const memStorage = new MemoryStorage()
+        configureCOW(memStorage, options)
+        return memStorage
 
       case 'opfs': {
         // Check if OPFS is available
         const opfsStorage = new OPFSStorage()
         if (opfsStorage.isOPFSAvailable()) {
-          console.log('Using OPFS storage + TypeAware wrapper')
+          console.log('Using OPFS storage with built-in type-aware')
           await opfsStorage.init()
 
           // Request persistent storage if specified
@@ -458,12 +454,15 @@ export async function createStorage(
             )
           }
 
-          return await wrapWithTypeAware(opfsStorage, options)
+          configureCOW(opfsStorage, options)
+          return opfsStorage
         } else {
           console.warn(
             'OPFS storage is not available, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
       }
 
@@ -472,28 +471,34 @@ export async function createStorage(
           console.warn(
             'FileSystemStorage is not available in browser environments, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
         const fsPath = getFileSystemPath(options)
-        console.log(`Using file system storage: ${fsPath} + TypeAware wrapper`)
+        console.log(`Using file system storage: ${fsPath} with built-in type-aware`)
         try {
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return await wrapWithTypeAware(new FileSystemStorage(fsPath))
+          const storage = new FileSystemStorage(fsPath)
+          configureCOW(storage, options)
+          return storage
         } catch (error) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',
             error
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
       }
 
       case 's3':
         if (options.s3Storage) {
-          console.log('Using Amazon S3 storage + TypeAware wrapper')
-          return await wrapWithTypeAware(new S3CompatibleStorage({
+          console.log('Using Amazon S3 storage with built-in type-aware')
+          const storage = new S3CompatibleStorage({
             bucketName: options.s3Storage.bucketName,
             region: options.s3Storage.region,
             accessKeyId: options.s3Storage.accessKeyId,
@@ -502,29 +507,37 @@ export async function createStorage(
             serviceType: 's3',
             operationConfig: options.operationConfig,
             cacheConfig: options.cacheConfig
-          }))
+          })
+          configureCOW(storage, options)
+          return storage
         } else {
           console.warn(
             'S3 storage configuration is missing, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
 
       case 'r2':
         if (options.r2Storage) {
-          console.log('Using Cloudflare R2 storage (dedicated adapter) + TypeAware wrapper')
-          return await wrapWithTypeAware(new R2Storage({
+          console.log('Using Cloudflare R2 storage (dedicated adapter) with built-in type-aware')
+          const storage = new R2Storage({
             bucketName: options.r2Storage.bucketName,
             accountId: options.r2Storage.accountId,
             accessKeyId: options.r2Storage.accessKeyId,
             secretAccessKey: options.r2Storage.secretAccessKey,
             cacheConfig: options.cacheConfig
-          }))
+          })
+          configureCOW(storage, options)
+          return storage
         } else {
           console.warn(
             'R2 storage configuration is missing, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
 
       case 'gcs-native':
@@ -546,7 +559,9 @@ export async function createStorage(
           console.warn(
             'GCS storage configuration is missing, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
 
         // If using legacy gcsStorage with HMAC keys, use S3-compatible adapter
@@ -558,7 +573,7 @@ export async function createStorage(
             '   Native GCS with Application Default Credentials is recommended for better performance and security.'
           )
           // Use S3-compatible storage for HMAC keys
-          return await wrapWithTypeAware(new S3CompatibleStorage({
+          const storage = new S3CompatibleStorage({
             bucketName: gcsLegacy.bucketName,
             region: gcsLegacy.region,
             endpoint: gcsLegacy.endpoint || 'https://storage.googleapis.com',
@@ -566,13 +581,15 @@ export async function createStorage(
             secretAccessKey: gcsLegacy.secretAccessKey,
             serviceType: 'gcs',
             cacheConfig: options.cacheConfig
-          }))
+          })
+          configureCOW(storage, options)
+          return storage
         }
 
         // Use native GCS SDK (the correct default!)
         const config = gcsNative || gcsLegacy!
         console.log('Using Google Cloud Storage (native SDK) + TypeAware wrapper')
-        return await wrapWithTypeAware(new GcsStorage({
+        const storage = new GcsStorage({
           bucketName: config.bucketName,
           keyFilename: gcsNative?.keyFilename,
           credentials: gcsNative?.credentials,
@@ -581,25 +598,31 @@ export async function createStorage(
           skipInitialScan: gcsNative?.skipInitialScan,
           skipCountsFile: gcsNative?.skipCountsFile,
           cacheConfig: options.cacheConfig
-        }))
+        })
+        configureCOW(storage, options)
+        return storage
       }
 
       case 'azure':
         if (options.azureStorage) {
           console.log('Using Azure Blob Storage (native SDK) + TypeAware wrapper')
-          return await wrapWithTypeAware(new AzureBlobStorage({
+          const storage = new AzureBlobStorage({
             containerName: options.azureStorage.containerName,
             accountName: options.azureStorage.accountName,
             accountKey: options.azureStorage.accountKey,
             connectionString: options.azureStorage.connectionString,
             sasToken: options.azureStorage.sasToken,
             cacheConfig: options.cacheConfig
-          }))
+          })
+          configureCOW(storage, options)
+          return storage
         } else {
           console.warn(
             'Azure storage configuration is missing, falling back to memory storage'
           )
-          return await wrapWithTypeAware(new MemoryStorage(), options)
+          const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
         }
 
       case 'type-aware':
@@ -621,7 +644,9 @@ export async function createStorage(
         console.warn(
           `Unknown storage type: ${options.type}, falling back to memory storage`
         )
-        return await wrapWithTypeAware(new MemoryStorage(), options)
+        const storage = new MemoryStorage()
+          configureCOW(storage, options)
+          return storage
     }
   }
 
@@ -630,7 +655,7 @@ export async function createStorage(
     console.log(
       `Using custom S3-compatible storage: ${options.customS3Storage.serviceType || 'custom'} + TypeAware wrapper`
     )
-    return await wrapWithTypeAware(new S3CompatibleStorage({
+    const storage = new S3CompatibleStorage({
       bucketName: options.customS3Storage.bucketName,
       region: options.customS3Storage.region,
       endpoint: options.customS3Storage.endpoint,
@@ -638,25 +663,29 @@ export async function createStorage(
       secretAccessKey: options.customS3Storage.secretAccessKey,
       serviceType: options.customS3Storage.serviceType || 'custom',
       cacheConfig: options.cacheConfig
-    }))
+    })
+    configureCOW(storage, options)
+    return storage
   }
 
   // If R2 storage is specified, use it
   if (options.r2Storage) {
     console.log('Using Cloudflare R2 storage (dedicated adapter) + TypeAware wrapper')
-    return await wrapWithTypeAware(new R2Storage({
+    const storage = new R2Storage({
       bucketName: options.r2Storage.bucketName,
       accountId: options.r2Storage.accountId,
       accessKeyId: options.r2Storage.accessKeyId,
       secretAccessKey: options.r2Storage.secretAccessKey,
       cacheConfig: options.cacheConfig
-    }))
+    })
+    configureCOW(storage, options)
+    return storage
   }
 
   // If S3 storage is specified, use it
   if (options.s3Storage) {
     console.log('Using Amazon S3 storage + TypeAware wrapper')
-    return await wrapWithTypeAware(new S3CompatibleStorage({
+    const storage = new S3CompatibleStorage({
       bucketName: options.s3Storage.bucketName,
       region: options.s3Storage.region,
       accessKeyId: options.s3Storage.accessKeyId,
@@ -664,7 +693,9 @@ export async function createStorage(
       sessionToken: options.s3Storage.sessionToken,
       serviceType: 's3',
       cacheConfig: options.cacheConfig
-    }))
+    })
+    configureCOW(storage, options)
+    return storage
   }
 
   // If GCS storage is specified (native or legacy S3-compatible)
@@ -683,7 +714,7 @@ export async function createStorage(
       )
       // Use S3-compatible storage for HMAC keys
       console.log('Using Google Cloud Storage (S3-compatible with HMAC - auto-detected) + TypeAware wrapper')
-      return await wrapWithTypeAware(new S3CompatibleStorage({
+      const storage = new S3CompatibleStorage({
         bucketName: gcsLegacy.bucketName,
         region: gcsLegacy.region,
         endpoint: gcsLegacy.endpoint || 'https://storage.googleapis.com',
@@ -691,13 +722,15 @@ export async function createStorage(
         secretAccessKey: gcsLegacy.secretAccessKey,
         serviceType: 'gcs',
         cacheConfig: options.cacheConfig
-      }))
+      })
+      configureCOW(storage, options)
+      return storage
     }
 
     // Use native GCS SDK (the correct default!)
     const config = gcsNative || gcsLegacy!
     console.log('Using Google Cloud Storage (native SDK - auto-detected) + TypeAware wrapper')
-    return await wrapWithTypeAware(new GcsStorage({
+    const storage = new GcsStorage({
       bucketName: config.bucketName,
       keyFilename: gcsNative?.keyFilename,
       credentials: gcsNative?.credentials,
@@ -706,20 +739,24 @@ export async function createStorage(
       skipInitialScan: gcsNative?.skipInitialScan,
       skipCountsFile: gcsNative?.skipCountsFile,
       cacheConfig: options.cacheConfig
-    }))
+    })
+    configureCOW(storage, options)
+    return storage
   }
 
   // If Azure storage is specified, use it
   if (options.azureStorage) {
     console.log('Using Azure Blob Storage (native SDK) + TypeAware wrapper')
-    return await wrapWithTypeAware(new AzureBlobStorage({
+    const storage = new AzureBlobStorage({
       containerName: options.azureStorage.containerName,
       accountName: options.azureStorage.accountName,
       accountKey: options.azureStorage.accountKey,
       connectionString: options.azureStorage.connectionString,
       sasToken: options.azureStorage.sasToken,
       cacheConfig: options.cacheConfig
-    }))
+    })
+    configureCOW(storage, options)
+    return storage
   }
 
   // Auto-detect the best storage adapter based on the environment
@@ -733,12 +770,14 @@ export async function createStorage(
         process.versions.node
       ) {
         const fsPath = getFileSystemPath(options)
-        console.log(`Using file system storage (auto-detected): ${fsPath} + TypeAware wrapper`)
+        console.log(`Using file system storage (auto-detected): ${fsPath} with built-in type-aware`)
         try {
           const { FileSystemStorage } = await import(
             './adapters/fileSystemStorage.js'
           )
-          return await wrapWithTypeAware(new FileSystemStorage(fsPath))
+          const storage = new FileSystemStorage(fsPath)
+          configureCOW(storage, options)
+          return storage
         } catch (fsError) {
           console.warn(
             'Failed to load FileSystemStorage, falling back to memory storage:',
@@ -765,17 +804,20 @@ export async function createStorage(
         console.log(`Persistent storage ${isPersistent ? 'granted' : 'denied'}`)
       }
 
-      return await wrapWithTypeAware(opfsStorage, options)
+      configureCOW(opfsStorage, options)
+      return opfsStorage
     }
   }
 
   // Finally, fall back to memory storage
-  console.log('Using memory storage (auto-detected) + TypeAware wrapper')
-  return await wrapWithTypeAware(new MemoryStorage(), options)
+  console.log('Using memory storage (auto-detected) with built-in type-aware')
+  const storage = new MemoryStorage()
+  configureCOW(storage, options)
+  return storage
 }
 
 /**
- * Export storage adapters
+ * Export storage adapters (v5.4.0: TypeAware is now built-in, no separate export)
  */
 export {
   MemoryStorage,
@@ -783,8 +825,7 @@ export {
   S3CompatibleStorage,
   R2Storage,
   GcsStorage,
-  AzureBlobStorage,
-  TypeAwareStorageAdapter
+  AzureBlobStorage
 }
 
 // Export FileSystemStorage conditionally

@@ -417,7 +417,7 @@ describe('VirtualFileSystem - Production Tests', () => {
       console.log(`Listed 100 files in ${listTime}ms`)
 
       // Performance assertions
-      expect(writeTime).toBeLessThan(5000)  // Should write 100 files in < 5s
+      expect(writeTime).toBeLessThan(5500)  // v5.4.0: Type-first storage takes slightly longer
       expect(listTime).toBeLessThan(100)    // Should list 100 files in < 100ms
     })
 

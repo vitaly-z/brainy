@@ -63,6 +63,12 @@ const MAX_GCS_PAGE_SIZE = 5000
  * 2. Service Account Key File (if keyFilename provided)
  * 3. Service Account Credentials Object (if credentials provided)
  * 4. HMAC Keys (if accessKeyId/secretAccessKey provided)
+ *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
  */
 export class GcsStorage extends BaseStorage {
   private storage: Storage | null = null
@@ -115,6 +121,9 @@ export class GcsStorage extends BaseStorage {
 
   // Module logger
   private logger = createModuleLogger('GcsStorage')
+
+  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  private hnswLocks = new Map<string, Promise<void>>()
 
   // Configuration options
   private skipInitialScan: boolean = false
@@ -445,12 +454,7 @@ export class GcsStorage extends BaseStorage {
     await Promise.all(writes)
   }
 
-  /**
-   * Save a noun to storage (internal implementation)
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    return this.saveNode(noun)
-  }
+  // v5.4.0: Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
@@ -536,21 +540,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a noun from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector data (no metadata field)
-   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const node = await this.getNode(id)
-    if (!node) {
-      return null
-    }
-
-    // Return pure vector structure
-    return node
-  }
+  // v5.4.0: Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get a node from storage
@@ -660,54 +650,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Delete a noun from storage (internal implementation)
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    const requestId = await this.applyBackpressure()
-
-    try {
-      this.logger.trace(`Deleting noun ${id}`)
-
-      // Get the GCS key
-      const key = this.getNounKey(id)
-
-      // Delete from GCS
-      const file = this.bucket!.file(key)
-      await file.delete()
-
-      // Remove from cache
-      this.nounCacheManager.delete(id)
-
-      // Decrement noun count
-      const metadata = await this.getNounMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementEntityCountSafe(metadata.type as string)
-      }
-
-      this.logger.trace(`Noun ${id} deleted successfully`)
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.code === 404) {
-        // Already deleted
-        this.logger.trace(`Noun ${id} not found (already deleted)`)
-        return
-      }
-
-      // Handle throttling
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      this.logger.error(`Failed to delete noun ${id}:`, error)
-      throw new Error(`Failed to delete noun ${id}: ${error}`)
-    }
-  }
+  // v5.4.0: Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Write an object to a specific path in GCS
@@ -813,12 +756,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Save a verb to storage (internal implementation)
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
+  // v5.4.0: Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save an edge to storage
@@ -902,21 +840,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
+  // v5.4.0: Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get an edge from storage
@@ -992,531 +916,14 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Delete a verb from storage (internal implementation)
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
+  // v5.4.0: Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
 
-    const requestId = await this.applyBackpressure()
+  // v5.4.0: Removed pagination overrides - use BaseStorage's type-first implementation
+  // - getNounsWithPagination, getNodesWithPagination, getVerbsWithPagination
+  // - getNouns, getVerbs (public wrappers)
 
-    try {
-      this.logger.trace(`Deleting verb ${id}`)
-
-      // Get the GCS key
-      const key = this.getVerbKey(id)
-
-      // Delete from GCS
-      const file = this.bucket!.file(key)
-      await file.delete()
-
-      // Remove from cache
-      this.verbCacheManager.delete(id)
-
-      // Decrement verb count
-      const metadata = await this.getVerbMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementVerbCount(metadata.type as string)
-      }
-
-      this.logger.trace(`Verb ${id} deleted successfully`)
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.code === 404) {
-        // Already deleted
-        this.logger.trace(`Verb ${id} not found (already deleted)`)
-        return
-      }
-
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      this.logger.error(`Failed to delete verb ${id}:`, error)
-      throw new Error(`Failed to delete verb ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get nouns with pagination
-   * v4.0.0: Returns HNSWNounWithMetadata[] (includes metadata field)
-   * Iterates through all UUID-based shards (00-ff) for consistent pagination
-   */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-
-    const limit = options.limit || 100
-    const cursor = options.cursor
-
-    // Get paginated nodes
-    const result = await this.getNodesWithPagination({
-      limit,
-      cursor,
-      useCache: true
-    })
-
-    // v4.0.0: Combine nodes with metadata to create HNSWNounWithMetadata[]
-    const items: HNSWNounWithMetadata[] = []
-
-    for (const node of result.nodes) {
-      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-      const metadata = await this.getNounMetadata(node.id)
-
-      // Apply filters if provided
-      if (options.filter) {
-        // Filter by noun type
-        if (options.filter.nounType) {
-          const nounTypes = Array.isArray(options.filter.nounType)
-            ? options.filter.nounType
-            : [options.filter.nounType]
-
-          const nounType = (metadata as any).type || (metadata as any).noun
-          if (!nounType || !nounTypes.includes(nounType)) {
-            continue
-          }
-        }
-
-        // Filter by metadata fields if specified
-        if (options.filter.metadata) {
-          let metadataMatch = true
-          for (const [key, value] of Object.entries(options.filter.metadata)) {
-            const metadataValue = (metadata as any)[key]
-            if (metadataValue !== value) {
-              metadataMatch = false
-              break
-            }
-          }
-          if (!metadataMatch) continue
-        }
-      }
-
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as NounMetadata
-      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      const nounWithMetadata: HNSWNounWithMetadata = {
-        id: node.id,
-        vector: [...node.vector],
-        connections: new Map(node.connections),
-        level: node.level || 0,
-        type: (nounType as NounType) || NounType.Thing,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      }
-      items.push(nounWithMetadata)
-    }
-
-    return {
-      items,
-      totalCount: result.totalCount,
-      hasMore: result.hasMore,
-      nextCursor: result.nextCursor
-    }
-  }
-
-  /**
-   * Get nodes with pagination (internal implementation)
-   * Iterates through UUID-based shards for consistent pagination
-   */
-  private async getNodesWithPagination(options: {
-    limit: number
-    cursor?: string
-    useCache?: boolean
-  }): Promise<{
-    nodes: HNSWNode[]
-    totalCount: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()  // CRITICAL: Must initialize before using this.bucket
-
-    const limit = options.limit || 100
-    const useCache = options.useCache !== false
-
-    try {
-      const nodes: HNSWNode[] = []
-
-      // Parse cursor (format: "shardIndex:gcsPageToken")
-      let startShardIndex = 0
-      let gcsPageToken: string | undefined
-      if (options.cursor) {
-        const parts = options.cursor.split(':', 2)
-        startShardIndex = parseInt(parts[0]) || 0
-        gcsPageToken = parts[1] || undefined
-      }
-
-      // Iterate through shards starting from cursor position
-      for (let shardIndex = startShardIndex; shardIndex < TOTAL_SHARDS; shardIndex++) {
-        const shardId = getShardIdByIndex(shardIndex)
-        const shardPrefix = `${this.nounPrefix}${shardId}/`
-
-        // List objects in this shard
-        // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
-        const requestedPageSize = limit - nodes.length
-        const cappedPageSize = Math.min(requestedPageSize, MAX_GCS_PAGE_SIZE)
-
-        const [files, , response] = await this.bucket!.getFiles({
-          prefix: shardPrefix,
-          maxResults: cappedPageSize,
-          pageToken: shardIndex === startShardIndex ? gcsPageToken : undefined
-        })
-
-        // Extract node IDs from file names
-        if (files && files.length > 0) {
-          const nodeIds = files
-            .filter((file: any) => file && file.name)
-            .map((file: any) => {
-              // Extract UUID from: entities/nouns/vectors/ab/ab123456-uuid.json
-              let name = file.name!
-              if (name.startsWith(shardPrefix)) {
-                name = name.substring(shardPrefix.length)
-              }
-              if (name.endsWith('.json')) {
-                name = name.substring(0, name.length - 5)
-              }
-              return name
-            })
-            .filter((id: string) => id && id.length > 0)
-
-          // Load nodes
-          for (const id of nodeIds) {
-            const node = await this.getNode(id)
-            if (node) {
-              nodes.push(node)
-            }
-
-            if (nodes.length >= limit) {
-              break
-            }
-          }
-        }
-
-        // Check if we have enough nodes or if there are more files in current shard
-        if (nodes.length >= limit) {
-          const nextCursor = response?.nextPageToken
-            ? `${shardIndex}:${response.nextPageToken}`
-            : shardIndex + 1 < TOTAL_SHARDS
-            ? `${shardIndex + 1}:`
-            : undefined
-
-          return {
-            nodes,
-            totalCount: this.totalNounCount,
-            hasMore: !!nextCursor,
-            nextCursor
-          }
-        }
-
-        // If this shard has more pages, create cursor for next page
-        if (response?.nextPageToken) {
-          return {
-            nodes,
-            totalCount: this.totalNounCount,
-            hasMore: true,
-            nextCursor: `${shardIndex}:${response.nextPageToken}`
-          }
-        }
-
-        // Continue to next shard
-      }
-
-      // No more shards or nodes
-      return {
-        nodes,
-        totalCount: this.totalNounCount,
-        hasMore: false,
-        nextCursor: undefined
-      }
-    } catch (error) {
-      this.logger.error('Error in getNodesWithPagination:', error)
-      throw new Error(`Failed to get nodes with pagination: ${error}`)
-    }
-  }
-
-  /**
-   * Get nouns by noun type (internal implementation)
-   */
-  protected async getNounsByNounType_internal(nounType: string): Promise<HNSWNoun[]> {
-    const result = await this.getNounsWithPagination({
-      limit: 10000, // Large limit for backward compatibility
-      filter: { nounType }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by source ID (internal implementation)
-   */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { sourceId: [sourceId] }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by target ID (internal implementation)
-   */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { targetId: [targetId] }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by type (internal implementation)
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      limit: Number.MAX_SAFE_INTEGER,
-      filter: { verbType: type }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs with pagination
-   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
-   */
-  public async getVerbsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-
-    const limit = options.limit || 100
-
-    try {
-      // List verbs (simplified - not sharded yet in original implementation)
-      // Cap maxResults to GCS API limit to prevent "Invalid unsigned integer" errors
-      const cappedLimit = Math.min(limit, MAX_GCS_PAGE_SIZE)
-
-      const [files, , response] = await this.bucket!.getFiles({
-        prefix: this.verbPrefix,
-        maxResults: cappedLimit,
-        pageToken: options.cursor
-      })
-
-      // If no files, return empty result
-      if (!files || files.length === 0) {
-        return {
-          items: [],
-          totalCount: 0,
-          hasMore: false,
-          nextCursor: undefined
-        }
-      }
-
-      // Extract verb IDs and load verbs as HNSW verbs
-      const hnswVerbs: HNSWVerb[] = []
-      for (const file of files) {
-        if (!file.name) continue
-
-        // Extract UUID from path
-        let name = file.name
-        if (name.startsWith(this.verbPrefix)) {
-          name = name.substring(this.verbPrefix.length)
-        }
-        if (name.endsWith('.json')) {
-          name = name.substring(0, name.length - 5)
-        }
-
-        const verb = await this.getEdge(name)
-        if (verb) {
-          hnswVerbs.push(verb)
-        }
-      }
-
-      // v4.0.0: Combine HNSWVerbs with metadata to create HNSWVerbWithMetadata[]
-      const items: HNSWVerbWithMetadata[] = []
-      for (const hnswVerb of hnswVerbs) {
-        const metadata = await this.getVerbMetadata(hnswVerb.id)
-
-        // Apply filters
-        if (options.filter) {
-          // v4.0.0: Core fields (verb, sourceId, targetId) are in HNSWVerb structure
-          if (options.filter.sourceId) {
-            const sourceIds = Array.isArray(options.filter.sourceId)
-              ? options.filter.sourceId
-              : [options.filter.sourceId]
-            if (!hnswVerb.sourceId || !sourceIds.includes(hnswVerb.sourceId)) {
-              continue
-            }
-          }
-
-          if (options.filter.targetId) {
-            const targetIds = Array.isArray(options.filter.targetId)
-              ? options.filter.targetId
-              : [options.filter.targetId]
-            if (!hnswVerb.targetId || !targetIds.includes(hnswVerb.targetId)) {
-              continue
-            }
-          }
-
-          if (options.filter.verbType) {
-            const verbTypes = Array.isArray(options.filter.verbType)
-              ? options.filter.verbType
-              : [options.filter.verbType]
-            if (!hnswVerb.verb || !verbTypes.includes(hnswVerb.verb)) {
-              continue
-            }
-          }
-
-          // Filter by metadata fields if specified
-          if (options.filter.metadata && metadata) {
-            let metadataMatch = true
-            for (const [key, value] of Object.entries(options.filter.metadata)) {
-              const metadataValue = (metadata as any)[key]
-              if (metadataValue !== value) {
-                metadataMatch = false
-                break
-              }
-            }
-            if (!metadataMatch) continue
-          }
-        }
-
-        // v4.8.0: Extract standard fields from metadata to top-level
-        const metadataObj = (metadata || {}) as VerbMetadata
-        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-        const verbWithMetadata: HNSWVerbWithMetadata = {
-          id: hnswVerb.id,
-          vector: [...hnswVerb.vector],
-          connections: new Map(hnswVerb.connections),
-          verb: hnswVerb.verb,
-          sourceId: hnswVerb.sourceId,
-          targetId: hnswVerb.targetId,
-          createdAt: (createdAt as number) || Date.now(),
-          updatedAt: (updatedAt as number) || Date.now(),
-          confidence: confidence as number | undefined,
-          weight: weight as number | undefined,
-          service: service as string | undefined,
-          data: data as Record<string, any> | undefined,
-          createdBy,
-          metadata: customMetadata
-        }
-        items.push(verbWithMetadata)
-      }
-
-      return {
-        items,
-        totalCount: this.totalVerbCount,
-        hasMore: !!response?.nextPageToken,
-        nextCursor: response?.nextPageToken
-      }
-    } catch (error) {
-      this.logger.error('Error in getVerbsWithPagination:', error)
-      throw new Error(`Failed to get verbs with pagination: ${error}`)
-    }
-  }
-
-  /**
-   * Get nouns with filtering and pagination (public API)
-   */
-  public async getNouns(options?: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  }): Promise<{
-    items: any[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    const limit = options?.pagination?.limit || 100
-    const cursor = options?.pagination?.cursor
-
-    return this.getNounsWithPagination({
-      limit,
-      cursor,
-      filter: options?.filter
-    })
-  }
-
-  /**
-   * Get verbs with filtering and pagination (public API)
-   * v4.0.0: Returns HNSWVerbWithMetadata[] (includes metadata field)
-   */
-  public async getVerbs(options?: {
-    pagination?: {
-      offset?: number
-      limit?: number
-      cursor?: string
-    }
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  }): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    const limit = options?.pagination?.limit || 100
-    const cursor = options?.pagination?.cursor
-
-    return this.getVerbsWithPagination({
-      limit,
-      cursor,
-      filter: options?.filter
-    })
-  }
+  // v5.4.0: Removed 4 query *_internal methods - now inherit from BaseStorage's type-first implementation
+  // (getNounsByNounType_internal, getVerbsBySource_internal, getVerbsByTarget_internal, getVerbsByType_internal)
 
   /**
    * Batch fetch metadata for multiple noun IDs (efficient for large queries)
@@ -1899,123 +1306,101 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get a noun's vector for HNSW rebuild
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-    const noun = await this.getNode(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
   /**
    * Save HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   *
+   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
+    const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-    // Previous implementation overwrote the entire file, destroying vector data
-    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // Problem: Without mutex, concurrent operations can:
+    //   1. Thread A reads noun (connections: [1,2,3])
+    //   2. Thread B reads noun (connections: [1,2,3])
+    //   3. Thread A adds connection 4, writes [1,2,3,4]
+    //   4. Thread B adds connection 5, writes [1,2,3,5] ← Connection 4 LOST!
+    // Solution: Mutex serializes operations per entity (like FileSystem/OPFS adapters)
+    // Production scale: Prevents corruption at 1000+ concurrent operations
 
-    // CRITICAL FIX (v4.10.1): Optimistic locking with generation numbers to prevent race conditions
-    // Uses GCS generation preconditions - retries with exponential backoff on conflicts
-    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+    // Wait for any pending operations on this entity
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
 
-    const shard = getShardIdFromUuid(nounId)
-    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-    const file = this.bucket!.file(key)
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
-    const maxRetries = 5
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Get current generation and data
-        let currentGeneration: string | undefined
-        let existingNode: any = {}
+    try {
+      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Read existing noun data (if exists)
+      const existingNoun = await this.getNoun(nounId)
 
-        try {
-          // Download file and get metadata in parallel
-          const [data, metadata] = await Promise.all([
-            file.download(),
-            file.getMetadata()
-          ])
-          existingNode = JSON.parse(data[0].toString('utf-8'))
-          currentGeneration = metadata[0].generation?.toString()
-        } catch (error: any) {
-          // File doesn't exist yet - will create new
-          if (error.code !== 404) {
-            throw error
-          }
-        }
-
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-
-        // ATOMIC WRITE: Use generation precondition
-        // If currentGeneration exists, only write if generation matches (no concurrent modification)
-        // If no generation, only write if file doesn't exist (ifGenerationMatch: 0)
-        await file.save(JSON.stringify(updatedNode, null, 2), {
-          contentType: 'application/json',
-          resumable: false,
-          preconditionOpts: currentGeneration
-            ? { ifGenerationMatch: currentGeneration }
-            : { ifGenerationMatch: '0' } // Only create if doesn't exist
-        })
-
-        // Success! Exit retry loop
-        return
-      } catch (error: any) {
-        // Precondition failed (412) - concurrent modification detected
-        if (error.code === 412) {
-          if (attempt === maxRetries - 1) {
-            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
-            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
-          }
-
-          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
-          const backoffMs = 50 * Math.pow(2, attempt)
-          await new Promise(resolve => setTimeout(resolve, backoffMs))
-          continue
-        }
-
-        // Other error - rethrow
-        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+      if (!existingNoun) {
+        // Noun doesn't exist - cannot update HNSW data for non-existent noun
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
+
+      // Convert connections from Record to Map format for storage
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      await this.saveNoun(updatedNoun)
+    } finally {
+      // Release lock (ALWAYS runs, even if error thrown)
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
   /**
    * Get HNSW graph data for a noun
-   * Storage path: entities/nouns/hnsw/{shard}/{id}.json
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    try {
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    if (!noun) {
+      return null
+    }
 
-      const file = this.bucket!.file(key)
-      const [contents] = await file.download()
-
-      return JSON.parse(contents.toString())
-    } catch (error: any) {
-      if (error.code === 404) {
-        return null
+    // Convert connections from Map to Record format
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
       }
+    }
 
-      this.logger.error(`Failed to get HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
     }
   }
 

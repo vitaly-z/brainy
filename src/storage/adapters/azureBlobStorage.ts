@@ -63,6 +63,12 @@ const MAX_AZURE_PAGE_SIZE = 5000
  * 2. Connection String - if connectionString provided
  * 3. Storage Account Key - if accountName + accountKey provided
  * 4. SAS Token - if accountName + sasToken provided
+ *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed pagination overrides
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
  */
 export class AzureBlobStorage extends BaseStorage {
   private blobServiceClient: BlobServiceClient | null = null
@@ -110,6 +116,9 @@ export class AzureBlobStorage extends BaseStorage {
 
   // Module logger
   private logger = createModuleLogger('AzureBlobStorage')
+
+  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  private hnswLocks = new Map<string, Promise<void>>()
 
   /**
    * Initialize the storage adapter
@@ -443,12 +452,7 @@ export class AzureBlobStorage extends BaseStorage {
     await Promise.all(writes)
   }
 
-  /**
-   * Save a noun to storage (internal implementation)
-   */
-  protected async saveNoun_internal(noun: HNSWNoun): Promise<void> {
-    return this.saveNode(noun)
-  }
+  // v5.4.0: Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
@@ -540,21 +544,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a noun from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector data (no metadata field)
-   * Base class combines with metadata via getNoun() -> HNSWNounWithMetadata
-   */
-  protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v4.0.0: Return ONLY vector data (no metadata field)
-    const node = await this.getNode(id)
-    if (!node) {
-      return null
-    }
-
-    // Return pure vector structure
-    return node
-  }
+  // v5.4.0: Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get a node from storage
@@ -652,54 +642,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Delete a noun from storage (internal implementation)
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    const requestId = await this.applyBackpressure()
-
-    try {
-      this.logger.trace(`Deleting noun ${id}`)
-
-      // Get the Azure blob name
-      const blobName = this.getNounKey(id)
-
-      // Delete from Azure
-      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
-      await blockBlobClient.delete()
-
-      // Remove from cache
-      this.nounCacheManager.delete(id)
-
-      // Decrement noun count
-      const metadata = await this.getNounMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementEntityCountSafe(metadata.type as string)
-      }
-
-      this.logger.trace(`Noun ${id} deleted successfully`)
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
-        // Already deleted
-        this.logger.trace(`Noun ${id} not found (already deleted)`)
-        return
-      }
-
-      // Handle throttling
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      this.logger.error(`Failed to delete noun ${id}:`, error)
-      throw new Error(`Failed to delete noun ${id}: ${error}`)
-    }
-  }
+  // v5.4.0: Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Write an object to a specific path in Azure
@@ -1011,12 +954,7 @@ export class AzureBlobStorage extends BaseStorage {
     })
   }
 
-  /**
-   * Save a verb to storage (internal implementation)
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
+  // v5.4.0: Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save an edge to storage
@@ -1103,21 +1041,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
+  // v5.4.0: Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get an edge from storage
@@ -1194,285 +1118,13 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Delete a verb from storage (internal implementation)
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    await this.ensureInitialized()
+  // v5.4.0: Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
 
-    const requestId = await this.applyBackpressure()
+  // v5.4.0: Removed getNounsWithPagination - now inherit from BaseStorage's type-first implementation
 
-    try {
-      this.logger.trace(`Deleting verb ${id}`)
+  // v5.4.0: Removed getNounsByNounType_internal - now inherit from BaseStorage's type-first implementation
 
-      // Get the Azure blob name
-      const blobName = this.getVerbKey(id)
-
-      // Delete from Azure
-      const blockBlobClient = this.containerClient!.getBlockBlobClient(blobName)
-      await blockBlobClient.delete()
-
-      // Remove from cache
-      this.verbCacheManager.delete(id)
-
-      // Decrement verb count
-      const metadata = await this.getVerbMetadata(id)
-      if (metadata && metadata.type) {
-        await this.decrementVerbCount(metadata.type as string)
-      }
-
-      this.logger.trace(`Verb ${id} deleted successfully`)
-      this.releaseBackpressure(true, requestId)
-    } catch (error: any) {
-      this.releaseBackpressure(false, requestId)
-
-      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
-        // Already deleted
-        this.logger.trace(`Verb ${id} not found (already deleted)`)
-        return
-      }
-
-      if (this.isThrottlingError(error)) {
-        await this.handleThrottling(error)
-        throw error
-      }
-
-      this.logger.error(`Failed to delete verb ${id}:`, error)
-      throw new Error(`Failed to delete verb ${id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get nouns with pagination
-   * v4.0.0: Returns HNSWNounWithMetadata[] (includes metadata field)
-   * Iterates through all UUID-based shards (00-ff) for consistent pagination
-   */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-
-    const limit = options.limit || 100
-
-    // Simplified implementation for Azure (can be optimized similar to GCS)
-    const items: HNSWNounWithMetadata[] = []
-    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.nounPrefix })
-
-    let count = 0
-    for await (const blob of iterator) {
-      if (count >= limit) break
-      if (!blob.name || !blob.name.endsWith('.json')) continue
-
-      // Extract UUID from blob name
-      const parts = blob.name.split('/')
-      const fileName = parts[parts.length - 1]
-      const id = fileName.replace('.json', '')
-
-      const node = await this.getNode(id)
-      if (!node) continue
-
-      // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-      const metadata = await this.getNounMetadata(id)
-
-      // Apply filters if provided
-      if (options.filter) {
-        if (options.filter.nounType) {
-          const nounTypes = Array.isArray(options.filter.nounType)
-            ? options.filter.nounType
-            : [options.filter.nounType]
-
-          const nounType = (metadata as any).type || (metadata as any).noun
-          if (!nounType || !nounTypes.includes(nounType)) {
-            continue
-          }
-        }
-      }
-
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as NounMetadata
-      const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      items.push({
-        id: node.id,
-        vector: node.vector,
-        connections: node.connections,
-        level: node.level || 0,
-        type: (nounType as NounType) || NounType.Thing,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      })
-
-      count++
-    }
-
-    return {
-      items,
-      totalCount: this.totalNounCount,
-      hasMore: false,
-      nextCursor: undefined
-    }
-  }
-
-  /**
-   * Get nouns by noun type (internal implementation)
-   */
-  protected async getNounsByNounType_internal(nounType: string): Promise<HNSWNoun[]> {
-    const result = await this.getNounsWithPagination({
-      limit: 10000, // Large limit for backward compatibility
-      filter: { nounType }
-    })
-
-    return result.items
-  }
-
-  /**
-   * Get verbs by source ID (internal implementation)
-   */
-  protected async getVerbsBySource_internal(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Simplified: scan all verbs and filter
-    const items: HNSWVerbWithMetadata[] = []
-    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
-
-    for await (const blob of iterator) {
-      if (!blob.name || !blob.name.endsWith('.json')) continue
-
-      const parts = blob.name.split('/')
-      const fileName = parts[parts.length - 1]
-      const id = fileName.replace('.json', '')
-
-      const verb = await this.getEdge(id)
-      if (!verb || verb.sourceId !== sourceId) continue
-
-      const metadata = await this.getVerbMetadata(id)
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as VerbMetadata
-      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      items.push({
-        id: verb.id,
-        vector: verb.vector,
-        connections: verb.connections,
-        verb: verb.verb,
-        sourceId: verb.sourceId,
-        targetId: verb.targetId,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      })
-    }
-
-    return items
-  }
-
-  /**
-   * Get verbs by target ID (internal implementation)
-   */
-  protected async getVerbsByTarget_internal(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // Simplified: scan all verbs and filter
-    const items: HNSWVerbWithMetadata[] = []
-    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
-
-    for await (const blob of iterator) {
-      if (!blob.name || !blob.name.endsWith('.json')) continue
-
-      const parts = blob.name.split('/')
-      const fileName = parts[parts.length - 1]
-      const id = fileName.replace('.json', '')
-
-      const verb = await this.getEdge(id)
-      if (!verb || verb.targetId !== targetId) continue
-
-      const metadata = await this.getVerbMetadata(id)
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as VerbMetadata
-      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      items.push({
-        id: verb.id,
-        vector: verb.vector,
-        connections: verb.connections,
-        verb: verb.verb,
-        sourceId: verb.sourceId,
-        targetId: verb.targetId,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      })
-    }
-
-    return items
-  }
-
-  /**
-   * Get verbs by type (internal implementation)
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Simplified: scan all verbs and filter
-    const items: HNSWVerbWithMetadata[] = []
-    const iterator = this.containerClient!.listBlobsFlat({ prefix: this.verbPrefix })
-
-    for await (const blob of iterator) {
-      if (!blob.name || !blob.name.endsWith('.json')) continue
-
-      const parts = blob.name.split('/')
-      const fileName = parts[parts.length - 1]
-      const id = fileName.replace('.json', '')
-
-      const verb = await this.getEdge(id)
-      if (!verb || verb.verb !== type) continue
-
-      const metadata = await this.getVerbMetadata(id)
-      // v4.8.0: Extract standard fields from metadata to top-level
-      const metadataObj = (metadata || {}) as VerbMetadata
-      const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-      items.push({
-        id: verb.id,
-        vector: verb.vector,
-        connections: verb.connections,
-        verb: verb.verb,
-        sourceId: verb.sourceId,
-        targetId: verb.targetId,
-        createdAt: (createdAt as number) || Date.now(),
-        updatedAt: (updatedAt as number) || Date.now(),
-        confidence: confidence as number | undefined,
-        weight: weight as number | undefined,
-        service: service as string | undefined,
-        data: data as Record<string, any> | undefined,
-        createdBy,
-        metadata: customMetadata
-      })
-    }
-
-    return items
-  }
+  // v5.4.0: Removed 3 verb query *_internal methods (getVerbsBySource, getVerbsByTarget, getVerbsByType) - now inherit from BaseStorage's type-first implementation
 
   /**
    * Clear all data from storage
@@ -1715,120 +1367,101 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Get a noun's vector for HNSW rebuild
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-    const noun = await this.getNode(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
   /**
    * Save HNSW graph data for a noun
+   *
+   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
+    const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-    // Previous implementation overwrote the entire file, destroying vector data
-    // Now we READ the existing node, UPDATE only connections/level, then WRITE back the complete node
+    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // Problem: Without mutex, concurrent operations can:
+    //   1. Thread A reads noun (connections: [1,2,3])
+    //   2. Thread B reads noun (connections: [1,2,3])
+    //   3. Thread A adds connection 4, writes [1,2,3,4]
+    //   4. Thread B adds connection 5, writes [1,2,3,5] ← Connection 4 LOST!
+    // Solution: Mutex serializes operations per entity (like FileSystem/OPFS adapters)
+    // Production scale: Prevents corruption at 1000+ concurrent operations
 
-    // CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
-    // Uses Azure Blob ETags with ifMatch preconditions - retries with exponential backoff on conflicts
-    // Prevents data corruption when multiple entities connect to same neighbor simultaneously
+    // Wait for any pending operations on this entity
+    while (this.hnswLocks.has(lockKey)) {
+      await this.hnswLocks.get(lockKey)
+    }
 
-    const shard = getShardIdFromUuid(nounId)
-    const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
-    const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
+    // Acquire lock
+    let releaseLock!: () => void
+    const lockPromise = new Promise<void>(resolve => { releaseLock = resolve })
+    this.hnswLocks.set(lockKey, lockPromise)
 
-    const maxRetries = 5
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Get current ETag and data
-        let currentETag: string | undefined
-        let existingNode: any = {}
+    try {
+      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Read existing noun data (if exists)
+      const existingNoun = await this.getNoun(nounId)
 
-        try {
-          const downloadResponse = await blockBlobClient.download(0)
-          const existingData = await this.streamToBuffer(downloadResponse.readableStreamBody!)
-          existingNode = JSON.parse(existingData.toString())
-          currentETag = downloadResponse.etag
-        } catch (error: any) {
-          // File doesn't exist yet - will create new
-          if (error.statusCode !== 404 && error.code !== 'BlobNotFound') {
-            throw error
-          }
-        }
-
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,  // Preserve all existing fields (id, vector, etc.)
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-
-        const content = JSON.stringify(updatedNode, null, 2)
-
-        // ATOMIC WRITE: Use ETag precondition
-        // If currentETag exists, only write if ETag matches (no concurrent modification)
-        // If no ETag, only write if blob doesn't exist (ifNoneMatch: *)
-        await blockBlobClient.upload(content, content.length, {
-          blobHTTPHeaders: { blobContentType: 'application/json' },
-          conditions: currentETag
-            ? { ifMatch: currentETag }
-            : { ifNoneMatch: '*' } // Only create if doesn't exist
-        })
-
-        // Success! Exit retry loop
-        return
-      } catch (error: any) {
-        // Precondition failed - concurrent modification detected
-        if (error.statusCode === 412 || error.code === 'ConditionNotMet') {
-          if (attempt === maxRetries - 1) {
-            this.logger.error(`Max retries (${maxRetries}) exceeded for ${nounId} - concurrent modification conflict`)
-            throw new Error(`Failed to save HNSW data for ${nounId}: max retries exceeded due to concurrent modifications`)
-          }
-
-          // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
-          const backoffMs = 50 * Math.pow(2, attempt)
-          await new Promise(resolve => setTimeout(resolve, backoffMs))
-          continue
-        }
-
-        // Other error - rethrow
-        this.logger.error(`Failed to save HNSW data for ${nounId}:`, error)
-        throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+      if (!existingNoun) {
+        // Noun doesn't exist - cannot update HNSW data for non-existent noun
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
+
+      // Convert connections from Record to Map format for storage
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      await this.saveNoun(updatedNoun)
+    } finally {
+      // Release lock (ALWAYS runs, even if error thrown)
+      this.hnswLocks.delete(lockKey)
+      releaseLock()
     }
   }
 
   /**
    * Get HNSW graph data for a noun
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    try {
-      const shard = getShardIdFromUuid(nounId)
-      const key = `entities/nouns/hnsw/${shard}/${nounId}.json`
+    if (!noun) {
+      return null
+    }
 
-      const blockBlobClient = this.containerClient!.getBlockBlobClient(key)
-      const downloadResponse = await blockBlobClient.download(0)
-      const downloaded = await this.streamToBuffer(downloadResponse.readableStreamBody!)
-
-      return JSON.parse(downloaded.toString())
-    } catch (error: any) {
-      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
-        return null
+    // Convert connections from Map to Record format
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
       }
+    }
 
-      this.logger.error(`Failed to get HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
     }
   }
 

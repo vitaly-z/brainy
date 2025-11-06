@@ -56,6 +56,12 @@ const ROOT_DIR = 'opfs-vector-db'
 /**
  * OPFS storage adapter for browser environments
  * Uses the Origin Private File System API to store data persistently
+ *
+ * v5.4.0: Type-aware storage now built into BaseStorage
+ * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
+ * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
+ * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
+ * - All operations now use type-first paths: entities/nouns/{type}/vectors/{shard}/{id}.json
  */
 export class OPFSStorage extends BaseStorage {
   private rootDir: FileSystemDirectoryHandle | null = null
@@ -225,475 +231,7 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Save a noun to storage
-   */
-  protected async saveNoun_internal(noun: HNSWNoun_internal): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // CRITICAL: Only save lightweight vector data (no metadata)
-      // Metadata is saved separately via saveNounMetadata() (2-file system)
-      const serializableNoun = {
-        id: noun.id,
-        vector: noun.vector,
-        connections: this.mapToObject(noun.connections, (set) =>
-          Array.from(set as Set<string>)
-        ),
-        level: noun.level || 0
-        // NO metadata field - saved separately for scalability
-      }
-
-      // Use UUID-based sharding for nouns
-      const shardId = getShardIdFromUuid(noun.id)
-
-      // Get or create the shard directory
-      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId, {
-        create: true
-      })
-
-      // Create or get the file in the shard directory
-      const fileHandle = await shardDir.getFileHandle(`${noun.id}.json`, {
-        create: true
-      })
-
-      // Write the noun data to the file
-      const writable = await fileHandle.createWritable()
-      await writable.write(JSON.stringify(serializableNoun))
-      await writable.close()
-    } catch (error) {
-      console.error(`Failed to save noun ${noun.id}:`, error)
-      throw new Error(`Failed to save noun ${noun.id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get a noun from storage (internal implementation)
-   * Combines vector data from file with metadata from getNounMetadata()
-   */
-  protected async getNoun_internal(
-    id: string
-  ): Promise<HNSWNoun_internal | null> {
-    await this.ensureInitialized()
-
-    try {
-      // Use UUID-based sharding for nouns
-      const shardId = getShardIdFromUuid(id)
-
-      // Get the shard directory
-      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId)
-
-      // Get the file handle from the shard directory
-      const fileHandle = await shardDir.getFileHandle(`${id}.json`)
-
-      // Read the noun data from the file
-      const file = await fileHandle.getFile()
-      const text = await file.text()
-      const data = JSON.parse(text)
-
-      // Convert serialized connections back to Map<number, Set<string>>
-      const connections = new Map<number, Set<string>>()
-      for (const [level, nounIds] of Object.entries(data.connections)) {
-        connections.set(Number(level), new Set(nounIds as string[]))
-      }
-
-      // v4.0.0: Return ONLY vector data (no metadata field)
-      const node: HNSWNode = {
-        id: data.id,
-        vector: data.vector,
-        connections,
-        level: data.level || 0
-      }
-
-      // Return pure vector structure
-      return node
-    } catch (error) {
-      // Noun not found or other error
-      return null
-    }
-  }
-
-
-  /**
-   * Get nouns by noun type (internal implementation)
-   * @param nounType The noun type to filter by
-   * @returns Promise that resolves to an array of nouns of the specified noun type
-   */
-  protected async getNounsByNounType_internal(
-    nounType: string
-  ): Promise<HNSWNoun[]> {
-    return this.getNodesByNounType(nounType)
-  }
-
-  /**
-   * Get nodes by noun type
-   * @param nounType The noun type to filter by
-   * @returns Promise that resolves to an array of nodes of the specified noun type
-   */
-  protected async getNodesByNounType(nounType: string): Promise<HNSWNode[]> {
-    await this.ensureInitialized()
-
-    const nodes: HNSWNode[] = []
-
-    try {
-      // Iterate through all shard directories
-      for await (const [shardName, shardHandle] of this.nounsDir!.entries()) {
-        if (shardHandle.kind === 'directory') {
-          const shardDir = shardHandle as FileSystemDirectoryHandle
-
-          // Iterate through all files in this shard
-          for await (const [fileName, fileHandle] of shardDir.entries()) {
-            if (fileHandle.kind === 'file') {
-              try {
-                // Read the node data from the file
-                const file = await safeGetFile(fileHandle)
-                const text = await file.text()
-                const data = JSON.parse(text)
-
-                // Get the metadata to check the noun type
-                const metadata = await this.getMetadata(data.id)
-
-                // Include the node if its noun type matches the requested type
-                if (metadata && metadata.noun === nounType) {
-                  // Convert serialized connections back to Map<number, Set<string>>
-                  const connections = new Map<number, Set<string>>()
-                  for (const [level, nodeIds] of Object.entries(data.connections)) {
-                    connections.set(Number(level), new Set(nodeIds as string[]))
-                  }
-
-                  nodes.push({
-                    id: data.id,
-                    vector: data.vector,
-                    connections,
-                    level: data.level || 0
-                  })
-                }
-              } catch (error) {
-                console.error(`Error reading node file ${shardName}/${fileName}:`, error)
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error reading nouns directory:', error)
-    }
-
-    return nodes
-  }
-
-  /**
-   * Delete a noun from storage (internal implementation)
-   */
-  protected async deleteNoun_internal(id: string): Promise<void> {
-    return this.deleteNode(id)
-  }
-
-  /**
-   * Delete a node from storage
-   */
-  protected async deleteNode(id: string): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // Use UUID-based sharding for nouns
-      const shardId = getShardIdFromUuid(id)
-
-      // Get the shard directory
-      const shardDir = await this.nounsDir!.getDirectoryHandle(shardId)
-
-      // Delete the file from the shard directory
-      await shardDir.removeEntry(`${id}.json`)
-    } catch (error: any) {
-      // Ignore NotFoundError, which means the file doesn't exist
-      if (error.name !== 'NotFoundError') {
-        console.error(`Error deleting node ${id}:`, error)
-        throw error
-      }
-    }
-  }
-
-  /**
-   * Save a verb to storage (internal implementation)
-   */
-  protected async saveVerb_internal(verb: HNSWVerb): Promise<void> {
-    return this.saveEdge(verb)
-  }
-
-  /**
-   * Save an edge to storage
-   */
-  protected async saveEdge(edge: Edge): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
-      // These fields are essential for 90% of operations - no metadata lookup needed
-      const serializableEdge = {
-        id: edge.id,
-        vector: edge.vector,
-        connections: this.mapToObject(edge.connections, (set) =>
-          Array.from(set as Set<string>)
-        ),
-
-        // CORE RELATIONAL DATA (v3.50.1+)
-        verb: edge.verb,
-        sourceId: edge.sourceId,
-        targetId: edge.targetId,
-
-        // User metadata (if any) - saved separately for scalability
-        // metadata field is saved separately via saveVerbMetadata()
-      }
-
-      // Use UUID-based sharding for verbs
-      const shardId = getShardIdFromUuid(edge.id)
-
-      // Get or create the shard directory
-      const shardDir = await this.verbsDir!.getDirectoryHandle(shardId, {
-        create: true
-      })
-
-      // Create or get the file in the shard directory
-      const fileHandle = await shardDir.getFileHandle(`${edge.id}.json`, {
-        create: true
-      })
-
-      // Write the verb data to the file
-      const writable = await fileHandle.createWritable()
-      await writable.write(JSON.stringify(serializableEdge))
-      await writable.close()
-    } catch (error) {
-      console.error(`Failed to save edge ${edge.id}:`, error)
-      throw new Error(`Failed to save edge ${edge.id}: ${error}`)
-    }
-  }
-
-  /**
-   * Get a verb from storage (internal implementation)
-   * v4.0.0: Returns ONLY vector + core relational fields (no metadata field)
-   * Base class combines with metadata via getVerb() -> HNSWVerbWithMetadata
-   */
-  protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v4.0.0: Return ONLY vector + core relational data (no metadata field)
-    const edge = await this.getEdge(id)
-    if (!edge) {
-      return null
-    }
-
-    // Return pure vector + core fields structure
-    return edge
-  }
-
-  /**
-   * Get an edge from storage
-   */
-  protected async getEdge(id: string): Promise<Edge | null> {
-    await this.ensureInitialized()
-
-    try {
-      // Use UUID-based sharding for verbs
-      const shardId = getShardIdFromUuid(id)
-
-      // Get the shard directory
-      const shardDir = await this.verbsDir!.getDirectoryHandle(shardId)
-
-      // Get the file handle from the shard directory
-      const fileHandle = await shardDir.getFileHandle(`${id}.json`)
-
-      // Read the edge data from the file
-      const file = await fileHandle.getFile()
-      const text = await file.text()
-      const data = JSON.parse(text)
-
-      // Convert serialized connections back to Map<number, Set<string>>
-      const connections = new Map<number, Set<string>>()
-      for (const [level, nodeIds] of Object.entries(data.connections)) {
-        connections.set(Number(level), new Set(nodeIds as string[]))
-      }
-
-      // Create default timestamp if not present
-      const defaultTimestamp = {
-        seconds: Math.floor(Date.now() / 1000),
-        nanoseconds: (Date.now() % 1000) * 1000000
-      }
-
-      // Create default createdBy if not present
-      const defaultCreatedBy = {
-        augmentation: 'unknown',
-        version: '1.0'
-      }
-
-      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
-      return {
-        id: data.id,
-        vector: data.vector,
-        connections,
-
-        // CORE RELATIONAL DATA (read from vector file)
-        verb: data.verb,
-        sourceId: data.sourceId,
-        targetId: data.targetId
-
-        // ✅ NO metadata field in v4.0.0
-        // User metadata retrieved separately via getVerbMetadata()
-      }
-    } catch (error) {
-      // Edge not found or other error
-      return null
-    }
-  }
-
-
-  /**
-   * Get all edges from storage
-   */
-  protected async getAllEdges(): Promise<Edge[]> {
-    await this.ensureInitialized()
-
-    const allEdges: Edge[] = []
-    try {
-      // Iterate through all shard directories
-      for await (const [shardName, shardHandle] of this.verbsDir!.entries()) {
-        if (shardHandle.kind === 'directory') {
-          const shardDir = shardHandle as FileSystemDirectoryHandle
-
-          // Iterate through all files in this shard
-          for await (const [fileName, fileHandle] of shardDir.entries()) {
-            if (fileHandle.kind === 'file') {
-              try {
-                // Read the edge data from the file
-                const file = await safeGetFile(fileHandle)
-                const text = await file.text()
-                const data = JSON.parse(text)
-
-                // Convert serialized connections back to Map<number, Set<string>>
-                const connections = new Map<number, Set<string>>()
-                for (const [level, nodeIds] of Object.entries(data.connections)) {
-                  connections.set(Number(level), new Set(nodeIds as string[]))
-                }
-
-                // Create default timestamp if not present
-                const defaultTimestamp = {
-                  seconds: Math.floor(Date.now() / 1000),
-                  nanoseconds: (Date.now() % 1000) * 1000000
-                }
-
-                // Create default createdBy if not present
-                const defaultCreatedBy = {
-                  augmentation: 'unknown',
-                  version: '1.0'
-                }
-
-                // v4.0.0: Include core relational fields (NO metadata field)
-                allEdges.push({
-                  id: data.id,
-                  vector: data.vector,
-                  connections,
-
-                  // CORE RELATIONAL DATA
-                  verb: data.verb,
-                  sourceId: data.sourceId,
-                  targetId: data.targetId
-
-                  // ✅ NO metadata field in v4.0.0
-                  // User metadata retrieved separately via getVerbMetadata()
-                })
-              } catch (error) {
-                console.error(`Error reading edge file ${shardName}/${fileName}:`, error)
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error reading verbs directory:', error)
-    }
-
-    return allEdges
-  }
-
-  /**
-   * Get verbs by source (internal implementation)
-   */
-  protected async getVerbsBySource_internal(
-    sourceId: string
-  ): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { sourceId: [sourceId] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Get edges by source
-   */
-  protected async getEdgesBySource(sourceId: string): Promise<HNSWVerbWithMetadata[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn(
-      'getEdgesBySource is deprecated and not efficiently supported in new storage pattern'
-    )
-    return []
-  }
-
-  /**
-   * Get verbs by target (internal implementation)
-   */
-  protected async getVerbsByTarget_internal(
-    targetId: string
-  ): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { targetId: [targetId] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Get edges by target
-   */
-  protected async getEdgesByTarget(targetId: string): Promise<HNSWVerbWithMetadata[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn(
-      'getEdgesByTarget is deprecated and not efficiently supported in new storage pattern'
-    )
-    return []
-  }
-
-  /**
-   * Get verbs by type (internal implementation)
-   */
-  protected async getVerbsByType_internal(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // Use the paginated approach to properly handle HNSWVerb to GraphVerb conversion
-    const result = await this.getVerbsWithPagination({
-      filter: { verbType: [type] },
-      limit: Number.MAX_SAFE_INTEGER // Get all matching results
-    })
-    return result.items
-  }
-
-  /**
-   * Get edges by type
-   */
-  protected async getEdgesByType(type: string): Promise<HNSWVerbWithMetadata[]> {
-    // This method is deprecated and would require loading metadata for each edge
-    // For now, return empty array since this is not efficiently implementable with new storage pattern
-    console.warn(
-      'getEdgesByType is deprecated and not efficiently supported in new storage pattern'
-    )
-    return []
-  }
-
-  /**
-   * Delete a verb from storage (internal implementation)
-   */
-  protected async deleteVerb_internal(id: string): Promise<void> {
-    return this.deleteEdge(id)
-  }
+  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
 
   /**
    * Delete an edge from storage
@@ -1654,311 +1192,7 @@ export class OPFSStorage extends BaseStorage {
    * @param options Pagination and filter options
    * @returns Promise that resolves to a paginated result of nouns
    */
-  public async getNounsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      nounType?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWNounWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-
-    const limit = options.limit || 100
-    const cursor = options.cursor
-
-    // Get all noun files from all shards
-    const nounFiles: string[] = []
-    if (this.nounsDir) {
-      // Iterate through all shard directories
-      for await (const [shardName, shardHandle] of this.nounsDir.entries()) {
-        if (shardHandle.kind === 'directory') {
-          // Iterate through files in this shard
-          const shardDir = shardHandle as FileSystemDirectoryHandle
-          for await (const [fileName, fileHandle] of shardDir.entries()) {
-            if (fileHandle.kind === 'file' && fileName.endsWith('.json')) {
-              nounFiles.push(`${shardName}/${fileName}`)
-            }
-          }
-        }
-      }
-    }
-    
-    // Sort files for consistent ordering
-    nounFiles.sort()
-    
-    // Apply cursor-based pagination
-    let startIndex = 0
-    if (cursor) {
-      const cursorIndex = nounFiles.findIndex(file => file > cursor)
-      if (cursorIndex >= 0) {
-        startIndex = cursorIndex
-      }
-    }
-    
-    // Get the subset of files for this page
-    const pageFiles = nounFiles.slice(startIndex, startIndex + limit)
-    
-    // v4.0.0: Load nouns from files and combine with metadata
-    const items: HNSWNounWithMetadata[] = []
-    for (const fileName of pageFiles) {
-      // fileName is in format "shard/uuid.json", extract just the UUID
-      const id = fileName.split('/')[1].replace('.json', '')
-      const noun = await this.getNoun_internal(id)
-      if (noun) {
-        // Load metadata for filtering and combining
-        // FIX v4.7.4: Don't skip nouns without metadata - metadata is optional in v4.0.0
-        const metadata = await this.getNounMetadata(id)
-
-        // Apply filters if provided
-        if (options.filter && metadata) {
-          // Filter by noun type
-          if (options.filter.nounType) {
-            const nounTypes = Array.isArray(options.filter.nounType)
-              ? options.filter.nounType
-              : [options.filter.nounType]
-            if (!nounTypes.includes((metadata.type || metadata.noun) as string)) {
-              continue
-            }
-          }
-
-          // Filter by service
-          if (options.filter.service) {
-            const services = Array.isArray(options.filter.service)
-              ? options.filter.service
-              : [options.filter.service]
-            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
-              continue
-            }
-          }
-
-          // Filter by metadata
-          if (options.filter.metadata) {
-            let matches = true
-            for (const [key, value] of Object.entries(options.filter.metadata)) {
-              if (metadata[key] !== value) {
-                matches = false
-                break
-              }
-            }
-            if (!matches) continue
-          }
-        }
-
-        // v4.8.0: Extract standard fields from metadata to top-level
-        const metadataObj = (metadata || {}) as NounMetadata
-        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-        const nounWithMetadata: HNSWNounWithMetadata = {
-          id: noun.id,
-          vector: [...noun.vector],
-          connections: new Map(noun.connections),
-          level: noun.level || 0,
-          type: (nounType as NounType) || NounType.Thing,
-          createdAt: (createdAt as number) || Date.now(),
-          updatedAt: (updatedAt as number) || Date.now(),
-          confidence: confidence as number | undefined,
-          weight: weight as number | undefined,
-          service: service as string | undefined,
-          data: data as Record<string, any> | undefined,
-          createdBy,
-          metadata: customMetadata
-        }
-
-        items.push(nounWithMetadata)
-      }
-    }
-    
-    // Determine if there are more items
-    const hasMore = startIndex + limit < nounFiles.length
-    
-    // Generate next cursor if there are more items
-    const nextCursor = hasMore && pageFiles.length > 0
-      ? pageFiles[pageFiles.length - 1]
-      : undefined
-    
-    return {
-      items,
-      totalCount: nounFiles.length,
-      hasMore,
-      nextCursor
-    }
-  }
-
-  /**
-   * Get verbs with pagination support
-   * @param options Pagination and filter options
-   * @returns Promise that resolves to a paginated result of verbs
-   */
-  public async getVerbsWithPagination(options: {
-    limit?: number
-    cursor?: string
-    filter?: {
-      verbType?: string | string[]
-      sourceId?: string | string[]
-      targetId?: string | string[]
-      service?: string | string[]
-      metadata?: Record<string, any>
-    }
-  } = {}): Promise<{
-    items: HNSWVerbWithMetadata[]
-    totalCount?: number
-    hasMore: boolean
-    nextCursor?: string
-  }> {
-    await this.ensureInitialized()
-
-    const limit = options.limit || 100
-    const cursor = options.cursor
-
-    // Get all verb files from all shards
-    const verbFiles: string[] = []
-    if (this.verbsDir) {
-      // Iterate through all shard directories
-      for await (const [shardName, shardHandle] of this.verbsDir.entries()) {
-        if (shardHandle.kind === 'directory') {
-          // Iterate through files in this shard
-          const shardDir = shardHandle as FileSystemDirectoryHandle
-          for await (const [fileName, fileHandle] of shardDir.entries()) {
-            if (fileHandle.kind === 'file' && fileName.endsWith('.json')) {
-              verbFiles.push(`${shardName}/${fileName}`)
-            }
-          }
-        }
-      }
-    }
-
-    // Sort files for consistent ordering
-    verbFiles.sort()
-
-    // Apply cursor-based pagination
-    let startIndex = 0
-    if (cursor) {
-      const cursorIndex = verbFiles.findIndex(file => file > cursor)
-      if (cursorIndex >= 0) {
-        startIndex = cursorIndex
-      }
-    }
-
-    // Get the subset of files for this page
-    const pageFiles = verbFiles.slice(startIndex, startIndex + limit)
-
-    // v4.0.0: Load verbs from files and combine with metadata
-    const items: HNSWVerbWithMetadata[] = []
-    for (const fileName of pageFiles) {
-      // fileName is in format "shard/uuid.json", extract just the UUID
-      const id = fileName.split('/')[1].replace('.json', '')
-      const hnswVerb = await this.getVerb_internal(id)
-      if (hnswVerb) {
-        // Load metadata for filtering and combining
-        // FIX v4.7.4: Don't skip verbs without metadata - metadata is optional in v4.0.0
-        // Core fields (verb, sourceId, targetId) are in HNSWVerb itself
-        const metadata = await this.getVerbMetadata(id)
-
-        // Apply filters if provided
-        if (options.filter && metadata) {
-          // Filter by verb type
-          // v4.0.0: verb field is in HNSWVerb structure (NOT in metadata)
-          if (options.filter.verbType) {
-            const verbTypes = Array.isArray(options.filter.verbType)
-              ? options.filter.verbType
-              : [options.filter.verbType]
-            if (!hnswVerb.verb || !verbTypes.includes(hnswVerb.verb)) {
-              continue
-            }
-          }
-
-          // Filter by source ID
-          // v4.0.0: sourceId field is in HNSWVerb structure (NOT in metadata)
-          if (options.filter.sourceId) {
-            const sourceIds = Array.isArray(options.filter.sourceId)
-              ? options.filter.sourceId
-              : [options.filter.sourceId]
-            if (!hnswVerb.sourceId || !sourceIds.includes(hnswVerb.sourceId)) {
-              continue
-            }
-          }
-
-          // Filter by target ID
-          // v4.0.0: targetId field is in HNSWVerb structure (NOT in metadata)
-          if (options.filter.targetId) {
-            const targetIds = Array.isArray(options.filter.targetId)
-              ? options.filter.targetId
-              : [options.filter.targetId]
-            if (!hnswVerb.targetId || !targetIds.includes(hnswVerb.targetId)) {
-              continue
-            }
-          }
-
-          // Filter by service
-          if (options.filter.service) {
-            const services = Array.isArray(options.filter.service)
-              ? options.filter.service
-              : [options.filter.service]
-            if (!metadata.createdBy?.augmentation || !services.includes(metadata.createdBy.augmentation as string)) {
-              continue
-            }
-          }
-
-          // Filter by metadata
-          if (options.filter.metadata) {
-            let matches = true
-            for (const [key, value] of Object.entries(options.filter.metadata)) {
-              if (metadata[key] !== value) {
-                matches = false
-                break
-              }
-            }
-            if (!matches) continue
-          }
-        }
-
-        // v4.8.0: Extract standard fields from metadata to top-level
-        const metadataObj = (metadata || {}) as VerbMetadata
-        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
-
-        const verbWithMetadata: HNSWVerbWithMetadata = {
-          id: hnswVerb.id,
-          vector: [...hnswVerb.vector],
-          connections: new Map(hnswVerb.connections),
-          verb: hnswVerb.verb,
-          sourceId: hnswVerb.sourceId,
-          targetId: hnswVerb.targetId,
-          createdAt: (createdAt as number) || Date.now(),
-          updatedAt: (updatedAt as number) || Date.now(),
-          confidence: confidence as number | undefined,
-          weight: weight as number | undefined,
-          service: service as string | undefined,
-          data: data as Record<string, any> | undefined,
-          createdBy,
-          metadata: customMetadata
-        }
-
-        items.push(verbWithMetadata)
-      }
-    }
-    
-    // Determine if there are more items
-    const hasMore = startIndex + limit < verbFiles.length
-    
-    // Generate next cursor if there are more items
-    const nextCursor = hasMore && pageFiles.length > 0
-      ? pageFiles[pageFiles.length - 1]
-      : undefined
-    
-    return {
-      items,
-      totalCount: verbFiles.length,
-      hasMore,
-      nextCursor
-    }
-  }
+  // v5.4.0: Removed pagination overrides (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's type-first implementation
 
   /**
    * Initialize counts from OPFS storage
@@ -2048,9 +1282,12 @@ export class OPFSStorage extends BaseStorage {
   /**
    * Get a noun's vector for HNSW rebuild
    */
+  /**
+   * Get vector for a noun
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   */
   public async getNounVector(id: string): Promise<number[] | null> {
-    await this.ensureInitialized()
-    const noun = await this.getNoun_internal(id)
+    const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
@@ -2060,18 +1297,14 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Save HNSW graph data for a noun
-   * Storage path: nouns/hnsw/{shard}/{id}.json
    *
-   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions during concurrent HNSW updates
-   * Browser is single-threaded but async operations can interleave - mutex prevents this
-   * Prevents data corruption when multiple entities connect to same neighbor simultaneously
+   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * CRITICAL: Preserves mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
     level: number
     connections: Record<string, string[]>
   }): Promise<void> {
-    await this.ensureInitialized()
-
     const lockKey = `hnsw/${nounId}`
 
     // MUTEX LOCK: Wait for any pending operations on this entity
@@ -2085,37 +1318,28 @@ export class OPFSStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // CRITICAL FIX (v4.7.3): Must preserve existing node data (id, vector) when updating HNSW metadata
-      const hnswDir = await this.nounsDir!.getDirectoryHandle('hnsw', { create: true })
-      const shard = getShardIdFromUuid(nounId)
-      const shardDir = await hnswDir.getDirectoryHandle(shard, { create: true })
-      const fileHandle = await shardDir.getFileHandle(`${nounId}.json`, { create: true })
+      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      const existingNoun = await this.getNoun(nounId)
 
-      try {
-        // Read existing node data
-        const file = await fileHandle.getFile()
-        const existingData = await file.text()
-        const existingNode = JSON.parse(existingData)
-
-        // Preserve id and vector, update only HNSW graph metadata
-        const updatedNode = {
-          ...existingNode,
-          level: hnswData.level,
-          connections: hnswData.connections
-        }
-
-        const writable = await fileHandle.createWritable()
-        await writable.write(JSON.stringify(updatedNode, null, 2))
-        await writable.close()
-      } catch (error) {
-        // If node doesn't exist or read fails, create with just HNSW data
-        const writable = await fileHandle.createWritable()
-        await writable.write(JSON.stringify(hnswData, null, 2))
-        await writable.close()
+      if (!existingNoun) {
+        throw new Error(`Cannot save HNSW data: noun ${nounId} not found`)
       }
-    } catch (error) {
-      console.error(`Failed to save HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to save HNSW data for ${nounId}: ${error}`)
+
+      // Convert connections from Record to Map format
+      const connectionsMap = new Map<number, Set<string>>()
+      for (const [level, nodeIds] of Object.entries(hnswData.connections)) {
+        connectionsMap.set(Number(level), new Set(nodeIds))
+      }
+
+      // Preserve id and vector, update only HNSW graph metadata
+      const updatedNoun: HNSWNoun = {
+        ...existingNoun,
+        level: hnswData.level,
+        connections: connectionsMap
+      }
+
+      // v5.4.0: Use BaseStorage's saveNoun (type-first paths)
+      await this.saveNoun(updatedNoun)
     } finally {
       // Release lock
       this.hnswLocks.delete(lockKey)
@@ -2125,36 +1349,29 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * Storage path: nouns/hnsw/{shard}/{id}.json
+   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
     connections: Record<string, string[]>
   } | null> {
-    await this.ensureInitialized()
+    const noun = await this.getNoun(nounId)
 
-    try {
-      // Get the hnsw directory under nouns
-      const hnswDir = await this.nounsDir!.getDirectoryHandle('hnsw')
+    if (!noun) {
+      return null
+    }
 
-      // Use sharded path for HNSW data
-      const shard = getShardIdFromUuid(nounId)
-      const shardDir = await hnswDir.getDirectoryHandle(shard)
-
-      // Get the file handle from the shard directory
-      const fileHandle = await shardDir.getFileHandle(`${nounId}.json`)
-
-      // Read the HNSW data from the file
-      const file = await fileHandle.getFile()
-      const text = await file.text()
-      return JSON.parse(text)
-    } catch (error: any) {
-      if (error.name === 'NotFoundError') {
-        return null
+    // Convert connections from Map to Record format
+    const connectionsRecord: Record<string, string[]> = {}
+    if (noun.connections) {
+      for (const [level, nodeIds] of noun.connections.entries()) {
+        connectionsRecord[String(level)] = Array.from(nodeIds)
       }
+    }
 
-      console.error(`Failed to get HNSW data for ${nounId}:`, error)
-      throw new Error(`Failed to get HNSW data for ${nounId}: ${error}`)
+    return {
+      level: noun.level || 0,
+      connections: connectionsRecord
     }
   }
 
