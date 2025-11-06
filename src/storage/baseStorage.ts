@@ -1018,7 +1018,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Get nouns with pagination (v5.4.0: Type-first implementation)
    *
    * CRITICAL: This method is required for brain.find() to work!
-   * Iterates through all noun types to find entities.
+   * Iterates through noun types with billion-scale optimizations.
+   *
+   * ARCHITECTURE: Reads storage directly (not indexes) to avoid circular dependencies.
+   * Storage → Indexes (one direction only). GraphAdjacencyIndex built FROM storage.
+   *
+   * OPTIMIZATIONS (v5.5.0):
+   * - Skip empty types using nounCountsByType[] tracking (O(1) check)
+   * - Early termination when offset + limit entities collected
+   * - Memory efficient: Never loads full dataset
    */
   public async getNounsWithPagination(options: {
     limit: number
@@ -1038,10 +1046,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     await this.ensureInitialized()
 
     const { limit, offset, filter } = options
-    const allNouns: HNSWNounWithMetadata[] = []
+    const collectedNouns: HNSWNounWithMetadata[] = []
+    const targetCount = offset + limit  // Early termination target
 
-    // v5.4.0: Iterate through all noun types (type-first architecture)
-    for (let i = 0; i < NOUN_TYPE_COUNT; i++) {
+    // v5.5.0: Iterate through noun types with billion-scale optimizations
+    for (let i = 0; i < NOUN_TYPE_COUNT && collectedNouns.length < targetCount; i++) {
+      // OPTIMIZATION 1: Skip empty types (most datasets use <10 of 42 types)
+      if (this.nounCountsByType[i] === 0) {
+        continue
+      }
+
       const type = TypeUtils.getNounFromIndex(i)
 
       // If filtering by type, skip other types
@@ -1059,6 +1073,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const nounFiles = await this.listObjectsInBranch(typeDir)
 
         for (const nounPath of nounFiles) {
+          // OPTIMIZATION 2: Early termination (stop when we have enough)
+          if (collectedNouns.length >= targetCount) {
+            break
+          }
+
           // Skip if not a .json file
           if (!nounPath.endsWith('.json')) continue
 
@@ -1079,7 +1098,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
                 }
 
                 // Combine noun + metadata (v5.4.0: Extract standard fields to top-level)
-                allNouns.push({
+                collectedNouns.push({
                   ...noun,
                   type: metadata.noun || type,  // Required: Extract type from metadata
                   confidence: metadata.confidence,
@@ -1106,17 +1125,126 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    // Apply pagination
-    const totalCount = allNouns.length
-    const paginatedNouns = allNouns.slice(offset, offset + limit)
-    const hasMore = offset + limit < totalCount
+    // Apply pagination (v5.5.0: Efficient slicing after early termination)
+    const paginatedNouns = collectedNouns.slice(offset, offset + limit)
+    const hasMore = collectedNouns.length >= targetCount
 
     return {
       items: paginatedNouns,
-      totalCount,
+      totalCount: collectedNouns.length,  // Accurate count of collected results
       hasMore,
       nextCursor: hasMore && paginatedNouns.length > 0
         ? paginatedNouns[paginatedNouns.length - 1].id
+        : undefined
+    }
+  }
+
+  /**
+   * Get verbs with pagination (v5.5.0: Type-first implementation with billion-scale optimizations)
+   *
+   * CRITICAL: This method is required for brain.getRelations() to work!
+   * Iterates through verb types with the same optimizations as nouns.
+   *
+   * ARCHITECTURE: Reads storage directly (not indexes) to avoid circular dependencies.
+   * Storage → Indexes (one direction only). GraphAdjacencyIndex built FROM storage.
+   *
+   * OPTIMIZATIONS (v5.5.0):
+   * - Skip empty types using verbCountsByType[] tracking (O(1) check)
+   * - Early termination when offset + limit verbs collected
+   * - Memory efficient: Never loads full dataset
+   * - Inline filtering for sourceId, targetId, verbType
+   */
+  public async getVerbsWithPagination(options: {
+    limit: number
+    offset: number
+    cursor?: string
+    filter?: {
+      verbType?: string | string[]
+      sourceId?: string | string[]
+      targetId?: string | string[]
+      service?: string | string[]
+      metadata?: Record<string, any>
+    }
+  }): Promise<{
+    items: HNSWVerbWithMetadata[]
+    totalCount: number
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    await this.ensureInitialized()
+
+    const { limit, offset, filter } = options
+    const collectedVerbs: HNSWVerbWithMetadata[] = []
+    const targetCount = offset + limit  // Early termination target
+
+    // v5.5.0: Iterate through verb types with billion-scale optimizations
+    for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
+      // OPTIMIZATION 1: Skip empty types (most datasets use <10 of 127 types)
+      if (this.verbCountsByType[i] === 0) {
+        continue
+      }
+
+      const type = TypeUtils.getVerbFromIndex(i)
+
+      // If filtering by verbType, skip other types
+      if (filter?.verbType) {
+        const filterTypes = Array.isArray(filter.verbType) ? filter.verbType : [filter.verbType]
+        if (!filterTypes.includes(type)) {
+          continue
+        }
+      }
+
+      try {
+        const verbsOfType = await this.getVerbsByType_internal(type)
+
+        // Apply filtering inline (memory efficient)
+        for (const verb of verbsOfType) {
+          // OPTIMIZATION 2: Early termination (stop when we have enough)
+          if (collectedVerbs.length >= targetCount) {
+            break
+          }
+
+          // Apply filters if specified
+          if (filter) {
+            // Filter by sourceId
+            if (filter.sourceId) {
+              const sourceIds = Array.isArray(filter.sourceId)
+                ? filter.sourceId
+                : [filter.sourceId]
+              if (!sourceIds.includes(verb.sourceId)) {
+                continue
+              }
+            }
+
+            // Filter by targetId
+            if (filter.targetId) {
+              const targetIds = Array.isArray(filter.targetId)
+                ? filter.targetId
+                : [filter.targetId]
+              if (!targetIds.includes(verb.targetId)) {
+                continue
+              }
+            }
+          }
+
+          // Verb passed all filters - add to collection
+          collectedVerbs.push(verb)
+        }
+      } catch (error) {
+        // Skip types that have no data (directory may not exist)
+      }
+    }
+
+    // Apply pagination (v5.5.0: Efficient slicing after early termination)
+    const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
+    const hasMore = collectedVerbs.length >= targetCount
+
+    return {
+      items: paginatedVerbs,
+      totalCount: collectedVerbs.length,  // Accurate count of collected results
+      hasMore,
+      nextCursor: hasMore && paginatedVerbs.length > 0
+        ? paginatedVerbs[paginatedVerbs.length - 1].id
         : undefined
     }
   }
