@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.4.0](https://github.com/soulcraftlabs/brainy/compare/v5.3.6...v5.4.0) (2025-11-05)
+
+- fix: resolve HNSW race condition and verb weight extraction (v5.4.0) (1fc54f0)
+- fix: resolve BlobStorage metadata prefix inconsistency (9d75019)
+
+
 ## [5.4.0](https://github.com/soulcraftlabs/brainy/compare/v5.3.6...v5.4.0) (2025-11-05)
 
 ### 🎯 Critical Stability Release
