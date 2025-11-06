@@ -23,7 +23,7 @@ export const UNIVERSAL_FIELD_PATTERNS: FieldPattern[] = [
     fields: ['firstName', 'lastName', 'fullName', 'realName'],
     displayField: 'title',
     confidence: 0.9,
-    applicableTypes: [NounType.Person, NounType.User],
+    applicableTypes: [NounType.Person, NounType.Person],
     transform: (value: any, context: FieldComputationContext) => {
       const { metadata } = context
       if (metadata.firstName && metadata.lastName) {
@@ -72,7 +72,7 @@ export const UNIVERSAL_FIELD_PATTERNS: FieldPattern[] = [
     fields: ['bio', 'biography', 'profile', 'about'],
     displayField: 'description',
     confidence: 0.85,
-    applicableTypes: [NounType.Person, NounType.User]
+    applicableTypes: [NounType.Person, NounType.Person]
   },
   {
     fields: ['content', 'text', 'body', 'message'],
@@ -105,7 +105,7 @@ export const UNIVERSAL_FIELD_PATTERNS: FieldPattern[] = [
     fields: ['role', 'position', 'jobTitle', 'occupation'],
     displayField: 'type',
     confidence: 0.8,
-    applicableTypes: [NounType.Person, NounType.User],
+    applicableTypes: [NounType.Person, NounType.Person],
     transform: (value: any) => String(value || 'Person')
   },
   {

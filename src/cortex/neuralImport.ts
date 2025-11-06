@@ -663,7 +663,6 @@ export class NeuralImport {
       [VerbType.WorksWith]: 0.7,       // Specific
       [VerbType.Mentors]: 0.9,         // Very specific
       [VerbType.ReportsTo]: 0.9,       // Very specific
-      [VerbType.Supervises]: 0.9       // Very specific
     }
 
     return specificityScores[verbType] || 0.5

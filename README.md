@@ -183,12 +183,13 @@ Most systems force you to choose:
 
 **Why this matters:** Your data isn't just vectors or just documents or just graphs. It's all three at once. A research paper is semantically similar to other papers (vector), written by an author (graph), and published in 2023 (document). **Brainy is the only system that understands this.**
 
-### 🎯 **31 Noun Types × 40 Verb Types = Universal Protocol**
+### 🎯 **42 Noun Types × 127 Verb Types = Universal Protocol**
 
 Model **any domain** with mathematical completeness:
 
 ```
-31 Nouns × 40 Verbs × ∞ Metadata = 1,240+ base combinations
+42 Nouns × 127 Verbs × ∞ Metadata = 5,334+ base combinations
+Stage 3 CANONICAL: 96-97% coverage of all human knowledge
 ```
 
 **Real-world expressiveness:**
@@ -545,7 +546,7 @@ Understand how the same code scales from prototype to billions of entities:
 **[📖 Cloud Deployment Guide →](docs/deployment/CLOUD_DEPLOYMENT_GUIDE.md)**
 
 ### 🎯 The Universal Type System
-Explore the mathematical foundation: 31 nouns × 40 verbs = any domain:
+Explore the mathematical foundation: 42 nouns × 127 verbs = Stage 3 CANONICAL taxonomy:
 
 **[📖 Noun-Verb Taxonomy →](docs/architecture/noun-verb-taxonomy.md)**
 

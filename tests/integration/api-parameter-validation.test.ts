@@ -19,17 +19,17 @@ describe('API Parameter Validation', () => {
     // Add test data
     await brain.add({
       data: 'Alice',
-      type: NounType.User,
+      type: NounType.Person,
       metadata: { category: 'test-category', status: 'active' }
     })
     await brain.add({
       data: 'Bob',
-      type: NounType.User,
+      type: NounType.Person,
       metadata: { category: 'other-category', status: 'active' }
     })
     await brain.add({
       data: 'Charlie',
-      type: NounType.User,
+      type: NounType.Person,
       metadata: { category: 'test-category', status: 'inactive' }
     })
   })

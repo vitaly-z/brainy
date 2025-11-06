@@ -3250,7 +3250,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
   ): Promise<string[]> {
     const entities = await this.extract(text, {
-      types: [NounType.Concept, NounType.Topic],
+      types: [NounType.Concept, NounType.Concept],
       confidence: options?.confidence || 0.7,
       neuralMatching: true
     })

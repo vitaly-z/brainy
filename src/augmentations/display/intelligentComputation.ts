@@ -443,12 +443,10 @@ export class IntelligentComputationEngine {
       [VerbType.WorksWith]: 'works with',
       [VerbType.MemberOf]: 'is member of',
       [VerbType.ReportsTo]: 'reports to',
-      [VerbType.CreatedBy]: 'created by',
       [VerbType.Owns]: 'owns',
       [VerbType.LocatedAt]: 'located at',
       [VerbType.Likes]: 'likes',
       [VerbType.Follows]: 'follows',
-      [VerbType.Supervises]: 'supervises'
     }
 
     return verbPhrases[verbType] || 'related to'

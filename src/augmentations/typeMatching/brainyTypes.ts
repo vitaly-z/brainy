@@ -22,20 +22,26 @@ import { getNounTypeEmbeddings, getVerbTypeEmbeddings } from '../../neural/embed
  * These descriptions are used to generate embeddings for each type
  */
 const NOUN_TYPE_DESCRIPTIONS: Record<string, string> = {
-  // Core Entity Types
+  // Core Entity Types (7)
   [NounType.Person]: 'person human individual user employee customer citizen member author creator agent actor participant',
   [NounType.Organization]: 'organization company business corporation institution agency department team group committee board',
   [NounType.Location]: 'location place address city country region area zone coordinate position site venue building',
   [NounType.Thing]: 'thing object item product device equipment tool instrument asset artifact material physical tangible',
   [NounType.Concept]: 'concept idea theory principle philosophy belief value abstract intangible notion thought',
   [NounType.Event]: 'event occurrence incident activity happening meeting conference celebration milestone timestamp date',
-  
+  [NounType.Agent]: 'agent AI bot automated system automation software assistant service daemon daemon worker processor',
+
+  // Biological Types (1) - Stage 3
+  [NounType.Organism]: 'organism animal plant bacteria fungi species living biological life creature being microorganism',
+
+  // Material Types (1) - Stage 3
+  [NounType.Substance]: 'substance material matter chemical element compound liquid gas solid molecule atom material',
+
   // Digital/Content Types
   [NounType.Document]: 'document file report article paper text pdf word contract agreement record documentation',
   [NounType.Media]: 'media image photo video audio music podcast multimedia graphic visualization animation',
   [NounType.File]: 'file digital data binary code script program software archive package bundle',
   [NounType.Message]: 'message email chat communication notification alert announcement broadcast transmission',
-  [NounType.Content]: 'content information data text material resource publication post blog webpage',
   
   // Collection Types
   [NounType.Collection]: 'collection group set list array category folder directory catalog inventory database',
@@ -44,7 +50,6 @@ const NOUN_TYPE_DESCRIPTIONS: Record<string, string> = {
   // Business/Application Types
   [NounType.Product]: 'product item merchandise offering service feature application software solution package',
   [NounType.Service]: 'service offering subscription support maintenance utility function capability',
-  [NounType.User]: 'user account profile member subscriber customer client participant identity credentials',
   [NounType.Task]: 'task action todo item job assignment duty responsibility activity step procedure',
   [NounType.Project]: 'project initiative program campaign effort endeavor plan scheme venture undertaking',
   
@@ -52,7 +57,6 @@ const NOUN_TYPE_DESCRIPTIONS: Record<string, string> = {
   [NounType.Process]: 'process workflow procedure method algorithm sequence pipeline operation routine protocol',
   [NounType.State]: 'state status condition phase stage mode situation circumstance configuration setting',
   [NounType.Role]: 'role position title function responsibility duty job capacity designation authority',
-  [NounType.Topic]: 'topic subject theme category tag keyword area domain field discipline specialty',
   [NounType.Language]: 'language dialect locale tongue vernacular communication speech linguistics vocabulary',
   [NounType.Currency]: 'currency money dollar euro pound yen bitcoin payment financial monetary unit',
   [NounType.Measurement]: 'measurement metric quantity value amount size dimension weight height volume distance',
@@ -80,7 +84,6 @@ const VERB_TYPE_DESCRIPTIONS: Record<string, string> = {
   
   // Temporal/Causal Types
   [VerbType.Precedes]: 'precedes before earlier prior previous antecedent preliminary foregoing',
-  [VerbType.Succeeds]: 'succeeds follows after later subsequent next ensuing succeeding',
   [VerbType.Causes]: 'causes triggers induces produces generates results influences affects',
   [VerbType.DependsOn]: 'depends requires needs relies necessitates contingent prerequisite',
   [VerbType.Requires]: 'requires needs demands necessitates mandates obliges compels entails',
@@ -95,8 +98,6 @@ const VERB_TYPE_DESCRIPTIONS: Record<string, string> = {
   // Ownership/Attribution Types
   [VerbType.Owns]: 'owns possesses holds controls manages administers governs maintains',
   [VerbType.AttributedTo]: 'attributed credited assigned ascribed authored written composed',
-  [VerbType.CreatedBy]: 'created made produced generated built developed authored written',
-  [VerbType.BelongsTo]: 'belongs property possession part member affiliate associated owned',
   
   // Social/Organizational Types
   [VerbType.MemberOf]: 'member participant affiliate associate belongs joined enrolled registered',
@@ -105,7 +106,6 @@ const VERB_TYPE_DESCRIPTIONS: Record<string, string> = {
   [VerbType.Follows]: 'follows subscribes tracks monitors watches observes trails pursues',
   [VerbType.Likes]: 'likes enjoys appreciates favors prefers admires values endorses',
   [VerbType.ReportsTo]: 'reports answers subordinate accountable responsible supervised managed',
-  [VerbType.Supervises]: 'supervises manages oversees directs leads controls guides administers',
   [VerbType.Mentors]: 'mentors teaches guides coaches instructs trains advises counsels',
   [VerbType.Communicates]: 'communicates talks speaks messages contacts interacts corresponds exchanges',
   

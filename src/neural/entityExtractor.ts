@@ -328,12 +328,12 @@ export class NeuralEntityExtractor {
     
     // Hashtag
     if (text.startsWith('#')) {
-      return { type: NounType.Topic, confidence: 0.8 }
+      return { type: NounType.Concept, confidence: 0.8 }
     }
     
     // Mention
     if (text.startsWith('@')) {
-      return { type: NounType.User, confidence: 0.8 }
+      return { type: NounType.Person, confidence: 0.8 }
     }
     
     // Capitalized words (likely proper nouns)

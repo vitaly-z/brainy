@@ -248,15 +248,15 @@ export class VerbExactMatchSignal {
     // Common relationship phrases with their VerbTypes
     const phrases: Array<{ pattern: RegExp; type: VerbType; confidence: number }> = [
       // Creation relationships
-      { pattern: /created?\s+by/i, type: VerbType.CreatedBy, confidence: 0.95 },
-      { pattern: /authored?\s+by/i, type: VerbType.CreatedBy, confidence: 0.95 },
-      { pattern: /written\s+by/i, type: VerbType.CreatedBy, confidence: 0.95 },
-      { pattern: /developed\s+by/i, type: VerbType.CreatedBy, confidence: 0.90 },
+      { pattern: /created?\s+by/i, type: VerbType.Creates, confidence: 0.95 },
+      { pattern: /authored?\s+by/i, type: VerbType.Creates, confidence: 0.95 },
+      { pattern: /written\s+by/i, type: VerbType.Creates, confidence: 0.95 },
+      { pattern: /developed\s+by/i, type: VerbType.Creates, confidence: 0.90 },
       { pattern: /built\s+by/i, type: VerbType.Creates, confidence: 0.85 },
 
       // Ownership relationships
       { pattern: /owned\s+by/i, type: VerbType.Owns, confidence: 0.95 },
-      { pattern: /belongs\s+to/i, type: VerbType.BelongsTo, confidence: 0.95 },
+      { pattern: /belongs\s+to/i, type: VerbType.Owns, confidence: 0.95 },
       { pattern: /attributed\s+to/i, type: VerbType.AttributedTo, confidence: 0.95 },
 
       // Part/Whole relationships
@@ -276,8 +276,8 @@ export class VerbExactMatchSignal {
 
       // Reporting relationships
       { pattern: /reports?\s+to/i, type: VerbType.ReportsTo, confidence: 0.95 },
-      { pattern: /manages/i, type: VerbType.Supervises, confidence: 0.85 },
-      { pattern: /supervises/i, type: VerbType.Supervises, confidence: 0.95 },
+      { pattern: /manages/i, type: VerbType.ReportsTo, confidence: 0.85 },
+      { pattern: /supervises/i, type: VerbType.ReportsTo, confidence: 0.95 },
 
       // Reference relationships
       { pattern: /references/i, type: VerbType.References, confidence: 0.90 },
@@ -286,9 +286,9 @@ export class VerbExactMatchSignal {
 
       // Temporal relationships
       { pattern: /precedes/i, type: VerbType.Precedes, confidence: 0.90 },
-      { pattern: /follows/i, type: VerbType.Succeeds, confidence: 0.90 },
+      { pattern: /follows/i, type: VerbType.Precedes, confidence: 0.90 },
       { pattern: /before/i, type: VerbType.Precedes, confidence: 0.75 },
-      { pattern: /after/i, type: VerbType.Succeeds, confidence: 0.75 },
+      { pattern: /after/i, type: VerbType.Precedes, confidence: 0.75 },
 
       // Causal relationships
       { pattern: /causes/i, type: VerbType.Causes, confidence: 0.90 },

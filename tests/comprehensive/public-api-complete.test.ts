@@ -1036,7 +1036,7 @@ describe('Brainy Public API - Complete Coverage', () => {
       const docs = await brain.find({ where: { type: NounType.Document } })
       const people = await brain.find({ where: { type: NounType.Person } })
       
-      await brain.relate(docs[0].entity.id, people[0].entity.id, VerbType.CreatedBy)
+      await brain.relate(docs[0].entity.id, people[0].entity.id, VerbType.Creates)
       
       await brain.clear({ type: NounType.Document })
       

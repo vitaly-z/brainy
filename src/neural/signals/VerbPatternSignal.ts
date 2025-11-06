@@ -95,7 +95,7 @@ export class VerbPatternSignal {
       // ========== Creation & Authorship ==========
       {
         regex: /\b(?:created?|made|built|developed|designed|wrote|authored|composed)\s+(?:by|from)\b/i,
-        type: VerbType.CreatedBy,
+        type: VerbType.Creates,
         confidence: 0.90,
         description: 'Creation with agent (passive)'
       },
@@ -127,7 +127,7 @@ export class VerbPatternSignal {
       },
       {
         regex: /\bbelongs?\s+to\b/i,
-        type: VerbType.BelongsTo,
+        type: VerbType.Owns,
         confidence: 0.95,
         description: 'Belonging relationship'
       },
@@ -187,7 +187,7 @@ export class VerbPatternSignal {
       },
       {
         regex: /\b(?:manages?|supervises?|oversees?)\b/i,
-        type: VerbType.Supervises,
+        type: VerbType.ReportsTo,
         confidence: 0.85,
         description: 'Management relationship'
       },
@@ -247,7 +247,7 @@ export class VerbPatternSignal {
       },
       {
         regex: /\b(?:succeeds?|follows?|comes?\s+after|happens?\s+after)\b/i,
-        type: VerbType.Succeeds,
+        type: VerbType.Precedes,
         confidence: 0.85,
         description: 'Temporal succession'
       },
@@ -259,7 +259,7 @@ export class VerbPatternSignal {
       },
       {
         regex: /\bafter\b/i,
-        type: VerbType.Succeeds,
+        type: VerbType.Precedes,
         confidence: 0.70,
         description: 'After (temporal)'
       },

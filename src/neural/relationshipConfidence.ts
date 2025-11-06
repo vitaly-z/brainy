@@ -169,7 +169,7 @@ export class RelationshipConfidenceScorer {
       [VerbType.Contains]: ['contains', 'includes', 'has', 'holds'],
       [VerbType.Requires]: ['requires', 'needs', 'depends on', 'relies on'],
       [VerbType.Uses]: ['uses', 'utilizes', 'employs', 'applies'],
-      [VerbType.Supervises]: ['manages', 'oversees', 'supervises', 'controls'],
+      [VerbType.ReportsTo]: ['manages', 'oversees', 'supervises', 'controls'],
       [VerbType.Causes]: ['influences', 'affects', 'impacts', 'shapes', 'causes'],
       [VerbType.DependsOn]: ['depends on', 'relies on', 'based on'],
       [VerbType.Modifies]: ['modifies', 'changes', 'alters', 'updates'],

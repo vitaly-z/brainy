@@ -212,7 +212,7 @@ export class IntelligentTypeMapper {
       'references': VerbType.References,
       'cites': VerbType.References,
       'before': VerbType.Precedes,
-      'after': VerbType.Succeeds,
+      'after': VerbType.Precedes,
       'causes': VerbType.Causes,
       'needs': VerbType.Requires,
       'requires': VerbType.Requires,
@@ -221,7 +221,7 @@ export class IntelligentTypeMapper {
       'changes': VerbType.Modifies,
       'updates': VerbType.Modifies,
       'owns': VerbType.Owns,
-      'ownedBy': VerbType.BelongsTo,  // Use BelongsTo for reverse ownership
+      'ownedBy': VerbType.Owns,  // Use BelongsTo for reverse ownership
       'uses': VerbType.Uses,
       'usedBy': VerbType.Uses  // Same relationship, just interpret direction
     }

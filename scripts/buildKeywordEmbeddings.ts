@@ -237,13 +237,13 @@ function buildExpandedKeywordList(): KeywordDefinition[] {
   add(['marketing', 'advertising', 'promotion'], NounType.Service, 0.85, true)
 
   // ========== User Type ==========
-  add(['user', 'account', 'profile', 'identity'], NounType.User, 0.90, true)
-  add(['username', 'login', 'credential'], NounType.User, 0.85, true)
-  add(['subscriber', 'follower', 'fan', 'supporter'], NounType.User, 0.85, true)
-  add(['member', 'participant', 'contributor', 'author'], NounType.User, 0.85, true)
-  add(['viewer', 'reader', 'listener', 'watcher'], NounType.User, 0.80, true)
-  add(['player', 'gamer', 'competitor'], NounType.User, 0.80, true)
-  add(['guest', 'visitor', 'attendee'], NounType.User, 0.80, true)
+  add(['user', 'account', 'profile', 'identity'], NounType.Person, 0.90, true)
+  add(['username', 'login', 'credential'], NounType.Person, 0.85, true)
+  add(['subscriber', 'follower', 'fan', 'supporter'], NounType.Person, 0.85, true)
+  add(['member', 'participant', 'contributor', 'author'], NounType.Person, 0.85, true)
+  add(['viewer', 'reader', 'listener', 'watcher'], NounType.Person, 0.80, true)
+  add(['player', 'gamer', 'competitor'], NounType.Person, 0.80, true)
+  add(['guest', 'visitor', 'attendee'], NounType.Person, 0.80, true)
 
   // ========== Task & Project Types ==========
   add(['task', 'todo', 'action', 'activity', 'job'], NounType.Task, 0.85, true)
@@ -303,8 +303,8 @@ function buildExpandedKeywordList(): KeywordDefinition[] {
   addVerb(['precedes', 'comes before', 'happens before', 'leads to', 'prior to'], VerbType.Precedes, 0.90, true)
   addVerb(['preceding', 'earlier than', 'before'], VerbType.Precedes, 0.85, false)
 
-  addVerb(['succeeds', 'comes after', 'follows', 'happens after', 'subsequent to'], VerbType.Succeeds, 0.90, true)
-  addVerb(['succeeding', 'later than', 'after'], VerbType.Succeeds, 0.85, false)
+  addVerb(['succeeds', 'comes after', 'follows', 'happens after', 'subsequent to'], VerbType.Precedes, 0.90, true)
+  addVerb(['succeeding', 'later than', 'after'], VerbType.Precedes, 0.85, false)
 
   addVerb(['causes', 'results in', 'leads to', 'brings about', 'triggers'], VerbType.Causes, 0.95, true)
   addVerb(['influences', 'affects', 'impacts', 'produces'], VerbType.Causes, 0.90, true)
@@ -341,11 +341,11 @@ function buildExpandedKeywordList(): KeywordDefinition[] {
   addVerb(['attributed to', 'credited to', 'ascribed to', 'assigned to'], VerbType.AttributedTo, 0.95, true)
   addVerb(['attribution', 'credit', 'acknowledgment'], VerbType.AttributedTo, 0.85, false)
 
-  addVerb(['created by', 'made by', 'built by', 'authored by', 'developed by'], VerbType.CreatedBy, 0.95, true)
-  addVerb(['creator', 'author', 'maker'], VerbType.CreatedBy, 0.85, false)
+  addVerb(['created by', 'made by', 'built by', 'authored by', 'developed by'], VerbType.Creates, 0.95, true)
+  addVerb(['creator', 'author', 'maker'], VerbType.Creates, 0.85, false)
 
-  addVerb(['belongs to', 'owned by', 'property of', 'part of'], VerbType.BelongsTo, 0.95, true)
-  addVerb(['belonging', 'membership'], VerbType.BelongsTo, 0.85, false)
+  addVerb(['belongs to', 'owned by', 'property of', 'part of'], VerbType.Owns, 0.95, true)
+  addVerb(['belonging', 'membership'], VerbType.Owns, 0.85, false)
 
   // ========== Social/Organizational Types ==========
   addVerb(['member of', 'belongs to', 'affiliated with', 'part of'], VerbType.MemberOf, 0.95, true)
@@ -368,8 +368,8 @@ function buildExpandedKeywordList(): KeywordDefinition[] {
   addVerb(['reports to', 'answers to', 'subordinate to', 'under'], VerbType.ReportsTo, 0.95, true)
   addVerb(['reporting', 'subordination'], VerbType.ReportsTo, 0.85, false)
 
-  addVerb(['supervises', 'manages', 'oversees', 'directs', 'leads'], VerbType.Supervises, 0.95, true)
-  addVerb(['supervision', 'management', 'oversight'], VerbType.Supervises, 0.85, false)
+  addVerb(['supervises', 'manages', 'oversees', 'directs', 'leads'], VerbType.ReportsTo, 0.95, true)
+  addVerb(['supervision', 'management', 'oversight'], VerbType.ReportsTo, 0.85, false)
 
   addVerb(['mentors', 'coaches', 'guides', 'advises', 'teaches'], VerbType.Mentors, 0.95, true)
   addVerb(['mentorship', 'coaching', 'guidance'], VerbType.Mentors, 0.85, false)

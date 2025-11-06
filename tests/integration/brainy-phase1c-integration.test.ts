@@ -266,7 +266,7 @@ describe('Brainy - Phase 1c: Type-Aware Integration', () => {
       await brainy.relate({ from: alice, to: acme, type: VerbType.MemberOf })
       await brainy.relate({ from: bob, to: acme, type: VerbType.MemberOf })
       await brainy.relate({ from: alice, to: project, type: VerbType.WorksWith })
-      await brainy.relate({ from: bob, to: project, type: VerbType.Supervises })
+      await brainy.relate({ from: bob, to: project, type: VerbType.ReportsTo })
 
       // Query type statistics
       const topTypes = brainy.counts.topTypes(5)

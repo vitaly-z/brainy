@@ -184,7 +184,7 @@ describe('Count Synchronization (Bug Fix v4.1.2)', () => {
 
       // Create relationships of different types
       await brain.relate({ from: personId, to: orgId, type: VerbType.WorksWith })
-      await brain.relate({ from: personId, to: docId, type: VerbType.CreatedBy })
+      await brain.relate({ from: personId, to: docId, type: VerbType.Creates })
 
       // Flush to disk
       await brain.flush()
@@ -197,7 +197,7 @@ describe('Count Synchronization (Bug Fix v4.1.2)', () => {
       // Verify verb counts
       expect(counts.totalVerbCount).toBe(2)
       expect(counts.verbCounts[VerbType.WorksWith]).toBe(1)
-      expect(counts.verbCounts[VerbType.CreatedBy]).toBe(1)
+      expect(counts.verbCounts[VerbType.Creates]).toBe(1)
     })
   })
 

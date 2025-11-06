@@ -151,7 +151,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Document,
         objectType: NounType.Person,
-        verbType: VerbType.CreatedBy,
+        verbType: VerbType.Creates,
         confidence: 0.80,
         description: 'Document created by Person'
       },
@@ -224,7 +224,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Product,
         objectType: NounType.Organization,
-        verbType: VerbType.CreatedBy,
+        verbType: VerbType.Creates,
         confidence: 0.75,
         description: 'Product created by Organization'
       },
@@ -240,7 +240,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Product,
         objectType: NounType.Person,
-        verbType: VerbType.CreatedBy,
+        verbType: VerbType.Creates,
         confidence: 0.75,
         description: 'Product created by Person'
       },
@@ -249,7 +249,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Event,
         objectType: NounType.Person,
-        verbType: VerbType.CreatedBy,
+        verbType: VerbType.Creates,
         confidence: 0.70,
         description: 'Event created by Person'
       },
@@ -276,7 +276,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Project,
         objectType: NounType.Organization,
-        verbType: VerbType.BelongsTo,
+        verbType: VerbType.Owns,
         confidence: 0.75,
         description: 'Project belongs to Organization'
       },
@@ -285,7 +285,7 @@ export class VerbContextSignal {
       {
         subjectType: NounType.Project,
         objectType: NounType.Person,
-        verbType: VerbType.CreatedBy,
+        verbType: VerbType.Creates,
         confidence: 0.70,
         description: 'Project created by Person'
       },

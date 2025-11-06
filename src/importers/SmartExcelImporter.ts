@@ -384,7 +384,7 @@ export class SmartExcelImporter {
             const relationshipColumnPatterns = [
               { pattern: /^(location|home|lives in|resides|dwelling|place)$/i, defaultType: VerbType.LocatedAt },
               { pattern: /^(owner|owned by|belongs to|possessed by|wielder)$/i, defaultType: VerbType.PartOf },
-              { pattern: /^(created by|made by|invented by|authored by|creator|author)$/i, defaultType: VerbType.CreatedBy },
+              { pattern: /^(created by|made by|invented by|authored by|creator|author)$/i, defaultType: VerbType.Creates },
               { pattern: /^(uses|utilizes|requires|needs|employs|tool|weapon|item)$/i, defaultType: VerbType.Uses },
               { pattern: /^(member of|part of|within|inside|group|organization)$/i, defaultType: VerbType.PartOf },
               { pattern: /^(knows|friend|associate|colleague|ally|companion)$/i, defaultType: VerbType.FriendOf },

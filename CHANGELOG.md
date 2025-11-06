@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.5.0](https://github.com/soulcraftlabs/brainy/compare/v5.4.0...v5.5.0) (2025-11-06)
+
+### 🎯 Stage 3 CANONICAL Taxonomy - Complete Coverage
+
+**169 types** (42 nouns + 127 verbs) representing **96-97% of all human knowledge**
+
+### ✨ New Features
+
+* **Expanded Type System**: 169 types (from 71 types in v5.x)
+  - **42 noun types** (was 31): Added `organism`, `substance` + 11 others
+  - **127 verb types** (was 40): Added `affects`, `learns`, `destroys` + 84 others
+  - Coverage: Natural Sciences (96%), Formal Sciences (98%), Social Sciences (97%), Humanities (96%)
+  - Timeless design: Stable for 20+ years without changes
+
+* **New Noun Types**:
+  - `organism`: Living biological entities (animals, plants, bacteria, fungi)
+  - `substance`: Physical materials and matter (water, iron, chemicals, DNA)
+  - Plus 11 additional types from Stage 3 taxonomy
+
+* **New Verb Types**:
+  - `destroys`: Lifecycle termination and destruction relationship
+  - `affects`: Patient/experiencer relationship (who/what experiences action)
+  - `learns`: Cognitive acquisition and learning process
+  - Plus 84 additional verbs across 24 semantic categories
+
+### 🔧 Breaking Changes (Minor Impact)
+
+* **Removed Types** (migration recommended):
+  - `user` → migrate to `person`
+  - `topic` → migrate to `concept`
+  - `content` → migrate to `informationContent` or `document`
+  - `createdBy`, `belongsTo`, `supervises`, `succeeds` → use inverse relationships
+
+### 📊 Performance
+
+* **Memory optimization**: 676 bytes for 169 types (99.2% reduction vs Maps)
+* **Type embeddings**: 338KB embedded, zero runtime computation
+* **Build time**: Type embeddings pre-computed, instant availability
+
+### 📚 Documentation
+
+* Added `docs/STAGE3-CANONICAL-TAXONOMY.md` - Complete type reference
+* Updated all type descriptions and embeddings
+* Full semantic coverage across all knowledge domains
+
 ### [5.4.0](https://github.com/soulcraftlabs/brainy/compare/v5.3.6...v5.4.0) (2025-11-05)
 
 - fix: resolve HNSW race condition and verb weight extraction (v5.4.0) (1fc54f0)

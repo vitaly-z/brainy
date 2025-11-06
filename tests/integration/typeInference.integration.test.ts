@@ -140,7 +140,7 @@ describe('TypeInference System', () => {
 
       // Should have Organization and User types
       expect(types).toContain(NounType.Organization)
-      expect(types).toContain(NounType.User)
+      expect(types).toContain(NounType.Person)
     })
 
     it('should boost confidence for multiple keyword matches', () => {

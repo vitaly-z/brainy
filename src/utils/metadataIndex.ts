@@ -104,13 +104,13 @@ export class MetadataIndexManager {
   private typeFieldAffinity = new Map<string, Map<string, number>>() // nounType -> field -> count
   private totalEntitiesByType = new Map<string, number>() // nounType -> total count
 
-  // Phase 1b: Fixed-size type tracking (99.76% memory reduction vs Maps)
+  // Phase 1b: Fixed-size type tracking (Stage 3 CANONICAL: 99.2% memory reduction vs Maps)
   // Uint32Array provides O(1) access via type enum index
-  // 31 noun types × 4 bytes = 124 bytes (vs ~15KB with Map overhead)
-  // 40 verb types × 4 bytes = 160 bytes (vs ~20KB with Map overhead)
-  // Total: 284 bytes (vs ~35KB) = 99.2% memory reduction
-  private entityCountsByTypeFixed = new Uint32Array(NOUN_TYPE_COUNT) // 124 bytes
-  private verbCountsByTypeFixed = new Uint32Array(VERB_TYPE_COUNT)   // 160 bytes
+  // 42 noun types × 4 bytes = 168 bytes (vs ~20KB with Map overhead)
+  // 127 verb types × 4 bytes = 508 bytes (vs ~62KB with Map overhead)
+  // Total: 676 bytes (vs ~85KB) = 99.2% memory reduction
+  private entityCountsByTypeFixed = new Uint32Array(NOUN_TYPE_COUNT) // 168 bytes (Stage 3 CANONICAL: 42 types)
+  private verbCountsByTypeFixed = new Uint32Array(VERB_TYPE_COUNT)   // 508 bytes (Stage 3 CANONICAL: 127 types)
 
   // Unified cache for coordinated memory management
   private unifiedCache: UnifiedCache
