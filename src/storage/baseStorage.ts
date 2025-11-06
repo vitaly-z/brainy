@@ -157,6 +157,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected nounTypeCache = new Map<string, NounType>()
   protected verbTypeCache = new Map<string, VerbType>()
 
+  // v5.5.0: Track if type counts have been rebuilt (prevent repeated rebuilds)
+  private typeCountsRebuilt = false
+
   /**
    * Analyze a storage key to determine its routing and path
    * @param id - The key to analyze (UUID or system key)
@@ -1045,14 +1048,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }> {
     await this.ensureInitialized()
 
-    const { limit, offset, filter } = options
+    const { limit, offset = 0, filter } = options
     const collectedNouns: HNSWNounWithMetadata[] = []
     const targetCount = offset + limit  // Early termination target
 
+    // v5.5.0 BUG FIX: Only use optimization if counts are reliable
+    const totalNounCountFromArray = this.nounCountsByType.reduce((sum, c) => sum + c, 0)
+    const useOptimization = totalNounCountFromArray > 0
+
     // v5.5.0: Iterate through noun types with billion-scale optimizations
     for (let i = 0; i < NOUN_TYPE_COUNT && collectedNouns.length < targetCount; i++) {
-      // OPTIMIZATION 1: Skip empty types (most datasets use <10 of 42 types)
-      if (this.nounCountsByType[i] === 0) {
+      // OPTIMIZATION 1: Skip empty types (only if counts are reliable)
+      if (useOptimization && this.nounCountsByType[i] === 0) {
         continue
       }
 
@@ -1173,14 +1180,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }> {
     await this.ensureInitialized()
 
-    const { limit, offset, filter } = options
+    const { limit, offset = 0, filter } = options
     const collectedVerbs: HNSWVerbWithMetadata[] = []
     const targetCount = offset + limit  // Early termination target
 
+    // v5.5.0 BUG FIX: Only use optimization if counts are reliable
+    const totalVerbCountFromArray = this.verbCountsByType.reduce((sum, c) => sum + c, 0)
+    const useOptimization = totalVerbCountFromArray > 0
+
     // v5.5.0: Iterate through verb types with billion-scale optimizations
     for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
-      // OPTIMIZATION 1: Skip empty types (most datasets use <10 of 127 types)
-      if (this.verbCountsByType[i] === 0) {
+      // OPTIMIZATION 1: Skip empty types (only if counts are reliable)
+      if (useOptimization && this.verbCountsByType[i] === 0) {
         continue
       }
 
@@ -1493,11 +1504,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       let totalScanned = 0
       const targetCount = offset + limit  // We need this many verbs total (including offset)
 
+      // v5.5.0 BUG FIX: Check if optimization should be used
+      // Only use type-skipping optimization if counts are non-zero (reliable)
+      const totalVerbCountFromArray = this.verbCountsByType.reduce((sum, c) => sum + c, 0)
+      const useOptimization = totalVerbCountFromArray > 0
+
       // Iterate through all 127 verb types (Stage 3 CANONICAL) with early termination
-      // OPTIMIZATION: Skip types with zero count (uses existing verbCountsByType tracking)
+      // OPTIMIZATION: Skip types with zero count (only if counts are reliable)
       for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
-        // Skip empty types for performance (billions of entities may only use a few verb types)
-        if (this.verbCountsByType[i] === 0) {
+        // Skip empty types for performance (but only if optimization is enabled)
+        if (useOptimization && this.verbCountsByType[i] === 0) {
           continue
         }
 
@@ -1971,6 +1987,50 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     await this.writeObjectToPath(`${SYSTEM_DIR}/type-statistics.json`, stats)
+  }
+
+  /**
+   * Rebuild type counts from actual storage (v5.5.0)
+   * Called when statistics are missing or inconsistent
+   * Ensures verbCountsByType is always accurate for reliable pagination
+   */
+  protected async rebuildTypeCounts(): Promise<void> {
+    console.log('[BaseStorage] Rebuilding type counts from storage...')
+
+    // Rebuild verb counts by checking each type directory
+    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+      const type = TypeUtils.getVerbFromIndex(i)
+      const prefix = `entities/verbs/${type}/vectors/`
+
+      try {
+        const paths = await this.listObjectsInBranch(prefix)
+        this.verbCountsByType[i] = paths.length
+      } catch (error) {
+        // Type directory doesn't exist - count is 0
+        this.verbCountsByType[i] = 0
+      }
+    }
+
+    // Rebuild noun counts similarly
+    for (let i = 0; i < NOUN_TYPE_COUNT; i++) {
+      const type = TypeUtils.getNounFromIndex(i)
+      const prefix = `entities/nouns/${type}/vectors/`
+
+      try {
+        const paths = await this.listObjectsInBranch(prefix)
+        this.nounCountsByType[i] = paths.length
+      } catch (error) {
+        // Type directory doesn't exist - count is 0
+        this.nounCountsByType[i] = 0
+      }
+    }
+
+    // Save rebuilt counts to storage
+    await this.saveTypeStatistics()
+
+    const totalVerbs = this.verbCountsByType.reduce((sum, count) => sum + count, 0)
+    const totalNouns = this.nounCountsByType.reduce((sum, count) => sum + count, 0)
+    console.log(`[BaseStorage] Rebuilt counts: ${totalNouns} nouns, ${totalVerbs} verbs`)
   }
 
   /**
