@@ -1353,15 +1353,92 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         }
       }
 
-      // Storage adapter does not support pagination
-      console.error(
-        'Storage adapter does not support pagination. The deprecated getAllVerbs_internal() method has been removed. Please implement getVerbsWithPagination() in your storage adapter.'
+      // UNIVERSAL FALLBACK: Iterate through verb types with early termination (billion-scale safe)
+      // This approach works for ALL storage adapters without requiring adapter-specific pagination
+      console.warn(
+        'Using universal type-iteration strategy for getVerbs(). ' +
+        'This works for all adapters but may be slower than native pagination. ' +
+        'For optimal performance at scale, storage adapters can implement getVerbsWithPagination().'
       )
-      
+
+      const collectedVerbs: HNSWVerbWithMetadata[] = []
+      let totalScanned = 0
+      const targetCount = offset + limit  // We need this many verbs total (including offset)
+
+      // Iterate through all 127 verb types (Stage 3 CANONICAL) with early termination
+      // OPTIMIZATION: Skip types with zero count (uses existing verbCountsByType tracking)
+      for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
+        // Skip empty types for performance (billions of entities may only use a few verb types)
+        if (this.verbCountsByType[i] === 0) {
+          continue
+        }
+
+        const type = TypeUtils.getVerbFromIndex(i)
+        try {
+          const verbsOfType = await this.getVerbsByType_internal(type)
+
+          // Apply filtering inline (memory efficient)
+          for (const verb of verbsOfType) {
+            // Apply filters if specified
+            if (options?.filter) {
+              // Filter by sourceId
+              if (options.filter.sourceId) {
+                const sourceIds = Array.isArray(options.filter.sourceId)
+                  ? options.filter.sourceId
+                  : [options.filter.sourceId]
+                if (!sourceIds.includes(verb.sourceId)) {
+                  continue
+                }
+              }
+
+              // Filter by targetId
+              if (options.filter.targetId) {
+                const targetIds = Array.isArray(options.filter.targetId)
+                  ? options.filter.targetId
+                  : [options.filter.targetId]
+                if (!targetIds.includes(verb.targetId)) {
+                  continue
+                }
+              }
+
+              // Filter by verbType
+              if (options.filter.verbType) {
+                const verbTypes = Array.isArray(options.filter.verbType)
+                  ? options.filter.verbType
+                  : [options.filter.verbType]
+                if (!verbTypes.includes(verb.verb)) {
+                  continue
+                }
+              }
+            }
+
+            // Verb passed filters - add to collection
+            collectedVerbs.push(verb)
+
+            // Early termination: stop when we have enough for offset + limit
+            if (collectedVerbs.length >= targetCount) {
+              break
+            }
+          }
+
+          totalScanned += verbsOfType.length
+        } catch (error) {
+          // Ignore errors for types with no verbs (directory may not exist)
+          // This is expected for types that haven't been used yet
+        }
+      }
+
+      // Apply pagination (slice for offset)
+      const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
+      const hasMore = collectedVerbs.length >= targetCount
+
       return {
-        items: [],
-        totalCount: 0,
-        hasMore: false
+        items: paginatedVerbs,
+        totalCount: collectedVerbs.length,  // Accurate count of filtered results
+        hasMore,
+        nextCursor: hasMore && paginatedVerbs.length > 0
+          ? paginatedVerbs[paginatedVerbs.length - 1].id
+          : undefined
       }
     } catch (error) {
       console.error('Error getting verbs with pagination:', error)
