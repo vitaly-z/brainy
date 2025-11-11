@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.0](https://github.com/soulcraftlabs/brainy/compare/v5.6.3...v5.7.0) (2025-11-11)
+
+- test: skip flaky concurrent relationship test (race condition in duplicate detection) (a71785b)
+- perf: optimize imports with background deduplication (12-24x speedup) (02c80a0)
+
+
 ### [5.6.3](https://github.com/soulcraftlabs/brainy/compare/v5.6.2...v5.6.3) (2025-11-11)
 
 - docs: add entity versioning to fork section (3e81fd8)
