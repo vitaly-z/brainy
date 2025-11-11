@@ -236,9 +236,9 @@ Brainy automatically:
 
 **You write business logic. Brainy handles infrastructure.**
 
-### 🚀 **Instant Fork™** — Git for Databases (v5.0.0)
+### 🚀 **Git-Style Version Control** — Database & Entity Level (v5.0.0+)
 
-**Clone your entire database in <100ms. Merge back when ready. Full Git-style workflow.**
+**Clone your entire database in <100ms. Track every entity change. Full Git-style workflow.**
 
 ```javascript
 // Fork instantly - Snowflake-style copy-on-write
@@ -263,9 +263,20 @@ const commits = await brain.getHistory({ limit: 10 })
 const snapshot = await brain.asOf(commits[5].id)
 const pastResults = await snapshot.find({ query: 'historical data' })
 await snapshot.close()
+
+// Entity versioning: Track changes to individual entities (v5.3.0+)
+const userId = await brain.add({ type: 'user', data: { name: 'Alice' } })
+await brain.versions.save(userId, { tag: 'v1.0', description: 'Initial profile' })
+
+await brain.update(userId, { data: { name: 'Alice Smith', role: 'admin' } })
+await brain.versions.save(userId, { tag: 'v2.0', description: 'Added role' })
+
+// Compare versions or restore previous state
+const diff = await brain.versions.compare(userId, 1, 2)  // See what changed
+await brain.versions.restore(userId, 1)  // Restore v1.0
 ```
 
-**NEW in v5.0.0:**
+**Database-level version control (v5.0.0):**
 - ✅ `fork()` - Instant clone in <100ms
 - ✅ `merge()` - Merge with conflict resolution
 - ✅ `commit()` - Snapshot state
@@ -274,9 +285,16 @@ await snapshot.close()
 - ✅ `checkout()`, `listBranches()` - Full branch management
 - ✅ CLI support for all features
 
+**Entity-level version control (v5.3.0):**
+- ✅ `versions.save()` - Save entity snapshots with tags
+- ✅ `versions.restore()` - Restore previous versions
+- ✅ `versions.compare()` - Diff between versions
+- ✅ `versions.list()` - View version history
+- ✅ Automatic deduplication (content-addressable storage)
+
 **How it works:** Snowflake-style COW shares HNSW index structures, copying only modified nodes (10-20% memory overhead).
 
-**Perfect for:** Safe migrations, A/B testing, feature branches, distributed development, time-travel debugging, audit trails
+**Perfect for:** Safe migrations, A/B testing, feature branches, distributed development, time-travel debugging, audit trails, document versioning, compliance tracking
 
 [→ See Full Documentation](docs/features/instant-fork.md)
 
