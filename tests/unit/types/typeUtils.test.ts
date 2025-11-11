@@ -113,11 +113,11 @@ describe('Type System Foundation', () => {
     })
 
     test('should return correct type for index 6', () => {
-      expect(TypeUtils.getNounFromIndex(6)).toBe(NounType.Document)
+      expect(TypeUtils.getNounFromIndex(6)).toBe(NounType.Agent)
     })
 
     test('should return correct type for index 30', () => {
-      expect(TypeUtils.getNounFromIndex(30)).toBe(NounType.Resource)
+      expect(TypeUtils.getNounFromIndex(30)).toBe(NounType.Experiment)
     })
 
     test('should return default for invalid index', () => {
@@ -126,7 +126,7 @@ describe('Type System Foundation', () => {
     })
 
     test('should round-trip with getNounIndex', () => {
-      for (let i = 0; i < 31; i++) {
+      for (let i = 0; i < 42; i++) {
         const type = TypeUtils.getNounFromIndex(i)
         const index = TypeUtils.getNounIndex(type)
         expect(index).toBe(i)
@@ -136,15 +136,15 @@ describe('Type System Foundation', () => {
 
   describe('TypeUtils.getVerbFromIndex', () => {
     test('should return correct type for index 0', () => {
-      expect(TypeUtils.getVerbFromIndex(0)).toBe(VerbType.RelatedTo)
+      expect(TypeUtils.getVerbFromIndex(0)).toBe(VerbType.InstanceOf)
     })
 
     test('should return correct type for index 10', () => {
-      expect(TypeUtils.getVerbFromIndex(10)).toBe(VerbType.Creates)
+      expect(TypeUtils.getVerbFromIndex(10)).toBe(VerbType.During)
     })
 
     test('should return correct type for index 39', () => {
-      expect(TypeUtils.getVerbFromIndex(39)).toBe(VerbType.Competes)
+      expect(TypeUtils.getVerbFromIndex(39)).toBe(VerbType.Defines)
     })
 
     test('should return default for invalid index', () => {
@@ -153,7 +153,7 @@ describe('Type System Foundation', () => {
     })
 
     test('should round-trip with getVerbIndex', () => {
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 127; i++) {
         const type = TypeUtils.getVerbFromIndex(i)
         const index = TypeUtils.getVerbIndex(type)
         expect(index).toBe(i)
@@ -162,9 +162,9 @@ describe('Type System Foundation', () => {
   })
 
   describe('TypeMetadata', () => {
-    test('should have metadata for all 31 noun types', () => {
+    test('should have metadata for all 42 noun types', () => {
       const allTypes = Object.values(NounType)
-      expect(allTypes).toHaveLength(31)
+      expect(allTypes).toHaveLength(42)
 
       for (const type of allTypes) {
         const meta = TypeMetadata[type]
@@ -213,7 +213,7 @@ describe('Type System Foundation', () => {
       entityCountsByType[TypeUtils.getNounIndex(NounType.Document)] = 500
 
       expect(entityCountsByType[0]).toBe(1000) // person
-      expect(entityCountsByType[6]).toBe(500) // document
+      expect(entityCountsByType[13]).toBe(500) // document
       expect(entityCountsByType.length).toBe(42)
       expect(entityCountsByType.byteLength).toBe(168) // 42 × 4 bytes
     })
@@ -225,8 +225,8 @@ describe('Type System Foundation', () => {
       verbCountsByType[TypeUtils.getVerbIndex(VerbType.RelatedTo)] = 5000
       verbCountsByType[TypeUtils.getVerbIndex(VerbType.Creates)] = 2000
 
-      expect(verbCountsByType[0]).toBe(5000) // relatedTo
-      expect(verbCountsByType[10]).toBe(2000) // creates
+      expect(verbCountsByType[3]).toBe(5000) // relatedTo
+      expect(verbCountsByType[17]).toBe(2000) // creates
       expect(verbCountsByType.length).toBe(127)
       expect(verbCountsByType.byteLength).toBe(508) // 127 × 4 bytes
     })

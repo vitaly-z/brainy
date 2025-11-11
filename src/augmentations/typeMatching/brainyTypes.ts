@@ -37,6 +37,18 @@ const NOUN_TYPE_DESCRIPTIONS: Record<string, string> = {
   // Material Types (1) - Stage 3
   [NounType.Substance]: 'substance material matter chemical element compound liquid gas solid molecule atom material',
 
+  // Property & Quality Types (1) - Stage 3
+  [NounType.Quality]: 'quality property attribute characteristic feature aspect trait dimension parameter value',
+
+  // Temporal Types (1) - Stage 3
+  [NounType.TimeInterval]: 'timeInterval period duration span range epoch era season quarter interval window',
+
+  // Functional Types (1) - Stage 3
+  [NounType.Function]: 'function purpose role capability capacity utility objective goal aim intent',
+
+  // Informational Types (1) - Stage 3
+  [NounType.Proposition]: 'proposition statement claim assertion declaration premise conclusion hypothesis theory',
+
   // Digital/Content Types
   [NounType.Document]: 'document file report article paper text pdf word contract agreement record documentation',
   [NounType.Media]: 'media image photo video audio music podcast multimedia graphic visualization animation',
@@ -71,7 +83,22 @@ const NOUN_TYPE_DESCRIPTIONS: Record<string, string> = {
   
   // Technical Infrastructure Types
   [NounType.Interface]: 'interface API endpoint protocol specification contract schema definition connection',
-  [NounType.Resource]: 'resource infrastructure server database storage compute memory bandwidth capacity asset'
+  [NounType.Resource]: 'resource infrastructure server database storage compute memory bandwidth capacity asset',
+
+  // Custom/Extensible (1) - Stage 3
+  [NounType.Custom]: 'custom special unique particular specific domain-specific specialized tailored bespoke',
+
+  // Social Structures (3) - Stage 3
+  [NounType.SocialGroup]: 'socialGroup community tribe clan network circle collective society crowd gathering',
+  [NounType.Institution]: 'institution establishment foundation organization system structure framework tradition practice',
+  [NounType.Norm]: 'norm convention standard custom tradition protocol etiquette rule practice expectation',
+
+  // Information Theory (2) - Stage 3
+  [NounType.InformationContent]: 'informationContent story narrative knowledge data schema pattern model structure',
+  [NounType.InformationBearer]: 'informationBearer carrier medium vehicle signal token representation document',
+
+  // Meta-Level (1) - Stage 3
+  [NounType.Relationship]: 'relationship connection relation association link bond tie interaction dynamic'
 }
 
 const VERB_TYPE_DESCRIPTIONS: Record<string, string> = {
@@ -498,7 +525,17 @@ export class BrainyTypes {
   ): string {
     const descriptions = typeKind === 'noun' ? NOUN_TYPE_DESCRIPTIONS : VERB_TYPE_DESCRIPTIONS
     const typeDesc = descriptions[selectedType]
-    
+
+    // Handle missing descriptions gracefully
+    if (!typeDesc) {
+      if (typeKind === 'noun') {
+        const fields = Object.keys(obj).slice(0, 3).join(', ')
+        return `Matched to ${selectedType} based on semantic similarity and object fields: ${fields}`
+      } else {
+        return `Matched to ${selectedType} based on semantic similarity and relationship context`
+      }
+    }
+
     if (typeKind === 'noun') {
       const fields = Object.keys(obj).slice(0, 3).join(', ')
       return `Matched to ${selectedType} based on semantic similarity to "${typeDesc.split(' ').slice(0, 5).join(' ')}..." and object fields: ${fields}`
