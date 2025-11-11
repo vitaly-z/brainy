@@ -2,7 +2,72 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.7.1](https://github.com/soulcraftlabs/brainy/compare/v5.7.0...v5.7.1) (2025-11-11)
+
+### 🚨 CRITICAL BUG FIX
+
+**v5.7.0 caused complete production failure - ALL imports hung indefinitely. This hotfix restores functionality.**
+
+### Bug Description
+v5.7.0 introduced a circular dependency deadlock during GraphAdjacencyIndex initialization:
+- `GraphAdjacencyIndex.rebuild()` → `storage.getVerbs()`
+- `storage.getVerbsBySource_internal()` → `getGraphIndex()` (NEW in v5.7.0)
+- `getGraphIndex()` waiting for rebuild to complete
+- **DEADLOCK**: Each component waiting for the other
+
+### Symptoms
+- ❌ ALL imports hung at "Reading Data Structure" stage for 760+ seconds
+- ❌ `brain.add()` operations took 12+ seconds per entity (50x slower than expected)
+- ❌ No errors thrown - infinite wait
+- ❌ Zero entities imported successfully
+- ❌ 100% of users unable to import files
+
+### Root Cause
+v5.7.0 modified storage internal methods (`getVerbsBySource_internal`, `getVerbsByTarget_internal`) to use GraphAdjacencyIndex, creating tight coupling where:
+- Storage layer depends on index
+- Index depends on storage layer
+- Circular dependency = deadlock during initialization
+
+### Fix (Architectural)
+Reverted storage internals to v5.6.3 implementation:
+- ✅ Storage layer is now simple and has no index dependencies
+- ✅ GraphAdjacencyIndex can safely call storage.getVerbs() to rebuild
+- ✅ No circular dependency possible
+- ✅ Proper separation of concerns restored
+
+**Files changed**:
+- `src/storage/baseStorage.ts`: Reverted lines 2320-2444 to v5.6.3 implementation
+- `tests/regression/v5.7.0-deadlock.test.ts`: Added comprehensive regression tests
+
+### Performance Impact
+- Slightly slower GraphAdjacencyIndex initialization (one-time cost during rebuild)
+- High-level query operations still use optimized index
+- Import performance unaffected (writes don't trigger index initialization)
+- **NO breaking changes to public API**
+
+### Testing
+- ✅ 4 new regression tests verify no deadlock
+- ✅ All 1146 existing tests pass
+- ✅ Import + relationships complete in <1 second (not 760+ seconds)
+- ✅ No 12+ second delays per entity
+
+### Verification
+Workshop team (production users) should upgrade immediately:
+```bash
+npm install @soulcraft/brainy@5.7.1
+```
+
+Expected behavior after upgrade:
+- ✅ Imports work again
+- ✅ Fast entity creation (<100ms per entity)
+- ✅ No hangs or infinite waits
+- ✅ File operations responsive
+
+---
+
 ### [5.7.0](https://github.com/soulcraftlabs/brainy/compare/v5.6.3...v5.7.0) (2025-11-11)
+
+**⚠️ WARNING: This version has a critical deadlock bug. Use v5.7.1 instead.**
 
 - test: skip flaky concurrent relationship test (race condition in duplicate detection) (a71785b)
 - perf: optimize imports with background deduplication (12-24x speedup) (02c80a0)

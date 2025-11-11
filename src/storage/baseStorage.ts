@@ -2320,41 +2320,59 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async getVerbsBySource_internal(
     sourceId: string
   ): Promise<HNSWVerbWithMetadata[]> {
-    // v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
-    // Previous: O(total_verbs) - scanned all 127 verb types
-    // Now: O(log n) LSM-tree lookup + O(verbs_for_source) load
+    // v5.7.1: Reverted to v5.6.3 implementation to fix circular dependency deadlock
+    // v5.7.0 called getGraphIndex() here, creating deadlock during initialization:
+    //   GraphAdjacencyIndex.rebuild() → storage.getVerbs() → getVerbsBySource_internal() → getGraphIndex() → [deadlock]
+    // v5.4.0: Type-first implementation - scan across all verb types
+    // COW-aware: uses readWithInheritance for each verb
     await this.ensureInitialized()
 
-    const startTime = performance.now()
-
-    // Get GraphAdjacencyIndex (lazy-initialized)
-    const graphIndex = await this.getGraphIndex()
-
-    // O(log n) lookup with bloom filter optimization
-    const verbIds = await graphIndex.getVerbIdsBySource(sourceId)
-
-    // Load each verb by ID (uses existing optimized getVerb())
     const results: HNSWVerbWithMetadata[] = []
-    for (const verbId of verbIds) {
+
+    // Iterate through all verb types
+    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+      const type = TypeUtils.getVerbFromIndex(i)
+      const typeDir = `entities/verbs/${type}/vectors`
+
       try {
-        const verb = await this.getVerb(verbId)
-        if (verb) {
-          results.push(verb)
+        // v5.4.0 FIX: List all verb files directly (not shard directories)
+        // listObjectsInBranch returns full paths to .json files, not directories
+        const verbFiles = await this.listObjectsInBranch(typeDir)
+
+        for (const verbPath of verbFiles) {
+          // Skip if not a .json file
+          if (!verbPath.endsWith('.json')) continue
+
+          try {
+            const verb = await this.readWithInheritance(verbPath)
+            if (verb && verb.sourceId === sourceId) {
+              // v5.4.0: Use proper path helper instead of string replacement
+              const metadataPath = getVerbMetadataPath(type, verb.id)
+              const metadata = await this.readWithInheritance(metadataPath)
+
+              // v5.4.0: Extract standard fields from metadata to top-level (like nouns)
+              results.push({
+                ...verb,
+                weight: metadata?.weight,
+                confidence: metadata?.confidence,
+                createdAt: metadata?.createdAt
+                  ? (typeof metadata.createdAt === 'number' ? metadata.createdAt : metadata.createdAt.seconds * 1000)
+                  : Date.now(),
+                updatedAt: metadata?.updatedAt
+                  ? (typeof metadata.updatedAt === 'number' ? metadata.updatedAt : metadata.updatedAt.seconds * 1000)
+                  : Date.now(),
+                service: metadata?.service,
+                createdBy: metadata?.createdBy,
+                metadata: metadata || {} as VerbMetadata
+              })
+            }
+          } catch (error) {
+            // Skip verbs that fail to load
+          }
         }
       } catch (error) {
-        // Skip verbs that fail to load (handles deleted/corrupted verbs gracefully)
+        // Skip types that have no data
       }
-    }
-
-    const elapsed = performance.now() - startTime
-
-    // Performance monitoring - should be 100-10,000x faster than old O(n) scan
-    if (elapsed > 50.0) {
-      prodLog.warn(
-        `getVerbsBySource_internal: Slow query for ${sourceId} ` +
-        `(${verbIds.length} verbs, ${elapsed.toFixed(2)}ms). ` +
-        `Expected <50ms with index optimization.`
-      )
     }
 
     return results
@@ -2362,46 +2380,64 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Get verbs by target (COW-aware implementation)
-   * v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
+   * v5.7.1: Reverted to v5.6.3 implementation to fix circular dependency deadlock
+   * v5.4.0: Fixed to directly list verb files instead of directories
    */
   protected async getVerbsByTarget_internal(
     targetId: string
   ): Promise<HNSWVerbWithMetadata[]> {
-    // v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
-    // Previous: O(total_verbs) - scanned all 127 verb types
-    // Now: O(log n) LSM-tree lookup + O(verbs_for_target) load
+    // v5.7.1: Reverted to v5.6.3 implementation to fix circular dependency deadlock
+    // v5.7.0 called getGraphIndex() here, creating deadlock during initialization
+    // v5.4.0: Type-first implementation - scan across all verb types
+    // COW-aware: uses readWithInheritance for each verb
     await this.ensureInitialized()
 
-    const startTime = performance.now()
-
-    // Get GraphAdjacencyIndex (lazy-initialized)
-    const graphIndex = await this.getGraphIndex()
-
-    // O(log n) lookup with bloom filter optimization
-    const verbIds = await graphIndex.getVerbIdsByTarget(targetId)
-
-    // Load each verb by ID (uses existing optimized getVerb())
     const results: HNSWVerbWithMetadata[] = []
-    for (const verbId of verbIds) {
+
+    // Iterate through all verb types
+    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
+      const type = TypeUtils.getVerbFromIndex(i)
+      const typeDir = `entities/verbs/${type}/vectors`
+
       try {
-        const verb = await this.getVerb(verbId)
-        if (verb) {
-          results.push(verb)
+        // v5.4.0 FIX: List all verb files directly (not shard directories)
+        // listObjectsInBranch returns full paths to .json files, not directories
+        const verbFiles = await this.listObjectsInBranch(typeDir)
+
+        for (const verbPath of verbFiles) {
+          // Skip if not a .json file
+          if (!verbPath.endsWith('.json')) continue
+
+          try {
+            const verb = await this.readWithInheritance(verbPath)
+            if (verb && verb.targetId === targetId) {
+              // v5.4.0: Use proper path helper instead of string replacement
+              const metadataPath = getVerbMetadataPath(type, verb.id)
+              const metadata = await this.readWithInheritance(metadataPath)
+
+              // v5.4.0: Extract standard fields from metadata to top-level (like nouns)
+              results.push({
+                ...verb,
+                weight: metadata?.weight,
+                confidence: metadata?.confidence,
+                createdAt: metadata?.createdAt
+                  ? (typeof metadata.createdAt === 'number' ? metadata.createdAt : metadata.createdAt.seconds * 1000)
+                  : Date.now(),
+                updatedAt: metadata?.updatedAt
+                  ? (typeof metadata.updatedAt === 'number' ? metadata.updatedAt : metadata.updatedAt.seconds * 1000)
+                  : Date.now(),
+                service: metadata?.service,
+                createdBy: metadata?.createdBy,
+                metadata: metadata || {} as VerbMetadata
+              })
+            }
+          } catch (error) {
+            // Skip verbs that fail to load
+          }
         }
       } catch (error) {
-        // Skip verbs that fail to load (handles deleted/corrupted verbs gracefully)
+        // Skip types that have no data
       }
-    }
-
-    const elapsed = performance.now() - startTime
-
-    // Performance monitoring - should be 100-10,000x faster than old O(n) scan
-    if (elapsed > 50.0) {
-      prodLog.warn(
-        `getVerbsByTarget_internal: Slow query for ${targetId} ` +
-        `(${verbIds.length} verbs, ${elapsed.toFixed(2)}ms). ` +
-        `Expected <50ms with index optimization.`
-      )
     }
 
     return results
