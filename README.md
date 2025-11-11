@@ -257,19 +257,26 @@ const result = await brain.merge('test-migration', 'main', {
 })
 
 console.log(result)  // { added: 1, modified: 0, conflicts: 0 }
+
+// Time-travel: Query database at any past commit (read-only)
+const commits = await brain.getHistory({ limit: 10 })
+const snapshot = await brain.asOf(commits[5].id)
+const pastResults = await snapshot.find({ query: 'historical data' })
+await snapshot.close()
 ```
 
 **NEW in v5.0.0:**
 - ✅ `fork()` - Instant clone in <100ms
 - ✅ `merge()` - Merge with conflict resolution
 - ✅ `commit()` - Snapshot state
+- ✅ `asOf()` - Time-travel queries (query at any commit)
 - ✅ `getHistory()` - View commit history
 - ✅ `checkout()`, `listBranches()` - Full branch management
 - ✅ CLI support for all features
 
 **How it works:** Snowflake-style COW shares HNSW index structures, copying only modified nodes (10-20% memory overhead).
 
-**Perfect for:** Safe migrations, A/B testing, feature branches, distributed development
+**Perfect for:** Safe migrations, A/B testing, feature branches, distributed development, time-travel debugging, audit trails
 
 [→ See Full Documentation](docs/features/instant-fork.md)
 
