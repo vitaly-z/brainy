@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.6.2](https://github.com/soulcraftlabs/brainy/compare/v5.6.1...v5.6.2) (2025-11-11)
+
+- fix: update tests for Stage 3 CANONICAL taxonomy (42 nouns, 127 verbs) (c5dcdf6)
+- docs: restructure README for better new user flow (2d3f59e)
+
+
 ## [5.6.1](https://github.com/soulcraftlabs/brainy/compare/v5.6.0...v5.6.1) (2025-11-11)
 
 ### 🐛 Bug Fixes
