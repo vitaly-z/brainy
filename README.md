@@ -32,6 +32,25 @@ await brain.init()
 
 ---
 
+## 👉 Choose Your Path
+
+**New to Brainy? Pick your starting point:**
+
+### 🚀 Path 1: I want to build something NOW
+**→ [Complete API Reference](docs/api/README.md)** ⭐ **Most developers start here** ⭐
+- Every method documented with examples
+- Quick start in 60 seconds
+- 1,870 lines of copy-paste ready code
+- **This is your primary resource**
+
+### 🧠 Path 2: I want to understand the big picture first
+**→ Keep reading below** for demos, architecture, and use cases
+
+### 📊 Path 3: I'm evaluating database options
+**→ Jump to [Why Revolutionary](#why-brainy-is-revolutionary)** or **[Benchmarks](#benchmarks)**
+
+---
+
 ## See It In Action
 
 **30 seconds to understand why Brainy is different:**
@@ -72,98 +91,96 @@ const results = await brain.find({
 
 ---
 
+## Quick Start
+
+```bash
+npm install @soulcraft/brainy
+```
+
+### Your First Knowledge Graph (60 seconds)
+
+```javascript
+import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
+
+const brain = new Brainy()
+await brain.init()
+
+// Add knowledge
+const jsId = await brain.add({
+    data: "JavaScript is a programming language",
+    type: NounType.Concept,
+    metadata: { category: "language", year: 1995 }
+})
+
+const nodeId = await brain.add({
+    data: "Node.js runtime environment",
+    type: NounType.Concept,
+    metadata: { category: "runtime", year: 2009 }
+})
+
+// Create relationships
+await brain.relate({ from: nodeId, to: jsId, type: VerbType.Executes })
+
+// Query with Triple Intelligence
+const results = await brain.find({
+    query: "JavaScript",                     // 🔍 Vector
+    where: { category: "language" },         // 📊 Document
+    connected: { from: nodeId, depth: 1 }    // 🕸️ Graph
+})
+```
+
+**Done.** No configuration. No complexity. Production-ready from day one.
+
+**→ Ready to dive deeper? [Complete API Documentation](docs/api/README.md)** has every method with examples.
+
+---
+
 ## From Prototype to Planet Scale
 
 **The same API. Zero rewrites. Any scale.**
 
-### 👤 **Individual Developer** → Weekend Prototype
-
+### 👤 Individual Developer → Weekend Prototype
 ```javascript
-// Zero configuration - starts in memory
-const brain = new Brainy()
+const brain = new Brainy()  // Zero config, starts in memory
 await brain.init()
-
-// Build your prototype in minutes
-// Change nothing when ready to scale
 ```
+**Perfect for:** Hackathons, side projects, prototyping, learning
 
-**Perfect for:** Hackathons, side projects, rapid prototyping, learning AI concepts
-
-### 👥 **Small Team** → Production MVP (Thousands of Entities)
-
+### 👥 Small Team → Production MVP
 ```javascript
-// Add persistence - one line
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    path: './brainy-data',
-    compression: true  // 60-80% space savings
-  }
+  storage: { type: 'filesystem', path: './data', compression: true }
 })
 ```
+**Scale:** Thousands to hundreds of thousands • **Performance:** <5ms queries
 
-**Perfect for:** Startups, MVPs, internal tools, team knowledge bases
-**Scale:** Thousands to hundreds of thousands of entities
-**Performance:** <5ms queries, sub-second imports
-
-### 🏢 **Growing Company** → Multi-Million Entity Scale
-
+### 🏢 Growing Company → Multi-Million Scale
 ```javascript
-// Scale to cloud - same API
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    s3Storage: {
-      bucketName: 'my-knowledge-base',
-      region: 'us-east-1'
-    }
-  },
+  storage: { type: 's3', s3Storage: { bucketName: 'my-kb', region: 'us-east-1' } },
   hnsw: { typeAware: true }  // 87% memory reduction
 })
 ```
+**Scale:** Millions of entities • **Performance:** <10ms queries, 12GB @ 10M entities
 
-**Perfect for:** SaaS products, e-commerce, content platforms, enterprise apps
-**Scale:** Millions of entities
-**Performance:** <10ms queries, 12GB memory @ 10M entities
-**Features:** Auto-scaling, distributed storage, cost optimization (96% savings)
-
-### 🌍 **Enterprise / Planet Scale** → Billion+ Entities
-
+### 🌍 Enterprise → Billion+ Scale
 ```javascript
-// Billion-scale - STILL the same API
 const brain = new Brainy({
-  storage: {
-    type: 'gcs',
-    gcsStorage: { bucketName: 'global-knowledge' }
-  },
-  hnsw: {
-    typeAware: true,
-    M: 32,
-    efConstruction: 400
-  }
-})
-
-// Enable intelligent archival
-await brain.storage.enableAutoclass({
-  terminalStorageClass: 'ARCHIVE'
+  storage: { type: 'gcs', gcsStorage: { bucketName: 'global-kb' } },
+  hnsw: { typeAware: true, M: 32, efConstruction: 400 }
 })
 ```
-
-**Perfect for:** Fortune 500, global platforms, research institutions, government
-**Scale:** Billions of entities (tested at 1B+)
-**Performance:** 18ms queries @ 1B scale, 50GB memory (87% reduction)
+**Scale:** Billions (tested @ 1B+) • **Performance:** 18ms queries, 50GB memory
 **Cost:** $138k/year → $6k/year with intelligent tiering (96% savings)
-**Features:** Sharding, replication, monitoring, enterprise SLAs
 
-### 🎯 **The Point**
+**→ [Capacity Planning Guide](docs/operations/capacity-planning.md)** | **[Cost Optimization](docs/operations/)**
+
+### 🎯 The Point
 
 **Start simple. Scale infinitely. Never rewrite.**
 
-Most systems force you to choose:
-- Simple but doesn't scale (SQLite, Redis)
-- Scales but complex (Kubernetes + 7 databases)
-
-**Brainy gives you both:** Starts simple as SQLite. Scales like Google.
+Most systems make you choose: Simple (SQLite) OR Scalable (Kubernetes + 7 databases).
+**Brainy gives you both.** Starts simple as SQLite. Scales like Google.
 
 ---
 
@@ -296,48 +313,6 @@ Every asset knows its relationships. Intelligent tagging, similarity-based disco
 
 ---
 
-## Quick Start
-
-```bash
-npm install @soulcraft/brainy
-```
-
-### Your First Knowledge Graph (60 seconds)
-
-```javascript
-import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
-
-const brain = new Brainy()
-await brain.init()
-
-// Add knowledge
-const jsId = await brain.add({
-    data: "JavaScript is a programming language",
-    type: NounType.Concept,
-    metadata: { category: "language", year: 1995 }
-})
-
-const nodeId = await brain.add({
-    data: "Node.js runtime environment",
-    type: NounType.Concept,
-    metadata: { category: "runtime", year: 2009 }
-})
-
-// Create relationships
-await brain.relate({ from: nodeId, to: jsId, type: VerbType.Executes })
-
-// Query with Triple Intelligence
-const results = await brain.find({
-    query: "JavaScript",                     // 🔍 Vector
-    where: { category: "language" },         // 📊 Document
-    connected: { from: nodeId, depth: 1 }    // 🕸️ Graph
-})
-```
-
-**Done.** No configuration. No complexity. Production-ready from day one.
-
----
-
 ## Core Features
 
 ### 🧠 **Natural Language Queries**
@@ -354,6 +329,8 @@ await brain.find({
     connected: { to: "JavaScript", depth: 2 }
 })
 ```
+
+**→ [See all query methods in API Reference](docs/api/README.md#search--query)**
 
 ### 🌐 **Virtual Filesystem** — Intelligent File Management
 
@@ -566,40 +543,60 @@ brainy search "programming"
 
 ---
 
-## Documentation
+## 📖 Complete Documentation
 
-### 🚀 Getting Started
-- **[API Reference](docs/api/README.md)** — Complete API documentation for all features
-- **[v4.0.0 Migration Guide](docs/MIGRATION-V3-TO-V4.md)** — Upgrade from v3 (backward compatible)
+**For most developers:** Start with the **[Complete API Reference](docs/api/README.md)** ⭐
 
-### 🧠 Core Concepts
+This comprehensive guide includes:
+- ✅ Every method with parameters, returns, and examples
+- ✅ Quick start in 60 seconds
+- ✅ Core CRUD → Advanced features (branching, versioning, time-travel)
+- ✅ TypeScript types and patterns
+- ✅ 1,870 lines of copy-paste ready code
+
+---
+
+### 🎯 Essential Reading (Start Here)
+
+1. **[📖 Complete API Reference](docs/api/README.md)** ⭐ **START HERE** ⭐
+   - Your primary resource for building with Brainy
+   - Every method documented with working examples
+
+2. **[Natural Language Queries](docs/guides/natural-language.md)**
+   - Master the `find()` method and Triple Intelligence queries
+
+3. **[v4.0.0 Migration Guide](docs/MIGRATION-V3-TO-V4.md)**
+   - Upgrading from v3 (100% backward compatible)
+
+### 🧠 Core Concepts & Architecture
+
 - **[Triple Intelligence Architecture](docs/architecture/triple-intelligence.md)** — How vector + graph + document work together
-- **[Natural Language Queries](docs/guides/natural-language.md)** — Using find() effectively
-- **[API Reference](docs/api/README.md)** — Complete API documentation
-- **[Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)** — The universal type system
-
-### 🏗️ Architecture & Scaling
+- **[Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)** — The universal type system (42 nouns × 127 verbs)
 - **[Architecture Overview](docs/architecture/overview.md)** — System design and components
 - **[Data Storage Architecture](docs/architecture/data-storage-architecture.md)** — Type-aware indexing and HNSW
-- **[Capacity Planning](docs/operations/capacity-planning.md)** — Memory, storage, and scaling guidelines
 
 ### ☁️ Production & Operations
+
 - **[Cloud Deployment Guide](docs/deployment/CLOUD_DEPLOYMENT_GUIDE.md)** — Deploy to AWS, GCS, Azure
-- **[AWS Cost Optimization](docs/operations/cost-optimization-aws-s3.md)** | **[GCS](docs/operations/cost-optimization-gcs.md)** | **[Azure](docs/operations/cost-optimization-azure.md)** | **[Cloudflare R2](docs/operations/cost-optimization-cloudflare-r2.md)**
+- **[Capacity Planning](docs/operations/capacity-planning.md)** — Memory, storage, and scaling to billions
+- **Cost Optimization:** **[AWS S3](docs/operations/cost-optimization-aws-s3.md)** | **[GCS](docs/operations/cost-optimization-gcs.md)** | **[Azure](docs/operations/cost-optimization-azure.md)** | **[Cloudflare R2](docs/operations/cost-optimization-cloudflare-r2.md)**
 
 ### 🌐 Framework Integration
+
 - **[Framework Integration Guide](docs/guides/framework-integration.md)** — React, Vue, Angular, Svelte
 - **[Next.js Integration](docs/guides/nextjs-integration.md)**
 - **[Vue.js Integration](docs/guides/vue-integration.md)**
 
-### 🌳 Virtual Filesystem
+### 🌳 Virtual Filesystem (VFS)
+
 - **[VFS Quick Start](docs/vfs/QUICK_START.md)** — Build file explorers that never crash
 - **[VFS Core Documentation](docs/vfs/VFS_CORE.md)**
-- **[Semantic VFS Guide](docs/vfs/SEMANTIC_VFS.md)**
+- **[Semantic VFS Guide](docs/vfs/SEMANTIC_VFS.md)** — AI-powered file navigation
 - **[Neural Extraction API](docs/vfs/NEURAL_EXTRACTION.md)**
 
-### 📦 Data Import
-- **[Import Anything Guide](docs/guides/import-anything.md)** — CSV, Excel, PDF, URLs
+### 📦 Data Import & Processing
+
+- **[Import Anything Guide](docs/guides/import-anything.md)** — CSV, Excel, PDF, URLs with auto-detection
 
 ---
 
