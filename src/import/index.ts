@@ -11,6 +11,7 @@
 export { ImportCoordinator } from './ImportCoordinator.js'
 export { FormatDetector, SupportedFormat, DetectionResult } from './FormatDetector.js'
 export { EntityDeduplicator } from './EntityDeduplicator.js'
+export { BackgroundDeduplicator } from './BackgroundDeduplicator.js'
 export { ImportHistory } from './ImportHistory.js'
 
 export type {
@@ -26,6 +27,10 @@ export type {
   EntityDeduplicationOptions,
   MergeResult
 } from './EntityDeduplicator.js'
+
+export type {
+  DeduplicationStats
+} from './BackgroundDeduplicator.js'
 
 export type {
   ImportHistoryEntry,

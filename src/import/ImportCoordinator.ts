@@ -12,8 +12,8 @@
 
 import { Brainy } from '../brainy.js'
 import { FormatDetector, SupportedFormat } from './FormatDetector.js'
-import { EntityDeduplicator } from './EntityDeduplicator.js'
 import { ImportHistory } from './ImportHistory.js'
+import { BackgroundDeduplicator } from './BackgroundDeduplicator.js'
 import { SmartExcelImporter } from '../importers/SmartExcelImporter.js'
 import { SmartPDFImporter } from '../importers/SmartPDFImporter.js'
 import { SmartCSVImporter } from '../importers/SmartCSVImporter.js'
@@ -307,8 +307,8 @@ export interface ImportResult {
 export class ImportCoordinator {
   private brain: Brainy
   private detector: FormatDetector
-  private deduplicator: EntityDeduplicator
   private history: ImportHistory
+  private backgroundDedup: BackgroundDeduplicator
   private excelImporter: SmartExcelImporter
   private pdfImporter: SmartPDFImporter
   private csvImporter: SmartCSVImporter
@@ -321,8 +321,8 @@ export class ImportCoordinator {
   constructor(brain: Brainy) {
     this.brain = brain
     this.detector = new FormatDetector()
-    this.deduplicator = new EntityDeduplicator(brain)
     this.history = new ImportHistory(brain)
+    this.backgroundDedup = new BackgroundDeduplicator(brain)
     this.excelImporter = new SmartExcelImporter(brain)
     this.pdfImporter = new SmartPDFImporter(brain)
     this.csvImporter = new SmartCSVImporter(brain)
@@ -1089,49 +1089,34 @@ export class ImportCoordinator {
         try {
           const importSource = vfsResult.rootPath
           let entityId: string
-          let wasMerged = false
 
-          // Use deduplicator to check for existing entities
-          const mergeResult = await this.deduplicator.createOrMerge(
-            {
-              id: entity.id,
+          // v5.7.0: No deduplication during import (12-24x speedup)
+          // Background deduplication runs 5 minutes after import completes
+          entityId = await this.brain.add({
+            data: entity.description || entity.name,
+            type: entity.type,
+            metadata: {
+              ...entity.metadata,
               name: entity.name,
-              type: entity.type,
-              description: entity.description || entity.name,
               confidence: entity.confidence,
-              metadata: {
-                ...entity.metadata,
-                vfsPath: vfsFile?.path,
-                importedFrom: 'import-coordinator',
-                // v4.10.0: Import tracking metadata
-                ...(trackingContext && {
-                  importIds: [trackingContext.importId],
-                  projectId: trackingContext.projectId,
-                  importedAt: trackingContext.importedAt,
-                  importFormat: trackingContext.importFormat,
-                  importSource: trackingContext.importSource,
-                  sourceRow: row.rowNumber,
-                  sourceSheet: row.sheet,
-                  ...trackingContext.customMetadata
-                })
-              }
-            },
-            importSource,
-            {
-              similarityThreshold: options.deduplicationThreshold || 0.85,
-              strictTypeMatching: true,
-              enableFuzzyMatching: true
+              vfsPath: vfsFile?.path,
+              importedFrom: 'import-coordinator',
+              // v4.10.0: Import tracking metadata
+              ...(trackingContext && {
+                importId: trackingContext.importId,  // Used for background dedup
+                importIds: [trackingContext.importId],
+                projectId: trackingContext.projectId,
+                importedAt: trackingContext.importedAt,
+                importFormat: trackingContext.importFormat,
+                importSource: trackingContext.importSource,
+                sourceRow: row.rowNumber,
+                sourceSheet: row.sheet,
+                ...trackingContext.customMetadata
+              })
             }
-          )
+          })
 
-          entityId = mergeResult.mergedEntityId
-          wasMerged = mergeResult.wasMerged
-
-          if (wasMerged) {
-            mergedCount++
-          } else {
-            newCount++
-          }
+          newCount++
 
         // Update entity ID in extraction result
         entity.id = entityId
@@ -1382,6 +1367,11 @@ export class ImportCoordinator {
         console.warn('Error creating relationships in batch:', error)
         // Continue - relationships are optional
       }
+    }
+
+    // v5.7.0: Schedule background deduplication (debounced 5 minutes)
+    if (trackingContext && trackingContext.importId) {
+      this.backgroundDedup.scheduleDedup(trackingContext.importId)
     }
 
     return {

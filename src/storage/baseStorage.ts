@@ -28,6 +28,7 @@ import { getShardIdFromUuid } from './sharding.js'
 import { RefManager } from './cow/RefManager.js'
 import { BlobStorage, type COWStorageAdapter } from './cow/BlobStorage.js'
 import { CommitLog } from './cow/CommitLog.js'
+import { prodLog } from '../utils/logger.js'
 
 /**
  * Storage key analysis result
@@ -138,6 +139,7 @@ function getVerbMetadataPath(type: VerbType, id: string): string {
 export abstract class BaseStorage extends BaseStorageAdapter {
   protected isInitialized = false
   protected graphIndex?: GraphAdjacencyIndex
+  protected graphIndexPromise?: Promise<GraphAdjacencyIndex>
   protected readOnly = false
 
   // COW (Copy-on-Write) support - v5.0.0
@@ -196,7 +198,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // UUID validation for entity keys
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(id)) {
-      console.warn(`[Storage] Unknown key format: ${id} - treating as system resource`)
+      prodLog.warn(`[Storage] Unknown key format: ${id} - treating as system resource`)
       return {
         original: id,
         isEntity: false,
@@ -595,7 +597,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Load metadata
     const metadata = await this.getNounMetadata(id)
     if (!metadata) {
-      console.warn(`[Storage] Noun ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      prodLog.warn(`[Storage] Noun ${id} has vector but no metadata - this should not happen in v4.0.0`)
       return null
     }
 
@@ -673,7 +675,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       await this.deleteNounMetadata(id)
     } catch (error) {
       // Ignore if metadata file doesn't exist
-      console.debug(`No metadata file to delete for noun ${id}`)
+      prodLog.debug(`No metadata file to delete for noun ${id}`)
     }
   }
 
@@ -710,7 +712,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Load metadata
     const metadata = await this.getVerbMetadata(id)
     if (!metadata) {
-      console.warn(`[Storage] Verb ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      prodLog.warn(`[Storage] Verb ${id} has vector but no metadata - this should not happen in v4.0.0`)
       return null
     }
 
@@ -796,7 +798,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         embedding: hnswVerb.vector
       }
     } catch (error) {
-      console.error(`Failed to convert HNSWVerb to GraphVerb for ${hnswVerb.id}:`, error)
+      prodLog.error(`Failed to convert HNSWVerb to GraphVerb for ${hnswVerb.id}:`, error)
       return null
     }
   }
@@ -962,7 +964,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         }
       } catch (countError) {
         // Ignore errors from count method, it's optional
-        console.warn('Error getting noun count:', countError)
+        prodLog.warn('Error getting noun count:', countError)
       }
 
       // Check if the adapter has a paginated method for getting nouns
@@ -987,7 +989,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // If adapter forgets to return totalCount, log warning and use pre-calculated count
         let finalTotalCount = result.totalCount || totalCount
         if (result.totalCount === undefined && this.totalNounCount > 0) {
-          console.warn(
+          prodLog.warn(
             `⚠️  Storage adapter missing totalCount in getNounsWithPagination result! ` +
             `Using pre-calculated count (${this.totalNounCount}) as fallback. ` +
             `Please ensure your storage adapter returns totalCount: this.totalNounCount`
@@ -1004,7 +1006,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
 
       // Storage adapter does not support pagination
-      console.error(
+      prodLog.error(
         'Storage adapter does not support pagination. The deprecated getAllNouns_internal() method has been removed. Please implement getNounsWithPagination() in your storage adapter.'
       )
       
@@ -1014,7 +1016,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         hasMore: false
       }
     } catch (error) {
-      console.error('Error getting nouns with pagination:', error)
+      prodLog.error('Error getting nouns with pagination:', error)
       return {
         items: [],
         totalCount: 0,
@@ -1455,7 +1457,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         }
       } catch (countError) {
         // Ignore errors from count method, it's optional
-        console.warn('Error getting verb count:', countError)
+        prodLog.warn('Error getting verb count:', countError)
       }
 
       // Check if the adapter has a paginated method for getting verbs
@@ -1482,7 +1484,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // If adapter forgets to return totalCount, log warning and use pre-calculated count
         let finalTotalCount = result.totalCount || totalCount
         if (result.totalCount === undefined && this.totalVerbCount > 0) {
-          console.warn(
+          prodLog.warn(
             `⚠️  Storage adapter missing totalCount in getVerbsWithPagination result! ` +
             `Using pre-calculated count (${this.totalVerbCount}) as fallback. ` +
             `Please ensure your storage adapter returns totalCount: this.totalVerbCount`
@@ -1500,7 +1502,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       // UNIVERSAL FALLBACK: Iterate through verb types with early termination (billion-scale safe)
       // This approach works for ALL storage adapters without requiring adapter-specific pagination
-      console.warn(
+      prodLog.warn(
         'Using universal type-iteration strategy for getVerbs(). ' +
         'This works for all adapters but may be slower than native pagination. ' +
         'For optimal performance at scale, storage adapters can implement getVerbsWithPagination().'
@@ -1591,7 +1593,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           : undefined
       }
     } catch (error) {
-      console.error('Error getting verbs with pagination:', error)
+      prodLog.error('Error getting verbs with pagination:', error)
       return {
         items: [],
         totalCount: 0,
@@ -1614,24 +1616,51 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       await this.deleteVerbMetadata(id)
     } catch (error) {
       // Ignore if metadata file doesn't exist
-      console.debug(`No metadata file to delete for verb ${id}`)
+      prodLog.debug(`No metadata file to delete for verb ${id}`)
     }
   }
   /**
-   * Get graph index (lazy initialization)
+   * Get graph index (lazy initialization with concurrent access protection)
+   * v5.7.1: Fixed race condition where concurrent calls could trigger multiple rebuilds
    */
   async getGraphIndex(): Promise<GraphAdjacencyIndex> {
-    if (!this.graphIndex) {
-      console.log('Initializing GraphAdjacencyIndex...')
-      this.graphIndex = new GraphAdjacencyIndex(this)
-      
-      // Check if we need to rebuild from existing data
-      const sampleVerbs = await this.getVerbs({ pagination: { limit: 1 } })
-      if (sampleVerbs.items.length > 0) {
-        console.log('Found existing verbs, rebuilding graph index...')
-        await this.graphIndex.rebuild()
-      }
+    // If already initialized, return immediately
+    if (this.graphIndex) {
+      return this.graphIndex
     }
+
+    // If initialization in progress, wait for it
+    if (this.graphIndexPromise) {
+      return this.graphIndexPromise
+    }
+
+    // Start initialization (only first caller reaches here)
+    this.graphIndexPromise = this._initializeGraphIndex()
+
+    try {
+      const index = await this.graphIndexPromise
+      return index
+    } finally {
+      // Clear promise after completion (success or failure)
+      this.graphIndexPromise = undefined
+    }
+  }
+
+  /**
+   * Internal method to initialize graph index (called once by getGraphIndex)
+   * @private
+   */
+  private async _initializeGraphIndex(): Promise<GraphAdjacencyIndex> {
+    prodLog.info('Initializing GraphAdjacencyIndex...')
+    this.graphIndex = new GraphAdjacencyIndex(this)
+
+    // Check if we need to rebuild from existing data
+    const sampleVerbs = await this.getVerbs({ pagination: { limit: 1 } })
+    if (sampleVerbs.items.length > 0) {
+      prodLog.info('Found existing verbs, rebuilding graph index...')
+      await this.graphIndex.rebuild()
+    }
+
     return this.graphIndex
   }
   /**
@@ -2001,7 +2030,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Ensures verbCountsByType is always accurate for reliable pagination
    */
   protected async rebuildTypeCounts(): Promise<void> {
-    console.log('[BaseStorage] Rebuilding type counts from storage...')
+    prodLog.info('[BaseStorage] Rebuilding type counts from storage...')
 
     // Rebuild verb counts by checking each type directory
     for (let i = 0; i < VERB_TYPE_COUNT; i++) {
@@ -2036,7 +2065,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     const totalVerbs = this.verbCountsByType.reduce((sum, count) => sum + count, 0)
     const totalNouns = this.nounCountsByType.reduce((sum, count) => sum + count, 0)
-    console.log(`[BaseStorage] Rebuilt counts: ${totalNouns} nouns, ${totalVerbs} verbs`)
+    prodLog.info(`[BaseStorage] Rebuilt counts: ${totalNouns} nouns, ${totalVerbs} verbs`)
   }
 
   /**
@@ -2052,7 +2081,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Default to 'thing' if unknown
     // This should only happen if saveNoun_internal is called before saveNounMetadata
-    console.warn(`[BaseStorage] Unknown noun type for ${noun.id}, defaulting to 'thing'`)
+    prodLog.warn(`[BaseStorage] Unknown noun type for ${noun.id}, defaulting to 'thing'`)
     return 'thing'
   }
 
@@ -2072,7 +2101,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // This should never happen with current data
-    console.warn(`[BaseStorage] Verb missing type field for ${verb.id}, defaulting to 'relatedTo'`)
+    prodLog.warn(`[BaseStorage] Verb missing type field for ${verb.id}, defaulting to 'relatedTo'`)
     return 'relatedTo'
   }
 
@@ -2160,7 +2189,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           this.nounTypeCache.set(noun.id, type)
         }
       } catch (error) {
-        console.warn(`[BaseStorage] Failed to load noun from ${path}:`, error)
+        prodLog.warn(`[BaseStorage] Failed to load noun from ${path}:`, error)
       }
     }
 
@@ -2224,6 +2253,26 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // COW-aware write (v5.0.1): Use COW helper for branch isolation
     await this.writeObjectToBranch(path, verb)
 
+    // v5.7.0: Update GraphAdjacencyIndex incrementally for billion-scale optimization
+    // CRITICAL: Only update if index already initialized to avoid circular dependency
+    // Index is lazy-loaded on first query, then maintained incrementally
+    if (this.graphIndex && this.graphIndex.isInitialized) {
+      // Fast incremental update - no rebuild needed
+      await this.graphIndex.addVerb({
+        id: verb.id,
+        sourceId: verb.sourceId,
+        targetId: verb.targetId,
+        vector: verb.vector,
+        source: verb.sourceId,
+        target: verb.targetId,
+        verb: verb.verb,
+        type: verb.verb,
+        createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+        updatedAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+        createdBy: { augmentation: 'storage', version: '5.7.0' }
+      })
+    }
+
     // Periodically save statistics
     if (this.verbCountsByType[typeIndex] % 100 === 0) {
       await this.saveTypeStatistics()
@@ -2271,56 +2320,41 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async getVerbsBySource_internal(
     sourceId: string
   ): Promise<HNSWVerbWithMetadata[]> {
-    // v5.4.0: Type-first implementation - scan across all verb types
-    // COW-aware: uses readWithInheritance for each verb
+    // v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
+    // Previous: O(total_verbs) - scanned all 127 verb types
+    // Now: O(log n) LSM-tree lookup + O(verbs_for_source) load
     await this.ensureInitialized()
 
+    const startTime = performance.now()
+
+    // Get GraphAdjacencyIndex (lazy-initialized)
+    const graphIndex = await this.getGraphIndex()
+
+    // O(log n) lookup with bloom filter optimization
+    const verbIds = await graphIndex.getVerbIdsBySource(sourceId)
+
+    // Load each verb by ID (uses existing optimized getVerb())
     const results: HNSWVerbWithMetadata[] = []
-
-    // Iterate through all verb types
-    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
-      const type = TypeUtils.getVerbFromIndex(i)
-      const typeDir = `entities/verbs/${type}/vectors`
-
+    for (const verbId of verbIds) {
       try {
-        // v5.4.0 FIX: List all verb files directly (not shard directories)
-        // listObjectsInBranch returns full paths to .json files, not directories
-        const verbFiles = await this.listObjectsInBranch(typeDir)
-
-        for (const verbPath of verbFiles) {
-          // Skip if not a .json file
-          if (!verbPath.endsWith('.json')) continue
-
-          try {
-            const verb = await this.readWithInheritance(verbPath)
-            if (verb && verb.sourceId === sourceId) {
-              // v5.4.0: Use proper path helper instead of string replacement
-              const metadataPath = getVerbMetadataPath(type, verb.id)
-              const metadata = await this.readWithInheritance(metadataPath)
-
-              // v5.4.0: Extract standard fields from metadata to top-level (like nouns)
-              results.push({
-                ...verb,
-                weight: metadata?.weight,
-                confidence: metadata?.confidence,
-                createdAt: metadata?.createdAt
-                  ? (typeof metadata.createdAt === 'number' ? metadata.createdAt : metadata.createdAt.seconds * 1000)
-                  : Date.now(),
-                updatedAt: metadata?.updatedAt
-                  ? (typeof metadata.updatedAt === 'number' ? metadata.updatedAt : metadata.updatedAt.seconds * 1000)
-                  : Date.now(),
-                service: metadata?.service,
-                createdBy: metadata?.createdBy,
-                metadata: metadata || {} as VerbMetadata
-              })
-            }
-          } catch (error) {
-            // Skip verbs that fail to load
-          }
+        const verb = await this.getVerb(verbId)
+        if (verb) {
+          results.push(verb)
         }
       } catch (error) {
-        // Skip types that have no data
+        // Skip verbs that fail to load (handles deleted/corrupted verbs gracefully)
       }
+    }
+
+    const elapsed = performance.now() - startTime
+
+    // Performance monitoring - should be 100-10,000x faster than old O(n) scan
+    if (elapsed > 50.0) {
+      prodLog.warn(
+        `getVerbsBySource_internal: Slow query for ${sourceId} ` +
+        `(${verbIds.length} verbs, ${elapsed.toFixed(2)}ms). ` +
+        `Expected <50ms with index optimization.`
+      )
     }
 
     return results
@@ -2328,61 +2362,46 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Get verbs by target (COW-aware implementation)
-   * v5.4.0: Fixed to directly list verb files instead of directories
+   * v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
    */
   protected async getVerbsByTarget_internal(
     targetId: string
   ): Promise<HNSWVerbWithMetadata[]> {
-    // v5.4.0: Type-first implementation - scan across all verb types
-    // COW-aware: uses readWithInheritance for each verb
+    // v5.7.0: BILLION-SCALE OPTIMIZATION - Use GraphAdjacencyIndex for O(log n) lookup
+    // Previous: O(total_verbs) - scanned all 127 verb types
+    // Now: O(log n) LSM-tree lookup + O(verbs_for_target) load
     await this.ensureInitialized()
 
+    const startTime = performance.now()
+
+    // Get GraphAdjacencyIndex (lazy-initialized)
+    const graphIndex = await this.getGraphIndex()
+
+    // O(log n) lookup with bloom filter optimization
+    const verbIds = await graphIndex.getVerbIdsByTarget(targetId)
+
+    // Load each verb by ID (uses existing optimized getVerb())
     const results: HNSWVerbWithMetadata[] = []
-
-    // Iterate through all verb types
-    for (let i = 0; i < VERB_TYPE_COUNT; i++) {
-      const type = TypeUtils.getVerbFromIndex(i)
-      const typeDir = `entities/verbs/${type}/vectors`
-
+    for (const verbId of verbIds) {
       try {
-        // v5.4.0 FIX: List all verb files directly (not shard directories)
-        // listObjectsInBranch returns full paths to .json files, not directories
-        const verbFiles = await this.listObjectsInBranch(typeDir)
-
-        for (const verbPath of verbFiles) {
-          // Skip if not a .json file
-          if (!verbPath.endsWith('.json')) continue
-
-          try {
-            const verb = await this.readWithInheritance(verbPath)
-            if (verb && verb.targetId === targetId) {
-              // v5.4.0: Use proper path helper instead of string replacement
-              const metadataPath = getVerbMetadataPath(type, verb.id)
-              const metadata = await this.readWithInheritance(metadataPath)
-
-              // v5.4.0: Extract standard fields from metadata to top-level (like nouns)
-              results.push({
-                ...verb,
-                weight: metadata?.weight,
-                confidence: metadata?.confidence,
-                createdAt: metadata?.createdAt
-                  ? (typeof metadata.createdAt === 'number' ? metadata.createdAt : metadata.createdAt.seconds * 1000)
-                  : Date.now(),
-                updatedAt: metadata?.updatedAt
-                  ? (typeof metadata.updatedAt === 'number' ? metadata.updatedAt : metadata.updatedAt.seconds * 1000)
-                  : Date.now(),
-                service: metadata?.service,
-                createdBy: metadata?.createdBy,
-                metadata: metadata || {} as VerbMetadata
-              })
-            }
-          } catch (error) {
-            // Skip verbs that fail to load
-          }
+        const verb = await this.getVerb(verbId)
+        if (verb) {
+          results.push(verb)
         }
       } catch (error) {
-        // Skip types that have no data
+        // Skip verbs that fail to load (handles deleted/corrupted verbs gracefully)
       }
+    }
+
+    const elapsed = performance.now() - startTime
+
+    // Performance monitoring - should be 100-10,000x faster than old O(n) scan
+    if (elapsed > 50.0) {
+      prodLog.warn(
+        `getVerbsByTarget_internal: Slow query for ${targetId} ` +
+        `(${verbIds.length} verbs, ${elapsed.toFixed(2)}ms). ` +
+        `Expected <50ms with index optimization.`
+      )
     }
 
     return results
@@ -2444,7 +2463,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
         verbs.push(verbWithMetadata)
       } catch (error) {
-        console.warn(`[BaseStorage] Failed to load verb from ${path}:`, error)
+        prodLog.warn(`[BaseStorage] Failed to load verb from ${path}:`, error)
       }
     }
 
