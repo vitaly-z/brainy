@@ -1002,6 +1002,19 @@ export class GcsStorage extends BaseStorage {
       await deleteObjectsWithPrefix(this.verbMetadataPrefix)
       await deleteObjectsWithPrefix(this.systemPrefix)
 
+      // v5.6.1: Clear COW (copy-on-write) version control data
+      // This includes all git-like versioning data (commits, trees, blobs, refs)
+      // Must be deleted to fully clear all data including version history
+      await deleteObjectsWithPrefix('_cow/')
+
+      // CRITICAL: Reset COW state to prevent automatic reinitialization
+      // When COW data is cleared, we must also clear the COW managers
+      // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+      this.refManager = undefined
+      this.blobStorage = undefined
+      this.commitLog = undefined
+      this.cowEnabled = false
+
       // Clear caches
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()

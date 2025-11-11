@@ -1021,10 +1021,32 @@ export class FileSystemStorage extends BaseStorage {
     if (await this.directoryExists(this.indexDir)) {
       await removeDirectoryContents(this.indexDir)
     }
-    
+
+    // v5.6.1: Remove COW (copy-on-write) version control data
+    // This directory stores all git-like versioning data (commits, trees, blobs, refs)
+    // Must be deleted to fully clear all data including version history
+    const cowDir = path.join(this.rootDir, '_cow')
+    if (await this.directoryExists(cowDir)) {
+      // Delete the entire _cow/ directory (not just contents)
+      await fs.promises.rm(cowDir, { recursive: true, force: true })
+
+      // CRITICAL: Reset COW state to prevent automatic reinitialization
+      // When COW data is cleared, we must also clear the COW managers
+      // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+      this.refManager = undefined
+      this.blobStorage = undefined
+      this.commitLog = undefined
+      this.cowEnabled = false
+    }
+
     // Clear the statistics cache
     this.statisticsCache = null
     this.statisticsModified = false
+
+    // v5.6.1: Reset entity counters (inherited from BaseStorageAdapter)
+    // These in-memory counters must be reset to 0 after clearing all data
+    ;(this as any).totalNounCount = 0
+    ;(this as any).totalVerbCount = 0
   }
 
   /**

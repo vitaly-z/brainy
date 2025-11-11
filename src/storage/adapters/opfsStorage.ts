@@ -481,9 +481,35 @@ export class OPFSStorage extends BaseStorage {
       // Remove all files in the index directory
       await removeDirectoryContents(this.indexDir!)
 
+      // v5.6.1: Remove COW (copy-on-write) version control data
+      // This directory stores all git-like versioning data (commits, trees, blobs, refs)
+      // Must be deleted to fully clear all data including version history
+      try {
+        // Delete the entire _cow/ directory (not just contents)
+        await this.rootDir!.removeEntry('_cow', { recursive: true })
+
+        // CRITICAL: Reset COW state to prevent automatic reinitialization
+        // When COW data is cleared, we must also clear the COW managers
+        // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+        this.refManager = undefined
+        this.blobStorage = undefined
+        this.commitLog = undefined
+        this.cowEnabled = false
+      } catch (error: any) {
+        // Ignore if _cow directory doesn't exist (not all instances use COW)
+        if (error.name !== 'NotFoundError') {
+          throw error
+        }
+      }
+
       // Clear the statistics cache
       this.statisticsCache = null
       this.statisticsModified = false
+
+      // v5.6.1: Reset entity counters (inherited from BaseStorageAdapter)
+      // These in-memory counters must be reset to 0 after clearing all data
+      ;(this as any).totalNounCount = 0
+      ;(this as any).totalVerbCount = 0
     } catch (error) {
       console.error('Error clearing storage:', error)
       throw error

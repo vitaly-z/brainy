@@ -1032,14 +1032,24 @@ export class R2Storage extends BaseStorage {
 
     prodLog.info('🧹 R2: Clearing all data from bucket...')
 
-    // Clear all prefixes
-    for (const prefix of [this.nounPrefix, this.verbPrefix, this.metadataPrefix, this.verbMetadataPrefix, this.systemPrefix]) {
+    // Clear all prefixes (v5.6.1: includes _cow/ for version control data)
+    // _cow/ stores all git-like versioning data (commits, trees, blobs, refs)
+    // Must be deleted to fully clear all data including version history
+    for (const prefix of [this.nounPrefix, this.verbPrefix, this.metadataPrefix, this.verbMetadataPrefix, this.systemPrefix, '_cow/']) {
       const objects = await this.listObjectsUnderPath(prefix)
 
       for (const key of objects) {
         await this.deleteObjectFromPath(key)
       }
     }
+
+    // CRITICAL: Reset COW state to prevent automatic reinitialization
+    // When COW data is cleared, we must also clear the COW managers
+    // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+    this.refManager = undefined
+    this.blobStorage = undefined
+    this.commitLog = undefined
+    this.cowEnabled = false
 
     this.nounCacheManager.clear()
     this.verbCacheManager.clear()

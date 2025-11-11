@@ -1136,12 +1136,22 @@ export class AzureBlobStorage extends BaseStorage {
       this.logger.info('🧹 Clearing all data from Azure container...')
 
       // Delete all blobs in container
+      // v5.6.1: listBlobsFlat() returns ALL blobs including _cow/ prefix
+      // This correctly deletes COW version control data (commits, trees, blobs, refs)
       for await (const blob of this.containerClient!.listBlobsFlat()) {
         if (blob.name) {
           const blockBlobClient = this.containerClient!.getBlockBlobClient(blob.name)
           await blockBlobClient.delete()
         }
       }
+
+      // CRITICAL: Reset COW state to prevent automatic reinitialization
+      // When COW data is cleared, we must also clear the COW managers
+      // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+      this.refManager = undefined
+      this.blobStorage = undefined
+      this.commitLog = undefined
+      this.cowEnabled = false
 
       // Clear caches
       this.nounCacheManager.clear()

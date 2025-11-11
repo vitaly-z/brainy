@@ -289,6 +289,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {
+    // v5.6.1: If COW was explicitly disabled (e.g., via clear()), don't reinitialize
+    // This prevents automatic recreation of COW data after clear() operations
+    if (this.cowEnabled === false) {
+      return
+    }
+
     // Check if RefManager already initialized (full COW setup complete)
     if (this.refManager) {
       return

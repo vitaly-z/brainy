@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [5.6.1](https://github.com/soulcraftlabs/brainy/compare/v5.6.0...v5.6.1) (2025-11-11)
+
+### 🐛 Bug Fixes
+
+* **storage**: Fix `clear()` not deleting COW version control data ([#workshop-bug-report](https://github.com/soulcraftlabs/brainy/issues))
+  - Fixed all storage adapters to properly delete `_cow/` directory on clear()
+  - Fixed in-memory entity counters not being reset after clear()
+  - Prevents COW reinitialization after clear() by setting `cowEnabled = false`
+  - **Impact**: Resolves storage persistence bug (103MB → 0 bytes after clear)
+  - **Affected adapters**: FileSystemStorage, OPFSStorage, S3CompatibleStorage (GCSStorage, R2Storage, AzureBlobStorage already correct)
+
+### 📝 Technical Details
+
+* **Root causes identified**:
+  1. `_cow/` directory contents deleted but directory not removed
+  2. In-memory counters (`totalNounCount`, `totalVerbCount`) not reset
+  3. COW could auto-reinitialize on next operation
+* **Fixes applied**:
+  - FileSystemStorage: Use `fs.rm()` to delete entire `_cow/` directory
+  - OPFSStorage: Use `removeEntry('_cow', {recursive: true})`
+  - Cloud adapters: Already use `deleteObjectsWithPrefix('_cow/')`
+  - All adapters: Reset `totalNounCount = 0` and `totalVerbCount = 0`
+  - BaseStorage: Added guard in `initializeCOW()` to prevent reinitialization when `cowEnabled === false`
+
+## [5.6.0](https://github.com/soulcraftlabs/brainy/compare/v5.5.0...v5.6.0) (2025-11-11)
+
+### 🐛 Bug Fixes
+
+* **relations**: Fix `getRelations()` returning empty array for fresh instances
+  - Resolved initialization race condition in relationship loading
+  - Fresh Brain instances now correctly load persisted relationships
+
 ## [5.5.0](https://github.com/soulcraftlabs/brainy/compare/v5.4.0...v5.5.0) (2025-11-06)
 
 ### 🎯 Stage 3 CANONICAL Taxonomy - Complete Coverage
