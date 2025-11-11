@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.6.3](https://github.com/soulcraftlabs/brainy/compare/v5.6.2...v5.6.3) (2025-11-11)
+
+- docs: add entity versioning to fork section (3e81fd8)
+- docs: add asOf() time-travel to fork section (5706b71)
+
+
 ### [5.6.2](https://github.com/soulcraftlabs/brainy/compare/v5.6.1...v5.6.2) (2025-11-11)
 
 - fix: update tests for Stage 3 CANONICAL taxonomy (42 nouns, 127 verbs) (c5dcdf6)
