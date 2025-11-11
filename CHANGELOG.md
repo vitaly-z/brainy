@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.1](https://github.com/soulcraftlabs/brainy/compare/v5.7.0...v5.7.1) (2025-11-11)
+
+- fix: resolve v5.7.0 deadlock by restoring storage layer separation (v5.7.1) (eb9af45)
+
+
 ## [5.7.1](https://github.com/soulcraftlabs/brainy/compare/v5.7.0...v5.7.1) (2025-11-11)
 
 ### 🚨 CRITICAL BUG FIX
