@@ -143,10 +143,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected readOnly = false
 
   // v5.7.2: Write-through cache for read-after-write consistency
+  // v5.7.3: Extended lifetime - persists until explicit flush() call
   // Guarantees that immediately after writeObjectToBranch(), readWithInheritance() returns the data
   // Cache key: resolved branchPath (includes branch scope for COW isolation)
-  // Cache lifetime: write start → write completion (microseconds to milliseconds)
-  // Memory footprint: Typically <10 items (only in-flight writes), <1KB total
+  // Cache lifetime: write start → flush() call (provides safety net for batch operations)
+  // Memory footprint: Bounded by batch size (typically <1000 items during imports)
   private writeCache = new Map<string, any>()
 
   // COW (Copy-on-Write) support - v5.0.0
@@ -466,16 +467,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const branchPath = this.resolveBranchPath(path, branch)
 
     // v5.7.2: Add to write cache BEFORE async write (guarantees read-after-write consistency)
+    // v5.7.3: Cache persists until flush() is called (extended lifetime for batch operations)
     // This ensures readWithInheritance() returns data immediately, fixing "Source entity not found" bug
     this.writeCache.set(branchPath, data)
 
-    try {
-      await this.writeObjectToPath(branchPath, data)
-    } finally {
-      // v5.7.2: Remove from cache after write completes (success or failure)
-      // Small memory footprint: cache only holds in-flight writes (typically <10 items)
-      this.writeCache.delete(branchPath)
-    }
+    // Write to storage (async)
+    await this.writeObjectToPath(branchPath, data)
+
+    // v5.7.3: Cache is NOT cleared here anymore - persists until flush()
+    // This provides a safety net for immediate queries after batch writes
   }
 
   /**

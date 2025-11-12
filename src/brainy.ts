@@ -1856,6 +1856,26 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
     }
 
+    // v5.7.3: Ensure nounTypeCache is populated for all successful entities
+    // This prevents cache misses that trigger expensive 42-type searches
+    // when entities are immediately queried (e.g., during brain.relate())
+    const cacheWarmingNeeded = result.successful.filter(id =>
+      !(this.storage as any).nounTypeCache?.has(id)
+    )
+
+    if (cacheWarmingNeeded.length > 0) {
+      // Warm the cache by fetching metadata for entities not in cache
+      await Promise.all(
+        cacheWarmingNeeded.map(async (id) => {
+          try {
+            await this.storage.getNounMetadata(id)
+          } catch (error) {
+            // Ignore errors during cache warming (entity may be invalid)
+          }
+        })
+      )
+    }
+
     result.duration = Date.now() - startTime
     return result
   }
@@ -3665,7 +3685,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // 3. Flush graph adjacency index (relationship cache)
       // Note: Graph structure is already persisted via storage.saveVerb() calls
       // This just flushes the in-memory cache for performance
-      this.graphIndex.flush()
+      this.graphIndex.flush(),
+
+      // 4. v5.7.3: Clear write-through cache after flush
+      // Cache persists during batch operations for read-after-write consistency
+      // Cleared here after all writes are guaranteed flushed to disk
+      (async () => {
+        if (this.storage && typeof (this.storage as any).writeCache !== 'undefined') {
+          (this.storage as any).writeCache.clear()
+        }
+      })()
     ])
 
     const elapsed = Date.now() - startTime

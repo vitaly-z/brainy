@@ -149,7 +149,7 @@ describe('Write-Through Cache (v5.7.2)', () => {
     expect(result2.value).toBe(456)
   })
 
-  it('should handle write errors gracefully (cache cleanup on error)', async () => {
+  it('should handle write errors gracefully (cache persists even on error)', async () => {
     const data = { id: 'error-test', value: 999 }
     // Use invalid path to trigger write error (depends on adapter implementation)
     const invalidPath = '../../../invalid/path/outside/basedir.json'
@@ -161,10 +161,18 @@ describe('Write-Through Cache (v5.7.2)', () => {
       expect(err).toBeDefined()
     }
 
-    // Cache should be cleaned up even on error (finally block)
-    // Read should return null (no cached data, no file)
+    // v5.7.3: Cache persists even on error (until explicit flush)
+    // This provides read-after-write consistency even for failed writes
+    // Read should return cached data (even though file write failed)
     const result = await (storage as any).readWithInheritance(invalidPath)
-    expect(result).toBeNull()
+    expect(result).toEqual(data)
+
+    // After flush, cache is cleared
+    if (typeof (storage as any).writeCache !== 'undefined') {
+      (storage as any).writeCache.clear()
+    }
+    const resultAfterFlush = await (storage as any).readWithInheritance(invalidPath)
+    expect(resultAfterFlush).toBeNull()
   })
 
   it('should handle concurrent writes to different paths', async () => {

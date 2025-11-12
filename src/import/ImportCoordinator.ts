@@ -1048,6 +1048,11 @@ export class ImportCoordinator {
         console.warn(`⚠️  ${addResult.failed.length} entities failed to create`)
       }
 
+      // v5.7.3: Ensure all writes are flushed before creating relationships
+      // Fixes "Source entity not found" error in v5.7.0/v5.7.1/v5.7.2
+      // Guarantees entities are fully persisted and queryable before brain.relate() is called
+      await this.brain.flush()
+
       // Create provenance links in batch
       if (documentEntityId && options.createProvenanceLinks !== false && entities.length > 0) {
         const provenanceParams = entities.map((entity, idx) => {
