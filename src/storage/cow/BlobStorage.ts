@@ -105,6 +105,7 @@ export class BlobStorage {
   // Compression (lazily loaded)
   private zstdCompress?: (data: Buffer) => Promise<Buffer>
   private zstdDecompress?: (data: Buffer) => Promise<Buffer>
+  private compressionReady = false
 
   // Configuration
   private readonly CACHE_MAX_SIZE = 100 * 1024 * 1024  // 100MB default
@@ -159,6 +160,16 @@ export class BlobStorage {
   }
 
   /**
+   * v5.7.5: Ensure compression is ready before write operations
+   * Fixes race condition where write happens before async compression init completes
+   */
+  private async ensureCompressionReady(): Promise<void> {
+    if (this.compressionReady) return
+    await this.initCompression()
+    this.compressionReady = true
+  }
+
+  /**
    * Compute SHA-256 hash of data
    *
    * @param data - Data to hash
@@ -194,6 +205,10 @@ export class BlobStorage {
       return hash
     }
 
+    // v5.7.5: Ensure compression is initialized before writing
+    // Fixes race condition where write happens before async init completes
+    await this.ensureCompressionReady()
+
     // Determine compression strategy
     const compression = this.selectCompression(data, options)
 
@@ -207,11 +222,14 @@ export class BlobStorage {
     }
 
     // Create metadata
+    // v5.7.5: Store ACTUAL compression state, not intended
+    // Prevents corruption if compression failed to initialize
+    const actualCompression = finalData === data ? 'none' : compression
     const metadata: BlobMetadata = {
       hash,
       size: data.length,
       compressedSize,
-      compression,
+      compression: actualCompression,
       type: options.type || 'blob',  // CRITICAL FIX: Use 'blob' default to match storage prefix
       createdAt: Date.now(),
       refCount: 1
