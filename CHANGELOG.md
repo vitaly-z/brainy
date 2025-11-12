@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.4](https://github.com/soulcraftlabs/brainy/compare/v5.7.3...v5.7.4) (2025-11-12)
+
+- fix: resolve v5.7.3 race condition by persisting write-through cache (v5.7.4) (6e19ec8)
+
+
 ### [5.7.3](https://github.com/soulcraftlabs/brainy/compare/v5.7.2...v5.7.3) (2025-11-12)
 
 
