@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.3](https://github.com/soulcraftlabs/brainy/compare/v5.7.2...v5.7.3) (2025-11-12)
+
+
+### 🐛 Bug Fixes
+
+* resolve REAL v5.7.x race condition - type cache layer (v5.7.3) ([ee17565](https://github.com/soulcraftlabs/brainy/commit/ee1756565ca01666e2aa3b31a80b62c6aa8046e8))
+
 ### [5.7.2](https://github.com/soulcraftlabs/brainy/compare/v5.7.1...v5.7.2) (2025-11-12)
 
 
