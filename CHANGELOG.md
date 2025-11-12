@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.2](https://github.com/soulcraftlabs/brainy/compare/v5.7.1...v5.7.2) (2025-11-12)
+
+
+### 🐛 Bug Fixes
+
+* resolve v5.7.x race condition with write-through cache (v5.7.2) ([732d23b](https://github.com/soulcraftlabs/brainy/commit/732d23bd2afb4ac9559a9beb7835e0f623065ff2))
+
 ### [5.7.1](https://github.com/soulcraftlabs/brainy/compare/v5.7.0...v5.7.1) (2025-11-11)
 
 - fix: resolve v5.7.0 deadlock by restoring storage layer separation (v5.7.1) (eb9af45)
