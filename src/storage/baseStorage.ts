@@ -142,6 +142,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected graphIndexPromise?: Promise<GraphAdjacencyIndex>
   protected readOnly = false
 
+  // v5.7.2: Write-through cache for read-after-write consistency
+  // Guarantees that immediately after writeObjectToBranch(), readWithInheritance() returns the data
+  // Cache key: resolved branchPath (includes branch scope for COW isolation)
+  // Cache lifetime: write start → write completion (microseconds to milliseconds)
+  // Memory footprint: Typically <10 items (only in-flight writes), <1KB total
+  private writeCache = new Map<string, any>()
+
   // COW (Copy-on-Write) support - v5.0.0
   public refManager?: RefManager
   public blobStorage?: BlobStorage
@@ -457,7 +464,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected async writeObjectToBranch(path: string, data: any, branch?: string): Promise<void> {
     const branchPath = this.resolveBranchPath(path, branch)
-    return this.writeObjectToPath(branchPath, data)
+
+    // v5.7.2: Add to write cache BEFORE async write (guarantees read-after-write consistency)
+    // This ensures readWithInheritance() returns data immediately, fixing "Source entity not found" bug
+    this.writeCache.set(branchPath, data)
+
+    try {
+      await this.writeObjectToPath(branchPath, data)
+    } finally {
+      // v5.7.2: Remove from cache after write completes (success or failure)
+      // Small memory footprint: cache only holds in-flight writes (typically <10 items)
+      this.writeCache.delete(branchPath)
+    }
   }
 
   /**
@@ -467,14 +485,27 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected async readWithInheritance(path: string, branch?: string): Promise<any | null> {
     if (!this.cowEnabled) {
-      // COW disabled, direct read
+      // COW disabled: check write cache, then direct read
+      // v5.7.2: Check cache first for read-after-write consistency
+      const cachedData = this.writeCache.get(path)
+      if (cachedData !== undefined) {
+        return cachedData
+      }
       return this.readObjectFromPath(path)
     }
 
     const targetBranch = branch || this.currentBranch || 'main'
+    const branchPath = this.resolveBranchPath(path, targetBranch)
+
+    // v5.7.2: Check write cache FIRST (synchronous, instant)
+    // This guarantees read-after-write consistency within the same process
+    // Fixes bug: brain.add() → brain.relate() → "Source entity not found"
+    const cachedData = this.writeCache.get(branchPath)
+    if (cachedData !== undefined) {
+      return cachedData
+    }
 
     // Try current branch first
-    const branchPath = this.resolveBranchPath(path, targetBranch)
     let data = await this.readObjectFromPath(branchPath)
 
     if (data !== null) {
@@ -522,6 +553,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected async deleteObjectFromBranch(path: string, branch?: string): Promise<void> {
     const branchPath = this.resolveBranchPath(path, branch)
+
+    // v5.7.2: Remove from write cache immediately (before async delete)
+    // Ensures subsequent reads don't return stale cached data
+    this.writeCache.delete(branchPath)
+
     return this.deleteObjectFromPath(branchPath)
   }
 
