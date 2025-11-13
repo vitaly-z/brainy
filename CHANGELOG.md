@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.11](https://github.com/soulcraftlabs/brainy/compare/v5.7.10...v5.7.11) (2025-11-13)
+
+
+### 🐛 Bug Fixes
+
+* resolve critical 378x pagination infinite loop bug (v5.7.11) ([e86f765](https://github.com/soulcraftlabs/brainy/commit/e86f765f3d30be41707e2ef7d07bb5c92d4ca3da))
+
 ### [5.7.9](https://github.com/soulcraftlabs/brainy/compare/v5.7.8...v5.7.9) (2025-11-13)
 
 - fix: implement exists: false and missing operators in MetadataIndexManager (b0f72ef)
