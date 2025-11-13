@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.7](https://github.com/soulcraftlabs/brainy/compare/v5.7.6...v5.7.7) (2025-11-13)
+
+- docs: update index architecture documentation for v5.7.7 lazy loading (67039fc)
+
+
 ### [5.7.4](https://github.com/soulcraftlabs/brainy/compare/v5.7.3...v5.7.4) (2025-11-12)
 
 - fix: resolve v5.7.3 race condition by persisting write-through cache (v5.7.4) (6e19ec8)
