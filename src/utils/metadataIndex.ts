@@ -1618,7 +1618,8 @@ export class MetadataIndexManager {
             // exists: boolean - check if field exists (any value)
             case 'exists':
               if (operand) {
-                // Get all IDs that have this field (any value) from chunked sparse index with roaring bitmaps (v3.43.0)
+                // exists: true - Get all IDs that have this field (any value)
+                // v3.43.0: From chunked sparse index with roaring bitmaps
                 // v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
                 const allIntIds = new Set<number>()
 
@@ -1640,6 +1641,81 @@ export class MetadataIndexManager {
                 }
 
                 // Convert integer IDs back to UUIDs
+                fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
+              } else {
+                // exists: false - Get all IDs that DON'T have this field
+                // v5.7.9: Fixed excludeVFS bug (was returning empty array)
+                const allItemIds = await this.getAllIds()
+                const existsIntIds = new Set<number>()
+
+                // Get IDs that HAVE this field
+                const sparseIndex = await this.loadSparseIndex(field)
+                if (sparseIndex) {
+                  for (const chunkId of sparseIndex.getAllChunkIds()) {
+                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
+                    if (chunk) {
+                      for (const bitmap of chunk.entries.values()) {
+                        for (const intId of bitmap) {
+                          existsIntIds.add(intId)
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // Convert to UUIDs and subtract from all IDs
+                const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
+                const existsSet = new Set(existsUuids)
+                fieldResults = allItemIds.filter(id => !existsSet.has(id))
+              }
+              break
+
+            // ===== MISSING OPERATOR =====
+            // missing: boolean - equivalent to exists: !boolean (for compatibility with metadataFilter.ts)
+            case 'missing':
+              // missing: true is equivalent to exists: false
+              // missing: false is equivalent to exists: true
+              // v5.7.9: Added for API consistency with in-memory metadataFilter
+              if (operand) {
+                // missing: true - field does NOT exist (same as exists: false)
+                const allItemIds = await this.getAllIds()
+                const existsIntIds = new Set<number>()
+
+                const sparseIndex = await this.loadSparseIndex(field)
+                if (sparseIndex) {
+                  for (const chunkId of sparseIndex.getAllChunkIds()) {
+                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
+                    if (chunk) {
+                      for (const bitmap of chunk.entries.values()) {
+                        for (const intId of bitmap) {
+                          existsIntIds.add(intId)
+                        }
+                      }
+                    }
+                  }
+                }
+
+                const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
+                const existsSet = new Set(existsUuids)
+                fieldResults = allItemIds.filter(id => !existsSet.has(id))
+              } else {
+                // missing: false - field DOES exist (same as exists: true)
+                const allIntIds = new Set<number>()
+
+                const sparseIndex = await this.loadSparseIndex(field)
+                if (sparseIndex) {
+                  for (const chunkId of sparseIndex.getAllChunkIds()) {
+                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
+                    if (chunk) {
+                      for (const bitmap of chunk.entries.values()) {
+                        for (const intId of bitmap) {
+                          allIntIds.add(intId)
+                        }
+                      }
+                    }
+                  }
+                }
+
                 fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
               }
               break
