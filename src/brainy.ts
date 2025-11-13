@@ -1352,10 +1352,40 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v4.7.0: excludeVFS helper for cleaner UX
-        // Use vfsType field (more semantic than isVFS)
+        // v5.7.12: excludeVFS helper - ONLY exclude VFS infrastructure entities
+        // Bug fix: Previously excluded entities with ANY vfsType field
+        // Now ONLY excludes entities with isVFSEntity: true OR vfsType: 'file'/'directory'
+        // This allows extracted entities (concepts/people/etc) to be included even if they
+        // have vfsPath metadata showing where they were imported from
         if (params.excludeVFS === true) {
-          filter.vfsType = { exists: false }
+          // Build filter: EXCLUDE WHERE (isVFSEntity == true) OR (vfsType IN ['file', 'directory'])
+          // Implementation: INCLUDE WHERE (isVFSEntity missing/false) AND (vfsType missing/not file or directory)
+          const existingFilter = { ...filter }
+          filter = {
+            allOf: [
+              existingFilter,
+              {
+                // Only include entities WITHOUT isVFSEntity: true
+                anyOf: [
+                  { isVFSEntity: { exists: false } },
+                  { isVFSEntity: { ne: true } }
+                ]
+              },
+              {
+                // Only include entities WITHOUT vfsType: 'file' or 'directory'
+                // Since VFS files ALWAYS have vfsType set, we check it's missing OR not file/dir
+                anyOf: [
+                  { vfsType: { exists: false } },
+                  {
+                    allOf: [
+                      { vfsType: { ne: 'file' } },
+                      { vfsType: { ne: 'directory' } }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
         }
 
         if (params.type) {
