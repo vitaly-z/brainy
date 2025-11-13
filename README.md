@@ -135,6 +135,50 @@ const results = await brain.find({
 
 ---
 
+## Entity Extraction (NEW in v5.7.6)
+
+**Extract entities from text with AI-powered classification:**
+
+```javascript
+import { Brainy, NounType } from '@soulcraft/brainy'
+
+const brain = new Brainy()
+await brain.init()
+
+// Extract all entities
+const entities = await brain.extractEntities('John Smith founded Acme Corp in New York')
+// Returns:
+// [
+//   { text: 'John Smith', type: NounType.Person, confidence: 0.95 },
+//   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.92 },
+//   { text: 'New York', type: NounType.Location, confidence: 0.88 }
+// ]
+
+// Extract with filters
+const people = await brain.extractEntities(resume, {
+  types: [NounType.Person],
+  confidence: 0.8
+})
+
+// Advanced: Direct access to extractors
+import { SmartExtractor } from '@soulcraft/brainy'
+
+const extractor = new SmartExtractor(brain, { minConfidence: 0.7 })
+const result = await extractor.extract('CEO', {
+  formatContext: { format: 'excel', columnHeader: 'Title' }
+})
+```
+
+**Features:**
+- 🎯 **4-Signal Ensemble** - ExactMatch (40%) + Embedding (35%) + Pattern (20%) + Context (5%)
+- 📊 **Format Intelligence** - Adapts to Excel, CSV, PDF, YAML, DOCX, JSON, Markdown
+- ⚡ **Fast** - ~15-20ms per extraction with LRU caching
+- 🌍 **42 Types** - Person, Organization, Location, Document, and 38 more
+
+**→ [Neural Extraction Guide](docs/neural-extraction.md)** | **[Import Preview Mode](docs/neural-extraction.md#import-preview-mode)**
+
+---
+
 ## From Prototype to Planet Scale
 
 **The same API. Zero rewrites. Any scale.**

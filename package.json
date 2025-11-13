@@ -39,6 +39,18 @@
     "./universal": {
       "import": "./dist/universal/index.js",
       "types": "./dist/universal/index.d.ts"
+    },
+    "./neural/entityExtractor": {
+      "import": "./dist/neural/entityExtractor.js",
+      "types": "./dist/neural/entityExtractor.d.ts"
+    },
+    "./neural/SmartExtractor": {
+      "import": "./dist/neural/SmartExtractor.js",
+      "types": "./dist/neural/SmartExtractor.d.ts"
+    },
+    "./neural/SmartRelationshipExtractor": {
+      "import": "./dist/neural/SmartRelationshipExtractor.js",
+      "types": "./dist/neural/SmartRelationshipExtractor.d.ts"
     }
   },
   "browser": {

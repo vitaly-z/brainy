@@ -3229,6 +3229,41 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Extract entities from text (alias for extract())
+   * v5.7.6: Added for API clarity and Workshop team request
+   *
+   * Uses NeuralEntityExtractor with SmartExtractor ensemble (4-signal architecture):
+   * - ExactMatch (40%) - Dictionary lookups
+   * - Embedding (35%) - Semantic similarity
+   * - Pattern (20%) - Regex patterns
+   * - Context (5%) - Contextual hints
+   *
+   * @param text - Text to extract entities from
+   * @param options - Extraction options
+   * @returns Array of extracted entities with types and confidence scores
+   *
+   * @example
+   * ```typescript
+   * const entities = await brain.extractEntities('John Smith founded Acme Corp', {
+   *   confidence: 0.7,
+   *   types: [NounType.Person, NounType.Organization],
+   *   neuralMatching: true
+   * })
+   * ```
+   */
+  async extractEntities(
+    text: string,
+    options?: {
+      types?: NounType[]
+      confidence?: number
+      includeVectors?: boolean
+      neuralMatching?: boolean
+    }
+  ): Promise<ExtractedEntity[]> {
+    return this.extract(text, options)
+  }
+
+  /**
    * Extract concepts from text
    *
    * Simplified interface for concept/topic extraction

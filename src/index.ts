@@ -70,6 +70,23 @@ export type {
   NeuralImportOptions
 } from './cortex/neuralImport.js'
 
+// Export Neural Entity Extraction (v5.7.6 - Workshop request)
+export { NeuralEntityExtractor } from './neural/entityExtractor.js'
+export { SmartExtractor } from './neural/SmartExtractor.js'
+export { SmartRelationshipExtractor } from './neural/SmartRelationshipExtractor.js'
+export type {
+  ExtractedEntity
+} from './neural/entityExtractor.js'
+export type {
+  ExtractionResult,
+  SmartExtractorOptions,
+  FormatContext
+} from './neural/SmartExtractor.js'
+export type {
+  RelationshipExtractionResult,
+  SmartRelationshipExtractorOptions
+} from './neural/SmartRelationshipExtractor.js'
+
 // Import Manager removed - use brain.import() instead (available on all Brainy instances)
 
 // Augmentation types are already exported later in the file
