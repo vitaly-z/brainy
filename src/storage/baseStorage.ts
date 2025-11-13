@@ -1138,8 +1138,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           if (!nounPath.endsWith('.json')) continue
 
           try {
-            const noun = await this.readWithInheritance(nounPath)
-            if (noun) {
+            const rawNoun = await this.readWithInheritance(nounPath)
+            if (rawNoun) {
+              // v5.7.10: Deserialize connections Map from JSON storage format
+              // Replaces v5.7.8 manual deserialization (removed 13 lines at 1156-1168)
+              const noun = this.deserializeNoun(rawNoun)
+
               // Load metadata
               const metadataPath = getNounMetadataPath(type, noun.id)
               const metadata = await this.readWithInheritance(metadataPath)
@@ -1153,24 +1157,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
                   }
                 }
 
-                // v5.7.8: Convert connections from plain object to Map (JSON deserialization fix)
-                // When loaded from JSON, Map becomes plain object - must reconstruct
-                const connections = new Map<number, Set<string>>()
-                if (noun.connections && typeof noun.connections === 'object') {
-                  for (const [levelStr, ids] of Object.entries(noun.connections)) {
-                    if (Array.isArray(ids)) {
-                      connections.set(parseInt(levelStr, 10), new Set<string>(ids))
-                    } else if (ids && typeof ids === 'object') {
-                      // Handle if it's already an array-like or Set-like object
-                      connections.set(parseInt(levelStr, 10), new Set<string>(Object.values(ids)))
-                    }
-                  }
-                }
-
                 // Combine noun + metadata (v5.4.0: Extract standard fields to top-level)
                 collectedNouns.push({
                   ...noun,
-                  connections,  // Use reconstructed Map instead of plain object
+                  // v5.7.10: connections already deserialized by deserializeNoun()
                   type: metadata.noun || type,  // Required: Extract type from metadata
                   confidence: metadata.confidence,
                   weight: metadata.weight,
@@ -2163,6 +2153,72 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
 
   // ============================================================================
+  // DESERIALIZATION HELPERS (v5.7.10)
+  // Centralized Map/Set reconstruction from JSON storage format
+  // ============================================================================
+
+  /**
+   * Deserialize HNSW connections from JSON storage format
+   *
+   * Converts plain object { "0": ["id1"], "1": ["id2"] }
+   * into Map<number, Set<string>>
+   *
+   * v5.7.10: Central helper to fix serialization bug across all code paths
+   * Root cause: JSON.stringify(Map) = {} (empty object), must reconstruct on read
+   */
+  protected deserializeConnections(connections: any): Map<number, Set<string>> {
+    const result = new Map<number, Set<string>>()
+
+    if (!connections || typeof connections !== 'object') {
+      return result
+    }
+
+    // Already a Map (in-memory, not from JSON)
+    if (connections instanceof Map) {
+      return connections
+    }
+
+    // Deserialize from plain object
+    for (const [levelStr, ids] of Object.entries(connections)) {
+      if (Array.isArray(ids)) {
+        result.set(parseInt(levelStr, 10), new Set<string>(ids))
+      } else if (ids && typeof ids === 'object') {
+        // Handle Set-like or array-like objects
+        result.set(parseInt(levelStr, 10), new Set<string>(Object.values(ids)))
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Deserialize HNSWNoun from JSON storage format
+   *
+   * v5.7.10: Ensures connections are properly reconstructed from Map → object → Map
+   * Fixes: "TypeError: noun.connections.entries is not a function"
+   */
+  protected deserializeNoun(data: any): HNSWNoun {
+    return {
+      ...data,
+      connections: this.deserializeConnections(data.connections)
+    }
+  }
+
+  /**
+   * Deserialize HNSWVerb from JSON storage format
+   *
+   * v5.7.10: Ensures connections are properly reconstructed from Map → object → Map
+   * Fixes same serialization bug for verbs
+   */
+  protected deserializeVerb(data: any): HNSWVerb {
+    return {
+      ...data,
+      connections: this.deserializeConnections(data.connections)
+    }
+  }
+
+
+  // ============================================================================
   // ABSTRACT METHOD IMPLEMENTATIONS (v5.4.0)
   // Converted from abstract to concrete - all adapters now have built-in type-aware
   // ============================================================================
@@ -2197,7 +2253,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     if (cachedType) {
       const path = getNounVectorPath(cachedType, id)
       // COW-aware read (v5.0.1): Use COW helper for branch isolation
-      return await this.readWithInheritance(path)
+      const data = await this.readWithInheritance(path)
+      // v5.7.10: Deserialize connections Map from JSON storage format
+      return data ? this.deserializeNoun(data) : null
     }
 
     // Need to search across all types (expensive, but cached after first access)
@@ -2211,7 +2269,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         if (noun) {
           // Cache the type for next time
           this.nounTypeCache.set(id, type)
-          return noun
+          // v5.7.10: Deserialize connections Map from JSON storage format
+          return this.deserializeNoun(noun)
         }
       } catch (error) {
         // Not in this type, continue searching
@@ -2240,7 +2299,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // COW-aware read (v5.0.1): Use COW helper for branch isolation
         const noun = await this.readWithInheritance(path)
         if (noun) {
-          nouns.push(noun)
+          // v5.7.10: Deserialize connections Map from JSON storage format
+          nouns.push(this.deserializeNoun(noun))
           // Cache the type
           this.nounTypeCache.set(noun.id, type)
         }
@@ -2345,7 +2405,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       const path = getVerbVectorPath(cachedType, id)
       // COW-aware read (v5.0.1): Use COW helper for branch isolation
       const verb = await this.readWithInheritance(path)
-      return verb
+      // v5.7.10: Deserialize connections Map from JSON storage format
+      return verb ? this.deserializeVerb(verb) : null
     }
 
     // Search across all types (only on first access)
@@ -2359,7 +2420,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         if (verb) {
           // Cache the type for next time (read from verb.verb field)
           this.verbTypeCache.set(id, verb.verb as VerbType)
-          return verb
+          // v5.7.10: Deserialize connections Map from JSON storage format
+          return this.deserializeVerb(verb)
         }
       } catch (error) {
         // Not in this type, continue
@@ -2513,8 +2575,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     for (const path of paths) {
       try {
         // COW-aware read (v5.0.1): Use COW helper for branch isolation
-        const hnswVerb = await this.readWithInheritance(path)
-        if (!hnswVerb) continue
+        const rawVerb = await this.readWithInheritance(path)
+        if (!rawVerb) continue
+
+        // v5.7.10: Deserialize connections Map from JSON storage format
+        // Replaces v5.7.8 manual deserialization (lines 2599-2605)
+        const hnswVerb = this.deserializeVerb(rawVerb)
 
         // Cache type from HNSWVerb for future O(1) retrievals
         this.verbTypeCache.set(hnswVerb.id, hnswVerb.verb as VerbType)
@@ -2523,15 +2589,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // FIX: Don't skip verbs without metadata - metadata is optional!
         const metadata = await this.getVerbMetadata(hnswVerb.id)
 
-        // Create HNSWVerbWithMetadata (verbs don't have level field)
-        // Convert connections from plain object to Map<number, Set<string>>
-        const connectionsMap = new Map<number, Set<string>>()
-        if (hnswVerb.connections && typeof hnswVerb.connections === 'object') {
-          for (const [level, ids] of Object.entries(hnswVerb.connections)) {
-            connectionsMap.set(Number(level), new Set(ids as string[]))
-          }
-        }
-
         // v4.8.0: Extract standard fields from metadata to top-level
         const metadataObj = (metadata || {}) as VerbMetadata
         const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
@@ -2539,7 +2596,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const verbWithMetadata: HNSWVerbWithMetadata = {
           id: hnswVerb.id,
           vector: [...hnswVerb.vector],
-          connections: connectionsMap,
+          connections: hnswVerb.connections, // v5.7.10: Already deserialized
           verb: hnswVerb.verb,
           sourceId: hnswVerb.sourceId,
           targetId: hnswVerb.targetId,
