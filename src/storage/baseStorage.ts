@@ -329,6 +329,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           if (Buffer.isBuffer(data)) {
             return data
           }
+          // v5.7.5: Unwrap binary data stored as {_binary: true, data: "base64..."}
+          // Fixes "Blob integrity check failed" - hash must be calculated on original content
+          if (data._binary && typeof data.data === 'string') {
+            return Buffer.from(data.data, 'base64')
+          }
           return Buffer.from(JSON.stringify(data))
         } catch (error) {
           return undefined
