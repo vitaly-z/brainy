@@ -1092,7 +1092,7 @@ export class HNSWIndex {
         prodLog.info(`HNSW: Using cloud pagination strategy (${storageType})`)
 
         let hasMore = true
-        let cursor: string | undefined = undefined
+        let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
 
         while (hasMore) {
           // Fetch batch of nouns from storage (cast needed as method is not in base interface)
@@ -1103,7 +1103,7 @@ export class HNSWIndex {
             nextCursor?: string
           } = await (this.storage as any).getNounsWithPagination({
             limit: batchSize,
-            cursor
+            offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
           })
 
           // Set total count on first batch
@@ -1161,7 +1161,7 @@ export class HNSWIndex {
 
           // Check for more data
           hasMore = result.hasMore
-          cursor = result.nextCursor
+          offset += batchSize  // v5.7.11: Increment offset for next page
         }
       }
 

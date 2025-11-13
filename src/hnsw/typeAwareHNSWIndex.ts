@@ -452,7 +452,7 @@ export class TypeAwareHNSWIndex {
 
     // Load ALL nouns ONCE and route to correct type indexes
     // This is O(N) instead of O(42*N) from the previous parallel approach
-    let cursor: string | undefined = undefined
+    let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
     let hasMore = true
     let totalLoaded = 0
     const loadedByType = new Map<NounType, number>()
@@ -465,7 +465,7 @@ export class TypeAwareHNSWIndex {
         totalCount?: number
       } = await (this.storage as any).getNounsWithPagination({
         limit: batchSize,
-        cursor
+        offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
       })
 
       // Route each noun to its type index
@@ -530,7 +530,7 @@ export class TypeAwareHNSWIndex {
       }
 
       hasMore = result.hasMore
-      cursor = result.nextCursor
+      offset += batchSize  // v5.7.11: Increment offset for next page
 
       // Progress logging
       if (totalLoaded % 1000 === 0) {

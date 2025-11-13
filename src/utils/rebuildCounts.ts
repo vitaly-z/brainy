@@ -64,10 +64,13 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
   }
 
   let hasMore = true
-  let cursor: string | undefined
+  let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
 
   while (hasMore) {
-    const result: any = await storageWithPagination.getNounsWithPagination({ limit: 100, cursor })
+    const result: any = await storageWithPagination.getNounsWithPagination({
+      limit: 100,
+      offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+    })
 
     for (const noun of result.items) {
       const metadata = await storage.getNounMetadata(noun.id)
@@ -79,7 +82,7 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
     }
 
     hasMore = result.hasMore
-    cursor = result.nextCursor
+    offset += 100  // v5.7.11: Increment offset for next page
   }
 
   console.log(`   Found ${totalNouns} entities across ${entityCounts.size} types`)
@@ -92,10 +95,13 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
   }
 
   hasMore = true
-  cursor = undefined
+  offset = 0  // v5.7.11: Reset offset for verbs pagination
 
   while (hasMore) {
-    const result: any = await storageWithPagination.getVerbsWithPagination({ limit: 100, cursor })
+    const result: any = await storageWithPagination.getVerbsWithPagination({
+      limit: 100,
+      offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+    })
 
     for (const verb of result.items) {
       if (verb.verb) {
@@ -106,7 +112,7 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
     }
 
     hasMore = result.hasMore
-    cursor = result.nextCursor
+    offset += 100  // v5.7.11: Increment offset for next page
   }
 
   console.log(`   Found ${totalVerbs} relationships across ${verbCounts.size} types`)

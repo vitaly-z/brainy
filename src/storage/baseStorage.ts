@@ -1083,7 +1083,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getNounsWithPagination(options: {
     limit: number
     offset: number
-    cursor?: string
+    cursor?: string  // v5.7.11: Currently ignored (offset-based pagination). Cursor support planned for v5.8.0
     filter?: {
       nounType?: string | string[]
       service?: string | string[]
@@ -1097,7 +1097,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }> {
     await this.ensureInitialized()
 
-    const { limit, offset = 0, filter } = options
+    const { limit, offset = 0, filter } = options  // cursor intentionally not extracted (not yet implemented)
     const collectedNouns: HNSWNounWithMetadata[] = []
     const targetCount = offset + limit  // Early termination target
 
@@ -1188,7 +1188,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Apply pagination (v5.5.0: Efficient slicing after early termination)
     const paginatedNouns = collectedNouns.slice(offset, offset + limit)
-    const hasMore = collectedNouns.length >= targetCount
+    const hasMore = collectedNouns.length > targetCount  // v5.7.11: Fixed >= to > (was causing infinite loop)
 
     return {
       items: paginatedNouns,
@@ -1218,7 +1218,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getVerbsWithPagination(options: {
     limit: number
     offset: number
-    cursor?: string
+    cursor?: string  // v5.7.11: Currently ignored (offset-based pagination). Cursor support planned for v5.8.0
     filter?: {
       verbType?: string | string[]
       sourceId?: string | string[]
@@ -1234,7 +1234,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }> {
     await this.ensureInitialized()
 
-    const { limit, offset = 0, filter } = options
+    const { limit, offset = 0, filter } = options  // cursor intentionally not extracted (not yet implemented)
     const collectedVerbs: HNSWVerbWithMetadata[] = []
     const targetCount = offset + limit  // Early termination target
 
@@ -1302,7 +1302,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Apply pagination (v5.5.0: Efficient slicing after early termination)
     const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
-    const hasMore = collectedVerbs.length >= targetCount
+    const hasMore = collectedVerbs.length > targetCount  // v5.7.11: Fixed >= to > (was causing infinite loop)
 
     return {
       items: paginatedVerbs,
@@ -1628,7 +1628,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       // Apply pagination (slice for offset)
       const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
-      const hasMore = collectedVerbs.length >= targetCount
+      const hasMore = collectedVerbs.length > targetCount  // v5.7.11: Fixed >= to > (was causing infinite loop)
 
       return {
         items: paginatedVerbs,
