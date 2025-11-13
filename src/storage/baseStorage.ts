@@ -1153,9 +1153,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
                   }
                 }
 
+                // v5.7.8: Convert connections from plain object to Map (JSON deserialization fix)
+                // When loaded from JSON, Map becomes plain object - must reconstruct
+                const connections = new Map<number, Set<string>>()
+                if (noun.connections && typeof noun.connections === 'object') {
+                  for (const [levelStr, ids] of Object.entries(noun.connections)) {
+                    if (Array.isArray(ids)) {
+                      connections.set(parseInt(levelStr, 10), new Set<string>(ids))
+                    } else if (ids && typeof ids === 'object') {
+                      // Handle if it's already an array-like or Set-like object
+                      connections.set(parseInt(levelStr, 10), new Set<string>(Object.values(ids)))
+                    }
+                  }
+                }
+
                 // Combine noun + metadata (v5.4.0: Extract standard fields to top-level)
                 collectedNouns.push({
                   ...noun,
+                  connections,  // Use reconstructed Map instead of plain object
                   type: metadata.noun || type,  // Required: Extract type from metadata
                   confidence: metadata.confidence,
                   weight: metadata.weight,
