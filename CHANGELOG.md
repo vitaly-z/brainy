@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.9](https://github.com/soulcraftlabs/brainy/compare/v5.7.8...v5.7.9) (2025-11-13)
+
+- fix: implement exists: false and missing operators in MetadataIndexManager (b0f72ef)
+
+
 ### [5.7.8](https://github.com/soulcraftlabs/brainy/compare/v5.7.7...v5.7.8) (2025-11-13)
 
 - fix: reconstruct Map from JSON for HNSW connections (v5.7.8 hotfix) (f6f2717)
