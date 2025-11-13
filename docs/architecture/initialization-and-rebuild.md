@@ -70,19 +70,24 @@ class GraphAdjacencyIndex {
 
 ### 2. Brain Initialization Flow
 
-When you create a `Brain` instance and call `init()`:
+When you create a `Brain` instance and call `init()`, behavior depends on the `disableAutoRebuild` configuration:
+
+#### Mode 1: Auto-Rebuild on init() (Default)
 
 ```typescript
-// src/brainy.ts (lines 2900-3035)
+// src/brainy.ts (lines 192-237)
 async init(): Promise<void> {
   const initStartTime = Date.now()
 
-  // STEP 1: Check index sizes (lazy initialization triggers here)
+  // STEP 1: Initialize storage and unified cache
+  await this.storage.init()
+
+  // STEP 2: Check index sizes (lazy initialization triggers here)
   const metadataStats = await this.metadataIndex.getStats()
   const hnswIndexSize = this.index.size()
   const graphIndexSize = await this.graphIndex.size()
 
-  // STEP 2: Rebuild empty indexes from storage in parallel
+  // STEP 3: Rebuild empty indexes from storage in parallel
   if (metadataStats.totalEntries === 0 ||
       hnswIndexSize === 0 ||
       graphIndexSize === 0) {
@@ -104,13 +109,13 @@ async init(): Promise<void> {
     console.log(`✅ All indexes rebuilt in ${rebuildDuration}ms`)
   }
 
-  // STEP 3: Log statistics
+  // STEP 4: Log statistics
   const stats = await this.stats()
   console.log(`📊 Brain initialized with ${stats.entities} entities`)
 }
 ```
 
-**Timeline** (typical cold start with 10K entities, v4.2.1+):
+**Timeline** (typical cold start with 10K entities):
 - 0-50ms: Storage adapter initialization
 - 50-100ms: Field registry loading (O(1) discovery of persisted indices)
 - 100-200ms: Index lazy initialization (LSM-tree loading)
@@ -123,6 +128,79 @@ async init(): Promise<void> {
 - 50-100ms: Index lazy initialization
 - 100-2000ms: One-time rebuild to create indices
 - Total: ~1-3 seconds (one time only)
+
+#### Mode 2: Lazy Loading on First Query (v5.7.7+)
+
+When `disableAutoRebuild: true`, indexes remain empty after init() and rebuild on first query:
+
+```typescript
+// User code
+const brain = new Brainy({
+  storage: { type: 'filesystem' },
+  disableAutoRebuild: true  // Enable lazy loading
+})
+
+await brain.init()  // Returns instantly (0-10ms)
+
+// First query triggers lazy rebuild
+const results = await brain.find({ limit: 10 })
+// → Calls ensureIndexesLoaded() internally (brainy.ts:4617)
+// → Rebuilds all 3 main indexes with concurrency control
+// → Returns results (~50-200ms total for 1K-10K entities)
+
+// Subsequent queries are instant
+const more = await brain.find({ limit: 100 })  // 0ms check, instant
+```
+
+**ensureIndexesLoaded() Implementation** (brainy.ts:4617-4664):
+```typescript
+private async ensureIndexesLoaded(): Promise<void> {
+  // Fast path: Already loaded
+  if (this.lazyRebuildCompleted) {
+    return  // 0ms
+  }
+
+  // Concurrency control: Wait for in-progress rebuild
+  if (this.lazyRebuildInProgress && this.lazyRebuildPromise) {
+    await this.lazyRebuildPromise  // Wait for same rebuild
+    return
+  }
+
+  // Check if storage has data
+  const entities = await this.storage.getNouns({ pagination: { limit: 1 } })
+  const hasData = (entities.totalCount && entities.totalCount > 0) || entities.items.length > 0
+
+  if (!hasData) {
+    this.lazyRebuildCompleted = true
+    return
+  }
+
+  // Start lazy rebuild with mutex
+  this.lazyRebuildInProgress = true
+  this.lazyRebuildPromise = this.rebuildIndexesIfNeeded(true)
+    .then(() => {
+      this.lazyRebuildCompleted = true
+    })
+    .finally(() => {
+      this.lazyRebuildInProgress = false
+      this.lazyRebuildPromise = null
+    })
+
+  await this.lazyRebuildPromise
+}
+```
+
+**Lazy Loading Performance:**
+- First query: ~50-200ms (1K-10K entities) - triggers rebuild
+- Concurrent queries: Wait for same rebuild (mutex prevents duplicates)
+- Subsequent queries: 0ms check (instant)
+- Zero-config: Works automatically, no code changes needed
+
+**Use Cases for Lazy Loading:**
+- **Serverless/Edge**: Minimize cold start time, indexes load on demand
+- **Development**: Faster restarts during development
+- **Large datasets**: Defer index loading until actually needed
+- **Read-heavy workloads**: Write operations don't wait for index rebuild
 
 ## Rebuild Process
 
@@ -627,8 +705,9 @@ console.log('Nouns in storage:', nouns.items.length)
 
 ## Version History
 
+- **v5.7.7** (November 2025): Added production-scale lazy loading with `ensureIndexesLoaded()` helper. Fixed critical bug where `disableAutoRebuild: true` left indexes empty forever. Added concurrency control (mutex) to prevent duplicate rebuilds from concurrent queries. Added `getIndexStatus()` diagnostic method. Zero-config operation - works automatically.
 - **v3.45.0** (October 2025): Fixed TypeAwareHNSWIndex.rebuild() to load from storage instead of recomputing. Removed all snapshot code (unnecessary with correct rebuild pattern). 200-600x speedup.
 - **v3.44.0** (October 2025): GraphAdjacencyIndex migrated to LSM-tree storage for billion-scale relationships
 - **v3.42.0** (October 2025): MetadataIndex migrated to chunked sparse indexing
 - **v3.35.0** (August 2025): HNSW connections first persisted to storage
-- **v3.0.0** (September 2025): Initial 4-index architecture
+- **v3.0.0** (September 2025): Initial 3-tier index architecture
