@@ -90,7 +90,8 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
 
     it('should handle non-existent IDs according to API contract', async () => {
       // Use valid UUID format (stricter validation in v5.1.0)
-      const fakeId = '00000000-0000-0000-0000-000000000000'
+      // v5.10.0: Can't use 00000000... anymore (it's the VFS root)
+      const fakeId = '11111111-1111-1111-1111-111111111111'
 
       expect(await brain.get(fakeId)).toBeNull()
 
