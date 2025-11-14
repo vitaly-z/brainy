@@ -631,16 +631,20 @@ This comprehensive guide includes:
    - Your primary resource for building with Brainy
    - Every method documented with working examples
 
-2. **[Natural Language Queries](docs/guides/natural-language.md)**
+2. **[Filter & Query Syntax Guide](docs/FIND_SYSTEM.md)**
+   - Complete reference for operators, compound filters, and optimization tips
+
+3. **[Natural Language Queries](docs/guides/natural-language.md)**
    - Master the `find()` method and Triple Intelligence queries
 
-3. **[v4.0.0 Migration Guide](docs/MIGRATION-V3-TO-V4.md)**
+4. **[v4.0.0 Migration Guide](docs/MIGRATION-V3-TO-V4.md)**
    - Upgrading from v3 (100% backward compatible)
 
 ### 🧠 Core Concepts & Architecture
 
 - **[Triple Intelligence Architecture](docs/architecture/triple-intelligence.md)** — How vector + graph + document work together
 - **[Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)** — The universal type system (42 nouns × 127 verbs)
+- **[Transactions](docs/transactions.md)** — Atomic operations with automatic rollback
 - **[Architecture Overview](docs/architecture/overview.md)** — System design and components
 - **[Data Storage Architecture](docs/architecture/data-storage-architecture.md)** — Type-aware indexing and HNSW
 

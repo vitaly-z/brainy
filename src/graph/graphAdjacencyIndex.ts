@@ -136,12 +136,48 @@ export class GraphAdjacencyIndex {
 
   /**
    * Core API - Neighbor lookup with LSM-tree storage
-   * Now O(log n) with bloom filter optimization (90% of queries skip disk I/O)
+   *
+   * O(log n) with bloom filter optimization (90% of queries skip disk I/O)
+   * v5.8.0: Added pagination support for high-degree nodes
+   *
+   * @param id Entity ID to get neighbors for
+   * @param optionsOrDirection Optional: direction string OR options object
+   * @returns Array of neighbor IDs (paginated if limit/offset specified)
+   *
+   * @example
+   * // Get all neighbors (backward compatible)
+   * const all = await graphIndex.getNeighbors(id)
+   *
+   * @example
+   * // Get outgoing neighbors (backward compatible)
+   * const out = await graphIndex.getNeighbors(id, 'out')
+   *
+   * @example
+   * // Get first 50 outgoing neighbors (new API)
+   * const page1 = await graphIndex.getNeighbors(id, { direction: 'out', limit: 50 })
+   *
+   * @example
+   * // Paginate through neighbors
+   * const page1 = await graphIndex.getNeighbors(id, { limit: 100, offset: 0 })
+   * const page2 = await graphIndex.getNeighbors(id, { limit: 100, offset: 100 })
    */
-  async getNeighbors(id: string, direction?: 'in' | 'out' | 'both'): Promise<string[]> {
+  async getNeighbors(
+    id: string,
+    optionsOrDirection?: {
+      direction?: 'in' | 'out' | 'both'
+      limit?: number
+      offset?: number
+    } | 'in' | 'out' | 'both'
+  ): Promise<string[]> {
     await this.ensureInitialized()
 
+    // Normalize old API (direction string) to new API (options object)
+    const options = typeof optionsOrDirection === 'string'
+      ? { direction: optionsOrDirection }
+      : (optionsOrDirection || {})
+
     const startTime = performance.now()
+    const direction = options.direction || 'both'
     const neighbors = new Set<string>()
 
     // Query LSM-trees with bloom filter optimization
@@ -159,7 +195,16 @@ export class GraphAdjacencyIndex {
       }
     }
 
-    const result = Array.from(neighbors)
+    // Convert to array for pagination
+    let result = Array.from(neighbors)
+
+    // Apply pagination if requested (v5.8.0)
+    if (options?.limit !== undefined || options?.offset !== undefined) {
+      const offset = options.offset || 0
+      const limit = options.limit !== undefined ? options.limit : result.length
+      result = result.slice(offset, offset + limit)
+    }
+
     const elapsed = performance.now() - startTime
 
     // Performance assertion - should be sub-5ms with LSM-tree
@@ -172,13 +217,37 @@ export class GraphAdjacencyIndex {
 
   /**
    * Get verb IDs by source - Billion-scale optimization for getVerbsBySource
+   *
    * O(log n) LSM-tree lookup with bloom filter optimization
    * v5.7.1: Filters out deleted verb IDs (tombstone deletion workaround)
+   * v5.8.0: Added pagination support for entities with many relationships
    *
    * @param sourceId Source entity ID
-   * @returns Array of verb IDs originating from this source (excluding deleted)
+   * @param options Optional configuration
+   * @param options.limit Maximum number of verb IDs to return (default: all)
+   * @param options.offset Number of verb IDs to skip (default: 0)
+   * @returns Array of verb IDs originating from this source (excluding deleted, paginated if requested)
+   *
+   * @example
+   * // Get all verb IDs (backward compatible)
+   * const all = await graphIndex.getVerbIdsBySource(sourceId)
+   *
+   * @example
+   * // Get first 50 verb IDs
+   * const page1 = await graphIndex.getVerbIdsBySource(sourceId, { limit: 50 })
+   *
+   * @example
+   * // Paginate through verb IDs
+   * const page1 = await graphIndex.getVerbIdsBySource(sourceId, { limit: 100, offset: 0 })
+   * const page2 = await graphIndex.getVerbIdsBySource(sourceId, { limit: 100, offset: 100 })
    */
-  async getVerbIdsBySource(sourceId: string): Promise<string[]> {
+  async getVerbIdsBySource(
+    sourceId: string,
+    options?: {
+      limit?: number
+      offset?: number
+    }
+  ): Promise<string[]> {
     await this.ensureInitialized()
 
     const startTime = performance.now()
@@ -193,18 +262,51 @@ export class GraphAdjacencyIndex {
     // Filter out deleted verb IDs (tombstone deletion workaround)
     // LSM-tree retains all IDs, but verbIdSet tracks deletions
     const allIds = verbIds || []
-    return allIds.filter(id => this.verbIdSet.has(id))
+    let result = allIds.filter(id => this.verbIdSet.has(id))
+
+    // Apply pagination if requested (v5.8.0)
+    if (options?.limit !== undefined || options?.offset !== undefined) {
+      const offset = options.offset || 0
+      const limit = options.limit !== undefined ? options.limit : result.length
+      result = result.slice(offset, offset + limit)
+    }
+
+    return result
   }
 
   /**
    * Get verb IDs by target - Billion-scale optimization for getVerbsByTarget
+   *
    * O(log n) LSM-tree lookup with bloom filter optimization
    * v5.7.1: Filters out deleted verb IDs (tombstone deletion workaround)
+   * v5.8.0: Added pagination support for popular target entities
    *
    * @param targetId Target entity ID
-   * @returns Array of verb IDs pointing to this target (excluding deleted)
+   * @param options Optional configuration
+   * @param options.limit Maximum number of verb IDs to return (default: all)
+   * @param options.offset Number of verb IDs to skip (default: 0)
+   * @returns Array of verb IDs pointing to this target (excluding deleted, paginated if requested)
+   *
+   * @example
+   * // Get all verb IDs (backward compatible)
+   * const all = await graphIndex.getVerbIdsByTarget(targetId)
+   *
+   * @example
+   * // Get first 50 verb IDs
+   * const page1 = await graphIndex.getVerbIdsByTarget(targetId, { limit: 50 })
+   *
+   * @example
+   * // Paginate through verb IDs
+   * const page1 = await graphIndex.getVerbIdsByTarget(targetId, { limit: 100, offset: 0 })
+   * const page2 = await graphIndex.getVerbIdsByTarget(targetId, { limit: 100, offset: 100 })
    */
-  async getVerbIdsByTarget(targetId: string): Promise<string[]> {
+  async getVerbIdsByTarget(
+    targetId: string,
+    options?: {
+      limit?: number
+      offset?: number
+    }
+  ): Promise<string[]> {
     await this.ensureInitialized()
 
     const startTime = performance.now()
@@ -219,7 +321,16 @@ export class GraphAdjacencyIndex {
     // Filter out deleted verb IDs (tombstone deletion workaround)
     // LSM-tree retains all IDs, but verbIdSet tracks deletions
     const allIds = verbIds || []
-    return allIds.filter(id => this.verbIdSet.has(id))
+    let result = allIds.filter(id => this.verbIdSet.has(id))
+
+    // Apply pagination if requested (v5.8.0)
+    if (options?.limit !== undefined || options?.offset !== undefined) {
+      const offset = options.offset || 0
+      const limit = options.limit !== undefined ? options.limit : result.length
+      result = result.slice(offset, offset + limit)
+    }
+
+    return result
   }
 
   /**

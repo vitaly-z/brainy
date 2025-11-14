@@ -32,6 +32,24 @@ import { BlobStorage } from './storage/cow/BlobStorage.js'
 import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
+import { TransactionManager } from './transaction/TransactionManager.js'
+import {
+  SaveNounMetadataOperation,
+  SaveNounOperation,
+  AddToTypeAwareHNSWOperation,
+  AddToHNSWOperation,
+  AddToMetadataIndexOperation,
+  SaveVerbMetadataOperation,
+  SaveVerbOperation,
+  AddToGraphIndexOperation,
+  RemoveFromHNSWOperation,
+  RemoveFromTypeAwareHNSWOperation,
+  RemoveFromMetadataIndexOperation,
+  RemoveFromGraphIndexOperation,
+  UpdateNounMetadataOperation,
+  DeleteNounMetadataOperation,
+  DeleteVerbMetadataOperation
+} from './transaction/operations/index.js'
 import {
   DistributedCoordinator,
   ShardManager,
@@ -74,6 +92,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private storage!: BaseStorage
   private metadataIndex!: MetadataIndexManager
   private graphIndex!: GraphAdjacencyIndex
+  private transactionManager: TransactionManager
   private embedder: EmbeddingFunction
   private distance: DistanceFunction
   private augmentationRegistry: AugmentationRegistry
@@ -119,6 +138,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     this.distance = cosineDistance
     this.embedder = this.setupEmbedder()
     this.augmentationRegistry = this.setupAugmentations()
+    this.transactionManager = new TransactionManager()
 
     // Setup distributed components if enabled
     if (this.config.distributed?.enabled) {
@@ -432,26 +452,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.createdBy && { createdBy: params.createdBy })
       }
 
-      // v5.0.1: Save metadata FIRST so TypeAwareStorage can cache the type
-      // This prevents the race condition where saveNoun() defaults to 'thing'
-      await this.storage.saveNounMetadata(id, storageMetadata)
-
-      // Then save vector
-      await this.storage.saveNoun({
-        id,
-        vector,
-        connections: new Map(),
-        level: 0
-      })
-
-      // v5.4.0: Add to HNSW index AFTER entity is saved (fixes race condition)
-      // CRITICAL: Entity must exist in storage before HNSW tries to persist
-      if (this.index instanceof TypeAwareHNSWIndex) {
-        await this.index.addItem({ id, vector }, params.type as any)
-      } else {
-        await this.index.addItem({ id, vector })
-      }
-
       // v4.8.0: Build entity structure for indexing (NEW - with top-level fields)
       const entityForIndexing = {
         id,
@@ -470,8 +470,45 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         metadata: params.metadata || {}
       }
 
-      // Pass full entity structure to metadata index
-      await this.metadataIndex.addToIndex(id, entityForIndexing)
+      // v5.8.0: Execute atomically with transaction system
+      // All operations succeed or all rollback - prevents partial failures
+      await this.transactionManager.executeTransaction(async (tx) => {
+        // Operation 1: Save metadata FIRST (v5.0.1 - TypeAwareStorage caching)
+        tx.addOperation(
+          new SaveNounMetadataOperation(this.storage, id, storageMetadata)
+        )
+
+        // Operation 2: Save vector data
+        tx.addOperation(
+          new SaveNounOperation(this.storage, {
+            id,
+            vector,
+            connections: new Map(),
+            level: 0
+          })
+        )
+
+        // Operation 3: Add to HNSW index (v5.4.0 - after entity saved)
+        if (this.index instanceof TypeAwareHNSWIndex) {
+          tx.addOperation(
+            new AddToTypeAwareHNSWOperation(
+              this.index,
+              id,
+              vector,
+              params.type as any
+            )
+          )
+        } else {
+          tx.addOperation(
+            new AddToHNSWOperation(this.index, id, vector)
+          )
+        }
+
+        // Operation 4: Add to metadata index
+        tx.addOperation(
+          new AddToMetadataIndexOperation(this.metadataIndex, id, entityForIndexing)
+        )
+      })
 
       return id
     })
@@ -683,34 +720,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight })
       }
 
-      // v4.0.0: Save metadata FIRST (v5.1.0 fix: updates type cache for TypeAwareStorage)
-      // v5.1.0: saveNounMetadata must be called before saveNoun so that the type cache
-      // is updated before determining the shard path. Otherwise type changes cause
-      // entities to be saved in the wrong shard and become unfindable.
-      await this.storage.saveNounMetadata(params.id, updatedMetadata)
-
-      // Then save vector (will use updated type cache)
-      await this.storage.saveNoun({
-        id: params.id,
-        vector,
-        connections: new Map(),
-        level: 0
-      })
-
-      // v5.4.0: Update HNSW index AFTER entity is saved (fixes race condition)
-      // CRITICAL: Entity must be fully updated in storage before HNSW tries to persist
-      if (needsReindexing) {
-        // Update in index (remove and re-add since no update method)
-        // Phase 2: pass type for TypeAwareHNSWIndex
-        if (this.index instanceof TypeAwareHNSWIndex) {
-          await this.index.removeItem(params.id, existing.type as any)
-          await this.index.addItem({ id: params.id, vector }, newType as any) // v5.1.0: use new type
-        } else {
-          await this.index.removeItem(params.id)
-          await this.index.addItem({ id: params.id, vector })
-        }
-      }
-
       // v4.8.0: Build entity structure for metadata index (with top-level fields)
       const entityForIndexing = {
         id: params.id,
@@ -729,9 +738,60 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         metadata: newMetadata
       }
 
-      // Update metadata index - remove old entry and add new one with v4.8.0 structure
-      await this.metadataIndex.removeFromIndex(params.id, existing.metadata)
-      await this.metadataIndex.addToIndex(params.id, entityForIndexing)
+      // v5.8.0: Execute atomically with transaction system
+      await this.transactionManager.executeTransaction(async (tx) => {
+        // Operation 1: Update metadata FIRST (v5.1.0 - updates type cache)
+        tx.addOperation(
+          new UpdateNounMetadataOperation(this.storage, params.id, updatedMetadata)
+        )
+
+        // Operation 2: Update vector data (will use updated type cache)
+        tx.addOperation(
+          new SaveNounOperation(this.storage, {
+            id: params.id,
+            vector,
+            connections: new Map(),
+            level: 0
+          })
+        )
+
+        // Operation 3-4: Update HNSW index (remove and re-add if reindexing needed)
+        if (needsReindexing) {
+          if (this.index instanceof TypeAwareHNSWIndex) {
+            tx.addOperation(
+              new RemoveFromTypeAwareHNSWOperation(
+                this.index,
+                params.id,
+                existing.vector,
+                existing.type as any
+              )
+            )
+            tx.addOperation(
+              new AddToTypeAwareHNSWOperation(
+                this.index,
+                params.id,
+                vector,
+                newType as any
+              )
+            )
+          } else {
+            tx.addOperation(
+              new RemoveFromHNSWOperation(this.index, params.id, existing.vector)
+            )
+            tx.addOperation(
+              new AddToHNSWOperation(this.index, params.id, vector)
+            )
+          }
+        }
+
+        // Operation 5-6: Update metadata index (remove old, add new)
+        tx.addOperation(
+          new RemoveFromMetadataIndexOperation(this.metadataIndex, params.id, existing.metadata)
+        )
+        tx.addOperation(
+          new AddToMetadataIndexOperation(this.metadataIndex, params.id, entityForIndexing)
+        )
+      })
     })
   }
 
@@ -747,49 +807,57 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('delete', { id }, async () => {
-      // Remove from vector index (Phase 2: get type for TypeAwareHNSWIndex)
-      if (this.index instanceof TypeAwareHNSWIndex) {
-        // Get entity metadata to determine type
-        const metadata = await this.storage.getNounMetadata(id)
-        if (metadata && metadata.noun) {
-          await this.index.removeItem(id, metadata.noun as any)
-        }
-      } else {
-        await this.index.removeItem(id)
-      }
-
-      // Remove from metadata index
-      await this.metadataIndex.removeFromIndex(id)
-
-      // Delete from storage
-      await this.storage.deleteNoun(id)
-      
-      // Delete metadata (if it exists as separate)
-      try {
-        await this.storage.saveMetadata(id, null as any) // Clear metadata
-      } catch {
-        // Ignore if not supported
-      }
-
-      // Delete related verbs
+      // Get entity metadata and related verbs before deletion
+      const metadata = await this.storage.getNounMetadata(id)
+      const noun = await this.storage.getNoun(id)
       const verbs = await this.storage.getVerbsBySource(id)
       const targetVerbs = await this.storage.getVerbsByTarget(id)
       const allVerbs = [...verbs, ...targetVerbs]
 
-      for (const verb of allVerbs) {
-        // Remove from graph index first
-        await this.graphIndex.removeVerb(verb.id)
-        // Then delete from storage
-        await this.storage.deleteVerb(verb.id)
-        // Delete verb metadata if exists
-        try {
-          if (typeof (this.storage as any).deleteVerbMetadata === 'function') {
-            await (this.storage as any).deleteVerbMetadata(verb.id)
+      // v5.8.0: Execute atomically with transaction system
+      await this.transactionManager.executeTransaction(async (tx) => {
+        // Operation 1: Remove from vector index
+        if (noun && metadata) {
+          if (this.index instanceof TypeAwareHNSWIndex && metadata.noun) {
+            tx.addOperation(
+              new RemoveFromTypeAwareHNSWOperation(
+                this.index,
+                id,
+                noun.vector,
+                metadata.noun as any
+              )
+            )
+          } else if (this.index instanceof HNSWIndex || this.index instanceof HNSWIndexOptimized) {
+            tx.addOperation(
+              new RemoveFromHNSWOperation(this.index, id, noun.vector)
+            )
           }
-        } catch {
-          // Ignore if not supported
         }
-      }
+
+        // Operation 2: Remove from metadata index
+        if (metadata) {
+          tx.addOperation(
+            new RemoveFromMetadataIndexOperation(this.metadataIndex, id, metadata)
+          )
+        }
+
+        // Operation 3: Delete noun metadata
+        tx.addOperation(
+          new DeleteNounMetadataOperation(this.storage, id)
+        )
+
+        // Operations 4+: Delete all related verbs atomically
+        for (const verb of allVerbs) {
+          // Remove from graph index
+          tx.addOperation(
+            new RemoveFromGraphIndexOperation(this.graphIndex, verb as any)
+          )
+          // Delete verb metadata
+          tx.addOperation(
+            new DeleteVerbMetadataOperation(this.storage, verb.id)
+          )
+        }
+      })
     })
   }
 
@@ -920,17 +988,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // CRITICAL FIX (v3.43.2): Check for duplicate relationships
     // This prevents infinite loops where same relationship is created repeatedly
     // Bug #1 showed incrementing verb counts (7→8→9...) indicating duplicates
-    const existingVerbs = await this.storage.getVerbsBySource(params.from)
-    const duplicate = existingVerbs.find(v =>
-      v.targetId === params.to &&
-      v.verb === params.type
-    )
+    // v5.8.0 OPTIMIZATION: Use GraphAdjacencyIndex for O(log n) lookup instead of O(n) storage scan
+    const verbIds = await this.graphIndex.getVerbIdsBySource(params.from)
 
-    if (duplicate) {
-      // Relationship already exists - return existing ID instead of creating duplicate
-      console.log(`[DEBUG] Skipping duplicate relationship: ${params.from} → ${params.to} (${params.type})`)
-      return duplicate.id
+    // Check each verb ID for matching relationship (only load verbs we need to check)
+    for (const verbId of verbIds) {
+      const verb = await this.graphIndex.getVerbCached(verbId)
+      if (verb && verb.targetId === params.to && verb.verb === params.type) {
+        // Relationship already exists - return existing ID instead of creating duplicate
+        console.log(`[DEBUG] Skipping duplicate relationship: ${params.from} → ${params.to} (${params.type})`)
+        return verb.id
+      }
     }
+
+    // No duplicate found - proceed with creation
 
     // Generate ID
     const id = uuidv4()
@@ -965,46 +1036,65 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         createdAt: Date.now()
       } as any
 
-      await this.storage.saveVerb({
-        id,
-        vector: relationVector,
-        connections: new Map(),
-        verb: params.type,
-        sourceId: params.from,
-        targetId: params.to
+      // v5.8.0: Execute atomically with transaction system
+      await this.transactionManager.executeTransaction(async (tx) => {
+        // Operation 1: Save verb vector data
+        tx.addOperation(
+          new SaveVerbOperation(this.storage, {
+            id,
+            vector: relationVector,
+            connections: new Map(),
+            verb: params.type,
+            sourceId: params.from,
+            targetId: params.to
+          })
+        )
+
+        // Operation 2: Save verb metadata
+        tx.addOperation(
+          new SaveVerbMetadataOperation(this.storage, id, verbMetadata)
+        )
+
+        // Operation 3: Add to graph index for O(1) lookups
+        tx.addOperation(
+          new AddToGraphIndexOperation(this.graphIndex, verb)
+        )
+
+        // Create bidirectional if requested
+        if (params.bidirectional) {
+          const reverseId = uuidv4()
+          const reverseVerb: GraphVerb = {
+            ...verb,
+            id: reverseId,
+            sourceId: params.to,
+            targetId: params.from,
+            source: toEntity.type,
+            target: fromEntity.type
+          } as any
+
+          // Operation 4: Save reverse verb vector data
+          tx.addOperation(
+            new SaveVerbOperation(this.storage, {
+              id: reverseId,
+              vector: relationVector,
+              connections: new Map(),
+              verb: params.type,
+              sourceId: params.to,
+              targetId: params.from
+            })
+          )
+
+          // Operation 5: Save reverse verb metadata
+          tx.addOperation(
+            new SaveVerbMetadataOperation(this.storage, reverseId, verbMetadata)
+          )
+
+          // Operation 6: Add reverse relationship to graph index
+          tx.addOperation(
+            new AddToGraphIndexOperation(this.graphIndex, reverseVerb)
+          )
+        }
       })
-
-      await this.storage.saveVerbMetadata(id, verbMetadata)
-
-      // Add to graph index for O(1) lookups
-      await this.graphIndex.addVerb(verb)
-
-      // Create bidirectional if requested
-      if (params.bidirectional) {
-        const reverseId = uuidv4()
-        const reverseVerb: GraphVerb = {
-          ...verb,
-          id: reverseId,
-          sourceId: params.to,
-          targetId: params.from,
-          source: toEntity.type,
-          target: fromEntity.type
-        } as any
-
-        await this.storage.saveVerb({
-          id: reverseId,
-          vector: relationVector,
-          connections: new Map(),
-          verb: params.type,
-          sourceId: params.to,
-          targetId: params.from
-        })
-
-        await this.storage.saveVerbMetadata(reverseId, verbMetadata)
-
-        // Add reverse relationship to graph index too
-        await this.graphIndex.addVerb(reverseVerb)
-      }
 
       return id
     })
@@ -1017,10 +1107,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('unrelate', { id }, async () => {
-      // Remove from graph index
-      await this.graphIndex.removeVerb(id)
-      // Remove from storage
-      await this.storage.deleteVerb(id)
+      // Get verb data before deletion for rollback
+      const verb = await this.storage.getVerb(id)
+
+      // v5.8.0: Execute atomically with transaction system
+      await this.transactionManager.executeTransaction(async (tx) => {
+        // Operation 1: Remove from graph index
+        if (verb) {
+          tx.addOperation(
+            new RemoveFromGraphIndexOperation(this.graphIndex, verb as any)
+          )
+        }
+
+        // Operation 2: Delete verb metadata (which also deletes vector)
+        tx.addOperation(
+          new DeleteVerbMetadataOperation(this.storage, id)
+        )
+      })
     })
   }
 
