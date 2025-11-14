@@ -124,7 +124,7 @@ export class MetadataIndexManager {
   // Reduces file count from 560k → 89 files (630x reduction)
   // ALL fields now use chunking - no more flat files
   // v3.44.1: Removed sparseIndices Map - now lazy-loaded via UnifiedCache only
-  // This reduces metadata memory from 35GB → 5GB @ 1B scale (86% reduction)
+  // PROJECTED: Reduces metadata memory from 35GB → 5GB @ 1B scale (86% reduction from chunking strategy, not yet benchmarked)
   private chunkManager: ChunkManager
   private chunkingStrategy: AdaptiveChunkingStrategy
 

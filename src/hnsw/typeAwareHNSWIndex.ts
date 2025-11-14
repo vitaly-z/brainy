@@ -2,8 +2,8 @@
  * Type-Aware HNSW Index - Phase 2 Billion-Scale Optimization
  *
  * Maintains separate HNSW graphs per entity type for massive memory savings:
- * - Memory @ 1B scale: 384GB → 50GB (-87%)
- * - Query speed: 10x faster for single-type queries
+ * - Memory @ 1B scale: PROJECTED 384GB → 50GB (-87% from architectural analysis, not yet benchmarked)
+ * - Query speed: PROJECTED 10x faster for single-type queries (not yet benchmarked)
  * - Storage: Already type-first from Phase 1a
  *
  * Architecture:
@@ -54,7 +54,7 @@ export interface TypeAwareHNSWStats {
  * TypeAwareHNSWIndex - Separate HNSW graphs per entity type
  *
  * Phase 2 of billion-scale optimization roadmap.
- * Reduces HNSW memory by 87% @ billion scale.
+ * PROJECTED: Reduces HNSW memory by 87% @ billion scale (calculated from architecture, not yet benchmarked).
  */
 export class TypeAwareHNSWIndex {
   // One HNSW index per noun type (lazy initialization)

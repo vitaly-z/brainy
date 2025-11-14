@@ -1666,11 +1666,11 @@ After upgrading to v3.50.2:
 
 ### ✨ Features
 
-**Phase 2: Type-Aware HNSW - 87% Memory Reduction @ Billion Scale**
+**Phase 2: Type-Aware HNSW - PROJECTED 87% Memory Reduction @ Billion Scale**
 
 - **feat**: TypeAwareHNSWIndex with separate HNSW graphs per entity type
-  - **87% HNSW memory reduction**: 384GB → 50GB (-334GB) @ 1B scale
-  - **10x faster single-type queries**: search 100M nodes instead of 1B
+  - **PROJECTED 87% HNSW memory reduction**: 384GB → 50GB (-334GB) @ 1B scale (calculated from architectural analysis, not yet benchmarked at billion scale)
+  - **PROJECTED 10x faster single-type queries**: search 100M nodes instead of 1B (not yet benchmarked)
   - **5-8x faster multi-type queries**: search subset of types
   - **~3x faster all-types queries**: 31 smaller graphs vs 1 large graph
   - Lazy initialization - only creates indexes for types with entities
@@ -1688,11 +1688,11 @@ After upgrading to v3.50.2:
   - Maintains O(log n) performance guarantees
   - Zero API changes for existing code
 
-### 📊 Impact @ Billion Scale
+### 📊 Impact @ Billion Scale (PROJECTED)
 
-**Memory Reduction (Phase 2):**
+**Memory Reduction (Phase 2) - PROJECTED:**
 ```
-HNSW memory: 384GB → 50GB (-87% / -334GB)
+HNSW memory: 384GB → 50GB (-87% / -334GB) - PROJECTED from architectural analysis, not benchmarked at 1B scale
 ```
 
 **Query Performance:**
@@ -1758,7 +1758,7 @@ Part of the billion-scale optimization roadmap:
 ### 🎯 Next Steps
 
 **Phase 3** (planned): Type-First Query Optimization
-- Query: 40% latency reduction via type-aware planning
+- Query: PROJECTED 40% latency reduction via type-aware planning (not yet benchmarked)
 - Index: Smart query routing based on type cardinality
 - Estimated: 2 weeks implementation
 

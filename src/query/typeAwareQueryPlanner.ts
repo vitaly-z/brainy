@@ -5,14 +5,14 @@
  * natural language queries using semantic similarity and routing to specific
  * TypeAwareHNSWIndex graphs.
  *
- * Performance Impact:
+ * Performance Impact (PROJECTED - not yet benchmarked):
  * - Single-type queries: 42x speedup (search 1/42 graphs)
  * - Multi-type queries: 8-21x speedup (search 2-5/42 graphs)
- * - Overall: 40% latency reduction @ 1B scale
+ * - Overall: PROJECTED 40% latency reduction @ 1B scale (calculated from graph reduction, not measured)
  *
  * Examples:
- * - "Find engineers" → single-type → [Person] → 42x speedup
- * - "People at Tesla" → multi-type → [Person, Organization] → 21x speedup
+ * - "Find engineers" → single-type → [Person] → PROJECTED 42x speedup
+ * - "People at Tesla" → multi-type → [Person, Organization] → PROJECTED 21x speedup
  * - "Everything about AI" → all-types → [all 42 types] → no speedup
  */
 

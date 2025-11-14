@@ -116,9 +116,9 @@ class TypeAwareMetadataIndex {
 }
 ```
 
-**Real-World Impact**:
+**Real-World Impact (PROJECTED - not yet benchmarked)**:
 - **Before**: 500MB memory for 1M entities with diverse keys
-- **After**: 1.2MB memory for same dataset (385x reduction!)
+- **After**: PROJECTED 1.2MB memory for same dataset (385x reduction - calculated from Uint32Array size, not measured)
 - **Scales to billions**: Memory grows with entity count, not key diversity
 
 ### 2. Semantic Type Inference
@@ -316,7 +316,7 @@ class TypeAwareIndex {
   private nounTypeTracking: Uint32Array  // Fixed size!
   private typeIndexes: RoaringBitmap32[] // One per type
   // Memory: O(noun_types) + O(entities_per_type)
-  // 385x smaller at billion scale!
+  // PROJECTED: 385x smaller at billion scale (calculated from architecture, not benchmarked)
 }
 ```
 
