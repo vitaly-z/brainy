@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.10.1](https://github.com/soulcraftlabs/brainy/compare/v5.10.0...v5.10.1) (2025-11-14)
+
+### 🚨 CRITICAL BUG FIX - Blob Integrity Regression
+
+**v5.10.0 regressed the v5.7.2 blob integrity bug, causing 100% VFS file read failure. This hotfix restores functionality with defense-in-depth architecture.**
+
+### Bug Description
+v5.10.0 reintroduced a critical bug where `BlobStorage.read()` was hashing wrapped binary data instead of unwrapped content, causing all blob integrity checks to fail:
+- **Symptom**: `Blob integrity check failed: <hash>` errors on every VFS file read
+- **Root Cause**: Missing defense-in-depth unwrap verification in `BlobStorage.read()`
+- **Impact**: 100% failure rate for VFS file operations in Workshop application
+
+### The Fix (v5.10.1)
+1. **Defense-in-Depth Unwrapping**: Added unwrap verification in `BlobStorage.read()` before hash check
+2. **DRY Architecture**: Created `binaryDataCodec.ts` as single source of truth for wrap/unwrap logic
+3. **Metadata Unwrapping**: Fixed metadata parsing to handle wrapped format
+4. **Comprehensive Tests**: Added 3 regression tests using `TestWrappingAdapter`
+
+### Changes
+- **NEW**: `src/storage/cow/binaryDataCodec.ts` - Single source of truth for binary data encoding/decoding
+- **FIXED**: `src/storage/cow/BlobStorage.ts` - Unwraps data and metadata before verification (lines 314, 342)
+- **REFACTORED**: `src/storage/baseStorage.ts` - Uses shared binaryDataCodec utilities (lines 332, 340)
+- **ADDED**: `tests/helpers/TestWrappingAdapter.ts` - Real wrapping adapter for testing
+- **ADDED**: 3 regression tests in `tests/unit/storage/cow/BlobStorage.test.ts`
+
+### Architecture Improvements
+- ✅ **Defense-in-Depth**: Unwrap at BOTH adapter layer (v5.7.5) and blob layer (v5.10.1)
+- ✅ **DRY Principle**: All wrap/unwrap operations use shared `binaryDataCodec.ts`
+- ✅ **Works Across ALL 8 Storage Adapters**: FileSystem, Memory, S3, GCS, Azure, R2, OPFS, Historical
+- ✅ **Prevents Future Regressions**: Real wrapping tests catch this bug class
+
+### Related Issues
+- v5.7.2: Original blob integrity bug - hashed wrapper instead of content
+- v5.7.5: First fix - added unwrap to COW adapter (necessary but insufficient)
+- v5.10.0: Regression - missing defense-in-depth in BlobStorage layer
+- v5.10.1: Complete fix - defense-in-depth + DRY architecture + comprehensive tests
+
 ### [5.9.0](https://github.com/soulcraftlabs/brainy/compare/v5.8.0...v5.9.0) (2025-11-14)
 
 - fix: resolve VFS tree corruption from blob errors (v5.8.0) (93d2d70)

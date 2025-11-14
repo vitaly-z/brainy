@@ -509,4 +509,103 @@ describe('BlobStorage', () => {
       expect(elapsed).toBeLessThan(1000)  // Should be very fast from cache
     })
   })
+
+  describe('v5.10.0 Regression - Blob Integrity with Wrapped Data', () => {
+    it('should handle wrapped binary data without hash mismatch (v5.10.0 fix)', async () => {
+      // Import TestWrappingAdapter that actually wraps data like production
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+      const testBlobStorage = new BlobStorage(wrappingAdapter)
+
+      const originalData = Buffer.from('test content for v5.10.0 regression test')
+
+      // Write blob (TestWrappingAdapter wraps as {_binary: true, data: "base64..."})
+      const hash = await testBlobStorage.write(originalData)
+
+      // Clear cache to force re-read from storage (bypasses in-memory cache)
+      testBlobStorage.clearCache()
+
+      // v5.10.0 bug: This would fail with "Blob integrity check failed"
+      // because BlobStorage.read() was hashing the wrapped data instead of unwrapped
+      // v5.10.1 fix: unwrapBinaryData() is called before hash verification
+      const retrieved = await testBlobStorage.read(hash)
+
+      expect(retrieved.equals(originalData)).toBe(true)
+      expect(retrieved.toString()).toBe('test content for v5.10.0 regression test')
+    })
+
+    it('should handle multiple wrapped blobs without integrity errors', async () => {
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+      const testBlobStorage = new BlobStorage(wrappingAdapter)
+
+      const testData = [
+        Buffer.from('first blob'),
+        Buffer.from('second blob'),
+        Buffer.from('third blob with more content'),
+        Buffer.from(JSON.stringify({ test: 'json data' })),
+      ]
+
+      const hashes: string[] = []
+
+      // Write all blobs
+      for (const data of testData) {
+        const hash = await testBlobStorage.write(data)
+        hashes.push(hash)
+      }
+
+      // Clear cache
+      testBlobStorage.clearCache()
+
+      // Read all blobs (would fail in v5.10.0)
+      for (let i = 0; i < hashes.length; i++) {
+        const retrieved = await testBlobStorage.read(hashes[i])
+        expect(retrieved.equals(testData[i])).toBe(true)
+      }
+    })
+
+    it('should work even if adapter fails to unwrap (defense-in-depth)', async () => {
+      // Create a buggy adapter that doesn't unwrap properly
+      class BuggyAdapter implements COWStorageAdapter {
+        private storage = new Map<string, any>()
+
+        async get(key: string): Promise<any | undefined> {
+          // Simulate a bug where adapter returns wrapped data instead of Buffer
+          const data = this.storage.get(key)
+          if (!data) return undefined
+
+          // Return wrapped object (bug) instead of unwrapped Buffer
+          return data // {_binary: true, data: "base64..."}
+        }
+
+        async put(key: string, data: Buffer): Promise<void> {
+          // Store as wrapped object (like real storage)
+          this.storage.set(key, {
+            _binary: true,
+            data: data.toString('base64')
+          })
+        }
+
+        async delete(key: string): Promise<void> {
+          this.storage.delete(key)
+        }
+
+        async list(prefix: string): Promise<string[]> {
+          return Array.from(this.storage.keys()).filter(k => k.startsWith(prefix))
+        }
+      }
+
+      const buggyAdapter = new BuggyAdapter()
+      const testBlobStorage = new BlobStorage(buggyAdapter)
+
+      const originalData = Buffer.from('test defense-in-depth')
+      const hash = await testBlobStorage.write(originalData)
+
+      testBlobStorage.clearCache()
+
+      // Even with buggy adapter, BlobStorage.read() should unwrap and verify correctly
+      const retrieved = await testBlobStorage.read(hash)
+      expect(retrieved.equals(originalData)).toBe(true)
+    })
+  })
 })

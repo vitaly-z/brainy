@@ -28,6 +28,7 @@ import { getShardIdFromUuid } from './sharding.js'
 import { RefManager } from './cow/RefManager.js'
 import { BlobStorage, type COWStorageAdapter } from './cow/BlobStorage.js'
 import { CommitLog } from './cow/CommitLog.js'
+import { unwrapBinaryData, wrapBinaryData } from './cow/binaryDataCodec.js'
 import { prodLog } from '../utils/logger.js'
 
 /**
@@ -325,31 +326,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           if (data === null) {
             return undefined
           }
-          // Convert to Buffer
-          if (Buffer.isBuffer(data)) {
-            return data
-          }
-          // v5.7.5: Unwrap binary data stored as {_binary: true, data: "base64..."}
+          // v5.7.5/v5.10.1: Use shared binaryDataCodec utility (single source of truth)
+          // Unwraps binary data stored as {_binary: true, data: "base64..."}
           // Fixes "Blob integrity check failed" - hash must be calculated on original content
-          if (data._binary && typeof data.data === 'string') {
-            return Buffer.from(data.data, 'base64')
-          }
-          return Buffer.from(JSON.stringify(data))
+          return unwrapBinaryData(data)
         } catch (error) {
           return undefined
         }
       },
 
       put: async (key: string, data: Buffer): Promise<void> => {
-        // Store as Buffer (for blob data) or parse JSON (for metadata)
-        let obj: any
-        try {
-          // Try to parse as JSON first (for metadata)
-          obj = JSON.parse(data.toString())
-        } catch {
-          // Not JSON, store as binary (base64 encoded for JSON storage)
-          obj = { _binary: true, data: data.toString('base64') }
-        }
+        // v5.10.1: Use shared binaryDataCodec utility (single source of truth)
+        // Wraps binary data or parses JSON for storage
+        const obj = wrapBinaryData(data)
         await this.writeObjectToPath(`_cow/${key}`, obj)
       },
 

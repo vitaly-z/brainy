@@ -16,6 +16,7 @@
 
 import { createHash } from 'crypto'
 import { NULL_HASH, isNullHash } from './constants.js'
+import { unwrapBinaryData } from './binaryDataCodec.js'
 
 /**
  * Simple key-value storage interface for COW primitives
@@ -308,7 +309,10 @@ export class BlobStorage {
       metadataBuffer = await this.adapter.get(`${tryPrefix}-meta:${hash}`)
       if (metadataBuffer) {
         prefix = tryPrefix
-        metadata = JSON.parse(metadataBuffer.toString())
+        // v5.10.1: Unwrap metadata before parsing (defense-in-depth)
+        // Metadata should be JSON, but adapter might return wrapped format
+        const unwrappedMetadata = unwrapBinaryData(metadataBuffer)
+        metadata = JSON.parse(unwrappedMetadata.toString())
         break
       }
     }
@@ -334,17 +338,23 @@ export class BlobStorage {
       finalData = await this.zstdDecompress(data)
     }
 
-    // Verify hash (optional, expensive)
-    if (!options.skipVerification && BlobStorage.hash(finalData) !== hash) {
+    // v5.10.1: Defense-in-depth unwrap (CRITICAL FIX for blob integrity regression)
+    // Even though COW adapter should unwrap (v5.7.5), verify it happened and re-unwrap if needed
+    // This prevents "Blob integrity check failed" errors if adapter returns wrapped data
+    // Uses shared binaryDataCodec utility (single source of truth for unwrap logic)
+    const unwrappedData = unwrapBinaryData(finalData)
+
+    // Verify hash (on unwrapped data)
+    if (!options.skipVerification && BlobStorage.hash(unwrappedData) !== hash) {
       throw new Error(`Blob integrity check failed: ${hash}`)
     }
 
     // Add to cache (only if not skipped)
     if (!options.skipCache) {
-      this.addToCache(hash, finalData, metadata)
+      this.addToCache(hash, unwrappedData, metadata)
     }
 
-    return finalData
+    return unwrappedData
   }
 
   /**
