@@ -1352,42 +1352,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v5.7.12: excludeVFS helper - ONLY exclude VFS infrastructure entities
-        // Bug fix: Previously excluded entities with ANY vfsType field
-        // Now ONLY excludes entities with isVFSEntity: true OR vfsType: 'file'/'directory'
-        // This allows extracted entities (concepts/people/etc) to be included even if they
-        // have vfsPath metadata showing where they were imported from
-        if (params.excludeVFS === true) {
-          // Build filter: EXCLUDE WHERE (isVFSEntity == true) OR (vfsType IN ['file', 'directory'])
-          // Implementation: INCLUDE WHERE (isVFSEntity missing/false) AND (vfsType missing/not file or directory)
-          const existingFilter = { ...filter }
-          filter = {
-            allOf: [
-              existingFilter,
-              {
-                // Only include entities WITHOUT isVFSEntity: true
-                anyOf: [
-                  { isVFSEntity: { exists: false } },
-                  { isVFSEntity: { ne: true } }
-                ]
-              },
-              {
-                // Only include entities WITHOUT vfsType: 'file' or 'directory'
-                // Since VFS files ALWAYS have vfsType set, we check it's missing OR not file/dir
-                anyOf: [
-                  { vfsType: { exists: false } },
-                  {
-                    allOf: [
-                      { vfsType: { ne: 'file' } },
-                      { vfsType: { ne: 'directory' } }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        }
-
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
           if (types.length === 1) {
@@ -1400,6 +1364,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
               }))
             }
           }
+        }
+
+        // v5.7.13: excludeVFS helper - ONLY exclude VFS infrastructure entities
+        // Applied AFTER type filter to avoid execution order bugs
+        // Excludes entities where:
+        //   - vfsType is 'file' or 'directory' (VFS files/folders)
+        //   - isVFSEntity is true (explicitly marked as VFS)
+        // Includes extracted entities (person/concept/etc) even if they have vfsPath metadata
+        if (params.excludeVFS === true) {
+          // VFS infrastructure entities ALWAYS have vfsType set
+          // Extracted entities do NOT have vfsType (undefined)
+          filter.vfsType = { exists: false }
+          // Extra safety: exclude entities explicitly marked as VFS
+          filter.isVFSEntity = { ne: true }
         }
 
         // v4.5.4: Apply sorting if requested, otherwise just filter
@@ -1437,10 +1415,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
-        // v4.7.0: excludeVFS helper
+        // v5.7.13: excludeVFS helper - exclude VFS infrastructure entities
+        // VFS files/folders have vfsType set, extracted entities do NOT
         let filter: any = {}
         if (params.excludeVFS === true) {
           filter.vfsType = { exists: false }
+          filter.isVFSEntity = { ne: true }
         }
 
         // Use metadata index if we need to filter
@@ -1514,9 +1494,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v4.7.0: excludeVFS helper for cleaner UX
+        // v5.7.13: excludeVFS helper - exclude VFS infrastructure entities
+        // VFS files/folders have vfsType set, extracted entities do NOT
         if (params.excludeVFS === true) {
           filter.vfsType = { exists: false }
+          filter.isVFSEntity = { ne: true }
         }
 
         if (params.type) {
