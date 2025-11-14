@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.8.0](https://github.com/soulcraftlabs/brainy/compare/v5.7.13...v5.8.0) (2025-11-14)
+
+- feat: add v5.8.0 features - transactions, pagination, and comprehensive docs (e40fee3)
+- docs: label all performance claims as MEASURED vs PROJECTED (NO FAKE CODE compliance) (52e9617)
+
+
 ### [5.7.13](https://github.com/soulcraftlabs/brainy/compare/v5.7.12...v5.7.13) (2025-11-14)
 
 
