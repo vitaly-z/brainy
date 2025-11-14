@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.9.0](https://github.com/soulcraftlabs/brainy/compare/v5.8.0...v5.9.0) (2025-11-14)
+
+- fix: resolve VFS tree corruption from blob errors (v5.8.0) (93d2d70)
+
+
 ### [5.8.0](https://github.com/soulcraftlabs/brainy/compare/v5.7.13...v5.8.0) (2025-11-14)
 
 - feat: add v5.8.0 features - transactions, pagination, and comprehensive docs (e40fee3)
