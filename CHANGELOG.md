@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.7.13](https://github.com/soulcraftlabs/brainy/compare/v5.7.12...v5.7.13) (2025-11-14)
+
+
+### 🐛 Bug Fixes
+
+* resolve excludeVFS architectural bug across all query paths (v5.7.13) ([e57e947](https://github.com/soulcraftlabs/brainy/commit/e57e9474986097f37e89a8dbfa868005368d645c))
+
 ### [5.7.12](https://github.com/soulcraftlabs/brainy/compare/v5.7.11...v5.7.12) (2025-11-13)
 
 
