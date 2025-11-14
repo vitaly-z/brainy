@@ -30,7 +30,7 @@ export default defineConfig({
       'node_modules/**'
     ],
     
-    // Parallel execution OK for unit tests
+    // Parallel execution OK for unit tests (no native deps since v5.8.0)
     pool: 'threads',
     maxConcurrency: 4,
     fileParallelism: true,

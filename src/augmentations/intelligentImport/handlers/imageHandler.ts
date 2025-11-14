@@ -1,19 +1,20 @@
 /**
- * Image Import Handler (v5.2.0)
+ * Image Import Handler (v5.8.0 - Pure JavaScript)
  *
  * Handles image files with:
- * - EXIF metadata extraction (camera, GPS, timestamps)
- * - Thumbnail generation (multiple sizes)
- * - Image metadata (dimensions, format, color space)
- * - Support for JPEG, PNG, WebP, GIF, TIFF, AVIF, etc.
+ * - EXIF metadata extraction (camera, GPS, timestamps) via exifr
+ * - Image metadata (dimensions, format) via probe-image-size
+ * - Support for JPEG, PNG, WebP, GIF, TIFF, BMP, SVG
  *
- * NO MOCKS - Production implementation using sharp and exifr
+ * NO NATIVE DEPENDENCIES - Pure JavaScript implementation
+ * Replaces Sharp (v5.7.x) with lightweight pure-JS alternatives
  */
 
 import { BaseFormatHandler } from './base.js'
 import type { FormatHandlerOptions, ProcessedData } from '../types.js'
-import sharp from 'sharp'
 import exifr from 'exifr'
+import probeImageSize from 'probe-image-size'
+import { Readable } from 'stream'
 
 export interface ImageMetadata {
   /** Image dimensions */
@@ -23,23 +24,14 @@ export interface ImageMetadata {
   /** Image format (jpeg, png, webp, etc.) */
   format: string
 
-  /** Color space */
-  space: string
-
-  /** Number of channels */
-  channels: number
-
-  /** Bit depth */
-  depth: string
-
   /** File size in bytes */
   size: number
 
-  /** Whether image has alpha channel */
-  hasAlpha: boolean
-
   /** Orientation (EXIF) */
   orientation?: number
+
+  /** MIME type */
+  mimeType?: string
 }
 
 export interface EXIFData {
@@ -103,6 +95,8 @@ export interface ImageHandlerOptions extends FormatHandlerOptions {
  * Processes image files and extracts rich metadata including EXIF data.
  * Enables developers to import images into the knowledge graph with
  * full metadata extraction.
+ *
+ * v5.8.0: Pure JavaScript implementation (no native dependencies)
  */
 export class ImageHandler extends BaseFormatHandler {
   readonly format = 'image'
@@ -191,27 +185,38 @@ export class ImageHandler extends BaseFormatHandler {
   }
 
   /**
-   * Extract image metadata using sharp
+   * Extract image metadata using probe-image-size (pure JS)
    */
   private async extractMetadata(buffer: Buffer): Promise<ImageMetadata> {
-    const image = sharp(buffer)
-    const metadata = await image.metadata()
+    try {
+      // Convert Buffer to Stream for probe-image-size
+      const stream = Readable.from(buffer)
+      const result = await probeImageSize(stream)
 
-    return {
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      format: metadata.format || 'unknown',
-      space: metadata.space || 'unknown',
-      channels: metadata.channels || 0,
-      depth: metadata.depth || 'unknown',
-      size: buffer.length,
-      hasAlpha: metadata.hasAlpha || false,
-      orientation: metadata.orientation
+      return {
+        width: result.width,
+        height: result.height,
+        format: result.type, // 'jpeg', 'png', 'webp', etc.
+        size: buffer.length,
+        mimeType: result.mime,
+        orientation: result.orientation
+      }
+    } catch (error) {
+      // Fallback: Try to detect format from magic bytes
+      const detectedFormat = this.detectImageFormat(buffer)
+
+      return {
+        width: 0,
+        height: 0,
+        format: detectedFormat || 'unknown',
+        size: buffer.length,
+        mimeType: detectedFormat ? `image/${detectedFormat}` : undefined
+      }
     }
   }
 
   /**
-   * Extract EXIF data using exifr
+   * Extract EXIF data using exifr (pure JS)
    */
   private async extractEXIF(buffer: Buffer): Promise<EXIFData | undefined> {
     try {
@@ -309,6 +314,11 @@ export class ImageHandler extends BaseFormatHandler {
       (buffer[0] === 0x4d && buffer[1] === 0x4d && buffer[2] === 0x00 && buffer[3] === 0x2a)
     ) {
       return 'tiff'
+    }
+
+    // BMP: 42 4D
+    if (buffer[0] === 0x42 && buffer[1] === 0x4d) {
+      return 'bmp'
     }
 
     return null

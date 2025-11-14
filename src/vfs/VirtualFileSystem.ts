@@ -81,6 +81,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   // Mutex for preventing race conditions in directory creation
   private mkdirLocks: Map<string, Promise<void>> = new Map()
 
+  // v5.8.0: Singleton promise for root initialization (prevents duplicate roots)
+  private rootInitPromise: Promise<string> | null = null
+
   constructor(brain?: Brainy) {
     this.brain = brain || new Brainy()
     this.contentCache = new Map()
@@ -169,82 +172,173 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     }
   }
 
+  /**
+   * v5.8.0: CRITICAL FIX - Prevent duplicate root creation
+   * Uses singleton promise pattern to ensure only ONE root initialization
+   * happens even with concurrent init() calls
+   */
   private async initializeRoot(): Promise<string> {
-    // FIXED (v4.3.3): Use correct field names in where clause
-    // Metadata index stores flat fields: path, vfsType, name
-    // NOT nested: 'metadata.path', 'metadata.vfsType'
-    const existing = await this.brain.find({
+    // If initialization already in progress, wait for it (automatic mutex)
+    if (this.rootInitPromise) {
+      return await this.rootInitPromise
+    }
+
+    // Start initialization and cache the promise
+    this.rootInitPromise = this.doInitializeRoot()
+
+    try {
+      const rootId = await this.rootInitPromise
+      return rootId
+    } catch (error) {
+      // On error, clear promise so retry is possible
+      this.rootInitPromise = null
+      throw error
+    }
+    // NOTE: On success, we intentionally keep the promise cached
+    // This prevents re-initialization and serves as a cache
+  }
+
+  /**
+   * v5.8.0: Actual root initialization logic
+   * Uses brain.find() with no caching to get consistent results
+   */
+  private async doInitializeRoot(): Promise<string> {
+    // Query for existing roots using brain.find()
+    // Use higher limit and no cache to ensure we catch all roots
+    const roots = await this.brain.find({
       type: NounType.Collection,
       where: {
-        path: '/',           // ✅ Correct field name
-        vfsType: 'directory' // ✅ Correct field name
+        path: '/',
+        vfsType: 'directory'
       },
-      limit: 10
+      limit: 50,  // Higher limit to catch all possible duplicates
+      excludeVFS: false  // CRITICAL: Don't exclude VFS entities!
     })
 
-    if (existing.length > 0) {
-      // Handle duplicate roots (Workshop team reported ~10 duplicates!)
-      if (existing.length > 1) {
-        console.warn(`⚠️  Found ${existing.length} root entities! Using first one, consider cleanup.`)
-
-        // Sort by creation time - use oldest root (most likely to have children)
-        // v4.5.3: FIX - createdAt is in entity object, not at Result level!
-        // brain.find() returns Result[], which has entity.createdAt, not top-level createdAt
-        existing.sort((a, b) => {
-          const aTime = a.entity?.createdAt || a.metadata?.modified || 0
-          const bTime = b.entity?.createdAt || b.metadata?.modified || 0
-          return aTime - bTime
-        })
+    if (roots.length > 0) {
+      // Auto-heal if duplicates exist
+      if (roots.length > 1) {
+        console.warn(`⚠️  VFS: Found ${roots.length} duplicate root directories`)
+        console.warn(`⚠️  VFS: Auto-selecting best root (most children)`)
+        return await this.selectBestRoot(roots)
       }
 
-      const rootEntity = existing[0]
+      // Single root - verify metadata and return
+      const root = roots[0]
 
-      // Ensure the root entity has proper metadata structure
-      const entityMetadata = (rootEntity as any).metadata || rootEntity
-      if (!entityMetadata.vfsType) {
-        // Update the root entity with proper metadata
+      // Extract metadata safely from Result object
+      const metadata = (root as any).metadata || root
+
+      // Ensure proper metadata structure
+      if (!metadata.vfsType || metadata.vfsType !== 'directory') {
+        console.warn(`⚠️  VFS: Root metadata incomplete, repairing...`)
         await this.brain.update({
-          id: rootEntity.id,
+          id: root.id,
           metadata: {
+            ...metadata,
             path: '/',
             name: '',
             vfsType: 'directory',
-            isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
-            isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
+            isVFS: true,
+            isVFSEntity: true,
             size: 0,
             permissions: 0o755,
             owner: 'root',
             group: 'root',
             accessed: Date.now(),
-            modified: Date.now(),
-            ...entityMetadata  // Preserve any existing metadata
+            modified: Date.now()
           }
         })
       }
-      return rootEntity.id
+
+      return root.id
     }
 
-    // Create root directory (only if truly doesn't exist)
+    // ONLY create root if absolutely zero roots exist
+    console.log('VFS: Creating root directory (verified zero roots exist)')
+
     const root = await this.brain.add({
-      data: '/',  // Root directory content as string
+      data: '/',
       type: NounType.Collection,
       metadata: {
         path: '/',
         name: '',
         vfsType: 'directory',
-        isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
-        isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
+        isVFS: true,
+        isVFSEntity: true,
         size: 0,
         permissions: 0o755,
         owner: 'root',
         group: 'root',
         accessed: Date.now(),
         modified: Date.now(),
-        createdAt: Date.now()  // Track creation time for duplicate detection
+        createdAt: Date.now()
       } as VFSMetadata
     })
 
     return root
+  }
+
+  /**
+   * v5.8.0: Smart root selection when duplicates exist
+   * Selects root with MOST children (not oldest) to preserve user data
+   */
+  private async selectBestRoot(roots: any[]): Promise<string> {
+    // Count descendants for each root
+    const rootStats = await Promise.all(
+      roots.map(async (root) => {
+        const children = await this.brain.find({
+          where: { parent: root.id },
+          limit: 1000  // Cap to prevent huge queries
+        })
+
+        // Extract metadata safely from Result object
+        const metadata = (root as any).metadata || root
+        return {
+          id: root.id,
+          createdAt: metadata.createdAt || metadata.modified || 0,
+          childCount: children.length,
+          sampleChildren: children.slice(0, 3).map(c => {
+            const childMeta = (c as any).metadata || c
+            return childMeta.path || childMeta.name || 'unknown'
+          })
+        }
+      })
+    )
+
+    // Sort by child count (DESC), then by creation time (ASC) as tiebreaker
+    rootStats.sort((a, b) => {
+      if (b.childCount !== a.childCount) {
+        return b.childCount - a.childCount  // Most children first
+      }
+      return a.createdAt - b.createdAt  // Oldest first (tiebreaker)
+    })
+
+    const bestRoot = rootStats[0]
+    const emptyRoots = rootStats.filter(r => r.childCount === 0)
+
+    // Log detailed statistics
+    console.warn(`\n📊 VFS Root Statistics:`)
+    for (const stat of rootStats) {
+      const shortId = stat.id.substring(0, 8)
+      const created = stat.createdAt ? new Date(stat.createdAt).toISOString() : 'unknown'
+      console.warn(`  Root ${shortId}: ${stat.childCount} children, created ${created}`)
+      if (stat.sampleChildren.length > 0) {
+        console.warn(`    Sample: ${stat.sampleChildren.join(', ')}`)
+      }
+    }
+
+    console.warn(`\n✅ VFS: Selected root ${bestRoot.id.substring(0, 8)} (${bestRoot.childCount} children)`)
+
+    // Suggest cleanup for empty roots
+    if (emptyRoots.length > 0) {
+      console.warn(`\n💡 VFS: Found ${emptyRoots.length} empty duplicate root(s), suggest cleanup:`)
+      for (const empty of emptyRoots) {
+        console.warn(`   await brain.delete('${empty.id}')  // Empty VFS root`)
+      }
+    }
+
+    return bestRoot.id
   }
 
   // ============= File Operations =============
@@ -282,23 +376,40 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       )
     }
 
-    // Read from BlobStorage (handles decompression automatically)
-    const content = await this.blobStorage.read(entity.metadata.storage.hash)
+    // v5.8.0: CRITICAL FIX - Isolate blob errors from VFS tree corruption
+    // Blob read errors MUST NOT cascade to VFS tree structure
+    try {
+      // Read from BlobStorage (handles decompression automatically)
+      const content = await this.blobStorage.read(entity.metadata.storage.hash)
 
-    // Update access time
-    await this.updateAccessTime(entityId)
+      // Update access time
+      await this.updateAccessTime(entityId)
 
-    // Cache the content
-    if (options?.cache !== false) {
-      this.contentCache.set(path, { data: content, timestamp: Date.now() })
+      // Cache the content
+      if (options?.cache !== false) {
+        this.contentCache.set(path, { data: content, timestamp: Date.now() })
+      }
+
+      // Apply encoding if requested
+      if (options?.encoding) {
+        return Buffer.from(content.toString(options.encoding))
+      }
+
+      return content
+    } catch (blobError) {
+      // Blob error isolated - VFS tree structure remains intact
+      const errorMsg = blobError instanceof Error ? blobError.message : String(blobError)
+
+      console.error(`VFS: Cannot read blob for ${path}:`, errorMsg)
+
+      // Throw VFSError (not blob error) - prevents cascading corruption
+      throw new VFSError(
+        VFSErrorCode.EIO,
+        `File read failed: ${errorMsg}`,
+        path,
+        'readFile'
+      )
     }
-
-    // Apply encoding if requested
-    if (options?.encoding) {
-      return Buffer.from(content.toString(options.encoding))
-    }
-
-    return content
   }
 
   /**
