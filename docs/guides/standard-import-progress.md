@@ -450,4 +450,4 @@ onProgress: (p) => {
 ✅ **Standard Fields** - `stage`, `processed`, `total`, `entities`, `relationships` work everywhere
 ✅ **Optional Enhancements** - `throughput`, `eta` available during extraction (all formats)
 
-**The Workshop team (and any developer) can now build monitoring tools, dashboards, CLIs, and UIs that work perfectly for all import formats with zero format-specific code!**
+**Developers can now build monitoring tools, dashboards, CLIs, and UIs that work perfectly for all import formats with zero format-specific code!**

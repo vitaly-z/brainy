@@ -361,7 +361,7 @@ await brain.import(buffer, {
 ✅ **Real-time updates** during long imports (no more "0%" hangs)
 ✅ **Contextual messages** show exactly what's happening
 ✅ **Build reliable tools** with standardized progress callbacks
-✅ **Workshop team problem SOLVED** - users see progress throughout import
+✅ **Problem SOLVED** - users see progress throughout import
 
 **Files Modified:**
 - 3 handlers: `csvHandler.ts`, `pdfHandler.ts`, `excelHandler.ts`
