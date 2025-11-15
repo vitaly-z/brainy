@@ -197,6 +197,7 @@ const brain = new Brainy({
 })
 ```
 **Scale:** Thousands to hundreds of thousands • **Performance:** <5ms queries
+**→ [Production Service Architecture](docs/PRODUCTION_SERVICE_ARCHITECTURE.md)** — Singleton patterns, caching, and scaling for Express/Node.js services
 
 ### 🏢 Growing Company → Multi-Million Scale
 ```javascript

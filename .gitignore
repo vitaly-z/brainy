@@ -63,7 +63,7 @@ TODO_PRIVATE.md
 
 # Strategy and planning documents (private)
 .strategy/
-PRODUCTION_*.md
+# Removed: PRODUCTION_*.md (now these should be public documentation)
 DISTRIBUTED_*.md
 *_ASSESSMENT.md
 *_ANALYSIS.md
