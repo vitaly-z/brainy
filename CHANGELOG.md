@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.10.2](https://github.com/soulcraftlabs/brainy/compare/v5.10.1...v5.10.2) (2025-11-14)
+
+- docs: remove external project references from documentation (ccd6c54)
+
+
 ### [5.10.1](https://github.com/soulcraftlabs/brainy/compare/v5.10.0...v5.10.1) (2025-11-14)
 
 ### 🚨 CRITICAL BUG FIX - Blob Integrity Regression
