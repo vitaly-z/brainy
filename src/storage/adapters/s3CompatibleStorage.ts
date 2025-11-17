@@ -2137,6 +2137,12 @@ export class S3CompatibleStorage extends BaseStorage {
       this.commitLog = undefined
       this.cowEnabled = false
 
+      // v5.10.4: Create persistent marker object (CRITICAL FIX)
+      // Bug: cowEnabled = false only affects current instance, not future instances
+      // Fix: Create marker object that persists across instance restarts
+      // When new instance calls initializeCOW(), it checks for this marker
+      await this.createClearMarker()
+
       // Clear the statistics cache
       this.statisticsCache = null
       this.statisticsModified = false
@@ -2258,6 +2264,62 @@ export class S3CompatibleStorage extends BaseStorage {
         quota: null,
         details: { error: String(error) }
       }
+    }
+  }
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * @returns true if marker object exists, false otherwise
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    await this.ensureInitialized()
+
+    try {
+      const { HeadObjectCommand } = await import('@aws-sdk/client-s3')
+      const markerKey = `${this.systemPrefix}cow-disabled`
+
+      await this.s3Client!.send(
+        new HeadObjectCommand({
+          Bucket: this.bucketName,
+          Key: markerKey
+        })
+      )
+      return true // Marker exists
+    } catch (error: any) {
+      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+        return false // Marker doesn't exist
+      }
+      prodLog.warn('S3CompatibleStorage.checkClearMarker: Error checking marker', error)
+      return false
+    }
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const markerKey = `${this.systemPrefix}cow-disabled`
+
+      // Create empty marker object
+      await this.s3Client!.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: markerKey,
+          Body: Buffer.from(''),
+          ContentType: 'text/plain'
+        })
+      )
+    } catch (error) {
+      prodLog.error('S3CompatibleStorage.createClearMarker: Failed to create marker object', error)
+      // Don't throw - marker creation failure shouldn't break clear()
     }
   }
 

@@ -2196,7 +2196,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.augmentationRegistry.execute('clear', {}, async () => {
       // Clear storage
       await this.storage.clear()
-      
+
       // Reset index
       if ('clear' in this.index && typeof this.index.clear === 'function') {
         await this.index.clear()
@@ -2204,10 +2204,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // Recreate index if no clear method
         this.index = this.setupIndex()
       }
-      
+
+      // v5.10.4: Recreate metadata index to clear cached data
+      // Bug: Metadata index cache was not being cleared, causing find() with type filters to return stale data
+      this.metadataIndex = new MetadataIndexManager(this.storage)
+      await this.metadataIndex.init()
+
       // Reset dimensions
       this.dimensions = undefined
-      
+
       // Clear any cached sub-APIs
       this._neural = undefined
       this._nlp = undefined

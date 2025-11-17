@@ -1015,6 +1015,12 @@ export class GcsStorage extends BaseStorage {
       this.commitLog = undefined
       this.cowEnabled = false
 
+      // v5.10.4: Create persistent marker object (CRITICAL FIX)
+      // Bug: cowEnabled = false only affects current instance, not future instances
+      // Fix: Create marker object that persists across instance restarts
+      // When new instance calls initializeCOW(), it checks for this marker
+      await this.createClearMarker()
+
       // Clear caches
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
@@ -1066,6 +1072,45 @@ export class GcsStorage extends BaseStorage {
         used: 0,
         quota: null
       }
+    }
+  }
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * @returns true if marker object exists, false otherwise
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      const file = this.bucket!.file(markerPath)
+      const [exists] = await file.exists()
+      return exists
+    } catch (error) {
+      this.logger.warn('GCSStorage.checkClearMarker: Error checking marker', error)
+      return false
+    }
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      const file = this.bucket!.file(markerPath)
+      // Create empty marker object
+      await file.save('', { contentType: 'text/plain' })
+    } catch (error) {
+      this.logger.error('GCSStorage.createClearMarker: Failed to create marker object', error)
+      // Don't throw - marker creation failure shouldn't break clear()
     }
   }
 

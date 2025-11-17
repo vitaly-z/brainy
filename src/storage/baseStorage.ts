@@ -300,6 +300,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {
+    // v5.10.4: Check for persistent marker file (CRITICAL FIX)
+    // Bug: Setting cowEnabled = false on OLD instance doesn't affect NEW instances
+    // Fix: Check storage for persistent marker created by clear()
+    // If marker exists, COW was explicitly disabled and should NOT reinitialize
+    const markerExists = await this.checkClearMarker()
+    if (markerExists) {
+      return // COW was disabled by clear() - don't recreate _cow/ directory
+    }
+
     // v5.6.1: If COW was explicitly disabled (e.g., via clear()), don't reinitialize
     // This prevents automatic recreation of COW data after clear() operations
     if (this.cowEnabled === false) {
@@ -1703,6 +1712,23 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * This method should be implemented by each specific adapter
    */
   public abstract clear(): Promise<void>
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Each adapter checks for a marker file/object (e.g., "_system/cow-disabled")
+   * @returns true if COW was disabled by clear(), false otherwise
+   * @protected
+   */
+  protected abstract checkClearMarker(): Promise<boolean>
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * Each adapter creates a marker file/object (e.g., "_system/cow-disabled")
+   * @protected
+   */
+  protected abstract createClearMarker(): Promise<void>
 
   /**
    * Get information about storage usage and capacity

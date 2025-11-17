@@ -310,6 +310,25 @@ export class HistoricalStorageAdapter extends BaseStorage {
     }
   }
 
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: No-op for HistoricalStorageAdapter (read-only, doesn't manage COW)
+   * @returns Always false (read-only adapter doesn't manage COW state)
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    return false // Read-only adapter - COW state managed by underlying storage
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: No-op for HistoricalStorageAdapter (read-only)
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    // No-op: HistoricalStorageAdapter is read-only, doesn't create markers
+  }
+
   // ============= Override Write Methods (Read-Only) =============
 
   /**

@@ -1001,20 +1001,13 @@ export class FileSystemStorage extends BaseStorage {
       }
     }
 
-    // Remove all files in the nouns directory
-    await removeDirectoryContents(this.nounsDir)
-
-    // Remove all files in the verbs directory
-    await removeDirectoryContents(this.verbsDir)
-
-    // Remove all files in the metadata directory
-    await removeDirectoryContents(this.metadataDir)
-
-    // Remove all files in the noun metadata directory
-    await removeDirectoryContents(this.nounMetadataDir)
-
-    // Remove all files in the verb metadata directory
-    await removeDirectoryContents(this.verbMetadataDir)
+    // v5.10.4: Clear the entire branches/ directory (branch-based storage)
+    // Bug fix: Data is stored in branches/main/entities/, not just entities/
+    // The branch-based structure was introduced for COW support
+    const branchesDir = path.join(this.rootDir, 'branches')
+    if (await this.directoryExists(branchesDir)) {
+      await removeDirectoryContents(branchesDir)
+    }
 
     // Remove all files in both system directories
     await removeDirectoryContents(this.systemDir)
@@ -1037,6 +1030,12 @@ export class FileSystemStorage extends BaseStorage {
       this.blobStorage = undefined
       this.commitLog = undefined
       this.cowEnabled = false
+
+      // v5.10.4: Create persistent marker file (CRITICAL FIX)
+      // Bug: cowEnabled = false only affects current instance, not future instances
+      // Fix: Create marker file that persists across instance restarts
+      // When new instance calls initializeCOW(), it checks for this marker
+      await this.createClearMarker()
     }
 
     // Clear the statistics cache
@@ -1073,6 +1072,49 @@ export class FileSystemStorage extends BaseStorage {
     }
     
     return result
+  }
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * @returns true if marker file exists, false otherwise
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    // Check if fs module is available
+    if (!fs || !fs.promises) {
+      return false
+    }
+
+    try {
+      const markerPath = path.join(this.systemDir, 'cow-disabled')
+      await fs.promises.access(markerPath, fs.constants.F_OK)
+      return true // Marker exists
+    } catch (error) {
+      return false // Marker doesn't exist (ENOENT) or can't be accessed
+    }
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    // Check if fs module is available
+    if (!fs || !fs.promises) {
+      console.warn('FileSystemStorage.createClearMarker: fs module not available, skipping marker creation')
+      return
+    }
+
+    try {
+      const markerPath = path.join(this.systemDir, 'cow-disabled')
+      // Create empty marker file
+      await fs.promises.writeFile(markerPath, '', 'utf8')
+    } catch (error) {
+      console.error('FileSystemStorage.createClearMarker: Failed to create marker file', error)
+      // Don't throw - marker creation failure shouldn't break clear()
+    }
   }
 
   /**

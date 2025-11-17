@@ -1153,6 +1153,12 @@ export class AzureBlobStorage extends BaseStorage {
       this.commitLog = undefined
       this.cowEnabled = false
 
+      // v5.10.4: Create persistent marker blob (CRITICAL FIX)
+      // Bug: cowEnabled = false only affects current instance, not future instances
+      // Fix: Create marker blob that persists across instance restarts
+      // When new instance calls initializeCOW(), it checks for this marker
+      await this.createClearMarker()
+
       // Clear caches
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
@@ -1201,6 +1207,47 @@ export class AzureBlobStorage extends BaseStorage {
         used: 0,
         quota: null
       }
+    }
+  }
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * @returns true if marker blob exists, false otherwise
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(markerPath)
+      const exists = await blockBlobClient.exists()
+      return exists
+    } catch (error) {
+      this.logger.warn('AzureBlobStorage.checkClearMarker: Error checking marker', error)
+      return false
+    }
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(markerPath)
+      // Create empty marker blob
+      await blockBlobClient.upload(Buffer.from(''), 0, {
+        blobHTTPHeaders: { blobContentType: 'text/plain' }
+      })
+    } catch (error) {
+      this.logger.error('AzureBlobStorage.createClearMarker: Failed to create marker blob', error)
+      // Don't throw - marker creation failure shouldn't break clear()
     }
   }
 

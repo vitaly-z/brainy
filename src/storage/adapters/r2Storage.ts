@@ -1051,6 +1051,12 @@ export class R2Storage extends BaseStorage {
     this.commitLog = undefined
     this.cowEnabled = false
 
+    // v5.10.4: Create persistent marker object (CRITICAL FIX)
+    // Bug: cowEnabled = false only affects current instance, not future instances
+    // Fix: Create marker object that persists across instance restarts
+    // When new instance calls initializeCOW(), it checks for this marker
+    await this.createClearMarker()
+
     this.nounCacheManager.clear()
     this.verbCacheManager.clear()
 
@@ -1083,6 +1089,43 @@ export class R2Storage extends BaseStorage {
           'Type-aware HNSW support'
         ]
       }
+    }
+  }
+
+  /**
+   * Check if COW has been explicitly disabled via clear()
+   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * @returns true if marker object exists, false otherwise
+   * @protected
+   */
+  protected async checkClearMarker(): Promise<boolean> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      const data = await this.readObjectFromPath(markerPath)
+      return data !== null // Marker exists if we got any data
+    } catch (error) {
+      prodLog.warn('R2Storage.checkClearMarker: Error checking marker', error)
+      return false
+    }
+  }
+
+  /**
+   * Create marker indicating COW has been explicitly disabled
+   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
+   * @protected
+   */
+  protected async createClearMarker(): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const markerPath = `${this.systemPrefix}cow-disabled`
+      // Create empty marker object
+      await this.writeObjectToPath(markerPath, '')
+    } catch (error) {
+      prodLog.error('R2Storage.createClearMarker: Failed to create marker object', error)
+      // Don't throw - marker creation failure shouldn't break clear()
     }
   }
 
