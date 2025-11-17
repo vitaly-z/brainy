@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [5.10.4](https://github.com/soulcraftlabs/brainy/compare/v5.10.3...v5.10.4) (2025-11-17)
+
+- fix: critical clear() data persistence regression (v5.10.4) (aba1563)
+
+
 ### [5.10.3](https://github.com/soulcraftlabs/brainy/compare/v5.10.2...v5.10.3) (2025-11-14)
 
 - docs: add production service architecture guide to public docs (759e7fa)
