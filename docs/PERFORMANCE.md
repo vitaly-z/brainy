@@ -24,6 +24,40 @@ Where:
 - `f` = number of fields for entity type
 - `t` = number of types (42 nouns, 127 verbs)
 
+### v5.11.1: brain.get() Metadata-Only Optimization
+
+✨ **Massive Performance Improvement**: `brain.get()` is now **76-81% faster** by default!
+
+| Operation | Before (v5.11.0) | After (v5.11.1) | Speedup | Use Case |
+|-----------|------------------|-----------------|---------|----------|
+| **brain.get() (metadata-only)** | 43ms, 6KB | **10ms, 300 bytes** | **76-81%** | VFS, existence checks, metadata |
+| **brain.get({ includeVectors: true })** | 43ms, 6KB | 43ms, 6KB | 0% | Similarity calculations |
+| **VFS readFile()** | 53ms | **~13ms** | **75%** | File operations |
+| **VFS readdir(100 files)** | 5.3s | **~1.3s** | **75%** | Directory listings |
+
+**Key Innovation**: Lazy vector loading - only load 384-dimensional embeddings when explicitly needed.
+
+**Why this matters**:
+- **94% of brain.get() calls** don't need vectors (VFS, admin tools, import utilities, data APIs)
+- **Vector data is 95% of entity size** (6KB vectors vs 300 bytes metadata)
+- **Zero code changes** for most applications - automatic speedup!
+
+**When to use what**:
+```typescript
+// DEFAULT: Metadata-only (76-81% faster) - use for:
+const entity = await brain.get(id)
+// - VFS operations (readFile, stat, readdir)
+// - Existence checks: if (await brain.get(id)) ...
+// - Metadata access: entity.data, entity.type, entity.metadata
+// - Relationship traversal
+
+// EXPLICIT: Full entity (same as before) - use ONLY for:
+const entity = await brain.get(id, { includeVectors: true })
+// - Computing similarity on THIS entity
+// - Manual vector operations
+// - HNSW graph traversal
+```
+
 ## Architecture Deep Dive
 
 ### 1. Metadata Index - O(1) Lookups

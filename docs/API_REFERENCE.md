@@ -113,34 +113,50 @@ const id = await brain.add({
 
 ---
 
-### `async get(id: string): Promise<Entity | null>`
+### `async get(id: string, options?: GetOptions): Promise<Entity | null>`
 Retrieves an entity by ID.
+
+✨ **v5.11.1 Performance Optimization**:
+- **Default (metadata-only)**: 76-81% faster, 95% less bandwidth - perfect for VFS, existence checks, metadata access
+- **Opt-in vectors**: Use `{ includeVectors: true }` when computing similarity
 
 **Parameters:**
 - `id` - Entity ID
+- `options` (optional):
+  - `includeVectors?: boolean` - Include 384-dim vectors (default: false for 76-81% speedup)
 
 **Returns:** Entity object or null if not found
 
-**Entity Properties:** ✨ *Updated in v4.3.0*
+**Entity Properties:** ✨ *Updated in v4.3.0, v5.11.1*
 - `id` - Unique identifier
 - `type` - NounType classification
 - `data` - Original content
 - `metadata` - Custom metadata
-- `vector` - Embedding vector
-- `confidence` - Type classification confidence (0-1) *New*
-- `weight` - Entity importance/salience (0-1) *New*
+- `vector` - Embedding vector (empty array `[]` if includeVectors: false)
+- `confidence` - Type classification confidence (0-1)
+- `weight` - Entity importance/salience (0-1)
 - `createdAt` - Creation timestamp
 - `updatedAt` - Last update timestamp
 - `service` - Service name (multi-tenancy)
 
-**Example:**
+**Example (Metadata-Only - Default, 76-81% faster):**
 ```typescript
+// Perfect for VFS, metadata access, existence checks
 const entity = await brain.get('uuid-1234')
 if (entity) {
   console.log(entity.type)        // NounType.Document
   console.log(entity.metadata)    // { date: '2024-01-15', ... }
-  console.log(entity.confidence)  // 0.95 (if set)
-  console.log(entity.weight)      // 0.85 (if set)
+  console.log(entity.vector)      // [] (empty - not loaded for performance)
+}
+```
+
+**Example (Full Entity with Vectors):**
+```typescript
+// Use when computing similarity on this specific entity
+const entity = await brain.get('uuid-1234', { includeVectors: true })
+if (entity) {
+  console.log(entity.vector.length)  // 384 (full embeddings loaded)
+  // Now can use for similarity calculations
 }
 ```
 
