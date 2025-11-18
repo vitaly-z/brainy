@@ -1032,30 +1032,30 @@ export class R2Storage extends BaseStorage {
 
     prodLog.info('🧹 R2: Clearing all data from bucket...')
 
-    // Clear all prefixes (v5.6.1: includes _cow/ for version control data)
-    // _cow/ stores all git-like versioning data (commits, trees, blobs, refs)
-    // Must be deleted to fully clear all data including version history
-    for (const prefix of [this.nounPrefix, this.verbPrefix, this.metadataPrefix, this.verbMetadataPrefix, this.systemPrefix, '_cow/']) {
-      const objects = await this.listObjectsUnderPath(prefix)
-
-      for (const key of objects) {
-        await this.deleteObjectFromPath(key)
-      }
+    // v5.11.0: Clear ALL data using correct paths
+    // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
+    const branchObjects = await this.listObjectsUnderPath('branches/')
+    for (const key of branchObjects) {
+      await this.deleteObjectFromPath(key)
     }
 
-    // CRITICAL: Reset COW state to prevent automatic reinitialization
-    // When COW data is cleared, we must also clear the COW managers
-    // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+    // Delete COW version control data
+    const cowObjects = await this.listObjectsUnderPath('_cow/')
+    for (const key of cowObjects) {
+      await this.deleteObjectFromPath(key)
+    }
+
+    // Delete system metadata
+    const systemObjects = await this.listObjectsUnderPath('_system/')
+    for (const key of systemObjects) {
+      await this.deleteObjectFromPath(key)
+    }
+
+    // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+    // COW will re-initialize automatically on next use
     this.refManager = undefined
     this.blobStorage = undefined
     this.commitLog = undefined
-    this.cowEnabled = false
-
-    // v5.10.4: Create persistent marker object (CRITICAL FIX)
-    // Bug: cowEnabled = false only affects current instance, not future instances
-    // Fix: Create marker object that persists across instance restarts
-    // When new instance calls initializeCOW(), it checks for this marker
-    await this.createClearMarker()
 
     this.nounCacheManager.clear()
     this.verbCacheManager.clear()
@@ -1098,36 +1098,10 @@ export class R2Storage extends BaseStorage {
    * @returns true if marker object exists, false otherwise
    * @protected
    */
-  protected async checkClearMarker(): Promise<boolean> {
-    await this.ensureInitialized()
-
-    try {
-      const markerPath = `${this.systemPrefix}cow-disabled`
-      const data = await this.readObjectFromPath(markerPath)
-      return data !== null // Marker exists if we got any data
-    } catch (error) {
-      prodLog.warn('R2Storage.checkClearMarker: Error checking marker', error)
-      return false
-    }
-  }
-
   /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected async createClearMarker(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      const markerPath = `${this.systemPrefix}cow-disabled`
-      // Create empty marker object
-      await this.writeObjectToPath(markerPath, '')
-    } catch (error) {
-      prodLog.error('R2Storage.createClearMarker: Failed to create marker object', error)
-      // Don't throw - marker creation failure shouldn't break clear()
-    }
-  }
 
   // v5.4.0: Removed getNounsWithPagination override - use BaseStorage's type-first implementation
 

@@ -1,443 +1,425 @@
-# Brainy Data Storage Architecture
+# Brainy Data Storage Architecture (v5.11.0)
 
-This document explains how Brainy stores, indexes, and scales data across all storage backends (GCS, S3, OPFS, filesystem, memory).
+**Complete file structure reference for all storage backends**
+
+This document explains how Brainy stores, indexes, and scales data across all storage backends (GCS, S3, R2, Azure, filesystem, OPFS, memory).
 
 ---
 
 ## Table of Contents
 
-1. [What Gets Stored](#1-what-gets-stored)
-2. [The Indexes](#2-the-indexes)
-3. [Sharding Strategy](#3-sharding-strategy)
-4. [Storage Layout](#4-storage-layout)
+1. [Complete File Structure](#1-complete-file-structure)
+2. [What Gets Stored](#2-what-gets-stored)
+3. [The 4 Indexes](#3-the-4-indexes)
+4. [Sharding Strategy](#4-sharding-strategy)
+5. [COW (Copy-on-Write) Architecture](#5-cow-copy-on-write-architecture)
+6. [Type-First Storage](#6-type-first-storage)
+7. [VFS (Virtual File System)](#7-vfs-virtual-file-system)
+8. [Storage Backend Mapping](#8-storage-backend-mapping)
+9. [Performance Characteristics](#9-performance-characteristics)
 
 ---
 
-## 1. What Gets Stored
+## 1. Complete File Structure
 
-Brainy stores three types of data, with each type split across multiple files for optimal performance.
+### v5.11.0 Full Directory Tree
 
-### 1.1 Entities (Nouns)
+```
+brainy-data/                                  # Root directory (or bucket name for cloud)
+│
+├── branches/                                 # Branch-scoped storage (v5.4.0+, COW always-on)
+│   ├── main/                                # Main branch (default)
+│   │   └── entities/
+│   │       ├── nouns/
+│   │       │   ├── Character/              # Type-first: entities organized by type
+│   │       │   │   ├── vectors/
+│   │       │   │   │   ├── 00/            # UUID-based sharding (256 shards)
+│   │       │   │   │   │   ├── 001234...uuid.json    # HNSW vector + connections
+│   │       │   │   │   │   └── 00abcd...uuid.json
+│   │       │   │   │   ├── 01/ ... fe/
+│   │       │   │   │   └── ff/
+│   │       │   │   └── metadata/
+│   │       │   │       ├── 00/
+│   │       │   │       │   ├── 001234...uuid.json    # Business metadata only
+│   │       │   │       │   └── 00abcd...uuid.json
+│   │       │   │       ├── 01/ ... fe/
+│   │       │   │       └── ff/
+│   │       │   │
+│   │       │   ├── Place/                  # Another type
+│   │       │   │   ├── vectors/
+│   │       │   │   │   ├── 00/ ... ff/
+│   │       │   │   └── metadata/
+│   │       │   │       ├── 00/ ... ff/
+│   │       │   │
+│   │       │   ├── Concept/
+│   │       │   ├── Organization/
+│   │       │   ├── Event/
+│   │       │   └── [42 total noun types]
+│   │       │
+│   │       └── verbs/
+│   │           ├── Knows/                  # Type-first for relationships too
+│   │           │   ├── vectors/
+│   │           │   │   ├── 00/ ... ff/
+│   │           │   └── metadata/
+│   │           │       ├── 00/ ... ff/
+│   │           │
+│   │           ├── LocatedIn/
+│   │           ├── WorksFor/
+│   │           └── [127 total verb types]
+│   │
+│   ├── feature-branch-1/                    # Git-like feature branches
+│   │   └── entities/
+│   │       └── [same structure as main]
+│   │
+│   └── user-workspace-alice/                # User-specific branches
+│       └── entities/
+│           └── [same structure as main]
+│
+├── _cow/                                     # Copy-on-Write version control
+│   ├── commits/                             # Git-like commit objects
+│   │   ├── 00/
+│   │   │   ├── 00a1b2c3...sha256.json      # Commit metadata
+│   │   │   └── 00d4e5f6...sha256.json
+│   │   ├── 01/ ... fe/
+│   │   └── ff/
+│   │
+│   ├── trees/                               # Directory snapshots
+│   │   ├── 00/
+│   │   │   ├── 00123456...sha256.json      # Tree object (directory listing)
+│   │   │   └── 00789abc...sha256.json
+│   │   ├── 01/ ... fe/
+│   │   └── ff/
+│   │
+│   ├── blobs/                               # Content-addressable data storage
+│   │   ├── 00/
+│   │   │   ├── 00abcdef...sha256.bin       # Deduplicated data blobs
+│   │   │   └── 00fedcba...sha256.bin
+│   │   ├── 01/ ... fe/
+│   │   └── ff/
+│   │
+│   └── refs/                                # Branch pointers (not sharded)
+│       ├── heads/
+│       │   ├── main.json                   # Points to latest commit on main
+│       │   ├── feature-branch-1.json
+│       │   └── user-workspace-alice.json
+│       │
+│       └── tags/                            # Version tags
+│           ├── v1.0.0.json
+│           └── stable.json
+│
+└── _system/                                  # System metadata (not sharded)
+    ├── statistics.json                      # Global statistics
+    ├── counts.json                          # Entity/verb counts by type
+    │
+    ├── hnsw/                                # HNSW index metadata
+    │   ├── system.json                      # Entry point, max level
+    │   └── nodes/
+    │       ├── 00/
+    │       │   └── 001234...uuid.json      # Per-node HNSW data
+    │       ├── 01/ ... fe/
+    │       └── ff/
+    │
+    ├── metadata_indexes/                    # Field indexes for filtering
+    │   ├── __metadata_field_index__status.json
+    │   ├── __metadata_field_index__category.json
+    │   ├── __metadata_sorted_index__createdAt.json
+    │   └── [dynamic based on metadata fields]
+    │
+    └── vfs/                                 # Virtual File System (v5.0+)
+        ├── root/                            # VFS root directory
+        │   ├── 00000000-0000-0000-0000-000000000000.json  # Root dir entity
+        │   └── files/
+        │       ├── 12345678-...uuid.json   # File entities
+        │       └── 87654321-...uuid.json   # Folder entities
+        │
+        └── metadata/                        # VFS-specific metadata
+            └── registry.json                # VFS entity registry
+```
 
-Each entity is stored in **2 files**:
+---
+
+## 2. What Gets Stored
+
+### 2.1 Entities (Nouns) - Split into 2 Files
+
+Each entity is stored as **2 separate files** for optimal performance.
 
 #### Vector File
+**Location**: `branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json`
+
 ```json
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "vector": [0.1, 0.2, 0.3, ...],
-  "connections": {
-    "0": ["uuid1", "uuid2"],
-    "1": ["uuid3"]
+  "vector": [0.1, 0.2, 0.3, ...],  // 384-dimensional embedding
+  "connections": {                  // HNSW graph connections
+    "0": ["uuid1", "uuid2"],       // Layer 0 neighbors
+    "1": ["uuid3", "uuid4"]        // Layer 1 neighbors
   },
-  "level": 2
+  "level": 2                        // HNSW max level for this node
 }
 ```
 
-**Purpose:** HNSW graph navigation for semantic search
-**Size:** ~4KB per entity
-**Scale:** Millions of entities
-**Location:** `entities/nouns/vectors/{shard}/{uuid}.json`
+**Purpose**: HNSW graph navigation for semantic search
+**Size**: ~4KB per entity (384 dims × 4 bytes × 2.6 overhead)
+**Scale**: Millions of entities
 
 #### Metadata File
+**Location**: `branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json`
+
 ```json
 {
-  "type": "user",
-  "status": "active",
-  "name": "John Doe",
-  "email": "john@example.com",
-  "createdAt": {...},
-  "customField": "custom value"
+  "type": "Character",
+  "name": "Alice",
+  "age": 30,
+  "occupation": "Software Engineer",
+  "location": "San Francisco",
+  "createdAt": 1699564234567,
+  "customField": "custom value",
+  "_vfs": {                          // VFS metadata (if applicable)
+    "path": "/documents/alice.txt",
+    "parentId": "parent-uuid",
+    "isDirectory": false,
+    "size": 1024
+  }
 }
 ```
 
-**Purpose:** Business data and filtering
-**Size:** ~1-10KB per entity
-**Scale:** Millions of entities
-**Location:** `entities/nouns/metadata/{shard}/{uuid}.json`
+**Purpose**: Business data and filtering
+**Size**: ~1-10KB per entity (varies by metadata complexity)
+**Scale**: Millions of entities
 
 ---
 
-### 1.2 Relationships (Verbs)
+### 2.2 Relationships (Verbs) - Split into 2 Files
 
-Each relationship is also stored in **2 files**:
+Each relationship is also stored as **2 separate files**.
 
 #### Vector File
+**Location**: `branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json`
+
 ```json
 {
   "id": "7b2f5e3c-8d4a-4f1e-9c2b-5a6d7e8f9a0b",
-  "vector": [0.5, 0.3, 0.7, ...],
+  "vector": [0.5, 0.3, 0.7, ...],  // Relationship embedding
   "connections": {
-    "0": ["verb-uuid1", "verb-uuid2"]
-  }
+    "0": ["verb-uuid1", "verb-uuid2"]  // Verb-to-verb HNSW connections
+  },
+  "level": 1
 }
 ```
 
-**Purpose:** Relationship similarity for semantic graph queries
-**Size:** ~2KB per relationship
-**Scale:** Millions of relationships
-**Location:** `entities/verbs/vectors/{shard}/{uuid}.json`
+**Purpose**: Relationship similarity for semantic graph queries
+**Size**: ~2KB per relationship
+**Scale**: Millions of relationships
 
 #### Metadata File
+**Location**: `branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json`
+
 ```json
 {
-  "sourceId": "user-uuid",
-  "targetId": "product-uuid",
-  "type": "purchased",
+  "sourceId": "user-uuid",          // Source entity
+  "targetId": "product-uuid",       // Target entity
+  "type": "Purchased",              // Verb type
   "weight": 1.0,
-  "timestamp": {...},
+  "timestamp": 1699564234567,
   "metadata": {
     "amount": 99.99,
-    "quantity": 2
+    "quantity": 2,
+    "paymentMethod": "credit_card"
   }
 }
 ```
 
-**Purpose:** Graph structure (edges) and relationship data
-**Size:** ~500 bytes per relationship
-**Scale:** Millions of relationships
-**Location:** `entities/verbs/metadata/{shard}/{uuid}.json`
+**Purpose**: Graph structure (edges) and relationship data
+**Size**: ~500 bytes per relationship
+**Scale**: Millions of relationships
 
 ---
 
-### 1.3 System Metadata
+### 2.3 COW (Copy-on-Write) Data
+
+#### Commit Objects
+**Location**: `_cow/commits/{shard}/{sha256}.json`
+
+```json
+{
+  "tree": "tree-sha256-hash",       // Root tree snapshot
+  "parent": "parent-commit-sha256", // Previous commit (null for first)
+  "author": "user@example.com",
+  "timestamp": 1699564234567,
+  "message": "Add new characters",
+  "branch": "main"
+}
+```
+
+**Purpose**: Git-like version history
+**Size**: ~300 bytes per commit
+**Scale**: Thousands of commits
+
+#### Tree Objects
+**Location**: `_cow/trees/{shard}/{sha256}.json`
+
+```json
+{
+  "entries": [
+    {
+      "type": "tree",
+      "name": "entities/nouns/Character",
+      "hash": "subtree-sha256-hash"
+    },
+    {
+      "type": "blob",
+      "name": "entities/nouns/Character/vectors/00/001234...uuid.json",
+      "hash": "blob-sha256-hash"
+    }
+  ]
+}
+```
+
+**Purpose**: Directory snapshots (like git trees)
+**Size**: ~1-50KB per tree (varies by directory size)
+**Scale**: Thousands of trees
+
+#### Blob Objects
+**Location**: `_cow/blobs/{shard}/{sha256}.bin`
+
+```
+[Binary data - deduplicated content]
+```
+
+**Purpose**: Content-addressable storage (deduplication)
+**Size**: Varies (1KB - 1MB typical)
+**Scale**: Millions of blobs
+**Compression**: Optional zstd compression for >4KB blobs
+
+#### Refs (Branch Pointers)
+**Location**: `_cow/refs/heads/{branch}.json`
+
+```json
+{
+  "commit": "latest-commit-sha256-hash",
+  "updated": 1699564234567
+}
+```
+
+**Purpose**: Branch head tracking (like git refs)
+**Size**: ~100 bytes per ref
+**Scale**: Dozens to hundreds of branches
+
+---
+
+### 2.4 System Metadata
 
 Unlike entities and relationships, system metadata consists of **index files** that enable fast lookups without scanning millions of entities.
 
-**Purpose:** Fast filtering and range queries
-**Scale:** 10-200 files total (NOT per-entity!)
-**Location:** `_system/` (no sharding)
+**Purpose**: Fast filtering and range queries
+**Scale**: 50-200 files total (NOT per-entity!)
+**Location**: `_system/` (not sharded, not branched)
 
-Examples:
-- `__metadata_field_index__status.json` - Maps status values to entity IDs
-- `__metadata_sorted_index__createdAt.json` - Sorted list for range queries
-- `statistics.json` - Global statistics
+#### Statistics
+**Location**: `_system/statistics.json`
 
----
-
-## 2. The Indexes
-
-Brainy uses three complementary index systems for different query patterns.
-
-### 2.1 HNSW Vector Index (In-Memory with Lazy Loading)
-
-**Purpose:** Semantic similarity search
-**Location:** RAM (rebuilt from storage on startup)
-**Data Structure:** Hierarchical graph of vector connections
-
-**Example Query:**
-```typescript
-// Find entities similar to a vector
-const results = await brain.searchByVector([0.1, 0.2, 0.3, ...], { k: 10 })
-// Returns: [{id: "uuid1", score: 0.95}, {id: "uuid2", score: 0.89}, ...]
-```
-
-**How It Works:**
-1. Loads `entities/nouns/vectors/**/*.json` files
-2. Builds HNSW graph structure in memory
-3. Enables O(log n) approximate nearest neighbor search
-4. Vectors loaded on-demand in lazy mode (zero configuration)
-
-**Performance:**
-- Build time: 1-5 seconds per 100K entities
-- Query time: 1-10ms for k=10 results (standard mode)
-- Query time: 2-15ms for k=10 results (lazy mode, with cache)
-- Memory (standard): ~200MB per 100K entities (all vectors loaded)
-- Memory (lazy mode): ~50MB per 100K entities (graph only, vectors on-demand)
-
----
-
-#### Universal Lazy Mode (v3.36.0+)
-
-**Zero-Configuration Memory Management**
-
-Brainy's HNSW index automatically adapts to available memory by enabling lazy mode when vectors don't fit in the UnifiedCache.
-
-**Standard Mode vs. Lazy Mode:**
-
-| Mode | Graph Structure | Vectors | Memory | Performance |
-|------|----------------|---------|--------|-------------|
-| **Standard** | In memory | In memory | High (~1.5KB/vector) | Fastest (1-10ms) |
-| **Lazy** | In memory | On-demand | Low (~24 bytes/node) | Fast (2-15ms) |
-
-**Auto-Detection Logic (v3.36.0+):**
-```typescript
-// Step 1: Reserve embedding model memory (NEW in v3.36.0)
-const modelMemory = 150 * 1024 * 1024  // Q8: 150MB (default), FP32: 250MB
-
-// Step 2: Calculate available memory AFTER model reservation
-const availableForCache = systemMemory - modelMemory
-
-// Step 3: Allocate UnifiedCache from available memory
-// Environment-aware allocation (NEW in v3.36.0):
-// - Development: 25% of availableForCache
-// - Container: 40% of availableForCache
-// - Production: 50% of availableForCache
-const unifiedCacheSize = availableForCache × allocationRatio
-
-// Step 4: Calculate HNSW allocation within UnifiedCache
-const estimatedVectorMemory = entityCount × 1536  // 384 dims × 4 bytes
-const hnswAvailableCache = unifiedCacheSize × 0.30  // 30% for HNSW
-
-// Step 5: Auto-enable lazy mode if vectors exceed cache
-if (estimatedVectorMemory > hnswAvailableCache) {
-  lazyMode = true  // Vectors loaded on-demand
-} else {
-  lazyMode = false  // Vectors fully loaded
-}
-```
-
-**Example Output (2GB system, 100K entities):**
-```
-Model Memory: 150MB Q8 reserved (22MB weights + 30MB runtime + 98MB workspace)
-Available for Cache: 1.85GB (2GB - 150MB model)
-UnifiedCache Size: 400MB (25% development allocation)
-HNSW Allocation: 120MB (30% of 400MB)
-
-✓ HNSW: Auto-enabled lazy mode for 100,000 vectors
-  (146.5MB > 120MB cache)
-```
-
-**Example Output (16GB production, 100K entities):**
-```
-Model Memory: 150MB Q8 reserved
-Available for Cache: 15.85GB (16GB - 150MB model)
-UnifiedCache Size: 7.92GB (50% production allocation)
-HNSW Allocation: 2.38GB (30% of 7.92GB)
-
-✓ HNSW: Standard mode for 100,000 vectors
-  (146.5MB fits in 2.38GB cache)
-```
-
-**How Lazy Mode Works:**
-
-1. **Graph Loading (O(N))**: Loads only the HNSW graph structure
-   - Node IDs and connections: ~24 bytes per node
-   - Total: ~2.4MB for 100K entities
-
-2. **On-Demand Vectors**: Loads vectors during search operations
-   - Cache key: `hnsw:vector:{id}`
-   - Storage fallback: `storage.getNounVector(id)`
-   - Batch preloading: Parallel loads before distance calculations
-
-3. **Fair Competition**: Shares UnifiedCache with Graph and Metadata indexes
-   - Cost-aware eviction: `accessCount / rebuildCost`
-   - Fairness monitoring: Prevents any index from hogging cache
-   - 30% cache allocation for HNSW vectors
-
-**Monitoring Lazy Mode:**
-```typescript
-// Get comprehensive statistics
-const stats = brain.hnswIndex.getCacheStats()
-
-console.log(stats)
-// {
-//   lazyModeEnabled: true,
-//   autoDetection: {
-//     entityCount: 100000,
-//     estimatedVectorMemoryMB: 146.48,
-//     availableCacheMB: 600.0,
-//     threshold: 0.3,
-//     decision: "Lazy mode enabled (vectors > cache threshold)"
-//   },
-//   unifiedCache: {
-//     hits: 45230,
-//     misses: 12450,
-//     hitRatePercent: 78.42,
-//     evictions: 3200
-//   },
-//   hnswCache: {
-//     vectorsInCache: 8450,
-//     estimatedMemoryMB: 12.35
-//   },
-//   fairness: {
-//     hnswAccessPercent: 32.5,
-//     fairnessViolation: false
-//   },
-//   recommendations: [
-//     "All metrics healthy - no action needed"
-//   ]
-// }
-```
-
-**Performance Characteristics:**
-
-**Memory Usage:**
-```
-Standard mode (100K entities):
-  - Vectors: 146.5MB (100K × 1536 bytes)
-  - Graph: 2.4MB (100K × 24 bytes)
-  - Total: ~149MB
-
-Lazy mode (100K entities):
-  - Vectors: 0MB (loaded on-demand)
-  - Graph: 2.4MB (always in memory)
-  - Cache: 12-30MB (frequently accessed vectors)
-  - Total: ~15-33MB (5-10x less memory)
-```
-
-**Query Performance:**
-```
-Standard mode:
-  - All vectors in memory: 1-10ms per query
-  - No I/O overhead
-
-Lazy mode (with 80% cache hit rate):
-  - Cache hits: 2-8ms per query (20% overhead)
-  - Cache misses: 5-15ms per query (disk I/O)
-  - Average: 2-10ms per query (acceptable overhead)
-```
-
-**Optimization Techniques:**
-
-1. **Batch Preloading**: Loads all candidate vectors in parallel before distance calculations
-   ```typescript
-   // Before comparing distances, preload all candidates
-   await preloadVectors([node1.id, node2.id, node3.id, ...])
-   // Then calculate distances (all vectors now in cache)
-   ```
-
-2. **Request Coalescing**: UnifiedCache prevents stampede on parallel requests
-   ```typescript
-   // Multiple requests for same vector → single storage call
-   Promise.all([
-     getVector(id),  // Request 1
-     getVector(id),  // Request 2 (coalesced)
-     getVector(id)   // Request 3 (coalesced)
-   ])
-   ```
-
-3. **Cost-Aware Eviction**: Keeps frequently accessed vectors in cache
-   ```typescript
-   // UnifiedCache scores items: accessCount / rebuildCost
-   // High access + low rebuild cost = stays in cache
-   // Low access + high rebuild cost = evicted
-   ```
-
-**When Lazy Mode Activates:**
-
-With default 2GB UnifiedCache (600MB allocated to HNSW):
-
-| Entity Count | Vector Memory | Mode | Memory Savings |
-|-------------|---------------|------|----------------|
-| 10K | 14.6MB | Standard | N/A |
-| 100K | 146.5MB | Standard | N/A |
-| 400K | 586MB | Standard | N/A |
-| 500K | 732MB | **Lazy** | 5-10x |
-| 1M | 1.46GB | **Lazy** | 10-20x |
-| 10M | 14.6GB | **Lazy** | 50-100x |
-
-**Troubleshooting:**
-
-**Low Cache Hit Rate (<50%)**
-```typescript
-// Symptom: Slow queries despite lazy mode
-const stats = brain.hnswIndex.getCacheStats()
-if (stats.unifiedCache.hitRatePercent < 50) {
-  // Solution: Increase UnifiedCache size
-  brain = new Brainy({
-    cacheSize: 4 * 1024 * 1024 * 1024  // 4GB (default: 2GB)
-  })
-}
-```
-
-**Fairness Violation**
-```typescript
-// Symptom: HNSW using >90% cache with <10% access
-const stats = brain.hnswIndex.getCacheStats()
-if (stats.fairness.fairnessViolation) {
-  // Solution: Adjust rebuild costs for better competition
-  // (This is automatic - violation triggers rebalancing)
-}
-```
-
-**Force Lazy Mode (Testing Only)**
-```typescript
-// Override auto-detection (not recommended for production)
-await brain.rebuildIndexes({
-  hnsw: {
-    lazy: true  // Force lazy mode regardless of memory
-  }
-})
-```
-
----
-
-### 2.2 Graph Adjacency Index (In-Memory)
-
-**Purpose:** Navigate relationships (graph queries)
-**Location:** RAM (rebuilt from storage on startup)
-**Data Structure:** Bidirectional mappings
-
-```typescript
-{
-  sourceToTargets: Map<string, Set<string>>,  // "user-uuid" → ["product1", "product2"]
-  targetToSources: Map<string, Set<string>>   // "product1" → ["user1", "user2"]
-}
-```
-
-**Example Query:**
-```typescript
-// Find all products purchased by a user
-const verbs = await brain.getVerbsBySource("user-uuid")
-
-// Find all users who purchased a product
-const verbs = await brain.getVerbsByTarget("product-uuid")
-```
-
-**How It Works:**
-1. Loads `entities/verbs/metadata/**/*.json` files
-2. Builds bidirectional index in memory
-3. Enables O(1) relationship lookups
-
-**Performance:**
-- Build time: 0.5-2 seconds per 100K relationships
-- Query time: <1ms
-- Memory: ~100MB per 100K relationships
-
----
-
-### 2.3 Metadata Field Indexes (On-Disk)
-
-**Purpose:** Filter by business fields without loading all entities
-**Location:** Persistent storage
-**Data Structure:** Field → Value → IDs mapping
-
-#### Hash Indexes (Exact Match)
 ```json
-// _system/__metadata_field_index__status.json
+{
+  "nounCount": {
+    "Character": 50000,
+    "Place": 30000,
+    "Concept": 20000
+  },
+  "verbCount": {
+    "Knows": 100000,
+    "LocatedIn": 75000
+  },
+  "metadataCount": {
+    "Character": 50000,
+    "Place": 30000
+  },
+  "hnswIndexSize": 204800,
+  "totalNodes": 100000,
+  "totalEdges": 175000,
+  "lastUpdated": "2025-11-18T..."
+}
+```
+
+**Purpose**: Global statistics for monitoring and optimization
+
+#### Counts (Entity Type Counts)
+**Location**: `_system/counts.json`
+
+```json
+{
+  "nouns": {
+    "Character": 50000,
+    "Place": 30000,
+    "Concept": 20000,
+    "Organization": 15000
+  },
+  "verbs": {
+    "Knows": 100000,
+    "LocatedIn": 75000,
+    "WorksFor": 50000
+  },
+  "total": {
+    "nouns": 115000,
+    "verbs": 225000
+  },
+  "lastUpdated": 1699564234567
+}
+```
+
+**Purpose**: Fast entity/verb counts by type without scanning storage
+
+#### HNSW System Metadata
+**Location**: `_system/hnsw/system.json`
+
+```json
+{
+  "entryPointId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "maxLevel": 4,
+  "totalNodes": 100000,
+  "lastUpdated": 1699564234567
+}
+```
+
+**Purpose**: HNSW index entry point and global parameters
+
+#### HNSW Node Data
+**Location**: `_system/hnsw/nodes/{shard}/{uuid}.json`
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "level": 2,
+  "connections": {
+    "0": ["uuid1", "uuid2", "uuid3"],  // Layer 0 neighbors
+    "1": ["uuid4", "uuid5"],            // Layer 1 neighbors
+    "2": ["uuid6"]                      // Layer 2 neighbors
+  }
+}
+```
+
+**Purpose**: Per-node HNSW graph connections (persisted for fast rebuild)
+
+#### Field Indexes (Hash Indexes)
+**Location**: `_system/metadata_indexes/__metadata_field_index__{field}.json`
+
+```json
 {
   "values": {
-    "active": 800000,    // Count
-    "pending": 150000,
-    "deleted": 50000
+    "active": 80000,      // Count of entities with status=active
+    "pending": 15000,
+    "deleted": 5000
   },
-  "lastUpdated": "2025-10-09T..."
+  "lastUpdated": 1699564234567
 }
 ```
 
-**Example Query:**
-```typescript
-// Find all active users
-const users = await brain.getNouns({
-  filter: {
-    metadata: { status: 'active' }
-  }
-})
-```
-
-**How It Works:**
-1. Query checks `__metadata_field_index__status.json`
-2. Retrieves IDs for "active" status
-3. Loads only matching entity files
-4. Returns: ~1000 IDs in 5ms (vs scanning 1M entities)
-
----
+**Purpose**: Fast exact-match filtering without scanning all entities
 
 #### Sorted Indexes (Range Queries)
+**Location**: `_system/metadata_indexes/__metadata_sorted_index__{field}.json`
 
 ```json
-// _system/__metadata_sorted_index__createdAt.json
 {
   "values": [
     [1704067200000, ["uuid1", "uuid2", "uuid3"]],  // Jan 1, 2024
@@ -448,162 +430,218 @@ const users = await brain.getNouns({
 }
 ```
 
-**Example Query:**
-```typescript
-// Find entities created after Jan 1, 2024
-const recent = await brain.getNouns({
-  filter: {
-    metadata: {
-      createdAt: { greaterThan: 1704067200000 }
-    }
-  }
-})
-```
-
-**How It Works:**
-1. Binary search sorted index (O(log n) where n = unique values)
-2. Returns matching IDs
-3. Loads only matching entities
-4. Performance: Find 1000 entities in 10ms (from 1M total)
+**Purpose**: Fast range queries (e.g., "created after Jan 1, 2024")
 
 ---
 
-### 2.4 Adaptive Memory Management (3-Tier Cache)
+## 2.5 Path Construction Algorithm
 
-Brainy uses a smart 3-tier caching system to balance performance and memory usage, automatically adapting to available resources.
+Understanding how Brainy constructs storage paths is critical for debugging and optimization.
 
-**Architecture:** Hot Cache → Warm Cache → Cold Storage
+### Path Construction Steps
+
+**For an entity (noun)**:
+```typescript
+// Given:
+const entityId = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+const entityType = "Character"
+const branch = "main"
+
+// Step 1: Extract shard from UUID (first 2 hex characters)
+const shard = entityId.substring(0, 2)  // "3f"
+
+// Step 2: Construct vector path
+const vectorPath = `branches/${branch}/entities/nouns/${entityType}/vectors/${shard}/${entityId}.json`
+// Result: "branches/main/entities/nouns/Character/vectors/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json"
+
+// Step 3: Construct metadata path
+const metadataPath = `branches/${branch}/entities/nouns/${entityType}/metadata/${shard}/${entityId}.json`
+// Result: "branches/main/entities/nouns/Character/metadata/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json"
+```
+
+**For a relationship (verb)**:
+```typescript
+// Given:
+const verbId = "7b2f5e3c-8d4a-4f1e-9c2b-5a6d7e8f9a0b"
+const verbType = "Knows"
+const branch = "main"
+
+// Step 1: Extract shard
+const shard = verbId.substring(0, 2)  // "7b"
+
+// Step 2: Construct paths
+const vectorPath = `branches/${branch}/entities/verbs/${verbType}/vectors/${shard}/${verbId}.json`
+const metadataPath = `branches/${branch}/entities/verbs/${verbType}/metadata/${shard}/${verbId}.json`
+```
+
+**For COW objects**:
+```typescript
+// Commits, trees, blobs use content hash as filename
+const commitHash = "00a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef012345678"
+const shard = commitHash.substring(0, 2)  // "00"
+const commitPath = `_cow/commits/${shard}/${commitHash}.json`
+
+// Refs don't use sharding
+const branchRefPath = `_cow/refs/heads/${branch}.json`
+const tagRefPath = `_cow/refs/tags/${tagName}.json`
+```
+
+**For system files**:
+```typescript
+// System files never use sharding or branching
+const statsPath = `_system/statistics.json`
+const countsPath = `_system/counts.json`
+const hnswSystemPath = `_system/hnsw/system.json`
+const fieldIndexPath = `_system/metadata_indexes/__metadata_field_index__${fieldName}.json`
+
+// HNSW node data IS sharded (entity UUID-based)
+const hnswNodePath = `_system/hnsw/nodes/${shard}/${entityId}.json`
+```
+
+### Path Patterns Summary
+
+| Data Type | Path Pattern | Sharded? | Branched? |
+|-----------|--------------|----------|-----------|
+| **Noun vector** | `branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Noun metadata** | `branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Verb vector** | `branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Verb metadata** | `branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
+| **COW commit** | `_cow/commits/{shard}/{sha256}.json` | ✅ Yes (SHA) | ❌ No |
+| **COW tree** | `_cow/trees/{shard}/{sha256}.json` | ✅ Yes (SHA) | ❌ No |
+| **COW blob** | `_cow/blobs/{shard}/{sha256}.bin` | ✅ Yes (SHA) | ❌ No |
+| **COW ref** | `_cow/refs/heads/{branch}.json` | ❌ No | ❌ No |
+| **Statistics** | `_system/statistics.json` | ❌ No | ❌ No |
+| **Counts** | `_system/counts.json` | ❌ No | ❌ No |
+| **HNSW system** | `_system/hnsw/system.json` | ❌ No | ❌ No |
+| **HNSW node** | `_system/hnsw/nodes/{shard}/{uuid}.json` | ✅ Yes (UUID) | ❌ No |
+| **Field index** | `_system/metadata_indexes/__metadata_field_index__{field}.json` | ❌ No | ❌ No |
+
+### Key Principles
+
+1. **Shard Extraction**: Always use first 2 hex characters of UUID/SHA-256
+2. **Type-First**: Type comes before shard in entity paths
+3. **Branch Isolation**: Only entity data uses branches/
+4. **System Isolation**: System files never use sharding or branching (except HNSW nodes)
+5. **Content-Addressable**: COW uses SHA-256 hash as filename
+
+---
+
+## 3. The 4 Indexes
+
+Brainy uses four complementary index systems for different query patterns.
+
+### 3.1 HNSW Vector Index (In-Memory with Lazy Loading)
+
+**Purpose**: Semantic similarity search
+**Location**: RAM (rebuilt from storage on startup)
+**Data Structure**: Hierarchical graph of vector connections
+
+**How It Works**:
+1. Loads `branches/{branch}/entities/nouns/{type}/vectors/**/*.json` files
+2. Builds HNSW graph structure in memory
+3. Enables O(log n) approximate nearest neighbor search
+4. Vectors loaded on-demand in lazy mode (zero configuration)
+
+**Performance**:
+- Build time: 1-5 seconds per 100K entities
+- Query time: 1-10ms for k=10 results (standard mode)
+- Query time: 2-15ms for k=10 results (lazy mode, with cache)
+- Memory (standard): ~200MB per 100K entities
+- Memory (lazy): ~15-33MB per 100K entities (5-10x less!)
+
+**Automatic Lazy Mode** (v3.36.0+): Enables automatically when vectors don't fit in UnifiedCache
+
+---
+
+### 3.2 Type-Aware Index (Path-Based)
+
+**Purpose**: Fast type filtering and organization
+**Location**: Derived from filesystem paths (no separate storage)
+**Data Structure**: Directory tree organized by type
+
+**How It Works**:
+```typescript
+// Find all Characters
+const characters = await brain.getNouns({ type: 'Character' })
+// Scans only: branches/main/entities/nouns/Character/**/*.json
+// Skips: all other type directories
+```
+
+**Performance**:
+- Type filtering: O(type_count) instead of O(total_entities)
+- 42x faster for queries filtered by type (42 noun types total)
+- Zero storage overhead (uses filesystem structure)
+
+---
+
+### 3.3 Graph Adjacency Index (In-Memory, LSM-Tree)
+
+**Purpose**: Navigate relationships (graph queries)
+**Location**: RAM (rebuilt from storage on startup)
+**Data Structure**: Bidirectional LSM-tree mappings
 
 ```typescript
 {
-  hot: {
-    type: 'LRU Cache',
-    location: 'Memory',
-    access: 'Instant (<1ms)',
-    size: 'Small (most recent items)'
-  },
-  warm: {
-    type: 'TTL Cache',
-    location: 'Memory',
-    access: 'Fast (1-5ms)',
-    size: 'Medium (frequently accessed)'
-  },
-  cold: {
-    type: 'Persistent Storage',
-    location: 'Disk/Cloud',
-    access: 'Slower (10-150ms)',
-    size: 'Unlimited (all data)'
-  }
+  sourceToTargets: Map<string, Set<string>>,  // "user-uuid" → ["product1", "product2"]
+  targetToSources: Map<string, Set<string>>   // "product1" → ["user1", "user2"]
 }
 ```
 
-#### How It Works
-
-**1. Hot Cache (LRU - Least Recently Used)**
-- Stores most recently accessed items
-- Ultra-fast lookups (<1ms)
-- Automatically evicts least-used items when full
-- Default size: 1,000 - 10,000 items
-
-**2. Warm Cache (TTL - Time To Live)**
-- Stores frequently accessed items
-- Fast lookups (1-5ms)
-- Items expire after inactivity period
-- Default TTL: 5-30 minutes
-
-**3. Cold Storage (Persistent)**
-- All data stored on disk/cloud
-- Retrieved on cache miss
-- Automatically promoted to warm/hot on access
-- No size limit
-
-#### Adaptive Behavior
-
-The cache automatically adjusts based on memory pressure:
-
+**Example Query**:
 ```typescript
-// Low memory: Aggressive eviction
-hot.maxSize = 1,000
-warm.ttl = 5 minutes
+// Find all products purchased by a user
+const verbs = await brain.getVerbsBySource("user-uuid")
 
-// High memory: Generous caching
-hot.maxSize = 10,000
-warm.ttl = 30 minutes
+// Find all users who purchased a product
+const verbs = await brain.getVerbsByTarget("product-uuid")
 ```
 
-#### Cache Flow Example
-
-```typescript
-// First access: Miss all caches
-await brain.getNoun(id)
-// → Cold storage (150ms)
-// → Promoted to warm + hot
-
-// Second access: Hot cache hit
-await brain.getNoun(id)
-// → Hot cache (<1ms)
-
-// After 10 minutes: Hot evicted, warm hit
-await brain.getNoun(id)
-// → Warm cache (2ms)
-// → Promoted to hot
-
-// After 1 hour: All caches expired
-await brain.getNoun(id)
-// → Cold storage (150ms)
-// → Cycle repeats
-```
-
-#### Performance Impact
-
-| Cache Level | Hit Rate | Latency | Memory per 100K Items |
-|-------------|----------|---------|----------------------|
-| **Hot (LRU)** | 60-80% | <1ms | ~200MB |
-| **Warm (TTL)** | 15-30% | 1-5ms | ~100MB |
-| **Cold (Disk)** | 5-10% | 10-150ms | 0MB (disk only) |
-
-**Combined Performance:**
-- 90%+ requests served from memory
-- Average latency: 1-2ms
-- Memory usage scales with working set, not total data size
-
-#### What Gets Cached
-
-**HNSW Vector Index:**
-- Vector data cached in hot/warm tiers
-- Graph connections cached separately
-- Adaptive loading based on query patterns
-
-**Graph Adjacency Index:**
-- Relationship maps cached in warm tier
-- Most-used relationships in hot tier
-- Full graph in cold storage
-
-**Metadata Indexes:**
-- Field indexes loaded on demand
-- Frequently queried indexes stay in warm tier
-- Large indexes partially cached
+**Performance**:
+- Build time: 0.5-2 seconds per 100K relationships
+- Query time: <1ms (O(1) lookup)
+- Memory: ~100MB per 100K relationships
 
 ---
 
-## 3. Sharding Strategy
+### 3.4 Metadata Field Indexes (On-Disk)
 
-Sharding splits data into 256 buckets for optimal storage performance.
+**Purpose**: Filter by business fields without loading all entities
+**Location**: `_system/metadata_indexes/`
+**Data Structure**: Field → Value → IDs mapping
 
-### 3.1 Why Shard?
+**Example Query**:
+```typescript
+// Find all active users
+const users = await brain.getNouns({
+  filter: { metadata: { status: 'active' } }
+})
+// Uses: _system/metadata_indexes/__metadata_field_index__status.json
+// Returns: ~1000 IDs in 5ms (vs scanning 1M entities)
+```
 
-**Cloud Storage Limitations:**
+**Performance**:
+- Exact match: O(1) hash lookup
+- Range query: O(log n) binary search (sorted indexes)
+- Filter time: 5-50ms for 1M entities
+
+---
+
+## 4. Sharding Strategy
+
+### 4.1 Why Shard?
+
+**Cloud Storage Limitations**:
 - GCS/S3: Listing 100K files in one directory = 10-30 seconds
 - GCS/S3: Max recommended files per directory = 1,000-10,000
 - Network: Parallel operations faster than sequential
 
-**Solution:** Split into 256 shards = ~3,900 files per shard
+**Solution**: Split into 256 shards = ~3,900 files per shard at 1M scale
 
 ---
 
-### 3.2 How Sharding Works
+### 4.2 How Sharding Works
 
-**Algorithm:** Extract first 2 hex characters from UUID
+**Algorithm**: Extract first 2 hex characters from UUID
 
 ```
 UUID: 3fa85f64-5717-4562-b3fc-2c963f66afa6
@@ -611,13 +649,13 @@ UUID: 3fa85f64-5717-4562-b3fc-2c963f66afa6
 Shard: 3f
 ```
 
-**Properties:**
-- **Deterministic:** Same UUID always maps to same shard
-- **Uniform:** UUIDs distribute evenly across shards
-- **Predictable:** Easy to compute, no randomness
-- **Efficient:** Simple string operation (O(1))
+**Properties**:
+- **Deterministic**: Same UUID always maps to same shard
+- **Uniform**: UUIDs distribute evenly across shards
+- **Predictable**: Easy to compute, no randomness
+- **Efficient**: Simple string operation (O(1))
 
-**Shard Distribution (1M entities):**
+**Shard Distribution (1M entities)**:
 ```
 Shard 00: ~3,900 entities
 Shard 01: ~3,900 entities
@@ -629,177 +667,389 @@ Total: 256 shards × 3,900 = ~1,000,000 entities
 
 ---
 
-### 3.3 When to Shard vs. Not Shard
+### 4.3 What Gets Sharded vs. Not Sharded
 
-| Data Type | Shard? | Why? |
-|-----------|--------|------|
-| **Entity vectors** | ✅ Yes | Millions of files |
-| **Entity metadata** | ✅ Yes | Millions of files |
-| **Verb vectors** | ✅ Yes | Millions of files |
-| **Verb metadata** | ✅ Yes | Millions of files |
-| **System metadata** | ❌ No | Only 10-200 files |
-| **Statistics** | ❌ No | Single file |
-| **Indexes** | ❌ No | 10-100 files |
+| Data Type | Sharded? | Path Pattern |
+|-----------|----------|--------------|
+| **Noun vectors** | ✅ Yes | `branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json` |
+| **Noun metadata** | ✅ Yes | `branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json` |
+| **Verb vectors** | ✅ Yes | `branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json` |
+| **Verb metadata** | ✅ Yes | `branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json` |
+| **COW commits** | ✅ Yes | `_cow/commits/{shard}/{sha256}.json` |
+| **COW trees** | ✅ Yes | `_cow/trees/{shard}/{sha256}.json` |
+| **COW blobs** | ✅ Yes | `_cow/blobs/{shard}/{sha256}.bin` |
+| **COW refs** | ❌ No | `_cow/refs/heads/{branch}.json` |
+| **System metadata** | ❌ No | `_system/statistics.json` |
+| **Indexes** | ❌ No | `_system/metadata_indexes/*.json` |
 
-**Key Principle:** Shard by **entity UUID**, not by key type.
+**Key Principle**: Shard by **UUID** (entity IDs, commit hashes), not by type or field.
 
 ---
 
-### 3.4 Performance Impact
+### 4.4 Performance Impact
 
-**Without Sharding (1M entities):**
+**Without Sharding (1M entities)**:
 ```
 List directory: 30 seconds
 Find entity: 30 seconds (must list first)
 Delete entity: 30 seconds (must list first)
 ```
 
-**With Sharding (1M entities across 256 shards):**
+**With Sharding (1M entities across 256 shards)**:
 ```
 List directory: 120ms (only ~3,900 files)
 Find entity: 150ms (list shard + download)
 Delete entity: 150ms (list shard + delete)
 ```
 
-**Speedup:** 200x faster for large datasets
+**Speedup**: 200x faster for large datasets
 
 ---
 
-## 4. Storage Layout
+## 5. COW (Copy-on-Write) Architecture
 
-Complete directory structure for all storage backends.
+### 5.1 What is COW?
 
-### 4.1 Full Directory Tree
+COW is Brainy's **git-like versioning system** that enables:
+- ✅ **Time-travel queries** (query data as it existed at any point in time)
+- ✅ **Instant branches** (create lightweight branches in milliseconds)
+- ✅ **Efficient forks** (zero-copy duplication via lazy COW)
+- ✅ **Deduplication** (identical data stored only once)
+- ✅ **Version history** (full audit trail of all changes)
+
+**Status**: ALWAYS ENABLED (v5.11.0+) - cannot be disabled
+
+---
+
+### 5.2 COW Directory Structure
 
 ```
-storage-root/
-│
-├── entities/
-│   ├── nouns/
-│   │   ├── vectors/           [SHARDED]
-│   │   │   ├── 00/
-│   │   │   │   ├── 00123456-1234-5678-9abc-def012345678.json
-│   │   │   │   ├── 00abcdef-1234-5678-9abc-def012345678.json
-│   │   │   │   └── ... (~3,900 files)
-│   │   │   ├── 01/
-│   │   │   │   └── ... (~3,900 files)
-│   │   │   ├── 02/ - fe/ ...
-│   │   │   └── ff/
-│   │   │       └── ... (~3,900 files)
-│   │   │
-│   │   └── metadata/          [SHARDED]
-│   │       ├── 00/
-│   │       │   ├── 00123456-1234-5678-9abc-def012345678.json
-│   │       │   └── ... (~3,900 files)
-│   │       ├── 01/ - fe/ ...
-│   │       └── ff/
-│   │
-│   └── verbs/
-│       ├── vectors/           [SHARDED]
-│       │   ├── 00/
-│       │   │   └── ... (~3,900 files)
-│       │   ├── 01/ - fe/ ...
-│       │   └── ff/
-│       │
-│       └── metadata/          [SHARDED]
-│           ├── 00/
-│           │   └── ... (~3,900 files)
-│           ├── 01/ - fe/ ...
-│           └── ff/
-│
-└── _system/                   [NOT SHARDED]
-    ├── __metadata_field_index__status.json
-    ├── __metadata_field_index__type.json
-    ├── __metadata_sorted_index__createdAt.json
-    ├── __metadata_sorted_index__updatedAt.json
-    ├── statistics.json
-    └── counts.json
+_cow/
+├── commits/        # Commit objects (version history)
+├── trees/          # Directory snapshots
+├── blobs/          # Content-addressable data storage
+└── refs/           # Branch pointers
+    ├── heads/      # Branch heads (main, feature branches)
+    └── tags/       # Version tags (v1.0.0, stable, etc.)
 ```
 
 ---
 
-### 4.2 File Count Breakdown (1M Entities Example)
+### 5.3 How COW Works
+
+**When you add data**:
+1. Data written to `branches/main/entities/nouns/Character/...`
+2. Commit object created in `_cow/commits/{sha}/`
+3. Tree objects created for directory structure
+4. Blobs created for content (deduplicated by SHA-256)
+5. `_cow/refs/heads/main.json` updated to point to new commit
+
+**When you query `brain.asOf(timestamp)`**:
+1. Find commit at specified timestamp
+2. Load tree from commit
+3. Lazy-load entities from historical tree structure
+4. Return read-only view (no writes allowed)
+
+**When you create a branch**:
+1. Copy `_cow/refs/heads/main.json` → `_cow/refs/heads/feature.json`
+2. Create `branches/feature/` directory (initially empty)
+3. Lazy COW: Only modified files copied, rest shared with main
+4. Result: Instant branch creation (milliseconds)
+
+---
+
+### 5.4 Deduplication
+
+**Content-addressable storage** means identical data is stored only once:
+
+```
+// Two entities with identical vector data
+Entity A: vector = [0.1, 0.2, 0.3, ...]  → SHA-256 = abc123...
+Entity B: vector = [0.1, 0.2, 0.3, ...]  → SHA-256 = abc123... (same!)
+
+// Only ONE blob stored:
+_cow/blobs/ab/abc123...sha256.bin  (used by both entities)
+```
+
+**Deduplication savings**:
+- Typical: 10-30% storage reduction
+- Forks/branches: 70-90% reduction (shared data not duplicated)
+- Identical imports: 95%+ reduction
+
+---
+
+## 6. Type-First Storage
+
+### 6.1 What is Type-First?
+
+**Type-first storage** organizes entities by their **semantic type** before sharding by UUID.
+
+**Old structure** (pre-v5.4.0):
+```
+entities/nouns/vectors/00/001234...uuid.json  # What type? Unknown until you read it!
+```
+
+**Type-first structure** (v5.4.0+):
+```
+branches/main/entities/nouns/Character/vectors/00/001234...uuid.json  # Type visible in path!
+```
+
+---
+
+### 6.2 Benefits of Type-First
+
+**1. Fast Type Filtering**
+```typescript
+// Find all Characters
+const characters = await brain.getNouns({ type: 'Character' })
+// Scans only: branches/main/entities/nouns/Character/**
+// Skips: Place, Concept, Organization, etc. (41 other types)
+```
+
+**2. Efficient Storage Scans**
+- List all Characters: O(character_count) instead of O(total_entities)
+- 42x faster for type-filtered queries (42 noun types total)
+
+**3. Clear Data Organization**
+- Each type has dedicated directory
+- Easy to backup/restore specific types
+- Clear separation of concerns
+
+---
+
+### 6.3 Type-First Path Structure
+
+```
+branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json
+branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json
+branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json
+branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json
+```
+
+**Breakdown**:
+- `branches/{branch}`: Branch isolation (main, feature branches, user workspaces)
+- `entities/nouns` or `entities/verbs`: Entity vs. relationship
+- `{type}`: Semantic type (Character, Place, Knows, LocatedIn, etc.)
+- `vectors` or `metadata`: Vector vs. metadata split
+- `{shard}`: UUID-based shard (00-ff, 256 total)
+- `{uuid}.json`: Individual entity file
+
+---
+
+### 6.4 Supported Types
+
+**42 Noun Types**:
+- Person, Organization, Location, Thing, Concept, Event, Agent, Organism, Substance, Quality, TimeInterval, Function, Proposition, Document, Media, File, Message, Collection, Dataset, Product, Service, Task, Project, Process, State, Role, Language, Currency, Measurement, Hypothesis, Experiment, Contract, Regulation, Interface, Resource, Custom, SocialGroup, Institution, Norm, InformationContent, InformationBearer, Relationship
+
+**127 Verb Types**:
+- Knows, LocatedIn, WorksFor, HasProperty, Contains, PartOf, CausedBy, PrecededBy, FollowedBy, etc.
+- See [noun-verb-taxonomy.md](./noun-verb-taxonomy.md) for complete list
+
+---
+
+## 7. VFS (Virtual File System)
+
+### 7.1 What is VFS?
+
+**VFS** lets you store traditional file/folder hierarchies in Brainy's graph database.
+
+**Example**:
+```
+/documents/
+  ├── reports/
+  │   ├── Q1.pdf (stored as entity)
+  │   └── Q2.pdf (stored as entity)
+  └── notes/
+      └── meeting.txt (stored as entity)
+```
+
+Each file/folder is a **regular Brainy entity** with special VFS metadata.
+
+---
+
+### 7.2 VFS Storage Structure
+
+**File Entity**:
+```json
+// branches/main/entities/nouns/File/metadata/12/123456...uuid.json
+{
+  "type": "File",
+  "name": "Q1.pdf",
+  "_vfs": {
+    "path": "/documents/reports/Q1.pdf",
+    "parentId": "parent-directory-uuid",
+    "isDirectory": false,
+    "size": 102400,
+    "mimeType": "application/pdf",
+    "createdAt": 1699564234567,
+    "modifiedAt": 1699564234567
+  },
+  // Regular metadata fields can coexist
+  "author": "Alice",
+  "department": "Finance"
+}
+```
+
+**Directory Entity**:
+```json
+// branches/main/entities/nouns/Collection/metadata/ab/abcdef...uuid.json
+{
+  "type": "Collection",
+  "name": "reports",
+  "_vfs": {
+    "path": "/documents/reports",
+    "parentId": "documents-directory-uuid",
+    "isDirectory": true,
+    "childrenIds": ["Q1-uuid", "Q2-uuid"]
+  }
+}
+```
+
+**Root Directory** (special fixed UUID):
+```json
+// branches/main/entities/nouns/Collection/metadata/00/00000000-0000-0000-0000-000000000000.json
+{
+  "type": "Collection",
+  "name": "root",
+  "_vfs": {
+    "path": "/",
+    "parentId": null,
+    "isDirectory": true,
+    "childrenIds": ["documents-uuid", "projects-uuid"]
+  }
+}
+```
+
+---
+
+### 7.3 VFS + Triple Intelligence
+
+VFS files can use **Triple Intelligence** for semantic extraction:
+
+```typescript
+// Upload PDF
+const fileId = await brain.vfs.uploadFile('/documents/report.pdf', pdfBuffer)
+
+// Triple Intelligence extracts:
+// - Entities: People, organizations, locations mentioned
+// - Relationships: Who works where, who knows who
+// - Concepts: Key themes and topics
+
+// Query semantically
+const related = await brain.find('financial projections for Q2')
+// Returns: report.pdf + extracted entities + relationships
+```
+
+**Storage**: Extracted entities stored as regular entities in type-first structure, linked to file via relationships.
+
+---
+
+## 8. Storage Backend Mapping
+
+### 8.1 All Backends Use Same Structure
+
+**Filesystem** (local):
+```
+/path/to/brainy-data/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**Google Cloud Storage** (GCS):
+```
+gs://my-bucket/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**AWS S3** / **MinIO** / **DigitalOcean Spaces**:
+```
+s3://my-bucket/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**Cloudflare R2**:
+```
+r2://my-bucket/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**Azure Blob Storage**:
+```
+azure://my-container/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**OPFS** (browser):
+```
+opfs://root/brainy/
+  ├── branches/main/entities/nouns/Character/vectors/00/001234...uuid.json
+  ├── _cow/commits/00/00a1b2c3...sha256.json
+  └── _system/statistics.json
+```
+
+**Memory Storage** (in-memory):
+- Uses same path structure
+- Stored in `Map<string, any>`
+- Key = full path (e.g., "branches/main/entities/nouns/Character/vectors/00/001234...uuid.json")
+
+---
+
+### 8.2 Backend-Specific Optimizations
+
+**Cloud Storage (GCS, S3, R2, Azure)**:
+- Lifecycle policies for automatic archival (96% cost savings)
+- Intelligent-Tiering (S3) or Autoclass (GCS) for access-pattern optimization
+- Batch operations (1000 objects per request for S3)
+- Parallel uploads/downloads
+
+**Filesystem**:
+- Optional gzip compression (60-80% space savings)
+- Direct file I/O (fastest for local)
+- Atomic writes with rename
+
+**OPFS**:
+- Quota monitoring (browser storage limits)
+- Persistent storage (survives page refresh)
+- Worker-based I/O (non-blocking)
+
+**Memory**:
+- No I/O overhead (instant access)
+- No persistence (data lost on restart)
+- Ideal for testing and development
+
+---
+
+## 9. Performance Characteristics
+
+### 9.1 File Count (1M Entities Example)
 
 | Directory | File Count | Size per File | Total Size |
 |-----------|-----------|---------------|------------|
-| `entities/nouns/vectors/**` | 1,000,000 | ~4KB | ~4GB |
-| `entities/nouns/metadata/**` | 1,000,000 | ~2KB | ~2GB |
-| `entities/verbs/vectors/**` | 1,000,000 | ~2KB | ~2GB |
-| `entities/verbs/metadata/**` | 1,000,000 | ~500B | ~500MB |
-| `_system/**` | ~50-200 | ~1-500KB | ~5-10MB |
-| **Total** | **~4,000,100** | | **~8.5GB** |
+| `branches/main/entities/nouns/*/vectors/**` | 1,000,000 | ~4KB | ~4GB |
+| `branches/main/entities/nouns/*/metadata/**` | 1,000,000 | ~2KB | ~2GB |
+| `branches/main/entities/verbs/*/vectors/**` | 1,000,000 | ~2KB | ~2GB |
+| `branches/main/entities/verbs/*/metadata/**` | 1,000,000 | ~500B | ~500MB |
+| `_cow/commits/**` | ~10,000 | ~300B | ~3MB |
+| `_cow/trees/**` | ~50,000 | ~5KB | ~250MB |
+| `_cow/blobs/**` | ~2,000,000 | ~2KB | ~4GB |
+| `_cow/refs/**` | ~50 | ~100B | ~5KB |
+| `_system/**` | ~100 | ~1-500KB | ~10MB |
+| **Total** | **~5,060,150** | | **~12.8GB** |
+
+**With deduplication**: ~8.5-10GB (30-40% savings from blob deduplication)
 
 ---
 
-### 4.3 Storage Backend Mapping
-
-All storage backends follow the same structure:
-
-#### Google Cloud Storage (GCS)
-```
-gs://my-bucket/
-  ├── entities/nouns/vectors/00/00123456-uuid.json
-  ├── entities/nouns/metadata/00/00123456-uuid.json
-  └── _system/__metadata_field_index__status.json
-```
-
-#### AWS S3 / MinIO
-```
-s3://my-bucket/
-  ├── entities/nouns/vectors/00/00123456-uuid.json
-  ├── entities/nouns/metadata/00/00123456-uuid.json
-  └── _system/__metadata_field_index__status.json
-```
-
-#### Local Filesystem
-```
-/path/to/brainy-data/
-  ├── entities/nouns/vectors/00/00123456-uuid.json
-  ├── entities/nouns/metadata/00/00123456-uuid.json
-  └── _system/__metadata_field_index__status.json
-```
-
-#### OPFS (Browser)
-```
-opfs://root/brainy/
-  ├── entities/nouns/vectors/00/00123456-uuid.json
-  ├── entities/nouns/metadata/00/00123456-uuid.json
-  └── _system/__metadata_field_index__status.json
-```
-
-**Key Point:** Storage structure is **identical** across all backends.
-
----
-
-### 4.4 Path Resolution Examples
-
-#### Entity Paths (Sharded by UUID)
-```typescript
-// Entity UUID
-const entityId = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-
-// Computed shard
-const shard = entityId.substring(0, 2) // "3f"
-
-// Paths
-vector:   entities/nouns/vectors/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json
-metadata: entities/nouns/metadata/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json
-```
-
-#### System Paths (Not Sharded)
-```typescript
-// System keys
-const indexKey = "__metadata_field_index__status"
-
-// Path (no shard directory)
-_system/__metadata_field_index__status.json
-```
-
----
-
-## Performance Characteristics
-
-### Read Performance
+### 9.2 Read Performance
 
 | Operation | No Sharding | With Sharding | Improvement |
 |-----------|-------------|---------------|-------------|
@@ -807,8 +1057,12 @@ _system/__metadata_field_index__status.json
 | List all entities | 30-60s | 30-60s | Same |
 | Filter by metadata | 10-30s | 5-50ms | **100-600x faster** (via indexes) |
 | Semantic search | N/A | 1-10ms | N/A (requires HNSW) |
+| Type filtering | 30-60s | 120-200ms | **150-500x faster** (type-first) |
+| Graph query (getVerbsBySource) | O(total_verbs) | <1ms | **O(1) via index** |
 
-### Write Performance
+---
+
+### 9.3 Write Performance
 
 | Operation | No Sharding | With Sharding | Improvement |
 |-----------|-------------|---------------|-------------|
@@ -816,200 +1070,389 @@ _system/__metadata_field_index__status.json
 | Update entity | 15-30s | 100-150ms | **200x faster** |
 | Delete entity | 15-30s | 100-150ms | **200x faster** |
 | Batch insert (1000) | 4-8 hours | 2-3 minutes | **120x faster** |
+| Create branch | N/A | 100-200ms | Instant (COW) |
+| Commit changes | N/A | 500-1000ms | Automatic (COW) |
 
-### Scale Limits
+---
 
-| Storage Backend | Max Entities (No Shard) | Max Entities (Sharded) |
-|----------------|-------------------------|------------------------|
+### 9.4 Scale Limits
+
+| Storage Backend | Max Entities (No Optimization) | Max Entities (Full Optimization) |
+|----------------|-------------------------------|----------------------------------|
 | GCS | ~10,000 | **10M+** |
 | S3 | ~10,000 | **10M+** |
+| R2 | ~10,000 | **10M+** |
+| Azure | ~10,000 | **10M+** |
 | Filesystem | ~100,000 | **10M+** |
 | OPFS | ~50,000 | **1M+** (browser limits) |
 | Memory | Limited by RAM | Limited by RAM |
 
+**Full optimization** = Sharding + Type-first + COW + Lifecycle policies + Lazy mode
+
 ---
 
-## Best Practices
+### 9.5 Memory Usage
 
-### 1. Data Organization
+| Component | Standard Mode | Lazy Mode | Savings |
+|-----------|---------------|-----------|---------|
+| **HNSW Index (100K entities)** | 149MB | 15-33MB | 5-10x |
+| **Graph Index (100K verbs)** | 100MB | 100MB | N/A |
+| **Metadata Indexes** | 10-50MB | 10-50MB | N/A |
+| **UnifiedCache** | 2GB | 2GB | N/A |
+| **Total (100K entities)** | ~2.3GB | ~2.2GB | Minimal |
+| **Total (1M entities)** | ~3.5GB | ~2.3GB | **34% less** |
+| **Total (10M entities)** | ~15GB | ~3.0GB | **80% less** |
 
-✅ **Do:**
+**Lazy mode activates automatically** when vectors exceed available cache.
+
+---
+
+## 10. Best Practices
+
+### 10.1 Data Organization
+
+✅ **Do**:
 - Use UUIDs for all entities and relationships
-- Let Brainy handle sharding automatically
+- Let Brainy handle sharding automatically (type-first + UUID sharding)
 - Use metadata indexes for filtering
-- **v4.0.0**: Enable lifecycle policies for cloud storage (96% cost savings)
-- **v4.0.0**: Use batch operations for bulk deletions (efficient API usage)
-- **v4.0.0**: Enable compression for FileSystem storage (60-80% space savings)
+- Enable lifecycle policies for cloud storage (96% cost savings)
+- Use batch operations for bulk deletions
+- Enable compression for FileSystem storage (60-80% space savings)
+- Create branches for experimentation (instant, zero-cost)
 
-❌ **Don't:**
+❌ **Don't**:
 - Try to organize files manually
-- Assume file paths are predictable
-- Store large binary data in metadata
-- **v4.0.0**: Forget to monitor OPFS quota in browser applications
-- **v4.0.0**: Use single-object deletes when batch operations are available
+- Assume file paths are predictable (use IDs, not paths)
+- Store large binary data in metadata (use blob storage or VFS)
+- Disable COW (can't be disabled in v5.11.0+, always enabled)
+- Forget to monitor OPFS quota in browser applications
 
-### 2. Metadata Design
+---
 
-✅ **Do:**
-- Keep metadata small (<10KB per entity) for optimal performance
-- Index frequently filtered fields
-- Use appropriate data types (numbers for dates)
-- Store large metadata when needed (with performance considerations)
-- Consider pagination when retrieving entities with large metadata
+### 10.2 clear() Operation
 
-❌ **Don't:**
-- Use strings for numeric data (prevents range queries)
-- Create unnecessary custom fields (increases index size)
-- Index high-cardinality fields with millions of unique values
+**What clear() deletes** (v5.11.0+):
 
-#### Large Metadata Handling
+✅ Deletes:
+- `branches/` → ALL entity data (all types, all shards, all branches, all forks)
+- `_cow/` → ALL version control (commits, trees, blobs, refs)
+- `_system/` → ALL indexes (statistics, HNSW, metadata)
 
-Brainy supports storing large metadata (10KB - 1MB+) per entity. Performance considerations:
+✅ Resets:
+- COW managers (refManager, blobStorage, commitLog) → `undefined`
+- Entity counts → 0
+- Statistics cache → `null`
 
-**Performance Impact:**
-- Small metadata (<10KB): ~100-150ms read latency
-- Medium metadata (10-100KB): ~150-300ms read latency
-- Large metadata (100KB-1MB): ~300-1000ms read latency
+✅ Behavior:
+- COW **auto-reinitializes** on next operation (can't be disabled)
+- Branches recreated automatically when new data added
+- clean slate for fresh start
 
-**Best Practices for Large Metadata:**
+**Example**:
 ```typescript
-// ✅ Good: Structure data hierarchically
-{
-  summary: { /* small, frequently accessed */ },
-  details: { /* larger, occasionally accessed */ },
-  rawData: { /* large, rarely accessed */ }
-}
-
-// ✅ Good: Use pagination when retrieving
-const results = await brain.getNouns({
-  filter: { type: 'document' },
-  limit: 10  // Fetch 10 at a time, not all
-})
-
-// ❌ Avoid: Loading all large metadata at once
-const allDocs = await brain.getNouns({
-  filter: { type: 'document' }  // Could load 1000s of large objects
-})
+await brain.storage.clear()  // ✅ Deletes ALL data correctly (v5.11.0+)
+await brain.add({ data: 'Alice', type: 'person' })  // ✅ COW reinitializes automatically
 ```
 
-**When to Use Large Metadata:**
-- Document storage (text content, embeddings)
-- Rich user profiles (preferences, history)
-- Detailed analytics data
-- Configuration objects
+---
 
-**Alternative Approaches:**
-- For binary data (images, PDFs): Store URLs, not raw content
-- For very large datasets (>1MB): Consider separate blob storage
-- For frequently accessed data: Keep summaries in metadata, full content elsewhere
+### 10.3 Querying
 
-### 3. Querying
+✅ **Do**:
+- Use type filtering for known types: `brain.getNouns({ type: 'Character' })`
+- Use metadata filters when possible: `brain.getNouns({ filter: { metadata: { status: 'active' } } })`
+- Limit result sets with pagination: `brain.getNouns({ limit: 100, offset: 0 })`
+- Use semantic search for similarity queries: `brain.find('concept similar to...')`
+- Use graph queries for relationships: `brain.getVerbsBySource(userId)`
 
-✅ **Do:**
-- Use metadata filters when possible
-- Limit result sets with pagination
-- Use semantic search for similarity queries
-
-❌ **Don't:**
-- Load all entities into memory
-- Filter in application code
-- Scan all entities for simple queries
+❌ **Don't**:
+- Load all entities into memory: `const all = await brain.getNouns()` (use pagination!)
+- Filter in application code (use metadata indexes instead)
+- Scan all entities for simple queries (use indexes)
 
 ---
 
-## Summary
+## 10.4 Common Storage Scenarios
 
-**Data Storage:**
-- 3 data types: Entities (nouns), Relationships (verbs), System metadata
-- Each entity/relationship = 2 files (vector + metadata)
-- Millions of entities scale efficiently with sharding
+Understanding how Brainy's storage architecture handles common scenarios.
 
-**Indexing:**
-- HNSW index: Semantic similarity search (in-memory)
-- Graph index: Relationship navigation (in-memory)
-- Metadata indexes: Business logic filtering (on-disk)
+### Scenario 1: Adding an Entity
 
-**Sharding:**
-- 256 shards based on UUID prefix
-- ~3,900 entities per shard (at 1M scale)
-- 200x performance improvement for cloud storage
-- Automatic, transparent to users
+**User code**:
+```typescript
+await brain.add({ data: 'Alice', type: 'person' })
+```
 
-**Storage Layout:**
-- Consistent across all backends (GCS, S3, OPFS, FS)
-- Entity data: Sharded by UUID
-- System data: Not sharded
-- Predictable, scalable, performant
+**What happens in storage**:
+```
+1. Generate UUID: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+2. Compute vector embedding: [0.1, 0.2, 0.3, ...]
+3. Extract shard: "3f"
+4. Write vector file:
+   → branches/main/entities/nouns/person/vectors/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json
+5. Write metadata file:
+   → branches/main/entities/nouns/person/metadata/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json
+6. Create COW commit:
+   → _cow/commits/00/00a1b2c3...sha256.json
+7. Create COW tree (directory snapshot):
+   → _cow/trees/ab/abcdef12...sha256.json
+8. Create COW blobs (content-addressable):
+   → _cow/blobs/3f/3fa85f64...sha256.bin (vector data)
+   → _cow/blobs/7b/7b2f5e3c...sha256.bin (metadata)
+9. Update branch ref:
+   → _cow/refs/heads/main.json (points to new commit)
+10. Update statistics:
+   → _system/statistics.json (increment person count)
+11. Update HNSW index (in-memory):
+    → Connect to nearest neighbors
+12. Update graph index (in-memory):
+    → Add to adjacency maps
+```
+
+**Files created**: 5-7 files (2 entity files + 1 commit + 1 tree + 2-3 blobs + 1 ref update)
+
+---
+
+### Scenario 2: Querying by Type
+
+**User code**:
+```typescript
+const characters = await brain.getNouns({ type: 'Character', limit: 100 })
+```
+
+**What happens in storage**:
+```
+1. Type-first optimization:
+   → Scan only: branches/main/entities/nouns/Character/**
+   → Skip all other types (41 other type directories)
+2. List all shards in parallel:
+   → branches/main/entities/nouns/Character/metadata/00/
+   → branches/main/entities/nouns/Character/metadata/01/
+   → ... (256 parallel operations)
+3. Read first 100 metadata files
+4. Return results (no vector load needed for listing)
+```
+
+**Performance**: 120-200ms for 100K entities (vs 30-60s without type-first)
+
+---
+
+### Scenario 3: Semantic Search
+
+**User code**:
+```typescript
+const results = await brain.find('medieval castle', { k: 10 })
+```
+
+**What happens in storage**:
+```
+1. Compute query vector: [0.1, 0.2, 0.3, ...]
+2. Use HNSW index (in-memory):
+   → Navigate graph from entry point
+   → Find 10 nearest neighbors (1-10ms)
+3. Load vectors from cache or storage:
+   → Standard mode: All vectors already in memory
+   → Lazy mode: Load missing vectors from storage
+     branches/main/entities/nouns/Place/vectors/3f/3fa85f64...uuid.json
+4. Return results with metadata
+```
+
+**Performance**: 1-10ms (standard mode), 2-15ms (lazy mode with cache)
+
+---
+
+### Scenario 4: Creating a Branch
+
+**User code**:
+```typescript
+await brain.branch.create('feature-experiment')
+```
+
+**What happens in storage**:
+```
+1. Copy ref (instant):
+   _cow/refs/heads/main.json → _cow/refs/heads/feature-experiment.json
+2. Create branch directory (empty initially):
+   branches/feature-experiment/
+3. NO data copying (lazy COW):
+   → All data shared with main branch
+   → Only modified entities copied on write
+4. Result: Branch created in 100-200ms
+```
+
+**Storage overhead**: ~100 bytes (just the ref file)
+**Data duplication**: 0% (shared with main until modified)
+
+---
+
+### Scenario 5: Time-Travel Query
+
+**User code**:
+```typescript
+const yesterday = await brain.asOf(Date.now() - 86400000)
+const historicalData = await yesterday.getNouns({ type: 'Character' })
+```
+
+**What happens in storage**:
+```
+1. Find commit at timestamp:
+   → Search _cow/commits/** for timestamp match
+2. Load commit object:
+   → _cow/commits/00/00a1b2c3...sha256.json
+3. Load tree from commit:
+   → _cow/trees/ab/abcdef12...sha256.json
+4. Lazy-load entities from historical tree:
+   → Read blob hashes from tree
+   → Load blobs: _cow/blobs/3f/3fa85f64...sha256.bin
+   → Reconstruct entities from historical state
+5. Return read-only view (writes blocked)
+```
+
+**Performance**: 500-1000ms for first query (loads commit tree), 100-200ms for subsequent queries (cached)
+
+---
+
+### Scenario 6: Clearing Storage
+
+**User code**:
+```typescript
+await brain.storage.clear()
+```
+
+**What happens in storage** (v5.11.0+):
+```
+1. Delete all entity data:
+   → Remove: branches/ (entire directory)
+   → Result: ALL types, ALL shards, ALL branches deleted
+2. Delete all version control:
+   → Remove: _cow/ (entire directory)
+   → Result: ALL commits, trees, blobs, refs deleted
+3. Delete all indexes:
+   → Remove: _system/ (entire directory)
+   → Result: Statistics, HNSW, metadata indexes deleted
+4. Reset COW managers in memory:
+   → refManager = undefined
+   → blobStorage = undefined
+   → commitLog = undefined
+5. Reset counters:
+   → totalNounCount = 0
+   → totalVerbCount = 0
+6. Next operation auto-reinitializes COW:
+   → COW managers recreate automatically
+   → Fresh branches/main/ created
+   → New _cow/ initialized
+```
+
+**Storage after clear()**: Empty (all data deleted)
+**COW status**: Always enabled (auto-reinitializes)
+
+---
+
+### Scenario 7: Cold Start (Index Rebuild)
+
+**User code**:
+```typescript
+const brain = new Brainy({ storage: existingStorage })
+await brain.init()
+```
+
+**What happens in storage**:
+```
+1. Check for persisted indexes:
+   → Load: _system/hnsw/system.json (entry point, max level)
+   → Load: _system/hnsw/nodes/** (graph connections)
+   → Load: _system/statistics.json (entity counts)
+2. Decide standard vs lazy mode:
+   → Check: entityCount × vectorSize vs. available cache
+   → Auto-enable lazy mode if needed
+3. Rebuild HNSW index:
+   → Standard mode: Load all vectors into memory
+   → Lazy mode: Load only graph structure (~24 bytes/node)
+4. Rebuild Graph Adjacency index:
+   → Load: branches/main/entities/verbs/*/metadata/** (all verbs)
+   → Build: sourceToTargets and targetToSources maps
+5. Load Metadata indexes:
+   → Read: _system/metadata_indexes/** (on-demand)
+6. Ready for queries (1-5 seconds for 100K entities)
+```
+
+**Performance**:
+- 100K entities: 1-5 seconds
+- 1M entities: 10-30 seconds
+- 10M entities: 1-3 minutes
+
+---
+
+### Scenario 8: Bulk Import
+
+**User code**:
+```typescript
+await brain.addBatch([
+  { data: 'Alice', type: 'person' },
+  { data: 'Bob', type: 'person' },
+  // ... 10,000 more
+])
+```
+
+**What happens in storage**:
+```
+1. Batch vector computation (parallel)
+2. Batch shard distribution:
+   → 10,000 entities → ~39 entities per shard (256 shards)
+3. Parallel writes to storage:
+   → 256 shards written in parallel
+   → Each shard: ~39 files written
+4. Single COW commit for entire batch:
+   → 1 commit object
+   → 1 tree object (or tree fan-out for large trees)
+   → 10,000+ blobs (deduplicated)
+5. Update indexes in batch:
+   → HNSW: Batch insert (optimized)
+   → Graph: Batch update
+   → Metadata: Batch index update
+```
+
+**Performance**: 2-3 minutes for 10,000 entities (vs 4-8 hours without batching)
+
+---
+
+## 11. Summary
+
+**Complete Storage Structure**:
+- **3 storage layers**: branches/ (data), _cow/ (versions), _system/ (indexes)
+- **2 files per entity**: vector + metadata (optimized I/O)
+- **4 indexes**: HNSW (semantic), Type-Aware (filtering), Graph (relationships), Metadata (fields)
+- **256 shards**: UUID-based (uniform distribution)
+- **42 noun types + 127 verb types**: Type-first organization
+- **Git-like COW**: Branches, commits, trees, blobs, refs
+- **VFS support**: Traditional file/folder hierarchies
+
+**Scalability**:
+- Sharding: 200x faster for cloud storage
+- Type-first: 42x faster for type filtering
+- Lazy mode: 5-10x less memory for large datasets
+- COW: Instant branches, efficient forks
+- Deduplication: 30-90% storage savings
+
+**Production Features**:
+- Lifecycle policies (96% cost savings on cloud storage)
+- Batch operations (efficient API usage)
+- Compression (60-80% space savings on filesystem)
+- Quota monitoring (OPFS browser limits)
+- Auto-reinitialization (COW always-on, can't be broken)
 
 ---
 
 ## Next Steps
 
-- [Storage Adapter Guide](./storage-adapters.md) - Implement custom storage backends
-- [Performance Tuning](./performance-tuning.md) - Optimize for your use case
-- [Scaling Guide](./scaling-guide.md) - Handle 10M+ entities
+- [Storage Adapters](./storage-architecture.md) - Configure cloud storage backends
+- [VFS Guide](../vfs/README.md) - Use Virtual File System features
+- [Triple Intelligence](../vfs/TRIPLE_INTELLIGENCE.md) - Semantic file extraction
+- [Scaling Guide](../SCALING.md) - Handle 10M+ entities
+- [Performance Tuning](../PERFORMANCE.md) - Optimize for your use case
 
 ---
 
-## v4.0.0 Production Features
-
-### Lifecycle Management & Cost Optimization
-
-Brainy v4.0.0 adds enterprise-grade cost optimization features:
-
-**S3 Compatible Storage:**
-- **Lifecycle Policies**: Automatic tier transitions (Standard → IA → Glacier → Deep Archive)
-- **Intelligent-Tiering**: Access-pattern-based optimization (no retrieval fees)
-- **Batch Delete**: 1000 objects per request
-- **Cost Impact**: $138k/year → $5.9k/year at 500TB (**96% savings!**)
-
-**Google Cloud Storage:**
-- **Lifecycle Policies**: Automatic transitions (Standard → Nearline → Coldline → Archive)
-- **Autoclass**: Intelligent automatic tier optimization
-- **Batch Delete**: 100 objects per request
-- **Cost Impact**: $138k/year → $8.3k/year at 500TB (**94% savings!**)
-
-**Azure Blob Storage:**
-- **Blob Tier Management**: Hot/Cool/Archive manual or automatic tiers
-- **Lifecycle Policies**: Automatic tier transitions and deletions
-- **Batch Operations**: BlobBatchClient for efficient bulk operations
-- **Archive Rehydration**: Priority-based rehydration from Archive
-- **Cost Impact**: $107k/year → $5k/year at 500TB (**95% savings!**)
-
-**FileSystem Storage:**
-- **Gzip Compression**: 60-80% space savings with minimal CPU overhead
-- **Batch Delete**: Efficient bulk deletion with retry logic
-
-**OPFS (Browser):**
-- **Quota Monitoring**: Real-time quota tracking and warnings
-- **Storage Status**: Detailed usage/available/percent reporting
-
-### Implementation Examples
-
-```typescript
-// S3: Enable Intelligent-Tiering for automatic optimization
-await storage.enableIntelligentTiering('entities/', 'auto-optimize')
-
-// GCS: Enable Autoclass for hands-off optimization
-await storage.enableAutoclass({ terminalStorageClass: 'ARCHIVE' })
-
-// Azure: Change blob tier for immediate cost savings
-await storage.changeBlobTier(blobPath, 'Cool')  // 50% savings
-await storage.batchChangeTier([blob1, blob2, blob3], 'Archive')  // 99% savings
-
-// FileSystem: Enable compression
-const brain = new Brainy({
-  storage: { type: 'filesystem', path: './data', compression: true }
-})
-
-// OPFS: Monitor quota
-const status = await storage.getStorageStatus()
-if (status.details.usagePercent > 80) {
-  console.warn('Storage quota approaching limit')
-}
-```
-
----
-
-**Version:** 4.0.0
-**Last Updated:** 2025-10-17
+**Version**: v5.11.0
+**Last Updated**: 2025-11-18
+**Key Features**: COW always-on, type-first storage, 4-index architecture, VFS support, billion-scale optimization

@@ -33,6 +33,7 @@ import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
+import { ValidationConfig } from './utils/paramValidation.js'
 import {
   SaveNounMetadataOperation,
   SaveNounOperation,
@@ -133,6 +134,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   constructor(config?: BrainyConfig) {
     // Normalize configuration with defaults
     this.config = this.normalizeConfig(config)
+
+    // Configure memory limits (v5.11.0)
+    // This must happen early, before any validation occurs
+    if (this.config.maxQueryLimit !== undefined || this.config.reservedQueryMemory !== undefined) {
+      ValidationConfig.reconfigure({
+        maxQueryLimit: this.config.maxQueryLimit,
+        reservedQueryMemory: this.config.reservedQueryMemory
+      })
+    }
 
     // Setup core components
     this.distance = cosineDistance
@@ -3256,6 +3266,85 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Stream commit history (memory-efficient)
+   *
+   * Use this for large commit histories (1000s of snapshots) where memory
+   * efficiency is critical. Yields commits one at a time without accumulating
+   * them in memory.
+   *
+   * For small histories (< 100 commits), use getHistory() for simpler API.
+   *
+   * @param options - History options
+   * @param options.limit - Maximum number of commits to stream
+   * @param options.since - Only include commits after this timestamp
+   * @param options.until - Only include commits before this timestamp
+   * @param options.author - Filter by author name
+   *
+   * @yields Commit metadata in reverse chronological order (newest first)
+   *
+   * @example
+   * ```typescript
+   * // Stream all commits without memory accumulation
+   * for await (const commit of brain.streamHistory({ limit: 10000 })) {
+   *   console.log(`${commit.timestamp}: ${commit.message}`)
+   * }
+   *
+   * // Stream with filtering
+   * for await (const commit of brain.streamHistory({
+   *   author: 'alice',
+   *   since: Date.now() - 86400000  // Last 24 hours
+   * })) {
+   *   // Process commit
+   * }
+   * ```
+   */
+  async *streamHistory(options?: {
+    limit?: number
+    since?: number
+    until?: number
+    author?: string
+  }): AsyncIterableIterator<{
+    hash: string
+    message: string
+    author: string
+    timestamp: number
+    metadata?: Record<string, any>
+  }> {
+    await this.ensureInitialized()
+
+    if (!('commitLog' in this.storage) || !('refManager' in this.storage)) {
+      throw new Error('History streaming requires COW-enabled storage (v5.0.0+)')
+    }
+
+    const commitLog = (this.storage as any).commitLog
+    const currentBranch = await this.getCurrentBranch()
+    const blobStorage = (this.storage as any).blobStorage
+
+    // Stream commits from CommitLog
+    for await (const commit of commitLog.streamHistory(currentBranch, {
+      maxCount: options?.limit,
+      since: options?.since,
+      until: options?.until
+    })) {
+      // Filter by author if specified
+      if (options?.author && commit.author !== options.author) {
+        continue
+      }
+
+      // Map to expected format (compute hash for commit)
+      yield {
+        hash: blobStorage.constructor.hash(
+          Buffer.from(JSON.stringify(commit))
+        ),
+        message: commit.message,
+        author: commit.author,
+        timestamp: commit.timestamp,
+        metadata: commit.metadata
+      }
+    }
+  }
+
+  /**
    * Get total count of nouns - O(1) operation
    * @returns Promise that resolves to the total number of nouns
    */
@@ -3271,6 +3360,119 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async getVerbCount(): Promise<number> {
     await this.ensureInitialized()
     return this.storage.getVerbCount()
+  }
+
+  /**
+   * Get memory statistics and limits (v5.11.0)
+   *
+   * Returns detailed memory information including:
+   * - Current heap usage
+   * - Container memory limits (if detected)
+   * - Query limits and how they were calculated
+   * - Memory allocation recommendations
+   *
+   * Use this to debug why query limits are low or to understand
+   * memory allocation in production environments.
+   *
+   * @returns Memory statistics and configuration
+   *
+   * @example
+   * ```typescript
+   * const stats = brain.getMemoryStats()
+   * console.log(`Query limit: ${stats.limits.maxQueryLimit}`)
+   * console.log(`Basis: ${stats.limits.basis}`)
+   * console.log(`Free memory: ${Math.round(stats.memory.free / 1024 / 1024)}MB`)
+   * ```
+   */
+  getMemoryStats(): {
+    memory: {
+      heapUsed: number
+      heapTotal: number
+      external: number
+      rss: number
+      free: number
+      total: number
+      containerLimit: number | null
+    }
+    limits: {
+      maxQueryLimit: number
+      maxQueryLength: number
+      maxVectorDimensions: number
+      basis: 'override' | 'reservedMemory' | 'containerMemory' | 'freeMemory'
+    }
+    config: {
+      maxQueryLimit?: number
+      reservedQueryMemory?: number
+    }
+    recommendations?: string[]
+  } {
+    const config = ValidationConfig.getInstance()
+    const heapStats = process.memoryUsage ? process.memoryUsage() : {
+      heapUsed: 0,
+      heapTotal: 0,
+      external: 0,
+      rss: 0
+    }
+
+    // Get system memory info
+    let freeMemory = 0
+    let totalMemory = 0
+    if (typeof window === 'undefined') {
+      try {
+        const os = require('node:os')
+        freeMemory = os.freemem()
+        totalMemory = os.totalmem()
+      } catch (e) {
+        // OS module not available
+      }
+    }
+
+    const stats = {
+      memory: {
+        heapUsed: heapStats.heapUsed,
+        heapTotal: heapStats.heapTotal,
+        external: heapStats.external,
+        rss: heapStats.rss,
+        free: freeMemory,
+        total: totalMemory,
+        containerLimit: config.detectedContainerLimit
+      },
+      limits: {
+        maxQueryLimit: config.maxLimit,
+        maxQueryLength: config.maxQueryLength,
+        maxVectorDimensions: config.maxVectorDimensions,
+        basis: config.limitBasis
+      },
+      config: {
+        maxQueryLimit: this.config.maxQueryLimit,
+        reservedQueryMemory: this.config.reservedQueryMemory
+      },
+      recommendations: [] as string[]
+    }
+
+    // Generate recommendations based on stats
+    if (stats.limits.basis === 'freeMemory' && stats.memory.containerLimit) {
+      stats.recommendations.push(
+        `Container detected (${Math.round(stats.memory.containerLimit / 1024 / 1024)}MB) but limits based on free memory. ` +
+        `Consider setting reservedQueryMemory config option for better limits.`
+      )
+    }
+
+    if (stats.limits.maxQueryLimit < 5000 && stats.memory.containerLimit && stats.memory.containerLimit > 2 * 1024 * 1024 * 1024) {
+      stats.recommendations.push(
+        `Query limit is low (${stats.limits.maxQueryLimit}) despite ${Math.round(stats.memory.containerLimit / 1024 / 1024 / 1024)}GB container. ` +
+        `Consider: new Brainy({ reservedQueryMemory: 1073741824 }) to reserve 1GB for queries.`
+      )
+    }
+
+    if (stats.limits.basis === 'override') {
+      stats.recommendations.push(
+        `Using explicit maxQueryLimit override (${stats.limits.maxQueryLimit}). ` +
+        `Auto-detection bypassed.`
+      )
+    }
+
+    return stats
   }
 
   // ============= SUB-APIS =============
@@ -4791,7 +4993,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       disableMetrics: config?.disableMetrics ?? false,
       disableAutoOptimize: config?.disableAutoOptimize ?? false,
       batchWrites: config?.batchWrites ?? true,
-      maxConcurrentOperations: config?.maxConcurrentOperations ?? 10
+      maxConcurrentOperations: config?.maxConcurrentOperations ?? 10,
+      // Memory management options (v5.11.0)
+      maxQueryLimit: config?.maxQueryLimit ?? undefined as any,
+      reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any
     }
   }
 

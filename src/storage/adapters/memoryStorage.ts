@@ -202,19 +202,10 @@ export class MemoryStorage extends BaseStorage {
    * @returns Always false (marker doesn't persist in memory)
    * @protected
    */
-  protected async checkClearMarker(): Promise<boolean> {
-    return false // MemoryStorage doesn't persist - marker doesn't survive restart
-  }
-
   /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: No-op for MemoryStorage (doesn't persist)
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected async createClearMarker(): Promise<void> {
-    // No-op: MemoryStorage doesn't persist, so marker is not needed
-    // clear() in memory already resets all state, no marker survives restart
-  }
 
   /**
    * Save statistics data to storage

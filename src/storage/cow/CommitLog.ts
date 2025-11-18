@@ -268,6 +268,54 @@ export class CommitLog {
   }
 
   /**
+   * Stream commit history (memory-efficient for large histories)
+   *
+   * Yields commits one at a time without accumulating in memory.
+   * Use this for large commit histories (1000s of commits) where
+   * memory efficiency is important.
+   *
+   * @param ref - Starting ref
+   * @param options - Walk options
+   * @yields Commits in reverse chronological order (newest first)
+   *
+   * @example
+   * ```typescript
+   * // Stream all commits without memory accumulation
+   * for await (const commit of commitLog.streamHistory('main', { maxCount: 10000 })) {
+   *   console.log(commit.message)
+   * }
+   * ```
+   */
+  async *streamHistory(
+    ref: string,
+    options?: {
+      maxCount?: number
+      since?: number
+      until?: number
+    }
+  ): AsyncIterableIterator<CommitObject> {
+    let count = 0
+
+    for await (const commit of this.walk(ref, {
+      maxDepth: options?.maxCount,
+      until: options?.until
+    })) {
+      // Filter by since timestamp if provided
+      if (options?.since && commit.timestamp < options.since) {
+        continue
+      }
+
+      yield commit
+      count++
+
+      // Stop after maxCount commits
+      if (options?.maxCount && count >= options.maxCount) {
+        break
+      }
+    }
+  }
+
+  /**
    * Count commits between two commits
    *
    * @param fromRef - Starting ref/commit

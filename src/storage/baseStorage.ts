@@ -156,7 +156,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public blobStorage?: BlobStorage
   public commitLog?: CommitLog
   public currentBranch: string = 'main'
-  protected cowEnabled: boolean = false
+  // v5.11.0: Removed cowEnabled flag - COW is ALWAYS enabled (mandatory, cannot be disabled)
 
   // Type-first indexing support (v5.4.0)
   // Built into all storage adapters for billion-scale efficiency
@@ -275,13 +275,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Called during init() to ensure all data is stored with branch prefixes from the start
    * RefManager/BlobStorage/CommitLog are lazy-initialized on first fork()
    * @param branch - Branch name to use (default: 'main')
+   *
+   * v5.11.0: COW is always enabled - this method now just sets the branch name (idempotent)
    */
   public enableCOWLightweight(branch: string = 'main'): void {
-    if (this.cowEnabled) {
-      return
-    }
     this.currentBranch = branch
-    this.cowEnabled = true
     // RefManager/BlobStorage/CommitLog remain undefined until first fork()
   }
 
@@ -300,30 +298,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {
-    // v5.10.4: Check for persistent marker file (CRITICAL FIX)
-    // Bug: Setting cowEnabled = false on OLD instance doesn't affect NEW instances
-    // Fix: Check storage for persistent marker created by clear()
-    // If marker exists, COW was explicitly disabled and should NOT reinitialize
-    const markerExists = await this.checkClearMarker()
-    if (markerExists) {
-      return // COW was disabled by clear() - don't recreate _cow/ directory
-    }
+    // v5.11.0: COW is ALWAYS enabled - idempotent initialization only
+    // Removed marker file check (cowEnabled flag removed, COW is mandatory)
 
-    // v5.6.1: If COW was explicitly disabled (e.g., via clear()), don't reinitialize
-    // This prevents automatic recreation of COW data after clear() operations
-    if (this.cowEnabled === false) {
+    // Check if RefManager already initialized (idempotent)
+    if (this.refManager && this.blobStorage && this.commitLog) {
       return
     }
 
-    // Check if RefManager already initialized (full COW setup complete)
-    if (this.refManager) {
-      return
-    }
-
-    // Enable lightweight COW if not already enabled
-    if (!this.cowEnabled) {
-      this.currentBranch = options?.branch || 'main'
-      this.cowEnabled = true
+    // Set current branch if provided
+    if (options?.branch) {
+      this.currentBranch = options.branch
     }
 
     // Create COWStorageAdapter bridge
@@ -436,7 +421,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    this.cowEnabled = true
+    // v5.11.0: COW is always enabled - no flag to set
   }
 
   /**
@@ -452,10 +437,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return basePath  // COW metadata is global across all branches
     }
 
-    if (!this.cowEnabled) {
-      return basePath  // COW disabled, use direct path
-    }
-
+    // v5.11.0: COW is always enabled - always use branch-scoped paths
     const targetBranch = branch || this.currentBranch || 'main'
 
     // Branch-scoped path: branches/<branch>/<basePath>
@@ -485,18 +467,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Read object with inheritance from parent branches (COW layer)
    * Tries current branch first, then walks commit history
    * @protected - Available to subclasses for COW implementation
+   *
+   * v5.11.0: COW is always enabled - always use branch-scoped paths with inheritance
    */
   protected async readWithInheritance(path: string, branch?: string): Promise<any | null> {
-    if (!this.cowEnabled) {
-      // COW disabled: check write cache, then direct read
-      // v5.7.2: Check cache first for read-after-write consistency
-      const cachedData = this.writeCache.get(path)
-      if (cachedData !== undefined) {
-        return cachedData
-      }
-      return this.readObjectFromPath(path)
-    }
-
     const targetBranch = branch || this.currentBranch || 'main'
     const branchPath = this.resolveBranchPath(path, targetBranch)
 
@@ -585,12 +559,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * This enables fork to see parent's data in pagination operations
    *
    * Simplified approach: All branches inherit from main
+   *
+   * v5.11.0: COW is always enabled - always use inheritance
    */
   protected async listObjectsWithInheritance(prefix: string, branch?: string): Promise<string[]> {
-    if (!this.cowEnabled) {
-      return this.listObjectsInBranch(prefix, branch)
-    }
-
     const targetBranch = branch || this.currentBranch || 'main'
 
     // Collect paths from current branch
@@ -1714,21 +1686,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public abstract clear(): Promise<void>
 
   /**
-   * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
-   * Each adapter checks for a marker file/object (e.g., "_system/cow-disabled")
-   * @returns true if COW was disabled by clear(), false otherwise
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() abstract methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected abstract checkClearMarker(): Promise<boolean>
-
-  /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
-   * Each adapter creates a marker file/object (e.g., "_system/cow-disabled")
-   * @protected
-   */
-  protected abstract createClearMarker(): Promise<void>
 
   /**
    * Get information about storage usage and capacity

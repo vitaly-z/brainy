@@ -2109,39 +2109,21 @@ export class S3CompatibleStorage extends BaseStorage {
         }
       }
 
-      // Delete all objects in the nouns directory
-      await deleteObjectsWithPrefix(this.nounPrefix)
+      // v5.11.0: Clear ALL data using correct paths
+      // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
+      await deleteObjectsWithPrefix('branches/')
 
-      // Delete all objects in the verbs directory
-      await deleteObjectsWithPrefix(this.verbPrefix)
-
-      // Delete all objects in the noun metadata directory
-      await deleteObjectsWithPrefix(this.metadataPrefix)
-
-      // Delete all objects in the verb metadata directory
-      await deleteObjectsWithPrefix(this.verbMetadataPrefix)
-
-      // Delete all objects in the index directory
-      await deleteObjectsWithPrefix(this.indexPrefix)
-
-      // v5.6.1: Delete COW (copy-on-write) version control data
-      // This includes all git-like versioning data (commits, trees, blobs, refs)
-      // Must be deleted to fully clear all data including version history
+      // Delete COW version control data
       await deleteObjectsWithPrefix('_cow/')
 
-      // CRITICAL: Reset COW state to prevent automatic reinitialization
-      // When COW data is cleared, we must also clear the COW managers
-      // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+      // Delete system metadata
+      await deleteObjectsWithPrefix('_system/')
+
+      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
       this.commitLog = undefined
-      this.cowEnabled = false
-
-      // v5.10.4: Create persistent marker object (CRITICAL FIX)
-      // Bug: cowEnabled = false only affects current instance, not future instances
-      // Fix: Create marker object that persists across instance restarts
-      // When new instance calls initializeCOW(), it checks for this marker
-      await this.createClearMarker()
 
       // Clear the statistics cache
       this.statisticsCache = null
@@ -2273,55 +2255,10 @@ export class S3CompatibleStorage extends BaseStorage {
    * @returns true if marker object exists, false otherwise
    * @protected
    */
-  protected async checkClearMarker(): Promise<boolean> {
-    await this.ensureInitialized()
-
-    try {
-      const { HeadObjectCommand } = await import('@aws-sdk/client-s3')
-      const markerKey = `${this.systemPrefix}cow-disabled`
-
-      await this.s3Client!.send(
-        new HeadObjectCommand({
-          Bucket: this.bucketName,
-          Key: markerKey
-        })
-      )
-      return true // Marker exists
-    } catch (error: any) {
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-        return false // Marker doesn't exist
-      }
-      prodLog.warn('S3CompatibleStorage.checkClearMarker: Error checking marker', error)
-      return false
-    }
-  }
-
   /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected async createClearMarker(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-      const markerKey = `${this.systemPrefix}cow-disabled`
-
-      // Create empty marker object
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: markerKey,
-          Body: Buffer.from(''),
-          ContentType: 'text/plain'
-        })
-      )
-    } catch (error) {
-      prodLog.error('S3CompatibleStorage.createClearMarker: Failed to create marker object', error)
-      // Don't throw - marker creation failure shouldn't break clear()
-    }
-  }
 
   // Batch update timer ID
   protected statisticsBatchUpdateTimerId: NodeJS.Timeout | null = null

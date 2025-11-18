@@ -488,19 +488,11 @@ export class OPFSStorage extends BaseStorage {
         // Delete the entire _cow/ directory (not just contents)
         await this.rootDir!.removeEntry('_cow', { recursive: true })
 
-        // CRITICAL: Reset COW state to prevent automatic reinitialization
-        // When COW data is cleared, we must also clear the COW managers
-        // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+        // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+        // COW will re-initialize automatically on next use
         this.refManager = undefined
         this.blobStorage = undefined
         this.commitLog = undefined
-        this.cowEnabled = false
-
-        // v5.10.4: Create persistent marker file (CRITICAL FIX)
-        // Bug: cowEnabled = false only affects current instance, not future instances
-        // Fix: Create marker file that persists across instance restarts
-        // When new instance calls initializeCOW(), it checks for this marker
-        await this.createClearMarker()
       } catch (error: any) {
         // Ignore if _cow directory doesn't exist (not all instances use COW)
         if (error.name !== 'NotFoundError') {
@@ -528,46 +520,10 @@ export class OPFSStorage extends BaseStorage {
    * @returns true if marker file exists, false otherwise
    * @protected
    */
-  protected async checkClearMarker(): Promise<boolean> {
-    await this.ensureInitialized()
-
-    try {
-      // Get system directory (may not exist yet)
-      const systemDir = await this.rootDir!.getDirectoryHandle('system', { create: false })
-      // Try to get the marker file
-      await systemDir.getFileHandle('cow-disabled', { create: false })
-      return true // Marker exists
-    } catch (error: any) {
-      if (error.name === 'NotFoundError') {
-        return false // Marker doesn't exist (or system dir doesn't exist)
-      }
-      // Other errors (permissions, etc.) - treat as marker not existing
-      console.warn('OPFSStorage.checkClearMarker: Error checking marker', error)
-      return false
-    }
-  }
-
   /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected async createClearMarker(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      // Get or create system directory
-      const systemDir = await this.rootDir!.getDirectoryHandle('system', { create: true })
-      // Create empty marker file
-      const fileHandle = await systemDir.getFileHandle('cow-disabled', { create: true })
-      const writable = await fileHandle.createWritable()
-      await writable.write(new Uint8Array(0)) // Empty file
-      await writable.close()
-    } catch (error) {
-      console.error('OPFSStorage.createClearMarker: Failed to create marker file', error)
-      // Don't throw - marker creation failure shouldn't break clear()
-    }
-  }
 
   // Quota monitoring configuration (v4.0.0)
   private quotaWarningThreshold = 0.8  // Warn at 80% usage

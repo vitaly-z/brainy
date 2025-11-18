@@ -995,31 +995,21 @@ export class GcsStorage extends BaseStorage {
         }
       }
 
-      // Clear all data directories
-      await deleteObjectsWithPrefix(this.nounPrefix)
-      await deleteObjectsWithPrefix(this.verbPrefix)
-      await deleteObjectsWithPrefix(this.metadataPrefix)
-      await deleteObjectsWithPrefix(this.verbMetadataPrefix)
-      await deleteObjectsWithPrefix(this.systemPrefix)
+      // v5.11.0: Clear ALL data using correct paths
+      // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
+      await deleteObjectsWithPrefix('branches/')
 
-      // v5.6.1: Clear COW (copy-on-write) version control data
-      // This includes all git-like versioning data (commits, trees, blobs, refs)
-      // Must be deleted to fully clear all data including version history
+      // Delete COW version control data
       await deleteObjectsWithPrefix('_cow/')
 
-      // CRITICAL: Reset COW state to prevent automatic reinitialization
-      // When COW data is cleared, we must also clear the COW managers
-      // Otherwise initializeCOW() will auto-recreate initial commit on next operation
+      // Delete system metadata
+      await deleteObjectsWithPrefix('_system/')
+
+      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
       this.commitLog = undefined
-      this.cowEnabled = false
-
-      // v5.10.4: Create persistent marker object (CRITICAL FIX)
-      // Bug: cowEnabled = false only affects current instance, not future instances
-      // Fix: Create marker object that persists across instance restarts
-      // When new instance calls initializeCOW(), it checks for this marker
-      await this.createClearMarker()
 
       // Clear caches
       this.nounCacheManager.clear()
@@ -1081,38 +1071,10 @@ export class GcsStorage extends BaseStorage {
    * @returns true if marker object exists, false otherwise
    * @protected
    */
-  protected async checkClearMarker(): Promise<boolean> {
-    await this.ensureInitialized()
-
-    try {
-      const markerPath = `${this.systemPrefix}cow-disabled`
-      const file = this.bucket!.file(markerPath)
-      const [exists] = await file.exists()
-      return exists
-    } catch (error) {
-      this.logger.warn('GCSStorage.checkClearMarker: Error checking marker', error)
-      return false
-    }
-  }
-
   /**
-   * Create marker indicating COW has been explicitly disabled
-   * v5.10.4: Called by clear() to prevent COW reinitialization on new instances
-   * @protected
+   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * COW is now always enabled - marker files are no longer used
    */
-  protected async createClearMarker(): Promise<void> {
-    await this.ensureInitialized()
-
-    try {
-      const markerPath = `${this.systemPrefix}cow-disabled`
-      const file = this.bucket!.file(markerPath)
-      // Create empty marker object
-      await file.save('', { contentType: 'text/plain' })
-    } catch (error) {
-      this.logger.error('GCSStorage.createClearMarker: Failed to create marker object', error)
-      // Don't throw - marker creation failure shouldn't break clear()
-    }
-  }
 
   /**
    * Save statistics data to storage

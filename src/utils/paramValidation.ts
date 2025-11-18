@@ -8,13 +8,15 @@
 import { FindParams, AddParams, UpdateParams, RelateParams } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 
-// Dynamic import for Node.js os module
+// Dynamic import for Node.js os and fs modules
 let os: any = null
+let fs: any = null
 if (typeof window === 'undefined') {
   try {
     os = await import('node:os')
+    fs = await import('node:fs')
   } catch (e) {
-    // OS module not available
+    // OS/FS modules not available
   }
 }
 
@@ -36,65 +38,227 @@ const getAvailableMemory = (): number => {
 }
 
 /**
+ * Detect container memory limit (Docker/Kubernetes/Cloud Run)
+ *
+ * Production-grade detection for containerized environments.
+ * Supports:
+ * - cgroup v1 (legacy Docker/K8s)
+ * - cgroup v2 (modern systems)
+ * - Environment variables (Cloud Run, GCP, AWS, Azure)
+ *
+ * @returns Container memory limit in bytes, or null if not containerized
+ */
+const getContainerMemoryLimit = (): number | null => {
+  // Not in Node.js environment
+  if (!fs) {
+    return null
+  }
+
+  try {
+    // 1. Check environment variables first (fastest, most reliable for Cloud Run)
+    // Google Cloud Run
+    if (process.env.CLOUD_RUN_MEMORY) {
+      // Format: "512Mi", "1Gi", "2Gi", "4Gi"
+      const match = process.env.CLOUD_RUN_MEMORY.match(/^(\d+)(Mi|Gi)$/)
+      if (match) {
+        const value = parseInt(match[1])
+        const unit = match[2]
+        return unit === 'Gi' ? value * 1024 * 1024 * 1024 : value * 1024 * 1024
+      }
+    }
+
+    // Generic MEMORY_LIMIT env var (bytes)
+    if (process.env.MEMORY_LIMIT) {
+      const limit = parseInt(process.env.MEMORY_LIMIT)
+      if (!isNaN(limit) && limit > 0) {
+        return limit
+      }
+    }
+
+    // 2. Check cgroup v2 (modern Docker/K8s)
+    try {
+      const cgroupV2Path = '/sys/fs/cgroup/memory.max'
+      const cgroupV2Content = fs.readFileSync(cgroupV2Path, 'utf8').trim()
+
+      // "max" means no limit, otherwise it's bytes
+      if (cgroupV2Content !== 'max') {
+        const limit = parseInt(cgroupV2Content)
+        if (!isNaN(limit) && limit > 0) {
+          return limit
+        }
+      }
+    } catch (e) {
+      // cgroup v2 not available, try v1
+    }
+
+    // 3. Check cgroup v1 (legacy Docker/K8s)
+    try {
+      const cgroupV1Path = '/sys/fs/cgroup/memory/memory.limit_in_bytes'
+      const cgroupV1Content = fs.readFileSync(cgroupV1Path, 'utf8').trim()
+
+      const limit = parseInt(cgroupV1Content)
+
+      // Very large values (> 1 PB) indicate no limit
+      const ONE_PETABYTE = 1024 * 1024 * 1024 * 1024 * 1024
+      if (!isNaN(limit) && limit > 0 && limit < ONE_PETABYTE) {
+        return limit
+      }
+    } catch (e) {
+      // cgroup v1 not available
+    }
+
+    // Not containerized or no limit set
+    return null
+
+  } catch (e) {
+    // Error reading cgroup files
+    return null
+  }
+}
+
+/**
+ * Configuration options for ValidationConfig
+ */
+export interface ValidationConfigOptions {
+  /**
+   * Explicit maximum query limit override
+   * Bypasses all auto-detection
+   */
+  maxQueryLimit?: number
+
+  /**
+   * Memory reserved for query operations (in bytes)
+   * Bypasses auto-detection but still applies safety limits
+   */
+  reservedQueryMemory?: number
+}
+
+/**
  * Auto-configured limits based on system resources
  * These adapt to available memory and observed performance
  */
-class ValidationConfig {
+export class ValidationConfig {
   private static instance: ValidationConfig
-  
+
   // Dynamic limits based on system
   public maxLimit: number
   public maxQueryLength: number
   public maxVectorDimensions: number
-  
+
+  // Tracking for diagnostics
+  public limitBasis: 'override' | 'reservedMemory' | 'containerMemory' | 'freeMemory'
+  public detectedContainerLimit: number | null
+
   // Performance observations
   private avgQueryTime: number = 0
   private queryCount: number = 0
-  
-  private constructor() {
-    // Auto-configure based on system resources
-    const totalMemory = getSystemMemory()
+
+  private constructor(options?: ValidationConfigOptions) {
+    // Vector dimensions (standard for all-MiniLM-L6-v2)
+    this.maxVectorDimensions = 384
+
+    // Detect container memory limit
+    this.detectedContainerLimit = getContainerMemoryLimit()
+
+    // Priority 1: Explicit override (highest priority)
+    if (options?.maxQueryLimit !== undefined) {
+      this.maxLimit = Math.min(options.maxQueryLimit, 100000)  // Still cap at 100k for safety
+      this.limitBasis = 'override'
+
+      // Scale query length with limit
+      this.maxQueryLength = Math.min(50000, this.maxLimit * 5)
+      return
+    }
+
+    // Priority 2: Reserved memory specified
+    if (options?.reservedQueryMemory !== undefined) {
+      this.maxLimit = Math.min(
+        100000,
+        Math.floor(options.reservedQueryMemory / (1024 * 1024 * 100)) * 1000
+      )
+      this.limitBasis = 'reservedMemory'
+
+      this.maxQueryLength = Math.min(
+        50000,
+        Math.floor(options.reservedQueryMemory / (1024 * 1024 * 10)) * 1000
+      )
+      return
+    }
+
+    // Priority 3: Container detected (smart containerized behavior)
+    if (this.detectedContainerLimit) {
+      // In containers, assume 75% used by graph data (EXPECTED)
+      // Reserve 25% for query operations
+      const queryMemory = this.detectedContainerLimit * 0.25
+
+      this.maxLimit = Math.min(
+        100000,
+        Math.floor(queryMemory / (1024 * 1024 * 100)) * 1000
+      )
+      this.limitBasis = 'containerMemory'
+
+      this.maxQueryLength = Math.min(
+        50000,
+        Math.floor(queryMemory / (1024 * 1024 * 10)) * 1000
+      )
+      return
+    }
+
+    // Priority 4: Free memory (fallback, current behavior)
     const availableMemory = getAvailableMemory()
-    
-    // Scale limits based on available memory
-    // 1GB = 10K limit, 8GB = 80K limit, etc.
+
     this.maxLimit = Math.min(
-      100000, // Absolute max for safety
+      100000,
       Math.floor(availableMemory / (1024 * 1024 * 100)) * 1000
     )
-    
-    // Query length scales with memory too
+    this.limitBasis = 'freeMemory'
+
     this.maxQueryLength = Math.min(
       50000,
       Math.floor(availableMemory / (1024 * 1024 * 10)) * 1000
     )
-    
-    // Vector dimensions (standard for all-MiniLM-L6-v2)
-    this.maxVectorDimensions = 384
   }
-  
-  static getInstance(): ValidationConfig {
+
+  static getInstance(options?: ValidationConfigOptions): ValidationConfig {
     if (!ValidationConfig.instance) {
-      ValidationConfig.instance = new ValidationConfig()
+      ValidationConfig.instance = new ValidationConfig(options)
     }
     return ValidationConfig.instance
   }
-  
+
+  /**
+   * Reset singleton (for testing or reconfiguration)
+   */
+  static reset(): void {
+    ValidationConfig.instance = null as any
+  }
+
+  /**
+   * Reconfigure with new options
+   */
+  static reconfigure(options: ValidationConfigOptions): ValidationConfig {
+    ValidationConfig.instance = new ValidationConfig(options)
+    return ValidationConfig.instance
+  }
+
   /**
    * Learn from actual usage to adjust limits
    */
   recordQuery(duration: number, resultCount: number) {
     this.queryCount++
     this.avgQueryTime = (this.avgQueryTime * (this.queryCount - 1) + duration) / this.queryCount
-    
-    // If queries are consistently fast with large results, increase limits
-    if (this.avgQueryTime < 100 && resultCount > this.maxLimit * 0.8) {
-      this.maxLimit = Math.min(this.maxLimit * 1.5, 100000)
-    }
-    
-    // If queries are slow, reduce limits
-    if (this.avgQueryTime > 1000) {
-      this.maxLimit = Math.max(this.maxLimit * 0.8, 1000)
+
+    // Only auto-adjust if not using explicit overrides
+    if (this.limitBasis !== 'override') {
+      // If queries are consistently fast with large results, increase limits
+      if (this.avgQueryTime < 100 && resultCount > this.maxLimit * 0.8) {
+        this.maxLimit = Math.min(this.maxLimit * 1.5, 100000)
+      }
+
+      // If queries are slow, reduce limits
+      if (this.avgQueryTime > 1000) {
+        this.maxLimit = Math.max(this.maxLimit * 0.8, 1000)
+      }
     }
   }
 }

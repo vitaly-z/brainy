@@ -622,6 +622,10 @@ export interface BrainyConfig {
   batchWrites?: boolean            // Enable write batching for better performance
   maxConcurrentOperations?: number // Limit concurrent file operations
 
+  // Memory management options (v5.11.0)
+  maxQueryLimit?: number           // Override auto-detected query result limit (max: 100000)
+  reservedQueryMemory?: number     // Memory reserved for queries in bytes (e.g., 1073741824 = 1GB)
+
   // Logging configuration
   verbose?: boolean         // Enable verbose logging
   silent?: boolean          // Suppress all logging output
