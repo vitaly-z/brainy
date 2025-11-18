@@ -2006,7 +2006,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     } else if (Array.isArray(params.to)) {
       targetVector = params.to as Vector
     } else {
-      targetVector = (params.to as Entity<T>).vector
+      // v5.11.1: Entity object passed - check if vectors are loaded
+      const entityVector = (params.to as Entity<T>).vector
+      if (!entityVector || entityVector.length === 0) {
+        throw new Error(
+          'Entity passed to brain.similar() has no vector embeddings loaded. ' +
+          'Please retrieve the entity with { includeVectors: true } or pass the entity ID instead.\n\n' +
+          'Example: brain.similar({ to: entityId }) OR brain.similar({ to: await brain.get(entityId, { includeVectors: true }) })'
+        )
+      }
+      targetVector = entityVector
     }
 
     // Use find with vector
