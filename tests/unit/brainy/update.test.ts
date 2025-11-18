@@ -139,17 +139,18 @@ describe('Brainy.update()', () => {
         type: 'thing'
       }))
       
-      const original = await brain.get(id)
+      // v5.11.1: Need includeVectors to check vectors
+      const original = await brain.get(id, { includeVectors: true })
       const originalVector = original!.vector
-      
+
       // Act - Update with new data triggers re-embedding
       await brain.update({
         id,
         data: 'Completely different text content'
       })
-      
+
       // Assert
-      const updated = await brain.get(id)
+      const updated = await brain.get(id, { includeVectors: true })
       expect(updated).not.toBeNull()
       // Vector should be different after re-embedding
       expect(updated!.vector).not.toEqual(originalVector)

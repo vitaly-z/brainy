@@ -121,9 +121,9 @@ describe('Brainy Batch Operations', () => {
       
       const result = await brain.addMany({ items: entities })
       
-      // All should have vectors
+      // All should have vectors - v5.11.1: Need includeVectors
       for (const id of result.successful) {
-        const entity = await brain.get(id)
+        const entity = await brain.get(id, { includeVectors: true })
         expect(entity?.vector).toBeDefined()
         expect(entity?.vector?.length).toBeGreaterThan(0)
       }

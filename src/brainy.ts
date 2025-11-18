@@ -764,22 +764,26 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // v5.11.1: Metadata-only entity (no vector loading)
     // This is 76-81% faster for operations that don't need semantic similarity
 
+    // v4.8.0: Extract standard fields, rest are custom metadata
+    // Same destructuring as baseStorage.getNoun() to ensure consistency
+    const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+
     const entity: Entity<T> = {
       id,
       vector: [],  // Stub vector (empty array - vectors not loaded for metadata-only)
-      type: metadata.noun as NounType || NounType.Thing,
+      type: noun as NounType || NounType.Thing,
 
       // Standard fields from metadata
-      confidence: metadata.confidence,
-      weight: metadata.weight,
-      createdAt: metadata.createdAt || Date.now(),
-      updatedAt: metadata.updatedAt || Date.now(),
-      service: metadata.service,
-      data: metadata.data,
-      createdBy: metadata.createdBy,
+      confidence,
+      weight,
+      createdAt: createdAt || Date.now(),
+      updatedAt: updatedAt || Date.now(),
+      service,
+      data,
+      createdBy,
 
-      // Custom user fields (v4.8.0: separated by storage)
-      metadata: metadata.metadata as T
+      // Custom user fields (v4.8.0: standard fields removed, only custom remain)
+      metadata: customMetadata as T
     }
 
     return entity

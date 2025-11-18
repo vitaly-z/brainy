@@ -49,8 +49,9 @@ describe('Brainy 3.0 API', () => {
         metadata: { title: 'Sample Title' }
       })
 
-      const entity = await brain.get(id)
-      
+      // v5.11.1: Need includeVectors to check vectors
+      const entity = await brain.get(id, { includeVectors: true })
+
       expect(entity).toBeDefined()
       expect(entity!.id).toBe(id)
       expect(entity!.type).toBe(NounType.Document)

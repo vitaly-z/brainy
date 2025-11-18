@@ -55,10 +55,10 @@ describe('Brainy.get()', () => {
         metadata: { vectorized: true }
       })
       const id = await brain.add(params)
-      
-      // Act
-      const entity = await brain.get(id)
-      
+
+      // Act - v5.11.1: Need includeVectors to get vector data
+      const entity = await brain.get(id, { includeVectors: true })
+
       // Assert
       expect(entity).not.toBeNull()
       expect(entity!.vector).toEqual(vector)

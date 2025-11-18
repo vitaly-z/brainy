@@ -67,8 +67,8 @@ describe('Brainy.add()', () => {
       // Assert
       expect(id).toBeDefined()
       
-      // Verify entity was stored with correct vector
-      const entity = await brain.get(id)
+      // Verify entity was stored with correct vector - v5.11.1: Need includeVectors
+      const entity = await brain.get(id, { includeVectors: true })
       expect(entity).not.toBeNull()
       expect(entity!.vector).toEqual(vector)
       expect(entity!.metadata.name).toBe('Pre-vectorized item')
@@ -201,8 +201,8 @@ describe('Brainy.add()', () => {
       // Act
       const id = await brain.add(params)
       
-      // Assert
-      const entity = await brain.get(id)
+      // Assert - v5.11.1: Need includeVectors to check vectors
+      const entity = await brain.get(id, { includeVectors: true })
       expect(entity).not.toBeNull()
       expect(entity!.type).toBe('product')
       // The JSON should be embedded as a string representation
@@ -430,10 +430,11 @@ describe('Brainy.add()', () => {
       const id = await brain.add(params)
       
       // Assert - Brainy stores vectors as-is without normalization
-      const entity = await brain.get(id)
+      // v5.11.1: Need includeVectors to check vectors
+      const entity = await brain.get(id, { includeVectors: true })
       expect(entity).not.toBeNull()
       expect(entity!.vector).toEqual(unnormalizedVector)
-      
+
       // Verify it's not normalized
       const magnitude = Math.sqrt(
         entity!.vector.reduce((sum: number, val: number) => sum + val * val, 0)
