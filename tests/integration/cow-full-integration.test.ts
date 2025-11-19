@@ -1,3 +1,4 @@
+import { NounType } from '../../src/types/graphTypes.js'
 /**
  * Comprehensive COW Integration Tests
  *
@@ -29,7 +30,7 @@ describe('COW Full Integration', () => {
 
       // Add entity
       const entity = await brain.add({
-        noun: 'user',
+        type: NounType.Person,
         data: { name: 'Alice' }
       })
 
@@ -55,7 +56,7 @@ describe('COW Full Integration', () => {
       await brain.init()
 
       const entity = await brain.add({
-        noun: 'document',
+        type: NounType.Document,
         data: { title: 'Test' }
       })
 
@@ -79,7 +80,7 @@ describe('COW Full Integration', () => {
       await brain.init()
 
       const entity = await brain.add({
-        noun: 'product',
+        type: NounType.Product,
         data: { name: 'Widget', price: 99.99 }
       })
 
@@ -106,7 +107,7 @@ describe('COW Full Integration', () => {
       await brain.init()
 
       const entity = await brain.add({
-        noun: 'file',
+        type: NounType.File,
         data: { content: 'S3 test' }
       })
 
@@ -134,7 +135,7 @@ describe('COW Full Integration', () => {
 
       for (let i = 0; i < 1_000_000; i++) {
         await brain.add({
-          noun: 'entity',
+          type: NounType.Thing,
           data: { index: i },
           skipCommit: true  // Batch commit
         })
@@ -183,7 +184,7 @@ describe('COW Full Integration', () => {
       // Add 10K entities with same vector
       for (let i = 0; i < 10_000; i++) {
         await brain.add({
-          noun: 'doc',
+          type: NounType.Document,
           data: { id: i },
           vector: commonVector,
           skipCommit: true
@@ -215,12 +216,12 @@ describe('COW Full Integration', () => {
 
       // Create entities with relationships
       const alice = await brain.add({
-        noun: 'person',
+        type: NounType.Person,
         data: { name: 'Alice' }
       })
 
       const bob = await brain.add({
-        noun: 'person',
+        type: NounType.Person,
         data: { name: 'Bob' }
       })
 
@@ -231,7 +232,7 @@ describe('COW Full Integration', () => {
 
       // find() should work on fork
       const results = await fork.find({
-        noun: 'person',
+        type: NounType.Person,
         where: { name: 'Alice' }
       })
 
@@ -256,12 +257,12 @@ describe('COW Full Integration', () => {
 
       // Add entities with indexed metadata
       await brain.add({
-        noun: 'product',
+        type: NounType.Product,
         data: { price: 100, category: 'electronics' }
       })
 
       await brain.add({
-        noun: 'product',
+        type: NounType.Product,
         data: { price: 200, category: 'electronics' }
       })
 
@@ -269,7 +270,7 @@ describe('COW Full Integration', () => {
 
       // Metadata queries should work
       const cheap = await fork.find({
-        noun: 'product',
+        type: NounType.Product,
         where: { price: { $lt: 150 } }
       })
 
@@ -295,12 +296,12 @@ describe('COW Full Integration', () => {
 
       // Add entities
       await brain.add({
-        noun: 'person',
+        type: NounType.Person,
         data: { name: 'Alice', age: 30 }
       })
 
       await brain.add({
-        noun: 'person',
+        type: NounType.Person,
         data: { name: 'Bob', age: 25 }
       })
 
@@ -383,13 +384,13 @@ describe('COW Full Integration', () => {
 
       // Add entities with vectors
       const e1 = await brain.add({
-        noun: 'doc',
+        type: NounType.Document,
         data: { text: 'machine learning' },
         vector: [1, 0, 0]
       })
 
       const e2 = await brain.add({
-        noun: 'doc',
+        type: NounType.Document,
         data: { text: 'artificial intelligence' },
         vector: [0.9, 0.1, 0]
       })
@@ -412,9 +413,9 @@ describe('COW Full Integration', () => {
 
       await brain.init()
 
-      const a = await brain.add({ noun: 'node', data: { name: 'A' } })
-      const b = await brain.add({ noun: 'node', data: { name: 'B' } })
-      const c = await brain.add({ noun: 'node', data: { name: 'C' } })
+      const a = await brain.add({ type: NounType.Thing, data: { name: 'A' } })
+      const b = await brain.add({ type: NounType.Thing, data: { name: 'B' } })
+      const c = await brain.add({ type: NounType.Thing, data: { name: 'C' } })
 
       await brain.addRelationship(a.id, 'connects', b.id)
       await brain.addRelationship(b.id, 'connects', c.id)
@@ -440,7 +441,7 @@ describe('COW Full Integration', () => {
       await brain.init()
 
       const entity = await brain.add({
-        noun: 'temp',
+        type: NounType.Thing,
         data: { value: 'test' }
       })
 
@@ -467,7 +468,7 @@ describe('COW Full Integration', () => {
       await main.init()
 
       const entity = await main.add({
-        noun: 'shared',
+        type: NounType.Thing,
         data: { value: 'test' }
       })
 
@@ -506,7 +507,7 @@ describe('COW Full Integration', () => {
       await writeOnly.init()
 
       await writeOnly.add({
-        noun: 'log',
+        type: NounType.Message,
         data: { message: 'test' }
       })
 
@@ -569,7 +570,7 @@ describe('COW Full Integration', () => {
 
       // Time 1: Add entity
       await brain.add({
-        noun: 'doc',
+        type: NounType.Document,
         data: { version: 1 }
       })
 
@@ -581,7 +582,7 @@ describe('COW Full Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // Time 2: Update entity
-      const docs = await brain.find({ noun: 'doc' })
+      const docs = await brain.find({ type: NounType.Document })
       await brain.update(docs[0].id, { version: 2 })
 
       await brain.commit({ message: 'Version 2' })
@@ -589,7 +590,7 @@ describe('COW Full Integration', () => {
       // asOf(time1) should return version 1
       const snapshot = await brain.asOf(time1)
 
-      const retrieved = await snapshot.find({ noun: 'doc' })
+      const retrieved = await snapshot.find({ type: NounType.Document })
 
       expect(retrieved[0].data.version).toBe(1)
 
