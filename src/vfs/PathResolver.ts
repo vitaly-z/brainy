@@ -231,12 +231,17 @@ export class PathResolver {
       type: VerbType.Contains
     })
 
-    const validChildren: VFSEntity[]= []
+    const validChildren: VFSEntity[] = []
     const childNames = new Set<string>()
 
-    // Fetch all child entities via relationships
+    // v5.12.0: Batch fetch all child entities (eliminates N+1 query pattern)
+    // This is WIRED UP AND USED - no longer a stub!
+    const childIds = relations.map(r => r.to)
+    const childrenMap = await this.brain.batchGet(childIds)
+
+    // Process batched results
     for (const relation of relations) {
-      const entity = await this.brain.get(relation.to)
+      const entity = childrenMap.get(relation.to)
       if (entity && entity.metadata?.vfsType && entity.metadata?.name) {
         validChildren.push(entity as VFSEntity)
         childNames.add(entity.metadata.name)

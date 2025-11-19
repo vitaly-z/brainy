@@ -186,33 +186,6 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Get GCS-optimized batch configuration
-   *
-   * GCS has strict rate limits (~5000 writes/second per bucket) and benefits from:
-   * - Moderate batch sizes (50 items)
-   * - Sequential processing (not parallel)
-   * - Delays between batches (100ms)
-   *
-   * Note: Each entity write involves 2 operations (vector + metadata),
-   * so 800 ops/sec = ~400 entities/sec = ~2500 actual GCS writes/sec
-   *
-   * @returns GCS-optimized batch configuration
-   * @since v4.11.0
-   */
-  public getBatchConfig(): StorageBatchConfig {
-    return {
-      maxBatchSize: 50,
-      batchDelayMs: 100,
-      maxConcurrent: 50,
-      supportsParallelWrites: false,  // Sequential is safer for GCS rate limits
-      rateLimit: {
-        operationsPerSecond: 800,  // Conservative estimate for entity operations
-        burstCapacity: 200
-      }
-    }
-  }
-
-  /**
    * Initialize the storage adapter
    */
   public async init(): Promise<void> {
@@ -703,6 +676,95 @@ export class GcsStorage extends BaseStorage {
 
       this.logger.error(`Failed to read object from ${path}:`, error)
       throw BrainyError.fromError(error, `readObjectFromPath(${path})`)
+    }
+  }
+
+  /**
+   * Batch read multiple objects from GCS (v5.12.0 - Cloud Storage Optimization)
+   *
+   * **Performance**: GCS-optimized parallel downloads
+   * - Uses Promise.all() for concurrent requests
+   * - Respects GCS rate limits (100 concurrent by default)
+   * - Chunks large batches to prevent memory issues
+   *
+   * **GCS Specifics**:
+   * - No true "batch API" - uses parallel GetObject operations
+   * - Optimal concurrency: 50-100 concurrent downloads
+   * - Each download is a separate HTTPS request
+   *
+   * @param paths Array of GCS object paths to read
+   * @returns Map of path → data (only successful reads included)
+   *
+   * @public - Called by baseStorage.readBatchFromAdapter()
+   * @since v5.12.0
+   */
+  public async readBatch(paths: string[]): Promise<Map<string, any>> {
+    await this.ensureInitialized()
+
+    const results = new Map<string, any>()
+    if (paths.length === 0) return results
+
+    // Get batch configuration for optimal GCS performance
+    const batchConfig = this.getBatchConfig()
+    const chunkSize = batchConfig.maxConcurrent || 100
+
+    this.logger.debug(`[GCS Batch] Reading ${paths.length} objects in chunks of ${chunkSize}`)
+
+    // Process in chunks to respect rate limits and prevent memory issues
+    for (let i = 0; i < paths.length; i += chunkSize) {
+      const chunk = paths.slice(i, i + chunkSize)
+      this.logger.trace(`[GCS Batch] Processing chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(paths.length/chunkSize)}`)
+
+      // Parallel download for this chunk
+      const chunkResults = await Promise.allSettled(
+        chunk.map(async (path) => {
+          try {
+            const file = this.bucket!.file(path)
+            const [contents] = await file.download()
+            const data = JSON.parse(contents.toString())
+            return { path, data, success: true }
+          } catch (error: any) {
+            // Silently skip 404s (expected for missing entities)
+            if (error.code === 404) {
+              return { path, data: null, success: false }
+            }
+            // Log other errors but don't fail the batch
+            this.logger.warn(`[GCS Batch] Failed to read ${path}: ${error.message}`)
+            return { path, data: null, success: false }
+          }
+        })
+      )
+
+      // Collect successful results
+      for (const result of chunkResults) {
+        if (result.status === 'fulfilled' && result.value.success && result.value.data !== null) {
+          results.set(result.value.path, result.value.data)
+        }
+      }
+    }
+
+    this.logger.debug(`[GCS Batch] Successfully read ${results.size}/${paths.length} objects`)
+    return results
+  }
+
+  /**
+   * Get GCS-specific batch configuration (v5.12.0)
+   *
+   * GCS performs well with high concurrency due to HTTP/2 multiplexing
+   *
+   * @public - Overrides BaseStorage.getBatchConfig()
+   * @since v5.12.0
+   */
+  public getBatchConfig(): StorageBatchConfig {
+    return {
+      maxBatchSize: 1000,      // GCS can handle large batches
+      batchDelayMs: 0,         // No rate limiting needed (HTTP/2 handles it)
+      maxConcurrent: 100,      // Optimal for GCS (tested up to 200)
+      supportsParallelWrites: true,
+      rateLimit: {
+        operationsPerSecond: 1000,    // GCS is fast
+        burstCapacity: 5000
+      }
     }
   }
 

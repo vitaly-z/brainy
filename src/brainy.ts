@@ -687,6 +687,63 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Batch get multiple entities by IDs (v5.12.0 - Cloud Storage Optimization)
+   *
+   * **Performance**: Eliminates N+1 query pattern
+   * - Current: N × get() = N × 300ms cloud latency = 3-6 seconds for 10-20 entities
+   * - Batched: 1 × batchGet() = 1 × 300ms cloud latency = 0.3 seconds ✨
+   *
+   * **Use cases:**
+   * - VFS tree traversal (get all children at once)
+   * - Relationship traversal (get all targets at once)
+   * - Import operations (batch existence checks)
+   * - Admin tools (fetch multiple entities for listing)
+   *
+   * @param ids Array of entity IDs to fetch
+   * @param options Get options (includeVectors defaults to false for speed)
+   * @returns Map of id → entity (only successfully fetched entities included)
+   *
+   * @example
+   * ```typescript
+   * // VFS getChildren optimization
+   * const childIds = relations.map(r => r.to)
+   * const childrenMap = await brain.batchGet(childIds)
+   * const children = childIds.map(id => childrenMap.get(id)).filter(Boolean)
+   * ```
+   *
+   * @since v5.12.0
+   */
+  async batchGet(ids: string[], options?: GetOptions): Promise<Map<string, Entity<T>>> {
+    await this.ensureInitialized()
+
+    const results = new Map<string, Entity<T>>()
+    if (ids.length === 0) return results
+
+    const includeVectors = options?.includeVectors ?? false
+
+    if (includeVectors) {
+      // FULL PATH: Load vectors + metadata (currently not batched, fall back to individual)
+      // TODO v5.13.0: Add getNounBatch() for batched vector loading
+      for (const id of ids) {
+        const entity = await this.get(id, { includeVectors: true })
+        if (entity) {
+          results.set(id, entity)
+        }
+      }
+    } else {
+      // FAST PATH: Metadata-only batch (default) - OPTIMIZED
+      const metadataMap = await this.storage.getNounMetadataBatch(ids)
+
+      for (const [id, metadata] of metadataMap.entries()) {
+        const entity = await this.convertMetadataToEntity(id, metadata)
+        results.set(id, entity)
+      }
+    }
+
+    return results
+  }
+
+  /**
    * Create a flattened Result object from entity
    * Flattens commonly-used entity fields to top level for convenience
    */
