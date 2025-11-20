@@ -211,8 +211,8 @@ async function vfsSnapshots() {
   // Test refactor
   // ...
 
-  // Merge if successful
-  // await brain.merge(refactor)
+  // Switch to refactor branch if successful
+  // await brain.checkout('refactor')
 }
 
 // ========== The Key: It's All Zero Config! ==========
@@ -249,7 +249,7 @@ async function zeroConfigDemo() {
   // Branch operations
   brain.listBranches()             → List all branches
   brain.checkout(branch)           → Switch to branch
-  brain.merge(source, target)      → Merge branches (Enterprise)
+  brain.deleteBranch(branch)       → Delete a branch
 
   // Time queries
   brain.getHistory(limit?)         → Get commit history

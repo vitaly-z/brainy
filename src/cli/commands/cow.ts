@@ -274,74 +274,7 @@ ${chalk.cyan('Fork Statistics:')}
   },
 
   /**
-   * Merge a fork/branch into current branch
-   */
-  async merge(source: string | undefined, target: string | undefined, options: MergeOptions) {
-    let spinner: any = null
-    try {
-      const brain = getBrainy()
-      await brain.init()
-
-      // Interactive mode if parameters missing
-      if (!source || !target) {
-        const branches = await brain.listBranches()
-        const currentBranch = await brain.getCurrentBranch()
-
-        const answers = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'source',
-            message: 'Merge FROM branch:',
-            choices: branches.map(b => ({ name: b, value: b })),
-            when: !source
-          },
-          {
-            type: 'list',
-            name: 'target',
-            message: 'Merge INTO branch:',
-            choices: branches.map(b => ({
-              name: b === currentBranch ? `${b} (current)` : b,
-              value: b
-            })),
-            default: currentBranch,
-            when: !target
-          }
-        ])
-
-        source = source || answers.source
-        target = target || answers.target
-      }
-
-      spinner = ora(`Merging ${chalk.cyan(source)} → ${chalk.green(target)}...`).start()
-
-      const result = await brain.merge(source!, target!, {
-        strategy: options.strategy || 'last-write-wins'
-      })
-
-      spinner.succeed(`Merged ${chalk.cyan(source)} → ${chalk.green(target)}`)
-
-      console.log(`
-${chalk.cyan('Merge Summary:')}
-  ${chalk.green('Added:')} ${result.added} entities
-  ${chalk.yellow('Modified:')} ${result.modified} entities
-  ${chalk.red('Deleted:')} ${result.deleted} entities
-  ${chalk.magenta('Conflicts:')} ${result.conflicts} (resolved)
-      `.trim())
-
-      if (options.json) {
-        formatOutput(result, options)
-      }
-
-    } catch (error: any) {
-      if (spinner) spinner.fail('Merge failed')
-      console.error(chalk.red('Error:'), error.message)
-      if (options.verbose) console.error(error)
-      process.exit(1)
-    }
-  },
-
-  /**
-   * Get commit history
+   * View commit history
    */
   async history(options: CoreOptions & { limit?: string }) {
     try {

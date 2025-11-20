@@ -163,8 +163,8 @@ export class HistoricalStorageAdapter extends BaseStorage {
       throw new Error(`Commit not found: ${this.commitId}`)
     }
 
-    // Mark as initialized
-    this.isInitialized = true
+    // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+    await super.init()
   }
 
   // ============= Abstract Method Implementations =============

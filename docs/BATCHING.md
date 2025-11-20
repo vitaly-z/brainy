@@ -9,14 +9,15 @@ Brainy v5.12.0 introduces comprehensive batch operations at the storage layer, e
 ### Problem Solved
 
 **Before v5.12.0:**
-- VFS `readFile()` on cloud storage: **18-21 seconds** per file (cold cache)
-- Directory with 12 files: **12.7 seconds** (22 sequential calls × 580ms latency)
-- N+1 query pattern: 1 directory query + N individual file queries
+- VFS `getTreeStructure()` on cloud storage: **12.7 seconds** for directory with 12 files
+- N+1 query pattern: 1 directory query + N individual file queries (22 sequential calls × 580ms latency)
 
 **After v5.12.0:**
-- VFS operations: **<1 second** for 12 files (90%+ improvement)
+- VFS `getTreeStructure()`: **<1 second** for 12 files (90%+ improvement)
 - 2-3 batched calls instead of 22 sequential calls
 - Native cloud storage batch APIs for maximum throughput
+
+**IMPORTANT:** The v5.12.0 batch optimizations apply **ONLY to `getTreeStructure()`**, not to `readFile()` or individual `get()` operations. See v6.0.0 changes for comprehensive storage path optimizations.
 
 ---
 
@@ -55,7 +56,7 @@ results.size // → 3 (number of found entities)
 
 ### 2. `storage.getNounMetadataBatch(ids)`
 
-Batch metadata retrieval with type-aware caching.
+Batch metadata retrieval with direct O(1) path construction (v6.0.0+).
 
 ```typescript
 const storage = brain.storage as BaseStorage
@@ -70,15 +71,15 @@ for (const [id, metadata] of metadataMap) {
 ```
 
 **Features:**
-- ✅ Type cache consultation (O(1) path resolution for known types)
-- ✅ Uncached ID handling (tries multiple types automatically)
+- ✅ Direct O(1) path construction from ID (no type lookup needed!)
 - ✅ Sharding preservation (all paths include `{shard}/{id}`)
 - ✅ COW-aware (respects branch paths)
+- ✅ 40x faster than v5.x type-first architecture
 
 **Performance:**
-- Cached IDs: ~1ms per 100 entities
-- Uncached IDs: ~100ms per 100 entities (multi-type search)
+- ~1ms per 100 entities (consistent, no cache misses!)
 - Cloud storage: Parallel downloads (100-150 concurrent)
+- No type search delays - every ID maps directly to storage path
 
 ---
 
@@ -129,11 +130,11 @@ COW-aware batch path resolution with branch inheritance.
 const storage = brain.storage as BaseStorage
 
 const paths = [
-  'entities/nouns/document/metadata/{shard}/id1.json',
-  'entities/nouns/thing/metadata/{shard}/id2.json'
+  'entities/nouns/{shard}/id1/metadata.json',
+  'entities/nouns/{shard}/id2/metadata.json'
 ]
 
-// Resolves to: branches/{branch}/entities/nouns/...
+// Resolves to: branches/{branch}/entities/nouns/{shard}/{id}/metadata.json
 const results: Map<string, any> = await storage.readBatchWithInheritance(paths, 'my-branch')
 
 // Automatically inherits from parent branches for missing entities
@@ -284,26 +285,33 @@ VFS.getTreeStructure()
 
 ## Advanced Features Compatibility
 
-### ✅ Type-Aware Storage
+### ✅ ID-First Storage Architecture (v6.0.0+)
 
-All batch operations preserve type-first paths:
+All batch operations use direct ID-first paths - no type lookup needed!
+
+**NEW v6.0.0 Path Structure:**
 ```
-entities/nouns/{TYPE}/metadata/{SHARD}/{ID}.json
+entities/nouns/{SHARD}/{ID}/metadata.json
+entities/verbs/{SHARD}/{ID}/metadata.json
 ```
 
-Batch APIs consult the `nounTypeCache` for O(1) path resolution:
-
+**Direct O(1) Path Construction:**
 ```typescript
-// Cached IDs: Direct path construction
+// Every ID maps directly to exactly ONE path - 40x faster!
 const id = 'abc-123'
-const type = nounTypeCache.get(id) // → 'document'
-const path = `entities/nouns/document/metadata/${shard}/${id}.json`
+const shard = getShardIdFromUuid(id)  // → 'ab' (first 2 hex chars)
+const path = `entities/nouns/${shard}/${id}/metadata.json`
 
-// Uncached IDs: Try multiple types (automatically)
-// Batch API tries all types in search order:
-//   1. Common types (document, thing, person, file)
-//   2. All other types (alphabetically)
+// No type cache needed!
+// No type search needed!
+// No multi-type fallback needed!
+// Just pure O(1) lookup!
 ```
+
+**Benefits:**
+- **40x faster** on GCS/S3 (eliminates 42-type sequential search)
+- **Simpler code** - removed 500+ lines of type cache complexity
+- **Scalable** - works at billion-scale without type tracking overhead
 
 ---
 
@@ -314,7 +322,7 @@ All batch paths include shard IDs calculated via `getShardIdFromUuid(id)`:
 ```typescript
 const id = 'a3c4e5f7-...'
 const shard = getShardIdFromUuid(id) // → 'a3' (first 2 hex chars)
-const path = `entities/nouns/document/metadata/${shard}/${id}.json`
+const path = `entities/nouns/${shard}/${id}/metadata.json`
 ```
 
 **Distribution:** 256 shards (00-ff) for optimal load distribution.
@@ -570,13 +578,13 @@ npx vitest run tests/integration/storage-batch-operations.test.ts
 
 **Test Coverage:**
 - ✅ brain.batchGet() high-level API
-- ✅ storage.getNounMetadataBatch() with type caching
+- ✅ storage.getNounMetadataBatch() with ID-first paths
 - ✅ COW integration (branch isolation, inheritance)
 - ✅ storage.getVerbsBySourceBatch() relationship queries
 - ✅ VFS integration (PathResolver.getChildren())
 - ✅ Performance benchmarks (N+1 elimination)
 - ✅ Error handling (partial failures, empty batches, duplicates)
-- ✅ Type-aware storage verification
+- ✅ ID-first storage verification
 - ✅ Sharding preservation
 
 **Results:** 23 tests passing ✅
@@ -650,12 +658,12 @@ if (typeof selfWithBatch.readBatch === 'function') {
 - Zero N+1 query patterns
 
 **Compatibility:**
-- ✅ Type-aware storage
+- ✅ ID-first storage (v6.0.0+)
 - ✅ Sharding (256 shards)
 - ✅ COW (branch isolation, inheritance)
 - ✅ fork() and checkout()
 - ✅ asOf() time-travel
-- ✅ All 56+ indexes respected
+- ✅ All 6 indexes respected (HNSW, TypeAwareHNSW, MetadataIndex, GraphAdjacency, Version, DeletedItems)
 
 ---
 

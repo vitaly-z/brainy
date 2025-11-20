@@ -123,25 +123,25 @@ await brain.relate({ from: id1, to: id2, type: VerbType.RelatesTo })
 - Transaction operations don't need to know about shards
 - Rollback works across all shards involved
 
-### TypeAware Storage
+### ID-First Storage (v6.0.0+)
 
 ✅ **Fully Compatible**
 
-Transactions work with type-specific routing:
+Transactions work with direct ID-first paths - no type routing needed!
 
 ```typescript
-// Entities routed to type-specific storage paths
+// Entities stored with direct ID-first paths
 const personId = await brain.add({
   data: { name: 'John Doe' },
-  type: NounType.Person  // → entities/nouns/person/<shard>/...
+  type: NounType.Person  // → entities/nouns/{shard}/{id}/metadata.json
 })
 
 const orgId = await brain.add({
   data: { name: 'Acme Corp' },
-  type: NounType.Organization  // → entities/nouns/organization/<shard>/...
+  type: NounType.Organization  // → entities/nouns/{shard}/{id}/metadata.json
 })
 
-// Type changes handled atomically
+// Type changes handled atomically (type is just metadata)
 await brain.update({
   id: personId,
   type: NounType.Organization,  // Type change
@@ -150,10 +150,11 @@ await brain.update({
 ```
 
 **How It Works:**
-- Type information carried in metadata
-- Storage layer handles type-specific routing
-- Type cache updated/restored during rollback
+- Type information stored in metadata.noun field
+- Storage layer uses O(1) ID-first path construction
+- No type cache needed (removed in v6.0.0)
 - Type counters adjusted on commit/rollback
+- 40x faster on cloud storage (eliminates 42-type search)
 
 ### Distributed Storage
 

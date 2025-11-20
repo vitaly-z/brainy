@@ -39,9 +39,11 @@ const experiment = await brain.fork('test-migration')
 // Test your changes safely
 await experiment.updateAll(riskyTransformation)
 
-// Works? Great! Failed? Just discard.
+// Works? Great! Use the experimental branch.
+// Failed? Just discard.
 if (success) {
-  await brain.merge(experiment)
+  // Make experiment the new main branch
+  await brain.checkout('test-migration')
 } else {
   await experiment.destroy()  // No harm done
 }
@@ -139,8 +141,8 @@ console.log(originalUsers.length)  // 2 (Alice, Bob)
 // Clean up fork when finished
 await fork.destroy()
 
-// Note: brain.merge() is planned for future releases
-// Currently, fork() creates independent copies for experimentation
+// Note: fork() creates independent branches for experimentation
+// Use checkout() to switch between branches or keep them separate forever
 ```
 
 ---
@@ -249,8 +251,7 @@ const bobBranch = await production.fork('bob-feature-y')
 await aliceBranch.add({ noun: 'feature', data: { name: 'X' } })
 await bobBranch.add({ noun: 'feature', data: { name: 'Y' } })
 
-// When ready, apply validated changes to production
-// (merge() coming in v5.1.0)
+// When ready, manually copy validated changes to production
 await production.add({ noun: 'feature', data: { name: 'X' } })
 await production.add({ noun: 'feature', data: { name: 'Y' } })
 
@@ -386,59 +387,6 @@ history.forEach(commit => {
   console.log(`${commit.hash}: ${commit.message}`)
   console.log(`  By: ${commit.author} at ${new Date(commit.timestamp)}`)
 })
-```
-
-### Merge Branches (v5.0.0)
-
-**NEW in v5.0.0:** Merge branches with conflict resolution!
-
-```javascript
-// Create feature branch
-const feature = await brain.fork('feature-x')
-await feature.add({ type: 'feature', data: { name: 'X' } })
-
-// Commit changes
-await feature.commit({
-  message: 'Add feature X',
-  author: 'dev@example.com'
-})
-
-// Merge back to main
-const result = await brain.merge('feature-x', 'main', {
-  strategy: 'last-write-wins',  // or 'first-write-wins' or 'custom'
-  author: 'dev@example.com'
-})
-
-console.log(result)
-// { added: 1, modified: 0, deleted: 0, conflicts: 0 }
-```
-
-### Merge Strategies
-
-```javascript
-// Last-write-wins (default) - newer timestamp wins
-await brain.merge('source', 'target', { strategy: 'last-write-wins' })
-
-// First-write-wins - older timestamp wins
-await brain.merge('source', 'target', { strategy: 'first-write-wins' })
-
-// Custom conflict resolution
-await brain.merge('source', 'target', {
-  strategy: 'custom',
-  onConflict: async (targetEntity, sourceEntity) => {
-    // Your custom merge logic
-    return {
-      data: {
-        ...targetEntity.data,
-        ...sourceEntity.data,
-        mergedAt: Date.now()
-      }
-    }
-  }
-})
-```
-
----
 
 ## Performance Characteristics
 
@@ -578,7 +526,7 @@ const fork = await brain.fork()
 
 ### Q: Can I merge forks back to main?
 
-**A: Yes! (NEW in v5.0.0)** Use `brain.merge(sourceBranch, targetBranch, options)` to merge branches with automatic conflict resolution. Supports multiple merge strategies: last-write-wins, first-write-wins, and custom.
+**A: Use the "experimental branching" paradigm.** Instead of merging, either (1) make your experimental branch the new main with `checkout()`, or (2) manually copy specific entities you want. See CHANGELOG v6.0.0 for migration patterns.
 
 ### Q: How long are forks kept?
 
@@ -615,7 +563,7 @@ ALTER TABLE users_backup RENAME TO users;
 ```javascript
 const fork = await brain.fork('test')
 await fork.updateAll({ email: (u) => u.email.toLowerCase() })
-if (success) await brain.merge(fork)
+if (success) await brain.checkout('test')  // Make test branch active
 else await fork.destroy()
 ```
 
@@ -670,22 +618,15 @@ const fork = await brain.fork()  // Done!
 - ✅ `getCurrentBranch()` - Get active branch
 - ✅ `checkout()` - Switch between branches
 - ✅ `deleteBranch()` - Delete branches
-- ✅ `merge()` - Merge branches with conflict resolution
 - ✅ `commit()` - Create state snapshots
 - ✅ `getHistory()` - View commit history
 
 ### 🔮 Planned for v5.1.0+:
 
 **Temporal Features:**
-- `asOf(timestamp)` - Query data at specific time
+- `asOf(timestamp)` - Query data at specific time (✅ v5.0.0+)
 - `rollback(commitHash)` - Restore to previous state
-- `diff(branchA, branchB)` - Compare branches
 - Full audit trail for all changes
-
-**Enhanced Merge:**
-- Three-way merge algorithm
-- Automatic conflict detection for relationships
-- Merge preview mode
 
 These features require additional temporal infrastructure and are being carefully designed for v5.1.0+
 
@@ -717,8 +658,6 @@ brainy merge feature-x main --strategy last-write-wins
 # Delete branch
 brainy branch delete old-feature --force
 ```
-
----
 
 ## Try It Now
 

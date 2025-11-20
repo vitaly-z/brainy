@@ -275,7 +275,8 @@ export class GcsStorage extends BaseStorage {
       this.verbCacheManager.clear()
       prodLog.info('✅ Cache cleared - starting fresh')
 
-      this.isInitialized = true
+      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      await super.init()
     } catch (error) {
       this.logger.error('Failed to initialize GCS storage:', error)
       throw new Error(`Failed to initialize GCS storage: ${error}`)

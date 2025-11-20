@@ -234,19 +234,19 @@ describe('VFS Bug Fixes', () => {
       await vfs.writeFile('/src/b.ts', 'b')
       await vfs.writeFile('/docs/README.md', 'readme')
 
-      // Get statistics
-      const stats = await vfs.getProjectStats('/')
+      // Get statistics using du() (standard POSIX API)
+      const stats = await vfs.du('/')
 
       // Debug: Check what directories exist
       const rootChildren = await vfs.getDirectChildren('/')
       console.log('Root children (stats test):', rootChildren.map(c => ({name: c.metadata.name, type: c.metadata.vfsType})))
 
       // Should have exactly 3 files
-      expect(stats.fileCount).toBe(3)
+      expect(stats.files).toBe(3)
 
       // Should have exactly 2 directories (src, docs)
       // Note: If there's a duplicate, this will fail
-      expect(stats.directoryCount).toBe(2)
+      expect(stats.directories).toBe(2)
     })
   })
 })

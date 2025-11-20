@@ -245,7 +245,8 @@ export class FileSystemStorage extends BaseStorage {
       // Always use fixed depth after migration/detection
       this.cachedShardingDepth = this.SHARDING_DEPTH
 
-      this.isInitialized = true
+      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      await super.init()
     } catch (error) {
       console.error('Error initializing FileSystemStorage:', error)
       throw error

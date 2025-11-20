@@ -2150,109 +2150,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return this.currentUser
   }
 
-  /**
-   * Get all todos recursively from a path
-   */
-  async getAllTodos(path: string = '/'): Promise<VFSTodo[]> {
-    await this.ensureInitialized()
 
-    const allTodos: VFSTodo[] = []
-
-    // Get entity for this path
-    try {
-      const entityId = await this.pathResolver.resolve(path)
-      const entity = await this.getEntityById(entityId)
-
-      // Add todos from this entity
-      if (entity.metadata.todos) {
-        allTodos.push(...entity.metadata.todos)
-      }
-
-      // If it's a directory, recursively get todos from children
-      if (entity.metadata.vfsType === 'directory') {
-        const children = await this.readdir(path)
-
-        for (const child of children) {
-          const childPath = path === '/' ? `/${child}` : `${path}/${child}`
-          const childTodos = await this.getAllTodos(childPath)
-          allTodos.push(...childTodos)
-        }
-      }
-    } catch (error) {
-      // Path doesn't exist, return empty
-    }
-
-    return allTodos
-  }
-
-  /**
-   * Export directory structure to JSON
-   */
-  async exportToJSON(path: string = '/'): Promise<any> {
-    await this.ensureInitialized()
-
-    const result: any = {}
-
-    const traverse = async (currentPath: string, target: any) => {
-      try {
-        const entityId = await this.pathResolver.resolve(currentPath)
-        const entity = await this.getEntityById(entityId)
-
-        if (entity.metadata.vfsType === 'directory') {
-          // Add directory metadata
-          target._meta = {
-            type: 'directory',
-            path: currentPath,
-            modified: entity.metadata.modified ? new Date(entity.metadata.modified) : undefined
-          }
-
-          // Traverse children
-          const children = await this.readdir(currentPath)
-          for (const child of children) {
-            const childName = typeof child === 'string' ? child : child.name
-            const childPath = currentPath === '/' ? `/${childName}` : `${currentPath}/${childName}`
-            target[childName] = {}
-            await traverse(childPath, target[childName])
-          }
-        } else if (entity.metadata.vfsType === 'file') {
-          // For files, include content and metadata
-          try {
-            const content = await this.readFile(currentPath)
-            const textContent = content.toString('utf8')
-
-            // Try to parse JSON files
-            if (currentPath.endsWith('.json')) {
-              try {
-                target._content = JSON.parse(textContent)
-              } catch {
-                target._content = textContent
-              }
-            } else {
-              target._content = textContent
-            }
-          } catch {
-            // Binary or unreadable file
-            target._content = '[binary]'
-          }
-
-          target._meta = {
-            type: 'file',
-            path: currentPath,
-            size: entity.metadata.size || 0,
-            mimeType: entity.metadata.mimeType,
-            modified: entity.metadata.modified ? new Date(entity.metadata.modified) : undefined,
-            todos: entity.metadata.todos || []
-          }
-        }
-      } catch (error) {
-        // Skip inaccessible paths
-        target._error = 'inaccessible'
-      }
-    }
-
-    await traverse(path, result)
-    return result
-  }
 
   /**
    * Search for entities with filters
@@ -2360,100 +2258,229 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * Get project statistics for a path
+   * Calculate disk usage for a path (POSIX du command)
+   * Returns total bytes used by files in directory tree
+   *
+   * @param path - Path to calculate usage for
+   * @param options - Options including maxDepth for safety
    */
-  async getProjectStats(path: string = '/'): Promise<{
-    fileCount: number
-    directoryCount: number
-    totalSize: number
-    todoCount: number
-    averageFileSize: number
-    largestFile: { path: string, size: number } | null
-    modifiedRange: { earliest: Date, latest: Date } | null
+  async du(path: string = '/', options?: {
+    maxDepth?: number
+    humanReadable?: boolean
+  }): Promise<{
+    bytes: number
+    files: number
+    directories: number
+    formatted?: string
   }> {
     await this.ensureInitialized()
 
-    const stats = {
-      fileCount: 0,
-      directoryCount: 0,
-      totalSize: 0,
-      todoCount: 0,
-      averageFileSize: 0,
-      largestFile: null as { path: string, size: number } | null,
-      modifiedRange: null as { earliest: Date, latest: Date } | null
-    }
+    const maxDepth = options?.maxDepth ?? 100 // Safety limit
+    let totalBytes = 0
+    let fileCount = 0
+    let dirCount = 0
 
-    let earliestModified: number | null = null
-    let latestModified: number | null = null
+    const traverse = async (currentPath: string, depth: number) => {
+      if (depth > maxDepth) {
+        throw new Error(`Maximum depth ${maxDepth} exceeded. Use maxDepth option to increase limit.`)
+      }
 
-    const traverse = async (currentPath: string, isRoot = false) => {
       try {
         const entityId = await this.pathResolver.resolve(currentPath)
         const entity = await this.getEntityById(entityId)
 
         if (entity.metadata.vfsType === 'directory') {
-          // Don't count the root/starting directory itself
-          if (!isRoot) {
-            stats.directoryCount++
-          }
-
-          // Traverse children
+          dirCount++
           const children = await this.readdir(currentPath)
           for (const child of children) {
             const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
-            await traverse(childPath, false)
+            await traverse(childPath, depth + 1)
           }
         } else if (entity.metadata.vfsType === 'file') {
-          stats.fileCount++
+          fileCount++
+          totalBytes += entity.metadata.size || 0
+        }
+      } catch (error) {
+        // Skip inaccessible paths
+      }
+    }
+
+    await traverse(path, 0)
+
+    const result: any = {
+      bytes: totalBytes,
+      files: fileCount,
+      directories: dirCount
+    }
+
+    if (options?.humanReadable) {
+      const units = ['B', 'KB', 'MB', 'GB', 'TB']
+      let size = totalBytes
+      let unitIndex = 0
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024
+        unitIndex++
+      }
+      result.formatted = `${size.toFixed(2)} ${units[unitIndex]}`
+    }
+
+    return result
+  }
+
+  /**
+   * Check file access permissions (POSIX access command)
+   * Verifies if path exists and is accessible with specified mode
+   *
+   * @param path - Path to check
+   * @param mode - Access mode: 'r' (read), 'w' (write), 'x' (execute), or 'f' (exists only)
+   */
+  async access(path: string, mode: 'r' | 'w' | 'x' | 'f' = 'f'): Promise<boolean> {
+    await this.ensureInitialized()
+
+    try {
+      const entityId = await this.pathResolver.resolve(path)
+      const entity = await this.getEntityById(entityId)
+
+      // Path exists
+      if (mode === 'f') {
+        return true
+      }
+
+      // Check permissions based on mode
+      const permissions = entity.metadata.permissions || 0o644
+
+      switch (mode) {
+        case 'r':
+          // Check read permission (owner, group, or other)
+          return (permissions & 0o444) !== 0
+        case 'w':
+          // Check write permission
+          return (permissions & 0o222) !== 0
+        case 'x':
+          // Check execute permission (only meaningful for directories)
+          return entity.metadata.vfsType === 'directory' || (permissions & 0o111) !== 0
+        default:
+          return false
+      }
+    } catch (error) {
+      // Path doesn't exist or not accessible
+      return false
+    }
+  }
+
+  /**
+   * Find files matching patterns (Unix find command)
+   * Pattern-based file search (complements semantic search())
+   *
+   * @param path - Starting path for search
+   * @param options - Search options including pattern matching
+   */
+  async find(path: string = '/', options?: {
+    name?: string | RegExp
+    type?: 'file' | 'directory' | 'both'
+    maxDepth?: number
+    minSize?: number
+    maxSize?: number
+    modified?: { after?: Date, before?: Date }
+    limit?: number
+  }): Promise<Array<{
+    path: string
+    type: 'file' | 'directory'
+    size?: number
+    modified?: Date
+  }>> {
+    await this.ensureInitialized()
+
+    const maxDepth = options?.maxDepth ?? 100 // Safety limit
+    const limit = options?.limit ?? 1000 // Prevent unbounded results
+    const results: Array<{
+      path: string
+      type: 'file' | 'directory'
+      size?: number
+      modified?: Date
+    }> = []
+
+    const namePattern = options?.name
+    const nameRegex = namePattern instanceof RegExp
+      ? namePattern
+      : namePattern
+        ? new RegExp(namePattern.replace(/\*/g, '.*').replace(/\?/g, '.'))
+        : null
+
+    const traverse = async (currentPath: string, depth: number) => {
+      if (depth > maxDepth || results.length >= limit) {
+        return
+      }
+
+      try {
+        const entityId = await this.pathResolver.resolve(currentPath)
+        const entity = await this.getEntityById(entityId)
+
+        const vfsType = entity.metadata.vfsType
+        const fileName = currentPath.split('/').pop() || ''
+
+        // Check if this file matches criteria
+        let matches = true
+
+        // Type filter
+        if (options?.type && options.type !== 'both') {
+          matches = matches && vfsType === options.type
+        }
+
+        // Name pattern filter
+        if (nameRegex) {
+          matches = matches && nameRegex.test(fileName)
+        }
+
+        // Size filters (files only)
+        if (vfsType === 'file') {
           const size = entity.metadata.size || 0
-          stats.totalSize += size
-
-          // Track largest file
-          if (!stats.largestFile || size > stats.largestFile.size) {
-            stats.largestFile = { path: currentPath, size }
+          if (options?.minSize !== undefined) {
+            matches = matches && size >= options.minSize
           }
-
-          // Track modification times
-          const modified = entity.metadata.modified
-          if (modified) {
-            if (!earliestModified || modified < earliestModified) {
-              earliestModified = modified
-            }
-            if (!latestModified || modified > latestModified) {
-              latestModified = modified
-            }
+          if (options?.maxSize !== undefined) {
+            matches = matches && size <= options.maxSize
           }
+        }
 
-          // Count todos
-          if (entity.metadata.todos) {
-            stats.todoCount += entity.metadata.todos.length
+        // Modified time filter
+        if (options?.modified && entity.metadata.modified) {
+          const modifiedTime = new Date(entity.metadata.modified)
+          if (options.modified.after) {
+            matches = matches && modifiedTime >= options.modified.after
+          }
+          if (options.modified.before) {
+            matches = matches && modifiedTime <= options.modified.before
+          }
+        }
+
+        // Add to results if matches
+        if (matches && currentPath !== path) {
+          results.push({
+            path: currentPath,
+            type: vfsType as 'file' | 'directory',
+            size: entity.metadata.size,
+            modified: entity.metadata.modified ? new Date(entity.metadata.modified) : undefined
+          })
+        }
+
+        // Recurse into directories
+        if (vfsType === 'directory' && results.length < limit) {
+          const children = await this.readdir(currentPath)
+          for (const child of children) {
+            if (results.length >= limit) break
+            const childPath = currentPath === '/' ? `/${child}` : `${currentPath}/${child}`
+            await traverse(childPath, depth + 1)
           }
         }
       } catch (error) {
-        // Skip if path doesn't exist
+        // Skip inaccessible paths
       }
     }
 
-    await traverse(path, true)
-
-    // Calculate averages
-    if (stats.fileCount > 0) {
-      stats.averageFileSize = Math.round(stats.totalSize / stats.fileCount)
-    }
-
-    // Set date range
-    if (earliestModified && latestModified) {
-      stats.modifiedRange = {
-        earliest: new Date(earliestModified),
-        latest: new Date(latestModified)
-      }
-    }
-
-    return stats
+    await traverse(path, 0)
+    return results
   }
-
-
-
 
   /**
    * Get all versions of a file (semantic versioning)

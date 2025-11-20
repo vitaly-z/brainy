@@ -296,12 +296,8 @@ await experiment.updateAll({ /* migration logic */ })
 // Commit your work
 await experiment.commit({ message: 'Add test user', author: 'dev@example.com' })
 
-// Merge back to main with conflict resolution
-const result = await brain.merge('test-migration', 'main', {
-  strategy: 'last-write-wins'
-})
-
-console.log(result)  // { added: 1, modified: 0, conflicts: 0 }
+// Switch to experimental branch to make it active
+await brain.checkout('test-migration')
 
 // Time-travel: Query database at any past commit (read-only)
 const commits = await brain.getHistory({ limit: 10 })

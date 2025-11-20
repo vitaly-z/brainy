@@ -172,7 +172,8 @@ export class OPFSStorage extends BaseStorage {
       // Initialize counts from storage
       await this.initializeCounts()
 
-      this.isInitialized = true
+      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      await super.init()
     } catch (error) {
       console.error('Failed to initialize OPFS storage:', error)
       throw new Error(`Failed to initialize OPFS storage: ${error}`)

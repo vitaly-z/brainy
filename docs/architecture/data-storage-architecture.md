@@ -13,7 +13,7 @@ This document explains how Brainy stores, indexes, and scales data across all st
 3. [The 4 Indexes](#3-the-4-indexes)
 4. [Sharding Strategy](#4-sharding-strategy)
 5. [COW (Copy-on-Write) Architecture](#5-cow-copy-on-write-architecture)
-6. [Type-First Storage](#6-type-first-storage)
+6. [ID-First Storage Architecture (v6.0.0+)](#6-id-first-storage-architecture-v600)
 7. [VFS (Virtual File System)](#7-vfs-virtual-file-system)
 8. [Storage Backend Mapping](#8-storage-backend-mapping)
 9. [Performance Characteristics](#9-performance-characteristics)
@@ -438,40 +438,40 @@ Unlike entities and relationships, system metadata consists of **index files** t
 
 Understanding how Brainy constructs storage paths is critical for debugging and optimization.
 
-### Path Construction Steps
+### Path Construction Steps (v6.0.0+)
 
 **For an entity (noun)**:
 ```typescript
 // Given:
 const entityId = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-const entityType = "Character"
 const branch = "main"
 
 // Step 1: Extract shard from UUID (first 2 hex characters)
 const shard = entityId.substring(0, 2)  // "3f"
 
-// Step 2: Construct vector path
-const vectorPath = `branches/${branch}/entities/nouns/${entityType}/vectors/${shard}/${entityId}.json`
-// Result: "branches/main/entities/nouns/Character/vectors/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json"
+// Step 2: Construct metadata path (NO TYPE NEEDED!)
+const metadataPath = `branches/${branch}/entities/nouns/${shard}/${entityId}/metadata.json`
+// Result: "branches/main/entities/nouns/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6/metadata.json"
 
-// Step 3: Construct metadata path
-const metadataPath = `branches/${branch}/entities/nouns/${entityType}/metadata/${shard}/${entityId}.json`
-// Result: "branches/main/entities/nouns/Character/metadata/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6.json"
+// Step 3: Construct vector path
+const vectorPath = `branches/${branch}/entities/nouns/${shard}/${entityId}/vector.json`
+// Result: "branches/main/entities/nouns/3f/3fa85f64-5717-4562-b3fc-2c963f66afa6/vector.json"
+
+// Type is IN the metadata, not in the path!
 ```
 
 **For a relationship (verb)**:
 ```typescript
 // Given:
 const verbId = "7b2f5e3c-8d4a-4f1e-9c2b-5a6d7e8f9a0b"
-const verbType = "Knows"
 const branch = "main"
 
 // Step 1: Extract shard
 const shard = verbId.substring(0, 2)  // "7b"
 
-// Step 2: Construct paths
-const vectorPath = `branches/${branch}/entities/verbs/${verbType}/vectors/${shard}/${verbId}.json`
-const metadataPath = `branches/${branch}/entities/verbs/${verbType}/metadata/${shard}/${verbId}.json`
+// Step 2: Construct paths (NO TYPE NEEDED!)
+const metadataPath = `branches/${branch}/entities/verbs/${shard}/${verbId}/metadata.json`
+const vectorPath = `branches/${branch}/entities/verbs/${shard}/${verbId}/vector.json`
 ```
 
 **For COW objects**:
@@ -498,14 +498,14 @@ const fieldIndexPath = `_system/metadata_indexes/__metadata_field_index__${field
 const hnswNodePath = `_system/hnsw/nodes/${shard}/${entityId}.json`
 ```
 
-### Path Patterns Summary
+### Path Patterns Summary (v6.0.0+)
 
 | Data Type | Path Pattern | Sharded? | Branched? |
 |-----------|--------------|----------|-----------|
-| **Noun vector** | `branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
-| **Noun metadata** | `branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
-| **Verb vector** | `branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
-| **Verb metadata** | `branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Noun metadata** | `branches/{branch}/entities/nouns/{shard}/{uuid}/metadata.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Noun vector** | `branches/{branch}/entities/nouns/{shard}/{uuid}/vector.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Verb metadata** | `branches/{branch}/entities/verbs/{shard}/{uuid}/metadata.json` | ✅ Yes (UUID) | ✅ Yes |
+| **Verb vector** | `branches/{branch}/entities/verbs/{shard}/{uuid}/vector.json` | ✅ Yes (UUID) | ✅ Yes |
 | **COW commit** | `_cow/commits/{shard}/{sha256}.json` | ✅ Yes (SHA) | ❌ No |
 | **COW tree** | `_cow/trees/{shard}/{sha256}.json` | ✅ Yes (SHA) | ❌ No |
 | **COW blob** | `_cow/blobs/{shard}/{sha256}.bin` | ✅ Yes (SHA) | ❌ No |
@@ -516,10 +516,10 @@ const hnswNodePath = `_system/hnsw/nodes/${shard}/${entityId}.json`
 | **HNSW node** | `_system/hnsw/nodes/{shard}/{uuid}.json` | ✅ Yes (UUID) | ❌ No |
 | **Field index** | `_system/metadata_indexes/__metadata_field_index__{field}.json` | ❌ No | ❌ No |
 
-### Key Principles
+### Key Principles (v6.0.0+)
 
 1. **Shard Extraction**: Always use first 2 hex characters of UUID/SHA-256
-2. **Type-First**: Type comes before shard in entity paths
+2. **ID-First**: Shard + ID come BEFORE type (type is in metadata)
 3. **Branch Isolation**: Only entity data uses branches/
 4. **System Isolation**: System files never use sharding or branching (except HNSW nodes)
 5. **Content-Addressable**: COW uses SHA-256 hash as filename
@@ -553,24 +553,28 @@ Brainy uses four complementary index systems for different query patterns.
 
 ---
 
-### 3.2 Type-Aware Index (Path-Based)
+### 3.2 Type Index (Metadata-Based, v6.0.0+)
 
-**Purpose**: Fast type filtering and organization
-**Location**: Derived from filesystem paths (no separate storage)
-**Data Structure**: Directory tree organized by type
+**Purpose**: Fast type filtering via metadata index
+**Location**: MetadataIndexManager index on `noun` field
+**Data Structure**: RoaringBitmap32 per type value
 
-**How It Works**:
+**How It Works** (v6.0.0+):
 ```typescript
-// Find all Characters
-const characters = await brain.getNouns({ type: 'Character' })
-// Scans only: branches/main/entities/nouns/Character/**/*.json
-// Skips: all other type directories
+// Find all Person entities
+const people = await brain.getNouns({ type: 'person' })
+
+// Under the hood:
+// 1. MetadataIndexManager.getFieldIndex('noun')
+// 2. Returns RoaringBitmap32 of IDs where metadata.noun === 'person'
+// 3. Batch fetch those IDs using ID-first paths
 ```
 
 **Performance**:
-- Type filtering: O(type_count) instead of O(total_entities)
-- 42x faster for queries filtered by type (42 noun types total)
-- Zero storage overhead (uses filesystem structure)
+- Type filtering: O(person_count) via metadata index (not O(total_entities))
+- Index lookup: O(1) bitmap intersection
+- No filesystem scanning needed
+- Works at billion-scale with compressed bitmaps
 
 ---
 
@@ -778,72 +782,102 @@ _cow/blobs/ab/abc123...sha256.bin  (used by both entities)
 
 ---
 
-## 6. Type-First Storage
+## 6. ID-First Storage Architecture (v6.0.0+)
 
-### 6.1 What is Type-First?
+### 6.1 What is ID-First?
 
-**Type-first storage** organizes entities by their **semantic type** before sharding by UUID.
+**ID-first storage** organizes entities by **ID shard only** - no type directories! This eliminates 42-type sequential searches that caused 20-21 second delays on cloud storage.
 
-**Old structure** (pre-v5.4.0):
+**Old type-first structure** (v5.4.0-v5.12.0):
 ```
-entities/nouns/vectors/00/001234...uuid.json  # What type? Unknown until you read it!
+branches/main/entities/nouns/{TYPE}/metadata/00/001234...uuid.json
+# Problem: Requires knowing type OR searching 42 type directories!
 ```
 
-**Type-first structure** (v5.4.0+):
+**NEW ID-first structure** (v6.0.0+):
 ```
-branches/main/entities/nouns/Character/vectors/00/001234...uuid.json  # Type visible in path!
+branches/main/entities/nouns/00/001234...uuid/metadata.json
+# Direct O(1) lookup - no type needed!
 ```
 
 ---
 
-### 6.2 Benefits of Type-First
+### 6.2 Benefits of ID-First
 
-**1. Fast Type Filtering**
+**1. 40x Faster Lookups**
 ```typescript
-// Find all Characters
-const characters = await brain.getNouns({ type: 'Character' })
-// Scans only: branches/main/entities/nouns/Character/**
-// Skips: Place, Concept, Organization, etc. (41 other types)
+// v5.x: Had to search 42 types if type unknown
+// Result: 21 seconds on GCS (42 types × 500ms)
+
+// v6.0.0: Direct path from ID
+const id = '001234...'
+const shard = id.substring(0, 2)  // '00'
+const path = `branches/main/entities/nouns/${shard}/${id}/metadata.json`
+// Result: <500ms on GCS - 40x faster!
 ```
 
-**2. Efficient Storage Scans**
-- List all Characters: O(character_count) instead of O(total_entities)
-- 42x faster for type-filtered queries (42 noun types total)
+**2. Simpler Code**
+- **Removed 500+ lines** of type cache management
+- **No more** nounTypeCache Map tracking
+- **No more** persistent type index complexity
+- **No more** 42-type fallback search logic
 
-**3. Clear Data Organization**
-- Each type has dedicated directory
-- Easy to backup/restore specific types
-- Clear separation of concerns
+**3. Billion-Scale Ready**
+- Type information stored in **metadata** field (indexed by MetadataIndexManager)
+- Type queries still fast via metadata index
+- No type cache sync issues in distributed systems
+
+**4. Clean Architecture**
+- One path per ID - no ambiguity
+- Predictable storage layout
+- Easier to debug and reason about
 
 ---
 
-### 6.3 Type-First Path Structure
+### 6.3 ID-First Path Structure
 
+**v6.0.0 Path Structure:**
 ```
-branches/{branch}/entities/nouns/{type}/vectors/{shard}/{uuid}.json
-branches/{branch}/entities/nouns/{type}/metadata/{shard}/{uuid}.json
-branches/{branch}/entities/verbs/{type}/vectors/{shard}/{uuid}.json
-branches/{branch}/entities/verbs/{type}/metadata/{shard}/{uuid}.json
+branches/{branch}/entities/nouns/{shard}/{id}/metadata.json
+branches/{branch}/entities/nouns/{shard}/{id}/vector.json
+branches/{branch}/entities/verbs/{shard}/{id}/metadata.json
+branches/{branch}/entities/verbs/{shard}/{id}/vector.json
 ```
 
 **Breakdown**:
 - `branches/{branch}`: Branch isolation (main, feature branches, user workspaces)
 - `entities/nouns` or `entities/verbs`: Entity vs. relationship
-- `{type}`: Semantic type (Character, Place, Knows, LocatedIn, etc.)
-- `vectors` or `metadata`: Vector vs. metadata split
-- `{shard}`: UUID-based shard (00-ff, 256 total)
-- `{uuid}.json`: Individual entity file
+- `{shard}`: UUID-based shard (00-ff, 256 total) - **comes FIRST now!**
+- `{id}`: Full entity UUID
+- `metadata.json` or `vector.json`: Separate files for metadata vs vectors
+
+**Key Change:** Shard + ID come **before** type, not after!
 
 ---
 
-### 6.4 Supported Types
+### 6.4 Type Queries Still Work!
 
-**42 Noun Types**:
-- Person, Organization, Location, Thing, Concept, Event, Agent, Organism, Substance, Quality, TimeInterval, Function, Proposition, Document, Media, File, Message, Collection, Dataset, Product, Service, Task, Project, Process, State, Role, Language, Currency, Measurement, Hypothesis, Experiment, Contract, Regulation, Interface, Resource, Custom, SocialGroup, Institution, Norm, InformationContent, InformationBearer, Relationship
+**How do we filter by type without type directories?**
 
-**127 Verb Types**:
-- Knows, LocatedIn, WorksFor, HasProperty, Contains, PartOf, CausedBy, PrecededBy, FollowedBy, etc.
+The `metadata.noun` field is **indexed by MetadataIndexManager**:
+
+```typescript
+// Find all Person entities - still fast!
+const people = await brain.getNouns({ type: 'person' })
+
+// Under the hood:
+// 1. MetadataIndexManager has index on 'noun' field
+// 2. Returns all IDs where metadata.noun === 'person'
+// 3. Batch fetch those IDs using ID-first paths
+// Result: Still O(person_count), not O(total_entities)
+```
+
+**Supported Types (unchanged):**
+- **42 Noun Types**: Person, Organization, Location, Thing, Concept, Event, Agent, etc.
+- **127 Verb Types**: Knows, LocatedIn, WorksFor, HasProperty, etc.
 - See [noun-verb-taxonomy.md](./noun-verb-taxonomy.md) for complete list
+
+**Type is metadata, not storage structure!**
 
 ---
 
@@ -1418,18 +1452,19 @@ await brain.addBatch([
 
 ## 11. Summary
 
-**Complete Storage Structure**:
+**Complete Storage Structure (v6.0.0)**:
 - **3 storage layers**: branches/ (data), _cow/ (versions), _system/ (indexes)
-- **2 files per entity**: vector + metadata (optimized I/O)
-- **4 indexes**: HNSW (semantic), Type-Aware (filtering), Graph (relationships), Metadata (fields)
+- **2 files per entity**: metadata.json + vector.json (optimized I/O)
+- **4 indexes**: HNSW (semantic), Type Index (metadata-based), Graph (relationships), Metadata (fields)
 - **256 shards**: UUID-based (uniform distribution)
-- **42 noun types + 127 verb types**: Type-first organization
+- **42 noun types + 127 verb types**: Type is metadata, not storage structure
 - **Git-like COW**: Branches, commits, trees, blobs, refs
 - **VFS support**: Traditional file/folder hierarchies
 
-**Scalability**:
+**Scalability (v6.0.0 Improvements)**:
+- **ID-First Storage**: 40x faster on cloud storage (eliminates 42-type search)
 - Sharding: 200x faster for cloud storage
-- Type-first: 42x faster for type filtering
+- Type filtering: Still O(type_count) via metadata index
 - Lazy mode: 5-10x less memory for large datasets
 - COW: Instant branches, efficient forks
 - Deduplication: 30-90% storage savings
@@ -1440,6 +1475,7 @@ await brain.addBatch([
 - Compression (60-80% space savings on filesystem)
 - Quota monitoring (OPFS browser limits)
 - Auto-reinitialization (COW always-on, can't be broken)
+- **Clean architecture**: Removed 500+ lines of type cache complexity
 
 ---
 
@@ -1453,6 +1489,6 @@ await brain.addBatch([
 
 ---
 
-**Version**: v5.11.0
-**Last Updated**: 2025-11-18
-**Key Features**: COW always-on, type-first storage, 4-index architecture, VFS support, billion-scale optimization
+**Version**: v6.0.0
+**Last Updated**: 2025-11-19
+**Key Features**: ID-first storage, COW always-on, metadata-based type index, 4-index architecture, VFS support, billion-scale optimization, 40x cloud performance improvement

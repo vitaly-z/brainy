@@ -55,7 +55,7 @@ Typed connections between entities - building knowledge graphs.
 Vector search + Graph traversal + Metadata filtering in one unified query.
 
 ### 🌳 Git-Style Branching (v5.0.0+)
-Fork, experiment, commit, and merge - Snowflake-style copy-on-write isolation.
+Fork, experiment, and commit - Snowflake-style copy-on-write isolation.
 
 ### 📜 Entity Versioning (v5.3.0+)
 Time-travel and history tracking for individual entities - Git-like version control with content-addressable storage.
@@ -434,26 +434,6 @@ const commitId = await brain.commit({
 
 ---
 
-### `merge(sourceBranch, targetBranch, options?)` → `Promise<MergeResult>`
-
-Merge branches with conflict resolution.
-
-```typescript
-const result = await brain.merge('test-feature', 'main', {
-  strategy: 'last-write-wins',  // or 'manual'
-  deleteSource: false            // Keep source branch
-})
-
-console.log(result.added)       // Entities added
-console.log(result.modified)    // Entities modified
-console.log(result.conflicts)   // Conflicts (if any)
-```
-
-**Strategies:**
-- `last-write-wins`: Auto-resolve with latest changes
-- `manual`: Return conflicts for manual resolution
-
----
 
 ### `deleteBranch(branch)` → `Promise<void>`
 
@@ -1318,17 +1298,18 @@ await brain.import('https://api.example.com/data.json')
 
 ---
 
-### Export & Backup
+### Export & Snapshots
 
 ```typescript
 // Export to file
 await brain.export('/path/to/backup.brainy')
 
-// Create backup snapshot
-const backup = await brain.backup()
+// Create instant snapshot using COW fork
+await brain.fork('backup-2025-01-19')
 
-// Restore from backup
-await brain.restore(backup)
+// Time-travel to specific commit
+const snapshot = await brain.asOf(commitId)
+const entities = await snapshot.find({ limit: 100 })
 ```
 
 ---
@@ -1689,12 +1670,8 @@ await experiment.commit({
   author: 'dev@example.com'
 })
 
-// Merge back to main
-const result = await brain.merge('test-migration', 'main', {
-  strategy: 'last-write-wins'
-})
-
-console.log(`Added: ${result.added}, Modified: ${result.modified}`)
+// Switch to experimental branch to make it active
+await brain.checkout('test-migration')
 ```
 
 ---
@@ -1833,7 +1810,7 @@ For the full taxonomy with all 169 types and their descriptions, see:
 ### v5.0.0
 
 - ✅ **Instant Fork** - Snowflake-style copy-on-write (<100ms fork time)
-- ✅ **Git-Style Branching** - fork, merge, commit, checkout, listBranches
+- ✅ **Git-Style Branching** - fork, commit, checkout, listBranches
 - ✅ **Full Branch Isolation** - Parent and fork fully isolated
 - ✅ **Read-Through Inheritance** - Forks see parent + own data
 - ✅ **Universal Storage Support** - All 7 adapters support branching

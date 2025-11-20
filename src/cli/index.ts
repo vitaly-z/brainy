@@ -536,18 +536,8 @@ program
 
 // ===== Data Management Commands =====
 
-program
-  .command('backup <file>')
-  .description('Create database backup')
-  .option('--compress', 'Compress backup')
-  .action(dataCommands.backup)
 
 program
-  .command('restore <file>')
-  .description('Restore from backup')
-  .option('--merge', 'Merge with existing data (default: replace)')
-  .action(dataCommands.restore)
-
 program
   .command('data-stats')
   .description('Show detailed database statistics')
@@ -656,13 +646,6 @@ program
   .alias('co')
   .description('Switch to a different branch')
   .action(cowCommands.checkout)
-
-program
-  .command('merge [source] [target]')
-  .description('Merge a fork/branch into another branch')
-  .option('--strategy <type>', 'Merge strategy (last-write-wins|custom)', 'last-write-wins')
-  .option('-f, --force', 'Force merge on conflicts')
-  .action(cowCommands.merge)
 
 program
   .command('history')

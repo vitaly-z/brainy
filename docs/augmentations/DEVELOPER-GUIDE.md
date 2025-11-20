@@ -275,9 +275,10 @@ class BackupAugmentation extends BaseAugmentation {
   
   private async performBackup(brain?: any): Promise<void> {
     if (!brain) return
-    const backup = await brain.backup()
-    await this.saveToCloud(backup)
-    console.log('Automatic backup completed')
+    // Create instant COW snapshot
+    const snapshotName = `backup-${Date.now()}`
+    await brain.fork(snapshotName)
+    console.log(`Automatic snapshot created: ${snapshotName}`)
   }
 }
 ```

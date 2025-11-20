@@ -477,7 +477,8 @@ export class S3CompatibleStorage extends BaseStorage {
         prodLog.info('🧹 Node cache is empty - starting fresh')
       }
 
-      this.isInitialized = true
+      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      await super.init()
       this.logger.info(`Initialized ${this.serviceType} storage with bucket ${this.bucketName}`)
     } catch (error) {
       this.logger.error(`Failed to initialize ${this.serviceType} storage:`, error)

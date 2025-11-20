@@ -72,10 +72,10 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
-   * Nothing to initialize for in-memory storage
+   * v6.0.0: Calls super.init() to initialize GraphAdjacencyIndex and type statistics
    */
   public async init(): Promise<void> {
-    this.isInitialized = true
+    await super.init()
   }
 
   // v5.4.0: Removed saveNoun_internal and getNoun_internal - using BaseStorage's type-first implementation
@@ -296,7 +296,7 @@ export class MemoryStorage extends BaseStorage {
    * Initialize counts from in-memory storage - O(1) operation (v4.0.0)
    */
   protected async initializeCounts(): Promise<void> {
-    // v5.4.0: Scan objectStore paths (type-first structure) to count entities
+    // v6.0.0: Scan objectStore paths (ID-first structure) to count entities
     this.entityCounts.clear()
     this.verbCounts.clear()
 
@@ -305,19 +305,17 @@ export class MemoryStorage extends BaseStorage {
 
     // Scan all paths in objectStore
     for (const path of this.objectStore.keys()) {
-      // Count nouns by type (entities/nouns/{type}/vectors/{shard}/{id}.json)
-      const nounMatch = path.match(/^entities\/nouns\/([^/]+)\/vectors\//)
+      // Count nouns (entities/nouns/{shard}/{id}/vectors.json)
+      const nounMatch = path.match(/^entities\/nouns\/[0-9a-f]{2}\/[^/]+\/vectors\.json$/)
       if (nounMatch) {
-        const type = nounMatch[1]
-        this.entityCounts.set(type, (this.entityCounts.get(type) || 0) + 1)
+        // v6.0.0: Type is in metadata, not path - just count total
         totalNouns++
       }
 
-      // Count verbs by type (entities/verbs/{type}/vectors/{shard}/{id}.json)
-      const verbMatch = path.match(/^entities\/verbs\/([^/]+)\/vectors\//)
+      // Count verbs (entities/verbs/{shard}/{id}/vectors.json)
+      const verbMatch = path.match(/^entities\/verbs\/[0-9a-f]{2}\/[^/]+\/vectors\.json$/)
       if (verbMatch) {
-        const type = verbMatch[1]
-        this.verbCounts.set(type, (this.verbCounts.get(type) || 0) + 1)
+        // v6.0.0: Type is in metadata, not path - just count total
         totalVerbs++
       }
     }

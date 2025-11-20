@@ -344,7 +344,8 @@ export class R2Storage extends BaseStorage {
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
 
-      this.isInitialized = true
+      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      await super.init()
     } catch (error) {
       this.logger.error('Failed to initialize R2 storage:', error)
       throw new Error(`Failed to initialize R2 storage: ${error}`)
