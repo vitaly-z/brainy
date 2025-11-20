@@ -202,9 +202,17 @@ export class PathResolver {
       type: VerbType.Contains
     })
 
+    // v6.0.2: PERFORMANCE FIX - Batch fetch all children (eliminates N+1 pattern)
+    // Before: N sequential get() calls (10 children = 10 × 300ms = 3000ms on GCS)
+    // After: 1 batch call (10 children = 1 × 300ms = 300ms on GCS)
+    // 10x improvement for cloud storage (GCS, S3, Azure)
+    // Same pattern as getChildren() (line 240) - now consistently applied
+    const childIds = relations.map(r => r.to)
+    const childrenMap = await this.brain.batchGet(childIds)
+
     // Find the child with matching name
     for (const relation of relations) {
-      const childEntity = await this.brain.get(relation.to)
+      const childEntity = childrenMap.get(relation.to)
       if (childEntity && childEntity.metadata?.name === name) {
         // Update parent cache
         if (!this.parentCache.has(parentId)) {

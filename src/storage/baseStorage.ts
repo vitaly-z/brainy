@@ -2624,13 +2624,32 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       try {
         const verbIds = await this.graphIndex.getVerbIdsBySource(sourceId)
         prodLog.debug(`[BaseStorage] GraphAdjacencyIndex found ${verbIds.length} verb IDs for sourceId=${sourceId}`)
+
+        // v6.0.2: PERFORMANCE FIX - Batch fetch verbs + metadata (eliminates N+1 pattern)
+        // Before: N sequential calls (10 children = 20 × 300ms = 6000ms on GCS)
+        // After: 2 parallel batch calls (10 children = 2 × 300ms = 600ms on GCS)
+        // 10x improvement for cloud storage (GCS, S3, Azure)
+        const verbPaths = verbIds.map(id => getVerbVectorPath(id))
+        const metadataPaths = verbIds.map(id => getVerbMetadataPath(id))
+
+        const [verbsMap, metadataMap] = await Promise.all([
+          this.readBatchWithInheritance(verbPaths),
+          this.readBatchWithInheritance(metadataPaths)
+        ])
+
         const results: HNSWVerbWithMetadata[] = []
 
         for (const verbId of verbIds) {
-          const verb = await this.getVerb_internal(verbId)
-          const metadata = await this.getVerbMetadata(verbId)
+          const verbPath = getVerbVectorPath(verbId)
+          const metadataPath = getVerbMetadataPath(verbId)
 
-          if (verb && metadata) {
+          const rawVerb = verbsMap.get(verbPath)
+          const metadata = metadataMap.get(metadataPath)
+
+          if (rawVerb && metadata) {
+            // v6.0.0: CRITICAL - Deserialize connections Map from JSON storage format
+            const verb = this.deserializeVerb(rawVerb)
+
             results.push({
               ...verb,
               weight: metadata.weight,
@@ -2648,7 +2667,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           }
         }
 
-        prodLog.debug(`[BaseStorage] GraphAdjacencyIndex path returned ${results.length} verbs`)
+        prodLog.debug(`[BaseStorage] GraphAdjacencyIndex + batch fetch returned ${results.length} verbs`)
         return results
       } catch (error) {
         prodLog.warn('[BaseStorage] GraphAdjacencyIndex lookup failed, falling back to shard iteration:', error)
