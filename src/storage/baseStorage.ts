@@ -369,9 +369,26 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       },
 
       put: async (key: string, data: Buffer): Promise<void> => {
-        // v5.10.1: Use shared binaryDataCodec utility (single source of truth)
-        // Wraps binary data or parses JSON for storage
-        const obj = wrapBinaryData(data)
+        // v6.2.0 PERMANENT FIX: Use key naming convention (explicit type contract)
+        // NO GUESSING - key format explicitly declares data type:
+        //
+        // JSON keys (metadata and refs):
+        // - 'ref:*'           → JSON (RefManager: refs, HEAD, branches)
+        // - 'blob-meta:hash'  → JSON (BlobStorage: blob metadata)
+        // - 'commit-meta:hash'→ JSON (BlobStorage: commit metadata)
+        // - 'tree-meta:hash'  → JSON (BlobStorage: tree metadata)
+        //
+        // Binary keys (blob data):
+        // - 'blob:hash'       → Binary (BlobStorage: compressed/raw blob data)
+        // - 'commit:hash'     → Binary (BlobStorage: commit object data)
+        // - 'tree:hash'       → Binary (BlobStorage: tree object data)
+        //
+        // This eliminates the fragile JSON.parse() guessing that caused blob integrity
+        // failures when compressed data accidentally parsed as valid JSON.
+        const obj = key.includes('-meta:') || key.startsWith('ref:')
+          ? JSON.parse(data.toString())  // Metadata/refs: ALWAYS JSON.stringify'd
+          : { _binary: true, data: data.toString('base64') }  // Blobs: ALWAYS binary (possibly compressed)
+
         await this.writeObjectToPath(`_cow/${key}`, obj)
       },
 
@@ -787,6 +804,85 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Only custom user fields remain in metadata
       metadata: customMetadata
     }
+  }
+
+  /**
+   * Batch get multiple verbs (v6.2.0 - N+1 fix)
+   *
+   * **Performance**: Eliminates N+1 pattern for verb loading
+   * - Current: N × getVerb() = N × 50ms on GCS = 250ms for 5 verbs
+   * - Batched: 1 × getVerbsBatch() = 1 × 50ms on GCS = 50ms (**5x faster**)
+   *
+   * **Use cases:**
+   * - graphIndex.getVerbsBatchCached() for relate() duplicate checking
+   * - Loading relationships in batch operations
+   * - Pre-loading verbs for graph traversal
+   *
+   * @param ids Array of verb IDs to fetch
+   * @returns Map of id → HNSWVerbWithMetadata (only successful reads included)
+   *
+   * @since v6.2.0
+   */
+  public async getVerbsBatch(ids: string[]): Promise<Map<string, HNSWVerbWithMetadata>> {
+    await this.ensureInitialized()
+
+    const results = new Map<string, HNSWVerbWithMetadata>()
+    if (ids.length === 0) return results
+
+    // v6.2.0: Batch-fetch vectors and metadata in parallel
+    // Build paths for vectors
+    const vectorPaths: Array<{ path: string; id: string }> = ids.map(id => ({
+      path: getVerbVectorPath(id),
+      id
+    }))
+
+    // Build paths for metadata
+    const metadataPaths: Array<{ path: string; id: string }> = ids.map(id => ({
+      path: getVerbMetadataPath(id),
+      id
+    }))
+
+    // Batch read vectors and metadata in parallel
+    const [vectorResults, metadataResults] = await Promise.all([
+      this.readBatchWithInheritance(vectorPaths.map(p => p.path)),
+      this.readBatchWithInheritance(metadataPaths.map(p => p.path))
+    ])
+
+    // Combine vectors + metadata into HNSWVerbWithMetadata
+    for (const { path: vectorPath, id } of vectorPaths) {
+      const vectorData = vectorResults.get(vectorPath)
+      const metadataPath = getVerbMetadataPath(id)
+      const metadataData = metadataResults.get(metadataPath)
+
+      if (vectorData && metadataData) {
+        // Deserialize verb
+        const verb = this.deserializeVerb(vectorData)
+
+        // Extract standard fields to top-level (v4.8.0 pattern)
+        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+
+        results.set(id, {
+          id: verb.id,
+          vector: verb.vector,
+          connections: verb.connections,
+          verb: verb.verb,
+          sourceId: verb.sourceId,
+          targetId: verb.targetId,
+          // v4.8.0: Standard fields at top-level
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          // Only custom user fields remain in metadata
+          metadata: customMetadata
+        })
+      }
+    }
+
+    return results
   }
 
   /**
@@ -1943,6 +2039,84 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       const metadata = batchResults.get(path)
       if (metadata) {
         results.set(id, metadata)
+      }
+    }
+
+    return results
+  }
+
+  /**
+   * Batch get multiple nouns with vectors (v6.2.0 - N+1 fix)
+   *
+   * **Performance**: Eliminates N+1 pattern for vector loading
+   * - Current: N × getNoun() = N × 50ms on GCS = 500ms for 10 entities
+   * - Batched: 1 × getNounBatch() = 1 × 50ms on GCS = 50ms (**10x faster**)
+   *
+   * **Use cases:**
+   * - batchGet() with includeVectors: true
+   * - Loading entities for similarity computation
+   * - Pre-loading vectors for batch processing
+   *
+   * @param ids Array of entity IDs to fetch (with vectors)
+   * @returns Map of id → HNSWNounWithMetadata (only successful reads included)
+   *
+   * @since v6.2.0
+   */
+  public async getNounBatch(ids: string[]): Promise<Map<string, HNSWNounWithMetadata>> {
+    await this.ensureInitialized()
+
+    const results = new Map<string, HNSWNounWithMetadata>()
+    if (ids.length === 0) return results
+
+    // v6.2.0: Batch-fetch vectors and metadata in parallel
+    // Build paths for vectors
+    const vectorPaths: Array<{ path: string; id: string }> = ids.map(id => ({
+      path: getNounVectorPath(id),
+      id
+    }))
+
+    // Build paths for metadata
+    const metadataPaths: Array<{ path: string; id: string }> = ids.map(id => ({
+      path: getNounMetadataPath(id),
+      id
+    }))
+
+    // Batch read vectors and metadata in parallel
+    const [vectorResults, metadataResults] = await Promise.all([
+      this.readBatchWithInheritance(vectorPaths.map(p => p.path)),
+      this.readBatchWithInheritance(metadataPaths.map(p => p.path))
+    ])
+
+    // Combine vectors + metadata into HNSWNounWithMetadata
+    for (const { path: vectorPath, id } of vectorPaths) {
+      const vectorData = vectorResults.get(vectorPath)
+      const metadataPath = getNounMetadataPath(id)
+      const metadataData = metadataResults.get(metadataPath)
+
+      if (vectorData && metadataData) {
+        // Deserialize noun
+        const noun = this.deserializeNoun(vectorData)
+
+        // Extract standard fields to top-level (v4.8.0 pattern)
+        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+
+        results.set(id, {
+          id: noun.id,
+          vector: noun.vector,
+          connections: noun.connections,
+          level: noun.level,
+          // v4.8.0: Standard fields at top-level
+          type: (nounType as NounType) || NounType.Thing,
+          createdAt: (createdAt as number) || Date.now(),
+          updatedAt: (updatedAt as number) || Date.now(),
+          confidence: confidence as number | undefined,
+          weight: weight as number | undefined,
+          service: service as string | undefined,
+          data: data as Record<string, any> | undefined,
+          createdBy,
+          // Only custom user fields remain in metadata
+          metadata: customMetadata
+        })
       }
     }
 

@@ -364,6 +364,7 @@ export interface DeleteManyParams {
   where?: any               // Delete by metadata
   limit?: number            // Max to delete (safety)
   onProgress?: (done: number, total: number) => void
+  continueOnError?: boolean  // v6.2.0: Continue processing if a delete fails
 }
 
 /**

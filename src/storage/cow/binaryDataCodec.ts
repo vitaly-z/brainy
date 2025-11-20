@@ -86,14 +86,27 @@ export function unwrapBinaryData(data: any): Buffer {
 /**
  * Wrap binary data for JSON storage
  *
- * This is the SINGLE SOURCE OF TRUTH for wrapping binary data.
- * All storage operations MUST use this function.
+ * ⚠️ WARNING: DO NOT USE THIS ON WRITE PATH! (v6.2.0)
+ * ⚠️ Use key-based dispatch in baseStorage.ts COW adapter instead.
+ * ⚠️ This function exists for legacy/compatibility only.
+ *
+ * DEPRECATED APPROACH: Tries to guess if data is JSON by parsing.
+ * This is FRAGILE because compressed binary can accidentally parse as valid JSON,
+ * causing blob integrity failures.
+ *
+ * v6.2.0 SOLUTION: baseStorage.ts COW adapter now uses key naming convention:
+ * - Keys with '-meta:' or 'ref:' prefix → Always JSON
+ * - Keys with 'blob:', 'commit:', 'tree:' prefix → Always binary
+ * No guessing needed!
  *
  * @param data - Buffer to wrap
  * @returns Wrapped object or parsed JSON object
+ * @deprecated Use key-based dispatch in baseStorage.ts instead
  */
 export function wrapBinaryData(data: Buffer): any {
   // Try to parse as JSON first (for metadata, trees, commits)
+  // NOTE: This is the OLD approach - fragile because compressed data
+  // can accidentally parse as valid JSON!
   try {
     return JSON.parse(data.toString())
   } catch {

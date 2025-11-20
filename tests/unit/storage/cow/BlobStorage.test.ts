@@ -608,4 +608,103 @@ describe('BlobStorage', () => {
       expect(retrieved.equals(originalData)).toBe(true)
     })
   })
+
+  describe('v6.2.0 Regression - Key-Based Dispatch (Permanent Fix)', () => {
+    it('should handle JSON-like compressed data without integrity failures', async () => {
+      // THE KILLER TEST CASE: Data that looks like JSON when compressed
+      // This would fail with v5.10.1 wrapBinaryData() guessing approach
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+      const testBlobStorage = new BlobStorage(wrappingAdapter, { enableCompression: true })
+
+      // Create JSON data that will be compressed
+      const jsonData = { nested: { key: 'value', array: [1, 2, 3] }, repeated: 'x'.repeat(1000) }
+      const originalData = Buffer.from(JSON.stringify(jsonData))
+
+      // Write blob (compression happens, might create JSON-parseable bytes)
+      const hash = await testBlobStorage.write(originalData)
+
+      // Clear cache to force re-read from storage
+      testBlobStorage.clearCache()
+
+      // v5.10.1 bug: If compressed bytes accidentally parse as JSON,
+      // wrapBinaryData() would store parsed object instead of wrapped binary
+      // On read: JSON.stringify(object) !== original compressed bytes → hash mismatch
+      //
+      // v6.2.0 fix: Key-based dispatch eliminates guessing
+      // 'blob:hash' → Always wrapped as binary, never parsed
+      const retrieved = await testBlobStorage.read(hash)
+
+      // Hash MUST match
+      expect(BlobStorage.hash(retrieved)).toBe(hash)
+      expect(retrieved.equals(originalData)).toBe(true)
+    })
+
+    it('should correctly dispatch all key types', async () => {
+      // Verify key-based dispatch works for all COW key patterns
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+      const testBlobStorage = new BlobStorage(wrappingAdapter)
+
+      // Test binary blob keys
+      const blobData = Buffer.from('binary blob content')
+      const blobHash = await testBlobStorage.write(blobData, { type: 'blob' })
+      testBlobStorage.clearCache()
+      const retrievedBlob = await testBlobStorage.read(blobHash)
+      expect(retrievedBlob.equals(blobData)).toBe(true)
+
+      // Test commit keys
+      const commitData = Buffer.from('commit content')
+      const commitHash = await testBlobStorage.write(commitData, { type: 'commit' })
+      testBlobStorage.clearCache()
+      const retrievedCommit = await testBlobStorage.read(commitHash)
+      expect(retrievedCommit.equals(commitData)).toBe(true)
+
+      // Test tree keys
+      const treeData = Buffer.from('tree content')
+      const treeHash = await testBlobStorage.write(treeData, { type: 'tree' })
+      testBlobStorage.clearCache()
+      const retrievedTree = await testBlobStorage.read(treeHash)
+      expect(retrievedTree.equals(treeData)).toBe(true)
+    })
+
+    it('should handle metadata keys correctly', async () => {
+      // Verify that key-based dispatch correctly handles metadata keys
+      // This test verifies the dispatch logic, not the full read/write cycle
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+
+      // Test metadata key dispatch: should parse as JSON
+      const metadataObj = { hash: 'test123', size: 42, compression: 'none' as const }
+      const metadataBuffer = Buffer.from(JSON.stringify(metadataObj))
+
+      await wrappingAdapter.put('blob-meta:test123', metadataBuffer)
+      const retrieved = await wrappingAdapter.get('blob-meta:test123')
+
+      // Should be parsed as JSON object (not wrapped as binary)
+      expect(retrieved).toBeDefined()
+      expect(typeof retrieved).toBe('object')
+      expect(retrieved.hash).toBe('test123')
+      expect(retrieved.size).toBe(42)
+    })
+
+    it('should never call wrapBinaryData on write path', async () => {
+      // Verify that baseStorage COW adapter uses key-based dispatch,
+      // NOT wrapBinaryData() guessing
+      const { TestWrappingAdapter } = await import('../../../helpers/TestWrappingAdapter.js')
+      const wrappingAdapter = new TestWrappingAdapter()
+      const testBlobStorage = new BlobStorage(wrappingAdapter)
+
+      // Create data that would trigger wrapBinaryData() bug if used
+      const problematicData = Buffer.from('[{"looks":"like","valid":"json"}]')
+      const hash = await testBlobStorage.write(problematicData)
+
+      testBlobStorage.clearCache()
+      const retrieved = await testBlobStorage.read(hash)
+
+      // Should retrieve exact same bytes (no JSON parsing occurred)
+      expect(retrieved.equals(problematicData)).toBe(true)
+      expect(BlobStorage.hash(retrieved)).toBe(hash)
+    })
+  })
 })

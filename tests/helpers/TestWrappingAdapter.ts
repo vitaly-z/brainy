@@ -39,18 +39,11 @@ export class TestWrappingAdapter implements COWStorageAdapter {
   }
 
   async put(key: string, data: Buffer): Promise<void> {
-    // Determine if data is JSON or binary
-    let obj: any
-    try {
-      // Try to parse as JSON (for metadata)
-      obj = JSON.parse(data.toString())
-    } catch {
-      // Not JSON - wrap as binary (like production)
-      obj = {
-        _binary: true,
-        data: data.toString('base64')
-      }
-    }
+    // v6.2.0: Use key-based dispatch (matches baseStorage COW adapter)
+    // NO GUESSING - key format explicitly declares data type
+    const obj = key.includes('-meta:') || key.startsWith('ref:')
+      ? JSON.parse(data.toString())  // Metadata/refs: ALWAYS JSON
+      : { _binary: true, data: data.toString('base64') }  // Blobs: ALWAYS binary
 
     // Stringify to JSON
     const jsonStr = JSON.stringify(obj)

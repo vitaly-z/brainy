@@ -714,6 +714,13 @@ export interface StorageAdapter {
   getNounMetadata(id: string): Promise<NounMetadata | null>
 
   /**
+   * Batch get multiple nouns with vectors (v6.2.0 - N+1 fix)
+   * @param ids Array of noun IDs to fetch
+   * @returns Map of id → HNSWNounWithMetadata (only successful reads included)
+   */
+  getNounBatch?(ids: string[]): Promise<Map<string, HNSWNounWithMetadata>>
+
+  /**
    * Save verb metadata to storage (v4.0.0: now typed)
    * @param id The ID of the verb
    * @param metadata The metadata to save
@@ -727,6 +734,13 @@ export interface StorageAdapter {
    * @returns Promise that resolves to the metadata or null if not found
    */
   getVerbMetadata(id: string): Promise<VerbMetadata | null>
+
+  /**
+   * Batch get multiple verbs (v6.2.0 - N+1 fix)
+   * @param ids Array of verb IDs to fetch
+   * @returns Map of id → HNSWVerbWithMetadata (only successful reads included)
+   */
+  getVerbsBatch?(ids: string[]): Promise<Map<string, HNSWVerbWithMetadata>>
 
   clear(): Promise<void>
 

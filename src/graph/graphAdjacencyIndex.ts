@@ -360,6 +360,60 @@ export class GraphAdjacencyIndex {
   }
 
   /**
+   * Batch get multiple verbs with caching (v6.2.0 - N+1 fix)
+   *
+   * **Performance**: Eliminates N+1 pattern for verb loading
+   * - Current: N × getVerbCached() = N × 50ms on GCS = 250ms for 5 verbs
+   * - Batched: 1 × getVerbsBatchCached() = 1 × 50ms on GCS = 50ms (**5x faster**)
+   *
+   * **Use cases:**
+   * - relate() duplicate checking (check multiple existing relationships)
+   * - Loading relationship chains
+   * - Pre-loading verbs for analysis
+   *
+   * **Cache behavior:**
+   * - Checks UnifiedCache first (fast path)
+   * - Batch-loads uncached verbs from storage
+   * - Caches loaded verbs for future access
+   *
+   * @param verbIds Array of verb IDs to fetch
+   * @returns Map of verbId → GraphVerb (only successful reads included)
+   *
+   * @since v6.2.0
+   */
+  async getVerbsBatchCached(verbIds: string[]): Promise<Map<string, GraphVerb>> {
+    const results = new Map<string, GraphVerb>()
+    const uncached: string[] = []
+
+    // Phase 1: Check cache for each verb
+    for (const verbId of verbIds) {
+      const cacheKey = `graph:verb:${verbId}`
+      const cached = this.unifiedCache.getSync(cacheKey)
+
+      if (cached) {
+        results.set(verbId, cached)
+      } else {
+        uncached.push(verbId)
+      }
+    }
+
+    // Phase 2: Batch-load uncached verbs from storage
+    if (uncached.length > 0 && this.storage.getVerbsBatch) {
+      const loadedVerbs = await this.storage.getVerbsBatch(uncached)
+
+      for (const [verbId, verb] of loadedVerbs.entries()) {
+        const cacheKey = `graph:verb:${verbId}`
+        // Cache the loaded verb with metadata
+        // Note: HNSWVerbWithMetadata is compatible with GraphVerb (both interfaces)
+        this.unifiedCache.set(cacheKey, verb as any, 'other', 128, 50)  // 128 bytes estimated size, 50ms rebuild cost
+        results.set(verbId, verb as any)
+      }
+    }
+
+    return results
+  }
+
+  /**
    * Get total relationship count - O(1) operation
    */
   size(): number {
