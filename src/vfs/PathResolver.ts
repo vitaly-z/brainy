@@ -8,6 +8,8 @@
 import { Brainy } from '../brainy.js'
 import { VerbType, NounType } from '../types/graphTypes.js'
 import { VFSEntity, VFSError, VFSErrorCode } from './types.js'
+import { getGlobalCache } from '../utils/unifiedCache.js'
+import { prodLog } from '../utils/logger.js'
 
 /**
  * Path cache entry
@@ -38,6 +40,9 @@ export class PathResolver {
   // Statistics
   private cacheHits = 0
   private cacheMisses = 0
+  private metadataIndexHits = 0
+  private metadataIndexMisses = 0
+  private graphTraversalFallbacks = 0
 
   // Maintenance timer
   private maintenanceTimer: NodeJS.Timeout | null = null
@@ -66,7 +71,8 @@ export class PathResolver {
 
   /**
    * Resolve a path to an entity ID
-   * Uses multi-layer caching for optimal performance
+   * v6.1.0: Uses 3-tier caching + MetadataIndexManager for optimal performance
+   * Works for ALL storage adapters (FileSystem, GCS, S3, Azure, R2, OPFS)
    */
   async resolve(path: string, options?: {
     followSymlinks?: boolean
@@ -80,17 +86,32 @@ export class PathResolver {
       return this.rootEntityId
     }
 
-    // Check L1 cache (hot paths)
+    const cacheKey = `vfs:path:${normalizedPath}`
+
+    // L1: UnifiedCache (global LRU cache, <1ms, works for ALL adapters)
+    if (options?.cache !== false) {
+      const cached = getGlobalCache().getSync(cacheKey)
+      if (cached) {
+        this.cacheHits++
+        return cached
+      }
+    }
+
+    // L2: Local hot paths cache (warm, <1ms)
     if (options?.cache !== false && this.hotPaths.has(normalizedPath)) {
       const cached = this.pathCache.get(normalizedPath)
       if (cached && this.isCacheValid(cached)) {
         this.cacheHits++
         cached.hits++
+
+        // Also cache in UnifiedCache for cross-instance sharing
+        getGlobalCache().set(cacheKey, cached.entityId, 'other', 64, 20)
+
         return cached.entityId
       }
     }
 
-    // Check L2 cache (regular cache)
+    // L2b: Regular local cache
     if (options?.cache !== false && this.pathCache.has(normalizedPath)) {
       const cached = this.pathCache.get(normalizedPath)!
       if (this.isCacheValid(cached)) {
@@ -102,6 +123,9 @@ export class PathResolver {
           this.hotPaths.add(normalizedPath)
         }
 
+        // Also cache in UnifiedCache
+        getGlobalCache().set(cacheKey, cached.entityId, 'other', 64, 20)
+
         return cached.entityId
       } else {
         // Remove stale entry
@@ -111,27 +135,15 @@ export class PathResolver {
 
     this.cacheMisses++
 
-    // Try to resolve using parent cache
-    const parentPath = this.getParentPath(normalizedPath)
-    const name = this.getBasename(normalizedPath)
+    // L3: MetadataIndexManager query (cold, 5-20ms on GCS, works for ALL adapters)
+    // Falls back to graph traversal automatically if MetadataIndex unavailable
+    const entityId = await this.resolveWithMetadataIndex(normalizedPath)
 
-    if (parentPath && this.pathCache.has(parentPath)) {
-      const parentCached = this.pathCache.get(parentPath)!
-      if (this.isCacheValid(parentCached)) {
-        // We have the parent, just need to find the child
-        const entityId = await this.resolveChild(parentCached.entityId, name)
-        if (entityId) {
-          this.cachePathEntry(normalizedPath, entityId)
-          return entityId
-        }
-      }
+    // Cache the result in ALL layers for future hits
+    if (options?.cache !== false) {
+      getGlobalCache().set(cacheKey, entityId, 'other', 64, 20)
+      this.cachePathEntry(normalizedPath, entityId)
     }
-
-    // Full resolution required
-    const entityId = await this.fullResolve(normalizedPath, options)
-
-    // Cache the result
-    this.cachePathEntry(normalizedPath, entityId)
 
     return entityId
   }
@@ -181,6 +193,54 @@ export class PathResolver {
     }
 
     return currentId
+  }
+
+  /**
+   * Resolve path using MetadataIndexManager (O(log n) direct query)
+   * Works for ALL storage adapters (FileSystem, GCS, S3, Azure, R2, OPFS)
+   * Falls back to graph traversal if MetadataIndex unavailable
+   */
+  private async resolveWithMetadataIndex(path: string): Promise<string> {
+    // Access MetadataIndexManager from brain's storage
+    const storage = (this.brain as any).storage
+    const metadataIndex = storage?.metadataIndex
+
+    if (!metadataIndex) {
+      // MetadataIndex not available, use graph traversal
+      prodLog.debug(`MetadataIndex not available for ${path}, using graph traversal`)
+      this.graphTraversalFallbacks++
+      return await this.fullResolve(path)
+    }
+
+    try {
+      // Direct O(log n) query to roaring bitmap index
+      // This queries the 'path' field in VFS entity metadata
+      const ids = await metadataIndex.getIdsFromChunks('path', path)
+
+      if (ids.length === 0) {
+        this.metadataIndexMisses++
+        throw new VFSError(
+          VFSErrorCode.ENOENT,
+          `No such file or directory: ${path}`,
+          path,
+          'resolveWithMetadataIndex'
+        )
+      }
+
+      this.metadataIndexHits++
+      return ids[0]  // VFS paths are unique, return first match
+    } catch (error) {
+      // MetadataIndex query failed (index not built, path not indexed, etc.)
+      // Fallback to reliable graph traversal
+      if (error instanceof VFSError) {
+        throw error  // Re-throw ENOENT errors
+      }
+
+      prodLog.debug(`MetadataIndex query failed for ${path}, falling back to graph traversal:`, error)
+      this.metadataIndexMisses++
+      this.graphTraversalFallbacks++
+      return await this.fullResolve(path)
+    }
   }
 
   /**
@@ -451,6 +511,7 @@ export class PathResolver {
 
   /**
    * Get cache statistics
+   * v6.1.0: Added MetadataIndexManager metrics
    */
   getStats(): {
     cacheSize: number
@@ -458,13 +519,24 @@ export class PathResolver {
     hitRate: number
     hits: number
     misses: number
+    metadataIndexHits: number
+    metadataIndexMisses: number
+    metadataIndexHitRate: number
+    graphTraversalFallbacks: number
   } {
+    const totalMetadataIndexQueries = this.metadataIndexHits + this.metadataIndexMisses
     return {
       cacheSize: this.pathCache.size,
       hotPaths: this.hotPaths.size,
-      hitRate: this.cacheHits / (this.cacheHits + this.cacheMisses),
+      hitRate: this.cacheHits / (this.cacheHits + this.cacheMisses) || 0,
       hits: this.cacheHits,
-      misses: this.cacheMisses
+      misses: this.cacheMisses,
+      metadataIndexHits: this.metadataIndexHits,
+      metadataIndexMisses: this.metadataIndexMisses,
+      metadataIndexHitRate: totalMetadataIndexQueries > 0
+        ? this.metadataIndexHits / totalMetadataIndexQueries
+        : 0,
+      graphTraversalFallbacks: this.graphTraversalFallbacks
     }
   }
 }
