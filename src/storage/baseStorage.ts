@@ -259,22 +259,31 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * IMPORTANT: If your adapter overrides init(), call await super.init() first!
    */
   public async init(): Promise<void> {
-    // Load type statistics from storage (if they exist)
-    await this.loadTypeStatistics()
+    // v6.0.1: CRITICAL FIX - Set flag FIRST to prevent infinite recursion
+    // If any code path during initialization calls ensureInitialized(), it would
+    // trigger init() again. Setting the flag immediately breaks the recursion cycle.
+    this.isInitialized = true
 
-    // v6.0.0: Create GraphAdjacencyIndex (lazy-loaded, no rebuild)
-    // LSM-trees are initialized on first use via ensureInitialized()
-    // Index is populated incrementally as verbs are added via addVerb()
     try {
-      prodLog.debug('[BaseStorage] Creating GraphAdjacencyIndex...')
-      this.graphIndex = new GraphAdjacencyIndex(this)
-      prodLog.debug(`[BaseStorage] GraphAdjacencyIndex instantiated (lazy-loaded), graphIndex=${!!this.graphIndex}`)
+      // Load type statistics from storage (if they exist)
+      await this.loadTypeStatistics()
+
+      // v6.0.0: Create GraphAdjacencyIndex (lazy-loaded, no rebuild)
+      // LSM-trees are initialized on first use via ensureInitialized()
+      // Index is populated incrementally as verbs are added via addVerb()
+      try {
+        prodLog.debug('[BaseStorage] Creating GraphAdjacencyIndex...')
+        this.graphIndex = new GraphAdjacencyIndex(this)
+        prodLog.debug(`[BaseStorage] GraphAdjacencyIndex instantiated (lazy-loaded), graphIndex=${!!this.graphIndex}`)
+      } catch (error) {
+        prodLog.error('[BaseStorage] Failed to create GraphAdjacencyIndex:', error)
+        throw error
+      }
     } catch (error) {
-      prodLog.error('[BaseStorage] Failed to create GraphAdjacencyIndex:', error)
+      // Reset flag on failure to allow retry
+      this.isInitialized = false
       throw error
     }
-
-    this.isInitialized = true
   }
 
   /**

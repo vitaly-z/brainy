@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.0.1](https://github.com/soulcraftlabs/brainy/compare/v6.0.0...v6.0.1) (2025-11-20)
+
+### 🐛 Critical Bug Fixes
+
+**Fixed infinite loop during storage initialization on fresh workspaces (v6.0.1)**
+
+**Symptom:** FileSystemStorage (and all storage adapters) entered infinite loop on fresh installation, printing "📁 New installation: using depth 1 sharding..." message hundreds of thousands of times.
+
+**Root Cause:** In v6.0.0, `BaseStorage.init()` sets `isInitialized = true` at the END of initialization (after creating GraphAdjacencyIndex). If any code path during initialization called `ensureInitialized()`, it would trigger `init()` recursively because the flag was still `false`.
+
+**Fix:** Set `isInitialized = true` at the START of `BaseStorage.init()` (before any initialization work) to prevent recursive calls. Flag is reset to `false` on error to allow retries.
+
+**Impact:**
+- ✅ Fixes production blocker reported by Workshop team
+- ✅ All 8 storage adapters fixed (FileSystem, Memory, S3, R2, GCS, Azure, OPFS, Historical)
+- ✅ Init completes in ~1 second on fresh installation (was hanging indefinitely)
+- ✅ No new test failures introduced (1178 tests passing)
+
+**Files Changed:**
+- `src/storage/baseStorage.ts:261-287` - Moved `isInitialized = true` to top of init() with try/catch
+
+**Migration:** No code changes required - drop-in replacement for v6.0.0.
+
+---
+
 ## [6.0.0](https://github.com/soulcraftlabs/brainy/compare/v5.12.0...v6.0.0) (2025-11-19)
 
 ## 🚀 v6.0.0 - ID-First Storage Architecture
