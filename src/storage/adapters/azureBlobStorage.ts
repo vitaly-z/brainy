@@ -1629,7 +1629,16 @@ export class AzureBlobStorage extends BaseStorage {
 
       return JSON.parse(downloaded.toString())
     } catch (error: any) {
-      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+      // Azure may return not found errors in different formats
+      const isNotFound =
+        error.statusCode === 404 ||
+        error.code === 'BlobNotFound' ||
+        error.code === 404 ||
+        error.details?.code === 'BlobNotFound' ||
+        error.message?.includes('BlobNotFound') ||
+        error.message?.includes('not found') ||
+        error.message?.includes('404')
+      if (isNotFound) {
         return null
       }
 

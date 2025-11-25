@@ -3628,11 +3628,15 @@ export class S3CompatibleStorage extends BaseStorage {
       const bodyContents = await response.Body.transformToString()
       return JSON.parse(bodyContents)
     } catch (error: any) {
-      if (
+      // S3 may return not found errors in different formats
+      const isNotFound =
         error.name === 'NoSuchKey' ||
+        error.code === 'NoSuchKey' ||
+        error.$metadata?.httpStatusCode === 404 ||
         error.message?.includes('NoSuchKey') ||
-        error.message?.includes('not found')
-      ) {
+        error.message?.includes('not found') ||
+        error.message?.includes('404')
+      if (isNotFound) {
         return null
       }
 

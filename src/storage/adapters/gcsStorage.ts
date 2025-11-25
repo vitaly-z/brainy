@@ -1567,7 +1567,15 @@ export class GcsStorage extends BaseStorage {
 
       return JSON.parse(contents.toString())
     } catch (error: any) {
-      if (error.code === 404) {
+      // GCS may return 404 in different formats depending on SDK version
+      const is404 =
+        error.code === 404 ||
+        error.statusCode === 404 ||
+        error.status === 404 ||
+        error.message?.includes('No such object') ||
+        error.message?.includes('not found') ||
+        error.message?.includes('404')
+      if (is404) {
         return null
       }
 
