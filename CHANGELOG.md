@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.2.2](https://github.com/soulcraftlabs/brainy/compare/v6.2.1...v6.2.2) (2025-11-25)
+
+- refactor: remove 3,700+ LOC of unused HNSW implementations (e3146ce)
+- fix(hnsw): entry point recovery prevents import failures and log spam (52eae67)
+
+
 ## [6.2.0](https://github.com/soulcraftlabs/brainy/compare/v6.1.0...v6.2.0) (2025-11-20)
 
 ### ⚡ Critical Performance Fix
