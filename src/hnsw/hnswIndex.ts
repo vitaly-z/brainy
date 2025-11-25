@@ -491,6 +491,29 @@ export class HNSWIndex {
   }
 
   /**
+   * O(1) entry point recovery using highLevelNodes index (v6.2.3).
+   * At any reasonable scale (1000+ nodes), level 2+ nodes are guaranteed to exist.
+   * For tiny indexes with only level 0-1 nodes, any node works as entry point.
+   */
+  private recoverEntryPointO1(): { id: string | null; level: number } {
+    // O(1) recovery: check highLevelNodes from highest to lowest level
+    for (let level = this.MAX_TRACKED_LEVELS; level >= 2; level--) {
+      const nodesAtLevel = this.highLevelNodes.get(level)
+      if (nodesAtLevel && nodesAtLevel.size > 0) {
+        for (const nodeId of nodesAtLevel) {
+          if (this.nouns.has(nodeId)) {
+            return { id: nodeId, level }
+          }
+        }
+      }
+    }
+
+    // No high-level nodes - use any available node (works fine for HNSW)
+    const firstNode = this.nouns.keys().next().value
+    return { id: firstNode ?? null, level: 0 }
+  }
+
+  /**
    * Search for nearest neighbors
    */
   public async search(
@@ -514,20 +537,12 @@ export class HNSWIndex {
     }
 
     // Start from the entry point
-    // If entry point is null but nouns exist, attempt recovery (v6.2.2)
+    // If entry point is null but nouns exist, attempt O(1) recovery (v6.2.3)
     if (!this.entryPointId && this.nouns.size > 0) {
-      // Corrupted state: nouns exist but entry point is null - recover
-      let maxLevel = 0
-      let recoveredId: string | null = null
-      for (const [id, noun] of this.nouns.entries()) {
-        if (noun.level >= maxLevel) {
-          maxLevel = noun.level
-          recoveredId = id
-        }
-      }
+      const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
       if (recoveredId) {
         this.entryPointId = recoveredId
-        this.maxLevel = maxLevel
+        this.maxLevel = recoveredLevel
       }
     }
 
@@ -538,19 +553,12 @@ export class HNSWIndex {
 
     let entryPoint = this.nouns.get(this.entryPointId)
     if (!entryPoint) {
-      // Entry point ID exists but noun was deleted - attempt recovery
+      // Entry point ID exists but noun was deleted - O(1) recovery (v6.2.3)
       if (this.nouns.size > 0) {
-        let maxLevel = 0
-        let recoveredId: string | null = null
-        for (const [id, noun] of this.nouns.entries()) {
-          if (noun.level >= maxLevel) {
-            maxLevel = noun.level
-            recoveredId = id
-          }
-        }
+        const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
         if (recoveredId) {
           this.entryPointId = recoveredId
-          this.maxLevel = maxLevel
+          this.maxLevel = recoveredLevel
           entryPoint = this.nouns.get(recoveredId)
         }
       }
@@ -1200,28 +1208,20 @@ export class HNSWIndex {
         }
       }
 
-      // Step 5: CRITICAL - Recover entry point if missing (v6.2.2)
+      // Step 5: CRITICAL - Recover entry point if missing (v6.2.3 - O(1))
       // This ensures consistency even if getHNSWSystem() returned null
       if (this.nouns.size > 0 && this.entryPointId === null) {
-        prodLog.warn('HNSW rebuild: Entry point was null after loading nouns - recovering from loaded data')
+        prodLog.warn('HNSW rebuild: Entry point was null after loading nouns - recovering with O(1) lookup')
 
-        let maxLevel = 0
-        let recoveredEntryPointId: string | null = null
+        const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
 
-        for (const [id, noun] of this.nouns.entries()) {
-          if (noun.level >= maxLevel) {
-            maxLevel = noun.level
-            recoveredEntryPointId = id
-          }
-        }
+        this.entryPointId = recoveredId
+        this.maxLevel = recoveredLevel
 
-        this.entryPointId = recoveredEntryPointId
-        this.maxLevel = maxLevel
-
-        prodLog.info(`HNSW entry point recovered: ${recoveredEntryPointId} at level ${maxLevel}`)
+        prodLog.info(`HNSW entry point recovered: ${recoveredId} at level ${recoveredLevel}`)
 
         // Persist recovered state to prevent future recovery
-        if (this.storage && recoveredEntryPointId) {
+        if (this.storage && recoveredId) {
           await this.storage.saveHNSWSystem({
             entryPointId: this.entryPointId,
             maxLevel: this.maxLevel
@@ -1233,18 +1233,11 @@ export class HNSWIndex {
 
       // Step 6: Validate entry point exists if set (handles stale/deleted entry point)
       if (this.entryPointId && !this.nouns.has(this.entryPointId)) {
-        prodLog.warn(`HNSW: Entry point ${this.entryPointId} not found in loaded nouns - recovering`)
+        prodLog.warn(`HNSW: Entry point ${this.entryPointId} not found in loaded nouns - recovering with O(1) lookup`)
 
-        let maxLevel = 0
-        let recoveredId: string | null = null
-        for (const [id, noun] of this.nouns.entries()) {
-          if (noun.level >= maxLevel) {
-            maxLevel = noun.level
-            recoveredId = id
-          }
-        }
+        const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
         this.entryPointId = recoveredId
-        this.maxLevel = maxLevel
+        this.maxLevel = recoveredLevel
 
         // Persist corrected state
         if (this.storage && recoveredId) {

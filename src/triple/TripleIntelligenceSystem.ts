@@ -14,7 +14,6 @@
  */
 
 import { HNSWIndex } from '../hnsw/hnswIndex.js'
-import { HNSWIndexOptimized } from '../hnsw/hnswIndexOptimized.js'
 import { TypeAwareHNSWIndex } from '../hnsw/typeAwareHNSWIndex.js'
 import { MetadataIndexManager } from '../utils/metadataIndex.js'
 import { Vector } from '../coreTypes.js'
@@ -233,7 +232,7 @@ class QueryPlanner {
  */
 export class TripleIntelligenceSystem {
   private metadataIndex: MetadataIndexManager
-  private hnswIndex: HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex
+  private hnswIndex: HNSWIndex | TypeAwareHNSWIndex
   private graphIndex: GraphAdjacencyIndex
   private metrics: PerformanceMetrics
   private planner: QueryPlanner
@@ -242,7 +241,7 @@ export class TripleIntelligenceSystem {
 
   constructor(
     metadataIndex: MetadataIndexManager,
-    hnswIndex: HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex,
+    hnswIndex: HNSWIndex | TypeAwareHNSWIndex,
     graphIndex: GraphAdjacencyIndex,
     embedder: (text: string) => Promise<Vector>,
     storage: any

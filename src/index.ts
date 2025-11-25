@@ -346,14 +346,10 @@ import type {
   StorageAdapter
 } from './coreTypes.js'
 
-// Export HNSW index and optimized version
+// Export HNSW index
 import { HNSWIndex } from './hnsw/hnswIndex.js'
-import {
-  HNSWIndexOptimized,
-  HNSWOptimizedConfig
-} from './hnsw/hnswIndexOptimized.js'
 
-export { HNSWIndex, HNSWIndexOptimized }
+export { HNSWIndex }
 
 export type {
   Vector,
@@ -365,7 +361,6 @@ export type {
   HNSWNoun,
   HNSWVerb,
   HNSWConfig,
-  HNSWOptimizedConfig,
   StorageAdapter
 }
 

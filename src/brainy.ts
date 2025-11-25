@@ -7,7 +7,6 @@
 
 import { v4 as uuidv4 } from './universal/uuid.js'
 import { HNSWIndex } from './hnsw/hnswIndex.js'
-import { HNSWIndexOptimized } from './hnsw/hnswIndexOptimized.js'
 import { TypeAwareHNSWIndex } from './hnsw/typeAwareHNSWIndex.js'
 import { createStorage } from './storage/storageFactory.js'
 import { BaseStorage } from './storage/baseStorage.js'
@@ -90,7 +89,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private static instances: Brainy[] = []
 
   // Core components
-  private index!: HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex
+  private index!: HNSWIndex | TypeAwareHNSWIndex
   private storage!: BaseStorage
   private metadataIndex!: MetadataIndexManager
   private graphIndex!: GraphAdjacencyIndex
@@ -1010,7 +1009,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
                 metadata.noun as any
               )
             )
-          } else if (this.index instanceof HNSWIndex || this.index instanceof HNSWIndexOptimized) {
+          } else if (this.index instanceof HNSWIndex) {
             tx.addOperation(
               new RemoveFromHNSWOperation(this.index, id, noun.vector)
             )
@@ -2253,7 +2252,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
                       metadata.noun as any
                     )
                   )
-                } else if (this.index instanceof HNSWIndex || this.index instanceof HNSWIndexOptimized) {
+                } else if (this.index instanceof HNSWIndex) {
                   tx.addOperation(
                     new RemoveFromHNSWOperation(this.index, id, noun.vector)
                   )
@@ -4770,7 +4769,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * - 10x faster type-specific queries
    * - Automatic type routing
    */
-  private setupIndex(): HNSWIndex | HNSWIndexOptimized | TypeAwareHNSWIndex {
+  private setupIndex(): HNSWIndex | TypeAwareHNSWIndex {
     const indexConfig = {
       ...this.config.index,
       distanceFunction: this.distance
