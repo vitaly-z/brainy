@@ -104,6 +104,7 @@ export class MetadataIndexManager {
   private typeFieldAffinity = new Map<string, Map<string, number>>() // nounType -> field -> count
   private totalEntitiesByType = new Map<string, number>() // nounType -> total count
 
+
   // Phase 1b: Fixed-size type tracking (Stage 3 CANONICAL: 99.2% memory reduction vs Maps)
   // Uint32Array provides O(1) access via type enum index
   // 42 noun types × 4 bytes = 168 bytes (vs ~20KB with Map overhead)
@@ -1499,11 +1500,11 @@ export class MetadataIndexManager {
       if (allIds.length === 1) return allIds[0]
       
       // Intersection of all sets
-      return allIds.reduce((intersection, currentSet) => 
+      return allIds.reduce((intersection, currentSet) =>
         intersection.filter(id => currentSet.includes(id))
       )
     }
-    
+
     if (filter.anyOf && Array.isArray(filter.anyOf)) {
       // For anyOf, we need union of all sub-filters
       const unionIds = new Set<string>()
@@ -1511,9 +1512,28 @@ export class MetadataIndexManager {
         const subIds = await this.getIdsForFilter(subFilter)
         subIds.forEach(id => unionIds.add(id))
       }
+
+      // v6.2.1: Fix - Check for outer-level field conditions that need AND application
+      // This handles cases like { anyOf: [...], vfsType: { exists: false } }
+      // where the anyOf results must be intersected with other field conditions
+      const outerFields = Object.keys(filter).filter(
+        (k) => k !== 'anyOf' && k !== 'allOf' && k !== 'not'
+      )
+      if (outerFields.length > 0) {
+        // Build filter with just outer fields and get matching IDs
+        const outerFilter: any = {}
+        for (const field of outerFields) {
+          outerFilter[field] = filter[field]
+        }
+        const outerIds = await this.getIdsForFilter(outerFilter)
+        const outerIdSet = new Set(outerIds)
+        // Intersect: anyOf union AND outer field conditions
+        return Array.from(unionIds).filter((id) => outerIdSet.has(id))
+      }
+
       return Array.from(unionIds)
     }
-    
+
     // Process field filters with range support
     const idSets: string[][] = []
     
@@ -2225,6 +2245,62 @@ export class MetadataIndexManager {
    */
   getAllEntityCounts(): Map<string, number> {
     return new Map(this.totalEntitiesByType)
+  }
+
+  // ============================================================================
+  // v6.2.1: VFS Statistics Methods (uses existing Roaring bitmap infrastructure)
+  // ============================================================================
+
+  /**
+   * Get VFS entity count for a specific type using Roaring bitmap intersection
+   * Uses hardware-accelerated SIMD operations (AVX2/SSE4.2)
+   * @param type The noun type to query
+   * @returns Count of VFS entities of this type
+   */
+  async getVFSEntityCountByType(type: string): Promise<number> {
+    const vfsBitmap = await this.getBitmapFromChunks('isVFSEntity', true)
+    const typeBitmap = await this.getBitmapFromChunks('noun', type)
+
+    if (!vfsBitmap || !typeBitmap) return 0
+
+    // Hardware-accelerated intersection + O(1) cardinality
+    const intersection = RoaringBitmap32.and(vfsBitmap, typeBitmap)
+    return intersection.size
+  }
+
+  /**
+   * Get all VFS entity counts by type using Roaring bitmap operations
+   * @returns Map of type -> VFS entity count
+   */
+  async getAllVFSEntityCounts(): Promise<Map<string, number>> {
+    const vfsBitmap = await this.getBitmapFromChunks('isVFSEntity', true)
+    if (!vfsBitmap || vfsBitmap.size === 0) {
+      return new Map()
+    }
+
+    const result = new Map<string, number>()
+
+    // Iterate through all known types and compute VFS count via intersection
+    for (const type of this.totalEntitiesByType.keys()) {
+      const typeBitmap = await this.getBitmapFromChunks('noun', type)
+      if (typeBitmap) {
+        const intersection = RoaringBitmap32.and(vfsBitmap, typeBitmap)
+        if (intersection.size > 0) {
+          result.set(type, intersection.size)
+        }
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Get total count of VFS entities - O(1) using Roaring bitmap cardinality
+   * @returns Total VFS entity count
+   */
+  async getTotalVFSEntityCount(): Promise<number> {
+    const vfsBitmap = await this.getBitmapFromChunks('isVFSEntity', true)
+    return vfsBitmap?.size ?? 0
   }
 
   // ============================================================================

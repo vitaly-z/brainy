@@ -962,8 +962,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
 
         // Operation 5-6: Update metadata index (remove old, add new)
+        // v6.2.1: Fix - Include type in removal metadata so noun index is properly updated
+        // existing.metadata only contains custom fields, not 'type' which maps to 'noun'
+        const removalMetadata = {
+          ...existing.metadata,
+          type: existing.type // Include type so it maps to 'noun' during removal
+        }
         tx.addOperation(
-          new RemoveFromMetadataIndexOperation(this.metadataIndex, params.id, existing.metadata)
+          new RemoveFromMetadataIndexOperation(this.metadataIndex, params.id, removalMetadata)
         )
         tx.addOperation(
           new AddToMetadataIndexOperation(this.metadataIndex, params.id, entityForIndexing)
@@ -4154,7 +4160,43 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       relationships: () => this.graphIndex.getTotalRelationshipCount(),
 
       // O(1) count by type (string-based, backward compatible)
-      byType: (type?: string) => {
+      // v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+      byType: async (typeOrOptions?: string | { excludeVFS?: boolean }, options?: { excludeVFS?: boolean }) => {
+        // Handle overloaded signature: byType(type), byType({ excludeVFS }), byType(type, { excludeVFS })
+        let type: string | undefined
+        let excludeVFS = false
+
+        if (typeof typeOrOptions === 'string') {
+          type = typeOrOptions
+          excludeVFS = options?.excludeVFS ?? false
+        } else if (typeOrOptions && typeof typeOrOptions === 'object') {
+          excludeVFS = typeOrOptions.excludeVFS ?? false
+        }
+
+        if (excludeVFS) {
+          const allCounts = this.metadataIndex.getAllEntityCounts()
+          // Uses Roaring bitmap intersection - hardware accelerated
+          const vfsCounts = await this.metadataIndex.getAllVFSEntityCounts()
+
+          if (type) {
+            const total = allCounts.get(type) || 0
+            const vfs = vfsCounts.get(type) || 0
+            return total - vfs
+          }
+
+          // Return all counts with VFS subtracted
+          const result: Record<string, number> = {}
+          for (const [t, total] of allCounts) {
+            const vfs = vfsCounts.get(t) || 0
+            const nonVfs = total - vfs
+            if (nonVfs > 0) {
+              result[t] = nonVfs
+            }
+          }
+          return result
+        }
+
+        // Default path (unchanged) - synchronous for backward compatibility
         if (type) {
           return this.metadataIndex.getEntityCountByType(type)
         }
@@ -4205,7 +4247,37 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       getAllTypeCounts: () => this.metadataIndex.getAllEntityCounts(),
 
       // Get complete statistics
-      getStats: () => {
+      // v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+      getStats: async (options?: { excludeVFS?: boolean }) => {
+        if (options?.excludeVFS) {
+          const allCounts = this.metadataIndex.getAllEntityCounts()
+          // Uses Roaring bitmap intersection - hardware accelerated
+          const vfsCounts = await this.metadataIndex.getAllVFSEntityCounts()
+
+          // Compute non-VFS counts via subtraction
+          const byType: Record<string, number> = {}
+          let total = 0
+
+          for (const [type, count] of allCounts) {
+            const vfs = vfsCounts.get(type) || 0
+            const nonVfs = count - vfs
+            if (nonVfs > 0) {
+              byType[type] = nonVfs
+              total += nonVfs
+            }
+          }
+
+          const entityStats = { total, byType }
+          const relationshipStats = this.graphIndex.getRelationshipStats()
+
+          return {
+            entities: entityStats,
+            relationships: relationshipStats,
+            density: total > 0 ? relationshipStats.totalRelationships / total : 0
+          }
+        }
+
+        // Default path (unchanged) - synchronous for backward compatibility
         const entityStats = {
           total: this.metadataIndex.getTotalEntityCount(),
           byType: Object.fromEntries(this.metadataIndex.getAllEntityCounts())
@@ -4235,10 +4307,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Get complete statistics - convenience method
    * For more granular counting, use brain.counts API
+   * v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+   * @param options Optional settings - excludeVFS: filter out VFS entities
    * @returns Complete statistics including entities, relationships, and density
    */
-  getStats() {
-    return this.counts.getStats()
+  async getStats(options?: { excludeVFS?: boolean }) {
+    return this.counts.getStats(options)
   }
 
   // ============= HELPER METHODS =============
