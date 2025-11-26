@@ -2440,6 +2440,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Get noun counts by type (O(1) access to type statistics)
+   * v6.2.2: Exposed for MetadataIndexManager to use as single source of truth
+   * @returns Uint32Array indexed by NounType enum value (42 types)
+   */
+  public getNounCountsByType(): Uint32Array {
+    return this.nounCountsByType
+  }
+
+  /**
+   * Get verb counts by type (O(1) access to type statistics)
+   * v6.2.2: Exposed for MetadataIndexManager to use as single source of truth
+   * @returns Uint32Array indexed by VerbType enum value (127 types)
+   */
+  public getVerbCountsByType(): Uint32Array {
+    return this.verbCountsByType
+  }
+
+  /**
    * Rebuild type counts from actual storage (v5.5.0)
    * Called when statistics are missing or inconsistent
    * Ensures verbCountsByType is always accurate for reliable pagination

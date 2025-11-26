@@ -192,8 +192,9 @@ export class MetadataIndexManager {
     // Initialize Field Type Inference (v3.48.0)
     this.fieldTypeInference = new FieldTypeInference(storage)
 
-    // Lazy load counts from storage statistics on first access
-    this.lazyLoadCounts()
+    // v6.2.2: Removed lazyLoadCounts() call from constructor
+    // It was a race condition (not awaited) and read from wrong source.
+    // Now properly called in init() after warmCache() loads the sparse index.
   }
 
   /**
@@ -208,12 +209,17 @@ export class MetadataIndexManager {
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
 
-    // Phase 1b: Sync loaded counts to fixed-size arrays
-    // This populates the Uint32Arrays from the Maps loaded by lazyLoadCounts()
-    this.syncTypeCountsToFixed()
-
     // Warm the cache with common fields (v3.44.1 - lazy loading optimization)
+    // This loads the 'noun' sparse index which is needed for type counts
     await this.warmCache()
+
+    // v6.2.2: Load type counts AFTER warmCache (sparse index is now cached)
+    // Previously called in constructor without await and read from wrong source
+    await this.lazyLoadCounts()
+
+    // Phase 1b: Sync loaded counts to fixed-size arrays
+    // Now correctly happens AFTER lazyLoadCounts() finishes
+    this.syncTypeCountsToFixed()
   }
 
   /**
@@ -369,24 +375,35 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Lazy load entity counts from storage statistics (O(1) operation)
-   * This avoids rebuilding the entire index on startup
+   * Lazy load entity counts from the 'noun' field sparse index (O(n) where n = number of types)
+   * v6.2.2 FIX: Previously read from stats.nounCount which was SERVICE-keyed, not TYPE-keyed
+   * Now computes counts from the sparse index which has the correct type information
    */
   private async lazyLoadCounts(): Promise<void> {
     try {
-      // Get statistics from storage (should be O(1) with our FileSystemStorage improvements)
-      const stats = await this.storage.getStatistics()
-      if (stats && stats.nounCount) {
-        // Populate entity counts from storage statistics
-        for (const [type, count] of Object.entries(stats.nounCount)) {
-          if (typeof count === 'number' && count > 0) {
-            this.totalEntitiesByType.set(type, count)
+      // v6.2.2: Load counts from sparse index (correct source)
+      const nounSparseIndex = await this.loadSparseIndex('noun')
+      if (!nounSparseIndex) {
+        // No sparse index yet - counts will be populated as entities are added
+        return
+      }
+
+      // Iterate through all chunks and sum up bitmap sizes by type
+      for (const chunkId of nounSparseIndex.getAllChunkIds()) {
+        const chunk = await this.chunkManager.loadChunk('noun', chunkId)
+        if (chunk) {
+          for (const [type, bitmap] of chunk.entries) {
+            const currentCount = this.totalEntitiesByType.get(type) || 0
+            this.totalEntitiesByType.set(type, currentCount + bitmap.size)
           }
         }
       }
+
+      prodLog.debug(`✅ Loaded type counts from sparse index: ${this.totalEntitiesByType.size} types`)
     } catch (error) {
       // Silently fail - counts will be populated as entities are added
       // This maintains zero-configuration principle
+      prodLog.debug('Could not load type counts from sparse index:', error)
     }
   }
 
@@ -2242,6 +2259,9 @@ export class MetadataIndexManager {
 
   /**
    * Get all entity types and their counts - O(1) operation
+   * v6.2.2: Fixed - totalEntitiesByType is correctly populated by updateTypeFieldAffinity
+   * during add operations. lazyLoadCounts was reading wrong data but that doesn't
+   * affect freshly-added entities within the same session.
    */
   getAllEntityCounts(): Map<string, number> {
     return new Map(this.totalEntitiesByType)
