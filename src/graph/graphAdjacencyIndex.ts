@@ -568,6 +568,8 @@ export class GraphAdjacencyIndex {
       // Clear current index
       this.verbIdSet.clear()
       this.totalRelationshipsIndexed = 0
+      // v6.2.4: CRITICAL FIX - Clear relationship counts to prevent accumulation
+      this.relationshipCountsByType.clear()
 
       // Note: LSM-trees will be recreated from storage via their own initialization
       // Verb data will be loaded on-demand via UnifiedCache

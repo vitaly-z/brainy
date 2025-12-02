@@ -381,6 +381,12 @@ export class MetadataIndexManager {
    */
   private async lazyLoadCounts(): Promise<void> {
     try {
+      // v6.2.4: CRITICAL FIX - Clear counts before loading to prevent accumulation
+      // Previously, counts accumulated across restarts causing 100x inflation
+      this.totalEntitiesByType.clear()
+      this.entityCountsByTypeFixed.fill(0)
+      this.verbCountsByTypeFixed.fill(0)
+
       // v6.2.2: Load counts from sparse index (correct source)
       const nounSparseIndex = await this.loadSparseIndex('noun')
       if (!nounSparseIndex) {
@@ -2500,6 +2506,13 @@ export class MetadataIndexManager {
       // v3.44.1: No sparseIndices Map to clear - UnifiedCache handles eviction
       this.fieldIndexes.clear()
       this.dirtyFields.clear()
+
+      // v6.2.4: CRITICAL FIX - Clear type counts to prevent accumulation
+      // Previously, counts accumulated across rebuilds causing incorrect values
+      this.totalEntitiesByType.clear()
+      this.entityCountsByTypeFixed.fill(0)
+      this.verbCountsByTypeFixed.fill(0)
+      this.typeFieldAffinity.clear()
 
       // Clear all cached sparse indices in UnifiedCache
       // This ensures rebuild starts fresh (v3.44.1)
