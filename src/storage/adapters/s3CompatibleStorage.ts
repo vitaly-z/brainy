@@ -1069,6 +1069,14 @@ export class S3CompatibleStorage extends BaseStorage {
     // Use write buffer in high-volume mode
     if (this.highVolumeMode && this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer (high-volume mode active)`)
+
+      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
+      // Without this, add() returns but relate() can't find the entity (cloud storage production bug)
+      // The buffer flushes asynchronously, but cache ensures immediate reads succeed
+      if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
+        this.nounCacheManager.set(node.id, node)
+      }
+
       await this.nounWriteBuffer.add(node.id, node)
       return
     } else if (!this.highVolumeMode) {

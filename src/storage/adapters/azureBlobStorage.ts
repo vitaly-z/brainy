@@ -531,6 +531,13 @@ export class AzureBlobStorage extends BaseStorage {
     // Use write buffer in high-volume mode
     if (this.highVolumeMode && this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer (high-volume mode active)`)
+
+      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
+      // Without this, add() returns but relate() can't find the entity (cloud storage production bug)
+      if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
+        this.nounCacheManager.set(node.id, node)
+      }
+
       await this.nounWriteBuffer.add(node.id, node)
       return
     } else if (!this.highVolumeMode) {
@@ -1033,6 +1040,10 @@ export class AzureBlobStorage extends BaseStorage {
     // Use write buffer in high-volume mode
     if (this.highVolumeMode && this.verbWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer`)
+
+      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
+      this.verbCacheManager.set(edge.id, edge)
+
       await this.verbWriteBuffer.add(edge.id, edge)
       return
     }
