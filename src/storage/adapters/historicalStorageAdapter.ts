@@ -30,7 +30,6 @@
 
 import { BaseStorage } from '../baseStorage.js'
 import { CommitLog } from '../cow/CommitLog.js'
-import { TreeObject } from '../cow/TreeObject.js'
 import { BlobStorage } from '../cow/BlobStorage.js'
 import {
   HNSWNoun,
@@ -127,7 +126,6 @@ export class HistoricalStorageAdapter extends BaseStorage {
 
   // Historical commit state (loaded lazily) - must match BaseStorage visibility
   public commitLog?: CommitLog
-  public treeObject?: TreeObject
   public blobStorage?: BlobStorage
 
   constructor(options: HistoricalStorageAdapterOptions) {
@@ -146,11 +144,11 @@ export class HistoricalStorageAdapter extends BaseStorage {
    */
   public async init(): Promise<void> {
     // Get COW components from underlying storage
-    this.commitLog = (this.underlyingStorage as any)._commitLog
-    this.treeObject = (this.underlyingStorage as any)._treeObject
-    this.blobStorage = (this.underlyingStorage as any)._blobStorage
+    // v6.2.4: Fixed property names - use public properties without underscore prefix
+    this.commitLog = this.underlyingStorage.commitLog
+    this.blobStorage = this.underlyingStorage.blobStorage
 
-    if (!this.commitLog || !this.treeObject || !this.blobStorage) {
+    if (!this.commitLog || !this.blobStorage) {
       throw new Error(
         'Historical storage requires underlying storage to have COW enabled. ' +
         'Call brain.init() first to initialize COW.'
