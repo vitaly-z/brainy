@@ -151,11 +151,8 @@ export class S3CompatibleStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
   
-  // High-volume mode detection - MUCH more aggressive
-  private highVolumeMode = false
-  private lastVolumeCheck = 0
-  private volumeCheckInterval = 1000  // Check every second, not 5
-  private forceHighVolumeMode = false  // Environment variable override
+  // v6.2.7: Write buffering always enabled for consistent performance
+  // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Operation executors for timeout and retry handling
   private operationExecutors: StorageOperationExecutors
@@ -710,92 +707,8 @@ export class S3CompatibleStorage extends BaseStorage {
     )
   }
   
-  /**
-   * Check if we should enable high-volume mode
-   */
-  private checkVolumeMode(): void {
-    const now = Date.now()
-    if (now - this.lastVolumeCheck < this.volumeCheckInterval) {
-      return
-    }
-    
-    this.lastVolumeCheck = now
-    
-    // Check environment variable override
-    const envThreshold = process.env.BRAINY_BUFFER_THRESHOLD
-    const threshold = envThreshold ? parseInt(envThreshold) : 0  // Default to 0 for immediate activation!
-    
-    // Force enable from environment
-    if (process.env.BRAINY_FORCE_BUFFERING === 'true') {
-      this.forceHighVolumeMode = true
-    }
-    
-    // Get metrics
-    const backpressureStatus = this.backpressure.getStatus()
-    const socketMetrics = this.socketManager.getMetrics()
-    
-    // Reasonable high-volume detection - only activate under real load
-    const isTestEnvironment = process.env.NODE_ENV === 'test'
-    const explicitlyDisabled = process.env.BRAINY_FORCE_BUFFERING === 'false'
-    
-    // Use reasonable thresholds instead of emergency aggressive ones
-    const reasonableThreshold = Math.max(threshold, 10) // At least 10 pending operations
-    const highSocketUtilization = 0.8  // 80% socket utilization 
-    const highRequestRate = 50         // 50 requests per second
-    const significantErrors = 5        // 5 consecutive errors
-    
-    const shouldEnableHighVolume = 
-      !isTestEnvironment &&                               // Disable in test environment
-      !explicitlyDisabled &&                              // Allow explicit disabling
-      (this.forceHighVolumeMode ||                         // Environment override
-      backpressureStatus.queueLength >= reasonableThreshold ||      // High queue backlog
-      socketMetrics.pendingRequests >= reasonableThreshold ||       // Many pending requests
-      this.pendingOperations >= reasonableThreshold ||              // Many pending ops
-      socketMetrics.socketUtilization >= highSocketUtilization ||   // High socket pressure
-      (socketMetrics.requestsPerSecond >= highRequestRate) ||       // High request rate
-      (this.consecutiveErrors >= significantErrors))                // Significant error pattern
-    
-    if (shouldEnableHighVolume && !this.highVolumeMode) {
-      this.highVolumeMode = true
-      this.logger.warn(`🚨 HIGH-VOLUME MODE ACTIVATED 🚨`)
-      this.logger.warn(`  Queue Length: ${backpressureStatus.queueLength}`)
-      this.logger.warn(`  Pending Requests: ${socketMetrics.pendingRequests}`)
-      this.logger.warn(`  Pending Operations: ${this.pendingOperations}`)
-      this.logger.warn(`  Socket Utilization: ${(socketMetrics.socketUtilization * 100).toFixed(1)}%`)
-      this.logger.warn(`  Requests/sec: ${socketMetrics.requestsPerSecond}`)
-      this.logger.warn(`  Consecutive Errors: ${this.consecutiveErrors}`)
-      this.logger.warn(`  Threshold: ${threshold}`)
-      
-      // Adjust buffer parameters for high volume
-      const queueLength = Math.max(backpressureStatus.queueLength, socketMetrics.pendingRequests, 100)
-      
-      if (this.nounWriteBuffer) {
-        this.nounWriteBuffer.adjustForLoad(queueLength)
-        const stats = this.nounWriteBuffer.getStats()
-        this.logger.warn(`  Noun Buffer: ${stats.bufferSize} items, ${stats.totalWrites} total writes`)
-      }
-      if (this.verbWriteBuffer) {
-        this.verbWriteBuffer.adjustForLoad(queueLength)
-        const stats = this.verbWriteBuffer.getStats()
-        this.logger.warn(`  Verb Buffer: ${stats.bufferSize} items, ${stats.totalWrites} total writes`)
-      }
-      if (this.requestCoalescer) {
-        this.requestCoalescer.adjustParameters(queueLength)
-        const sizes = this.requestCoalescer.getQueueSizes()
-        this.logger.warn(`  Coalescer: ${sizes.total} queued operations`)
-      }
-      
-    } else if (!shouldEnableHighVolume && this.highVolumeMode && !this.forceHighVolumeMode) {
-      this.highVolumeMode = false
-      this.logger.info('✅ High-volume mode deactivated - load normalized')
-    }
-    
-    // Log current status every 10 checks when in high-volume mode
-    if (this.highVolumeMode && (now % 10000) < this.volumeCheckInterval) {
-      this.logger.info(`📊 High-volume mode status: Queue=${backpressureStatus.queueLength}, Pending=${socketMetrics.pendingRequests}, Sockets=${(socketMetrics.socketUtilization * 100).toFixed(1)}%`)
-    }
-  }
-  
+  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
+
   /**
    * Bulk write nouns to S3
    */
@@ -1059,30 +972,25 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Save a node to storage
+   * v6.2.7: Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
-    
-    // ALWAYS check if we should use high-volume mode (critical for detection)
-    this.checkVolumeMode()
-    
-    // Use write buffer in high-volume mode
-    if (this.highVolumeMode && this.nounWriteBuffer) {
-      this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer (high-volume mode active)`)
 
-      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
-      // Without this, add() returns but relate() can't find the entity (cloud storage production bug)
-      // The buffer flushes asynchronously, but cache ensures immediate reads succeed
+    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    if (this.nounWriteBuffer) {
+      this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
+
+      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
 
       await this.nounWriteBuffer.add(node.id, node)
       return
-    } else if (!this.highVolumeMode) {
-      this.logger.trace(`📝 DIRECT WRITE: Saving noun ${node.id} directly (high-volume mode inactive)`)
     }
 
+    // Fallback to direct write if buffer not initialized (shouldn't happen after init)
     // Apply backpressure before starting operation
     const requestId = await this.applyBackpressure()
 

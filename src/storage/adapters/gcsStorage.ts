@@ -109,11 +109,8 @@ export class GcsStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
 
-  // High-volume mode detection - MUCH more aggressive
-  private highVolumeMode = false
-  private lastVolumeCheck = 0
-  private volumeCheckInterval = 1000  // Check every second, not 5
-  private forceHighVolumeMode = false  // Environment variable override
+  // v6.2.7: Write buffering always enabled for consistent performance
+  // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Multi-level cache manager for efficient data access
   private nounCacheManager: CacheManager<HNSWNode>
@@ -177,12 +174,7 @@ export class GcsStorage extends BaseStorage {
     this.nounCacheManager = new CacheManager<HNSWNode>(options.cacheConfig)
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
-    // Check for high-volume mode override
-    if (typeof process !== 'undefined' && process.env?.BRAINY_FORCE_HIGH_VOLUME === 'true') {
-      this.forceHighVolumeMode = true
-      this.highVolumeMode = true
-      prodLog.info('🚀 High-volume mode FORCED via BRAINY_FORCE_HIGH_VOLUME environment variable')
-    }
+    // v6.2.7: Write buffering always enabled - no env var check needed
   }
 
   /**
@@ -371,32 +363,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  /**
-   * Check if high-volume mode should be enabled
-   */
-  private checkVolumeMode(): void {
-    if (this.forceHighVolumeMode) {
-      return // Already forced on
-    }
-
-    const now = Date.now()
-    if (now - this.lastVolumeCheck < this.volumeCheckInterval) {
-      return
-    }
-
-    this.lastVolumeCheck = now
-
-    // Enable high-volume mode if we have many pending operations
-    const shouldEnable = this.pendingOperations > 20
-
-    if (shouldEnable && !this.highVolumeMode) {
-      this.highVolumeMode = true
-      prodLog.info('🚀 High-volume mode ENABLED (pending operations:', this.pendingOperations, ')')
-    } else if (!shouldEnable && this.highVolumeMode && !this.forceHighVolumeMode) {
-      this.highVolumeMode = false
-      prodLog.info('🐌 High-volume mode DISABLED (pending operations:', this.pendingOperations, ')')
-    }
-  }
+  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
 
   /**
    * Flush noun buffer to GCS
@@ -432,31 +399,25 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save a node to storage
+   * v6.2.7: Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // ALWAYS check if we should use high-volume mode (critical for detection)
-    this.checkVolumeMode()
+    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    if (this.nounWriteBuffer) {
+      this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
 
-    // Use write buffer in high-volume mode
-    if (this.highVolumeMode && this.nounWriteBuffer) {
-      this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer (high-volume mode active)`)
-
-      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
-      // Without this, add() returns but relate() can't find the entity (GCS production bug)
-      // The buffer flushes asynchronously, but cache ensures immediate reads succeed
+      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
 
       await this.nounWriteBuffer.add(node.id, node)
       return
-    } else if (!this.highVolumeMode) {
-      this.logger.trace(`📝 DIRECT WRITE: Saving noun ${node.id} directly (high-volume mode inactive)`)
     }
 
-    // Direct write in normal mode
+    // Fallback to direct write if buffer not initialized (shouldn't happen after init)
     await this.saveNodeDirect(node)
   }
 
@@ -831,26 +792,23 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save an edge to storage
+   * v6.2.7: Always uses write buffer for consistent performance
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
-    // Check volume mode
-    this.checkVolumeMode()
-
-    // Use write buffer in high-volume mode
-    if (this.highVolumeMode && this.verbWriteBuffer) {
+    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    if (this.verbWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer`)
 
-      // v6.2.6: CRITICAL FIX - Populate cache BEFORE buffering for read-after-write consistency
-      // Without this, relate() might not find the verb immediately after creation
+      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
       this.verbCacheManager.set(edge.id, edge)
 
       await this.verbWriteBuffer.add(edge.id, edge)
       return
     }
 
-    // Direct write in normal mode
+    // Fallback to direct write if buffer not initialized (shouldn't happen after init)
     await this.saveEdgeDirect(edge)
   }
 
