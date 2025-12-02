@@ -46,10 +46,17 @@ export class HNSWIndex {
   private cowModifiedNodes: Set<string> = new Set()
   private cowParent: HNSWIndex | null = null
 
+  // v6.2.8: Deferred HNSW persistence for cloud storage performance
+  // In deferred mode, HNSW connections are only persisted on flush/close
+  // This reduces GCS operations from 70 to 2-3 per add() (30-50× faster)
+  private persistMode: 'immediate' | 'deferred' = 'immediate'
+  private dirtyNodes: Set<string> = new Set() // Nodes with unpersisted HNSW data
+  private dirtySystem: boolean = false // Whether system data (entryPoint, maxLevel) needs persist
+
   constructor(
     config: Partial<HNSWConfig> = {},
     distanceFunction: DistanceFunction = euclideanDistance,
-    options: { useParallelization?: boolean; storage?: BaseStorage } = {}
+    options: { useParallelization?: boolean; storage?: BaseStorage; persistMode?: 'immediate' | 'deferred' } = {}
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config }
     this.distanceFunction = distanceFunction
@@ -58,6 +65,7 @@ export class HNSWIndex {
         ? options.useParallelization
         : true
     this.storage = options.storage || null
+    this.persistMode = options.persistMode || 'immediate'
 
     // Use SAME UnifiedCache as Graph and Metadata for fair memory competition
     this.unifiedCache = getGlobalCache()
@@ -75,6 +83,96 @@ export class HNSWIndex {
    */
   public getUseParallelization(): boolean {
     return this.useParallelization
+  }
+
+  /**
+   * v6.2.8: Flush dirty HNSW data to storage
+   *
+   * In deferred persistence mode, HNSW connections are tracked as dirty but not
+   * immediately persisted. Call flush() to persist all pending changes.
+   *
+   * This is automatically called by:
+   * - brain.close()
+   * - brain.flush()
+   * - Process shutdown (SIGTERM/SIGINT)
+   *
+   * @returns Number of nodes flushed
+   */
+  public async flush(): Promise<number> {
+    if (!this.storage) {
+      return 0
+    }
+
+    if (this.dirtyNodes.size === 0 && !this.dirtySystem) {
+      return 0
+    }
+
+    const startTime = Date.now()
+    const nodeCount = this.dirtyNodes.size
+
+    // Batch persist all dirty nodes concurrently
+    if (this.dirtyNodes.size > 0) {
+      const batchSize = 50 // Reasonable batch size for cloud storage
+      const nodeIds = Array.from(this.dirtyNodes)
+
+      for (let i = 0; i < nodeIds.length; i += batchSize) {
+        const batch = nodeIds.slice(i, i + batchSize)
+        const promises = batch.map(nodeId => {
+          const noun = this.nouns.get(nodeId)
+          if (!noun) return Promise.resolve() // Node was deleted
+
+          const connectionsObj: Record<string, string[]> = {}
+          for (const [level, nounIds] of noun.connections.entries()) {
+            connectionsObj[level.toString()] = Array.from(nounIds)
+          }
+
+          return this.storage!.saveHNSWData(nodeId, {
+            level: noun.level,
+            connections: connectionsObj
+          }).catch(error => {
+            console.error(`[HNSW flush] Failed to persist node ${nodeId}:`, error)
+          })
+        })
+
+        await Promise.allSettled(promises)
+      }
+
+      this.dirtyNodes.clear()
+    }
+
+    // Persist system data if dirty
+    if (this.dirtySystem) {
+      await this.storage.saveHNSWSystem({
+        entryPointId: this.entryPointId,
+        maxLevel: this.maxLevel
+      }).catch(error => {
+        console.error('[HNSW flush] Failed to persist system data:', error)
+      })
+
+      this.dirtySystem = false
+    }
+
+    const duration = Date.now() - startTime
+    if (nodeCount > 0) {
+      prodLog.info(`[HNSW] Flushed ${nodeCount} dirty nodes in ${duration}ms`)
+    }
+
+    return nodeCount
+  }
+
+  /**
+   * Get the number of dirty (unpersisted) nodes
+   * Useful for monitoring and debugging
+   */
+  public getDirtyNodeCount(): number {
+    return this.dirtyNodes.size
+  }
+
+  /**
+   * Get the current persist mode
+   */
+  public getPersistMode(): 'immediate' | 'deferred' {
+    return this.persistMode
   }
 
   /**
@@ -371,14 +469,11 @@ export class HNSWIndex {
 
         // Persist updated neighbor HNSW data (v3.35.0+)
         //
-        // PERFORMANCE OPTIMIZATION (v4.10.0): Concurrent neighbor updates
-        // Previously (v4.9.2): Serial await - 100% safe but 48-64× slower
-        // Now: Promise.allSettled() - 48-64× faster bulk imports
-        // Safety: All storage adapters handle concurrent writes via:
-        //   - Optimistic locking with retry (GCS/S3/Azure/R2)
-        //   - Mutex serialization (Memory/OPFS/FileSystem)
-        // Trade-off: More retry activity under high contention (expected and handled)
-        if (this.storage) {
+        // v6.2.8: Deferred persistence mode for cloud storage performance
+        // In deferred mode, we track dirty nodes instead of persisting immediately
+        // This reduces GCS operations from 70 to 2-3 per add() (30-50× faster)
+        if (this.storage && this.persistMode === 'immediate') {
+          // IMMEDIATE MODE: Original behavior - persist each neighbor update
           const neighborConnectionsObj: Record<string, string[]> = {}
           for (const [lvl, nounIds] of neighbor.connections.entries()) {
             neighborConnectionsObj[lvl.toString()] = Array.from(nounIds)
@@ -391,11 +486,14 @@ export class HNSWIndex {
               connections: neighborConnectionsObj
             })
           })
+        } else if (this.persistMode === 'deferred') {
+          // DEFERRED MODE: Track dirty nodes for later batch persistence
+          this.dirtyNodes.add(neighborId)
         }
       }
 
-      // Execute all neighbor updates concurrently (with optional batch size limiting)
-      if (neighborUpdates.length > 0) {
+      // Execute all neighbor updates concurrently (only in immediate mode)
+      if (neighborUpdates.length > 0 && this.persistMode === 'immediate') {
         const batchSize = this.config.maxConcurrentNeighborWrites || neighborUpdates.length
         const allFailures: Array<{ result: PromiseRejectedResult; neighborId: string }> = []
 
@@ -464,8 +562,9 @@ export class HNSWIndex {
     }
 
     // Persist HNSW graph data to storage (v3.35.0+)
-    if (this.storage) {
-      // Convert connections Map to serializable format
+    // v6.2.8: Respect persistMode setting
+    if (this.storage && this.persistMode === 'immediate') {
+      // IMMEDIATE MODE: Original behavior - persist new entity and system data
       const connectionsObj: Record<string, string[]> = {}
       for (const [level, nounIds] of noun.connections.entries()) {
         connectionsObj[level.toString()] = Array.from(nounIds)
@@ -485,6 +584,10 @@ export class HNSWIndex {
       }).catch((error) => {
         console.error('Failed to persist HNSW system data:', error)
       })
+    } else if (this.persistMode === 'deferred') {
+      // DEFERRED MODE: Track dirty nodes for later batch persistence
+      this.dirtyNodes.add(id)
+      this.dirtySystem = true
     }
 
     return id

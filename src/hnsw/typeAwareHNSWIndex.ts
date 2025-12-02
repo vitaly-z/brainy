@@ -65,18 +65,19 @@ export class TypeAwareHNSWIndex {
   private distanceFunction: DistanceFunction
   private storage: BaseStorage | null
   private useParallelization: boolean
+  private persistMode: 'immediate' | 'deferred'
 
   /**
    * Create a new TypeAwareHNSWIndex
    *
    * @param config HNSW configuration (M, efConstruction, efSearch, ml)
    * @param distanceFunction Distance function (default: euclidean)
-   * @param options Additional options (storage, parallelization)
+   * @param options Additional options (storage, parallelization, persistMode)
    */
   constructor(
     config: Partial<HNSWConfig> = {},
     distanceFunction: DistanceFunction = euclideanDistance,
-    options: { useParallelization?: boolean; storage?: BaseStorage } = {}
+    options: { useParallelization?: boolean; storage?: BaseStorage; persistMode?: 'immediate' | 'deferred' } = {}
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config }
     this.distanceFunction = distanceFunction
@@ -85,6 +86,7 @@ export class TypeAwareHNSWIndex {
       options.useParallelization !== undefined
         ? options.useParallelization
         : true
+    this.persistMode = options.persistMode || 'immediate'
 
     prodLog.info('TypeAwareHNSWIndex initialized (Phase 2: Type-Aware HNSW)')
   }
@@ -105,13 +107,60 @@ export class TypeAwareHNSWIndex {
     for (const [type, parentIndex] of parent.indexes.entries()) {
       const childIndex = new HNSWIndex(this.config, this.distanceFunction, {
         useParallelization: this.useParallelization,
-        storage: this.storage || undefined
+        storage: this.storage || undefined,
+        persistMode: this.persistMode
       })
       childIndex.enableCOW(parentIndex)
       this.indexes.set(type, childIndex)
     }
 
     prodLog.info(`TypeAwareHNSWIndex COW enabled: ${parent.indexes.size} type-specific indexes shallow copied`)
+  }
+
+  /**
+   * v6.2.8: Flush dirty HNSW data to storage for all type-specific indexes
+   *
+   * In deferred persistence mode, HNSW connections are tracked as dirty but not
+   * immediately persisted. Call flush() to persist all pending changes across
+   * all type-specific indexes.
+   *
+   * @returns Total number of nodes flushed across all indexes
+   */
+  public async flush(): Promise<number> {
+    if (this.indexes.size === 0) {
+      return 0
+    }
+
+    const flushPromises = Array.from(this.indexes.values()).map(index =>
+      index.flush()
+    )
+
+    const results = await Promise.all(flushPromises)
+    const totalFlushed = results.reduce((sum, count) => sum + count, 0)
+
+    if (totalFlushed > 0) {
+      prodLog.info(`[TypeAwareHNSW] Flushed ${totalFlushed} dirty nodes across ${this.indexes.size} type indexes`)
+    }
+
+    return totalFlushed
+  }
+
+  /**
+   * Get the total number of dirty (unpersisted) nodes across all type-specific indexes
+   */
+  public getDirtyNodeCount(): number {
+    let total = 0
+    for (const index of this.indexes.values()) {
+      total += index.getDirtyNodeCount()
+    }
+    return total
+  }
+
+  /**
+   * Get the current persist mode
+   */
+  public getPersistMode(): 'immediate' | 'deferred' {
+    return this.persistMode
   }
 
   /**
@@ -137,7 +186,8 @@ export class TypeAwareHNSWIndex {
 
       const index = new HNSWIndex(this.config, this.distanceFunction, {
         useParallelization: this.useParallelization,
-        storage: this.storage || undefined
+        storage: this.storage || undefined,
+        persistMode: this.persistMode
       })
 
       this.indexes.set(type, index)

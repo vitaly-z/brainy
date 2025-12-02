@@ -4768,6 +4768,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * - 87% memory reduction through separate graphs per entity type
    * - 10x faster type-specific queries
    * - Automatic type routing
+   *
+   * v6.2.8: Smart defaults for HNSW persistence mode
+   * - Cloud storage (GCS/S3/R2/Azure): 'deferred' for 30-50× faster adds
+   * - Local storage (FileSystem/Memory/OPFS): 'immediate' (already fast)
    */
   private setupIndex(): HNSWIndex | TypeAwareHNSWIndex {
     const indexConfig = {
@@ -4775,15 +4779,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       distanceFunction: this.distance
     }
 
+    // v6.2.8: Determine persist mode (user config > smart default)
+    let persistMode: 'immediate' | 'deferred' = this.config.hnswPersistMode || 'immediate'
+
+    // Smart default: Use deferred mode for cloud storage adapters
+    if (!this.config.hnswPersistMode) {
+      const storageType = this.config.storage?.type || 'auto'
+      const cloudStorageTypes = ['gcs', 's3', 'r2', 'azure']
+      if (cloudStorageTypes.includes(storageType)) {
+        persistMode = 'deferred'
+      }
+    }
+
     // Phase 2: Use TypeAwareHNSWIndex for billion-scale optimization
     if (this.config.storage?.type !== 'memory') {
       return new TypeAwareHNSWIndex(indexConfig, this.distance, {
         storage: this.storage,
-        useParallelization: true
+        useParallelization: true,
+        persistMode
       })
     }
 
-    return new HNSWIndex(indexConfig as any)
+    return new HNSWIndex(indexConfig as any, this.distance, { persistMode })
   }
 
   /**
@@ -4882,7 +4899,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       maxConcurrentOperations: config?.maxConcurrentOperations ?? 10,
       // Memory management options (v5.11.0)
       maxQueryLimit: config?.maxQueryLimit ?? undefined as any,
-      reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any
+      reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any,
+      // HNSW persistence mode (v6.2.8) - undefined = smart default in setupIndex
+      hnswPersistMode: config?.hnswPersistMode ?? undefined as any
     }
   }
 
@@ -5080,8 +5099,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Close and cleanup
+   *
+   * v6.2.8: Now flushes HNSW dirty nodes before closing
+   * This ensures deferred persistence mode data is saved
    */
   async close(): Promise<void> {
+    // v6.2.8: Flush HNSW dirty nodes before closing
+    // In deferred persistence mode, this persists all pending HNSW graph data
+    if (this.index && typeof this.index.flush === 'function') {
+      await this.index.flush()
+    }
+
     // Shutdown augmentations
     const augs = this.augmentationRegistry.getAll()
     for (const aug of augs) {

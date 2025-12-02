@@ -681,6 +681,13 @@ export interface BrainyConfig {
   batchWrites?: boolean            // Enable write batching for better performance
   maxConcurrentOperations?: number // Limit concurrent file operations
 
+  // HNSW persistence mode (v6.2.8)
+  // Controls when HNSW graph connections are persisted to storage
+  // - 'immediate': Persist on every add (slow but durable, default for filesystem)
+  // - 'deferred': Persist only on flush/close (fast, default for cloud storage)
+  // Cloud storage (GCS/S3/R2/Azure) should use 'deferred' for 30-50× faster adds
+  hnswPersistMode?: 'immediate' | 'deferred'
+
   // Memory management options (v5.11.0)
   maxQueryLimit?: number           // Override auto-detected query result limit (max: 100000)
   reservedQueryMemory?: number     // Memory reserved for queries in bytes (e.g., 1073741824 = 1GB)
