@@ -1582,6 +1582,52 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           nextCursor
         }
       }
+
+      // v6.2.9: Fast path for SINGLE sourceId + verbType combo (common VFS pattern)
+      // This avoids the slow type-iteration fallback for VFS operations
+      // NOTE: Only use fast path for single sourceId to avoid incomplete results
+      const isSingleSourceId = options.filter.sourceId &&
+        !Array.isArray(options.filter.sourceId)
+      if (
+        isSingleSourceId &&
+        options.filter.verbType &&
+        !options.filter.targetId &&
+        !options.filter.service &&
+        !options.filter.metadata
+      ) {
+        const sourceId = options.filter.sourceId as string
+        const verbTypes = Array.isArray(options.filter.verbType)
+          ? options.filter.verbType
+          : [options.filter.verbType]
+
+        prodLog.debug(`[BaseStorage] getVerbs: Using fast path for sourceId=${sourceId}, verbTypes=${verbTypes.join(',')}`)
+
+        // Get verbs by source (uses GraphAdjacencyIndex if available)
+        const verbsBySource = await this.getVerbsBySource_internal(sourceId)
+
+        // Filter by verbType in memory (fast - usually small number of verbs per source)
+        const filtered = verbsBySource.filter(v => verbTypes.includes(v.verb))
+
+        // Apply pagination
+        const paginatedVerbs = filtered.slice(offset, offset + limit)
+        const hasMore = offset + limit < filtered.length
+
+        // Set next cursor if there are more items
+        let nextCursor: string | undefined = undefined
+        if (hasMore && paginatedVerbs.length > 0) {
+          const lastItem = paginatedVerbs[paginatedVerbs.length - 1]
+          nextCursor = lastItem.id
+        }
+
+        prodLog.debug(`[BaseStorage] getVerbs: Fast path returned ${filtered.length} verbs (${paginatedVerbs.length} after pagination)`)
+
+        return {
+          items: paginatedVerbs,
+          totalCount: filtered.length,
+          hasMore,
+          nextCursor
+        }
+      }
     }
 
     // For more complex filtering or no filtering, use a paginated approach
@@ -1656,15 +1702,39 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       const totalVerbCountFromArray = this.verbCountsByType.reduce((sum, c) => sum + c, 0)
       const useOptimization = totalVerbCountFromArray > 0
 
+      // v6.2.9 BUG FIX: Pre-compute requested verb types to avoid skipping them
+      // When a specific verbType filter is provided, we MUST check that type
+      // even if verbCountsByType shows 0 (counts can be stale after restart)
+      const requestedVerbTypes = options?.filter?.verbType
+      const requestedVerbTypesSet = requestedVerbTypes
+        ? new Set(Array.isArray(requestedVerbTypes) ? requestedVerbTypes : [requestedVerbTypes])
+        : null
+
       // Iterate through all 127 verb types (Stage 3 CANONICAL) with early termination
       // OPTIMIZATION: Skip types with zero count (only if counts are reliable)
       for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
-        // Skip empty types for performance (but only if optimization is enabled)
-        if (useOptimization && this.verbCountsByType[i] === 0) {
+        const type = TypeUtils.getVerbFromIndex(i)
+
+        // v6.2.9 FIX: Never skip a type that's explicitly requested in the filter
+        // This fixes VFS bug where Contains relationships were skipped after restart
+        // when verbCountsByType[Contains] was 0 due to stale statistics
+        const isRequestedType = requestedVerbTypesSet?.has(type) ?? false
+        const countIsZero = this.verbCountsByType[i] === 0
+
+        // Skip empty types for performance (but only if optimization is enabled AND not requested)
+        if (useOptimization && countIsZero && !isRequestedType) {
           continue
         }
 
-        const type = TypeUtils.getVerbFromIndex(i)
+        // v6.2.9: Log when we DON'T skip a requested type that would have been skipped
+        // This helps diagnose stale statistics issues in production
+        if (useOptimization && countIsZero && isRequestedType) {
+          prodLog.debug(
+            `[BaseStorage] getVerbs: NOT skipping type=${type} despite count=0 (type was explicitly requested). ` +
+            `Statistics may be stale - consider running rebuildTypeCounts().`
+          )
+        }
+
         try {
           const verbsOfType = await this.getVerbsByType_internal(type)
 
@@ -2650,8 +2720,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // COW-aware write (v5.0.1): Use COW helper for branch isolation
     await this.writeObjectToBranch(path, noun)
 
-    // Periodically save statistics (every 100 saves)
-    if (this.nounCountsByType[typeIndex] % 100 === 0) {
+    // Periodically save statistics
+    // v6.2.9: Also save on first noun of each type to ensure low-count types are tracked
+    const shouldSave = this.nounCountsByType[typeIndex] === 1 ||  // First noun of type
+                       this.nounCountsByType[typeIndex] % 100 === 0  // Every 100th
+    if (shouldSave) {
       await this.saveTypeStatistics()
     }
   }
@@ -2773,7 +2846,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Periodically save statistics
-    if (this.verbCountsByType[typeIndex] % 100 === 0) {
+    // v6.2.9: Also save on first verb of each type to ensure low-count types are tracked
+    // This prevents stale statistics after restart for types with < 100 verbs (common for VFS)
+    const shouldSave = this.verbCountsByType[typeIndex] === 1 ||  // First verb of type
+                       this.verbCountsByType[typeIndex] % 100 === 0  // Every 100th
+    if (shouldSave) {
       await this.saveTypeStatistics()
     }
   }

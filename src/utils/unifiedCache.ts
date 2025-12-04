@@ -416,6 +416,24 @@ export class UnifiedCache {
   }
 
   /**
+   * Delete all items with keys starting with the given prefix
+   * v6.2.9: Added for VFS cache invalidation (fixes stale parent ID bug)
+   * @param prefix - The key prefix to match
+   * @returns Number of items deleted
+   */
+  deleteByPrefix(prefix: string): number {
+    let deleted = 0
+    for (const [key, item] of this.cache) {
+      if (key.startsWith(prefix)) {
+        this.currentSize -= item.size
+        this.cache.delete(key)
+        deleted++
+      }
+    }
+    return deleted
+  }
+
+  /**
    * Clear cache or specific type
    */
   clear(type?: 'hnsw' | 'metadata' | 'embedding' | 'other'): void {

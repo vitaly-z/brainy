@@ -345,30 +345,44 @@ export class PathResolver {
 
   /**
    * Invalidate cache entries for a path and its children
+   * v6.2.9 FIX: Also invalidates UnifiedCache to prevent stale entity IDs
+   * This fixes the "Source entity not found" bug after delete+recreate operations
    */
   invalidatePath(path: string, recursive = false): void {
     const normalizedPath = this.normalizePath(path)
 
-    // Remove from all caches
+    // v6.2.9 FIX: Clear parent cache BEFORE deleting from pathCache
+    // (we need the entityId from the cache entry)
+    const cached = this.pathCache.get(normalizedPath)
+    if (cached) {
+      this.parentCache.delete(cached.entityId)
+    }
+
+    // Remove from local caches
     this.pathCache.delete(normalizedPath)
     this.hotPaths.delete(normalizedPath)
+
+    // v6.2.9 CRITICAL FIX: Also invalidate UnifiedCache (global LRU cache)
+    // This was missing before, causing stale entity IDs to be returned after delete
+    const cacheKey = `vfs:path:${normalizedPath}`
+    getGlobalCache().delete(cacheKey)
 
     if (recursive) {
       // Remove all paths that start with this path
       const prefix = normalizedPath.endsWith('/') ? normalizedPath : normalizedPath + '/'
 
-      for (const [cachedPath] of this.pathCache) {
+      for (const [cachedPath, entry] of this.pathCache) {
         if (cachedPath.startsWith(prefix)) {
           this.pathCache.delete(cachedPath)
           this.hotPaths.delete(cachedPath)
+          // v6.2.9: Also clear parent cache for this entry
+          this.parentCache.delete(entry.entityId)
         }
       }
-    }
 
-    // Clear parent cache for the entity
-    const cached = this.pathCache.get(normalizedPath)
-    if (cached) {
-      this.parentCache.delete(cached.entityId)
+      // v6.2.9 CRITICAL FIX: Also invalidate UnifiedCache entries with this prefix
+      const globalCachePrefix = `vfs:path:${prefix}`
+      getGlobalCache().deleteByPrefix(globalCachePrefix)
     }
   }
 
