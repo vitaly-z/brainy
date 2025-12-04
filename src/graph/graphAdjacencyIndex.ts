@@ -117,6 +117,7 @@ export class GraphAdjacencyIndex {
 
   /**
    * Initialize the graph index (lazy initialization)
+   * v6.3.0: Added defensive auto-rebuild check for verbIdSet consistency
    */
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) {
@@ -128,10 +129,63 @@ export class GraphAdjacencyIndex {
     await this.lsmTreeVerbsBySource.init()
     await this.lsmTreeVerbsByTarget.init()
 
+    // v6.3.0: Defensive check - if LSM-trees have data but verbIdSet is empty,
+    // the index was created without proper rebuild (shouldn't happen with singleton
+    // pattern but protects against edge cases and future refactoring)
+    const lsmTreeSize = this.lsmTreeVerbsBySource.size()
+    if (lsmTreeSize > 0 && this.verbIdSet.size === 0) {
+      prodLog.warn(
+        `GraphAdjacencyIndex: LSM-trees have ${lsmTreeSize} relationships but verbIdSet is empty. ` +
+        `Triggering auto-rebuild to restore consistency.`
+      )
+      // Note: We don't await rebuild() here to avoid infinite loop
+      // (rebuild calls ensureInitialized). Instead, we'll populate verbIdSet
+      // by loading all verb IDs from storage.
+      await this.populateVerbIdSetFromStorage()
+    }
+
     // Start auto-flush timer after initialization
     this.startAutoFlush()
 
     this.initialized = true
+  }
+
+  /**
+   * Populate verbIdSet from storage without full rebuild (v6.3.0)
+   * Lighter weight than full rebuild - only loads verb IDs, not all verb data
+   * @private
+   */
+  private async populateVerbIdSetFromStorage(): Promise<void> {
+    prodLog.info('GraphAdjacencyIndex: Populating verbIdSet from storage...')
+    const startTime = Date.now()
+
+    // Use pagination to load all verb IDs
+    let hasMore = true
+    let cursor: string | undefined = undefined
+    let count = 0
+
+    while (hasMore) {
+      const result = await this.storage.getVerbs({
+        pagination: { limit: 10000, cursor }
+      })
+
+      for (const verb of result.items) {
+        this.verbIdSet.add(verb.id)
+        // Also update counts
+        const verbType = verb.verb || 'unknown'
+        this.relationshipCountsByType.set(
+          verbType,
+          (this.relationshipCountsByType.get(verbType) || 0) + 1
+        )
+        count++
+      }
+
+      hasMore = result.hasMore
+      cursor = result.nextCursor
+    }
+
+    const elapsed = Date.now() - startTime
+    prodLog.info(`GraphAdjacencyIndex: Populated verbIdSet with ${count} verb IDs in ${elapsed}ms`)
   }
 
   /**

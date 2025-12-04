@@ -344,6 +344,30 @@ export class PathResolver {
   }
 
   /**
+   * Invalidate ALL caches (v6.3.0)
+   * Call this when switching branches (checkout), clearing data (clear), or forking
+   * This ensures no stale data from previous branch/state remains in cache
+   */
+  invalidateAllCaches(): void {
+    // Clear all local caches
+    this.pathCache.clear()
+    this.parentCache.clear()
+    this.hotPaths.clear()
+
+    // Clear all VFS entries from UnifiedCache
+    getGlobalCache().deleteByPrefix('vfs:path:')
+
+    // Reset statistics (optional but helpful for debugging)
+    this.cacheHits = 0
+    this.cacheMisses = 0
+    this.metadataIndexHits = 0
+    this.metadataIndexMisses = 0
+    this.graphTraversalFallbacks = 0
+
+    prodLog.info('[PathResolver] All caches invalidated')
+  }
+
+  /**
    * Invalidate cache entries for a path and its children
    * v6.2.9 FIX: Also invalidates UnifiedCache to prevent stale entity IDs
    * This fixes the "Source entity not found" bug after delete+recreate operations

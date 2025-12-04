@@ -231,8 +231,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.metadataIndex = new MetadataIndexManager(this.storage)
       await this.metadataIndex.init()
 
-      // Initialize core graph index
-      this.graphIndex = new GraphAdjacencyIndex(this.storage)
+      // v6.3.0: Get GraphAdjacencyIndex from storage (SINGLETON pattern)
+      // Storage owns the single instance, Brainy accesses it via getGraphIndex()
+      // This fixes the dual-ownership bug where Brainy and Storage had separate instances
+      // causing verbIdSet to be out of sync and VFS tree queries to fail
+      this.graphIndex = await (this.storage as any).getGraphIndex()
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
@@ -2636,8 +2639,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       clone.metadataIndex = new MetadataIndexManager(clone.storage)
       await clone.metadataIndex.init()
 
-      clone.graphIndex = new GraphAdjacencyIndex(clone.storage)
-      await clone.graphIndex.rebuild()
+      // v6.3.0: GraphAdjacencyIndex SINGLETON pattern for fork()
+      // Object.create() causes prototype inheritance, so clone.storage.graphIndex
+      // would point to parent's graphIndex. We must break this inheritance and
+      // create a fresh instance for the clone's branch.
+      ;(clone.storage as any).graphIndex = undefined
+      ;(clone.storage as any).graphIndexPromise = undefined
+      clone.graphIndex = await (clone.storage as any).getGraphIndex()
+      // getGraphIndex() will rebuild automatically if data exists (via _initializeGraphIndex)
 
       // Setup augmentations
       clone.augmentationRegistry = this.setupAugmentations()
@@ -2742,7 +2751,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.index = this.setupIndex()
       this.metadataIndex = new (MetadataIndexManager as any)(this.storage)
       await this.metadataIndex.init()
-      this.graphIndex = new GraphAdjacencyIndex(this.storage)
+
+      // v6.3.0: GraphAdjacencyIndex SINGLETON pattern for checkout()
+      // Invalidate the old graphIndex (it has data from the old branch)
+      // and get a fresh instance for the new branch
+      ;(this.storage as any).invalidateGraphIndex()
+      this.graphIndex = await (this.storage as any).getGraphIndex()
 
       // v5.7.7: Reset lazy loading state when switching branches
       // Indexes contain data from previous branch, must rebuild for new branch
@@ -2751,8 +2765,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Rebuild indexes from new branch data (force=true to override disableAutoRebuild)
       await this.rebuildIndexesIfNeeded(true)
 
-      // Re-initialize VFS for new branch
+      // v6.3.0: Clear VFS caches before recreating VFS for new branch
+      // UnifiedCache is global, so old branch's VFS path cache entries would persist
       if (this._vfs) {
+        // Clear old PathResolver's caches including UnifiedCache entries
+        if ((this._vfs as any).pathResolver?.invalidateAllCaches) {
+          (this._vfs as any).pathResolver.invalidateAllCaches()
+        }
+        // Recreate VFS for new branch
         this._vfs = new VirtualFileSystem(this)
         await this._vfs.init()
       }

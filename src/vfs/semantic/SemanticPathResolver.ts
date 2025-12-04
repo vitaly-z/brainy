@@ -317,6 +317,18 @@ export class SemanticPathResolver {
   }
 
   /**
+   * Invalidate ALL caches (v6.3.0)
+   * Clears both traditional path cache AND semantic cache
+   * Call this when switching branches, clearing data, or forking
+   */
+  invalidateAllCaches(): void {
+    // Clear traditional PathResolver caches (including UnifiedCache VFS entries)
+    this.pathResolver.invalidateAllCaches()
+    // Clear semantic cache
+    this.cache.clear()
+  }
+
+  /**
    * Cleanup resources
    */
   cleanup(): void {

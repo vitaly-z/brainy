@@ -268,17 +268,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Load type statistics from storage (if they exist)
       await this.loadTypeStatistics()
 
-      // v6.0.0: Create GraphAdjacencyIndex (lazy-loaded, no rebuild)
-      // LSM-trees are initialized on first use via ensureInitialized()
-      // Index is populated incrementally as verbs are added via addVerb()
-      try {
-        prodLog.debug('[BaseStorage] Creating GraphAdjacencyIndex...')
-        this.graphIndex = new GraphAdjacencyIndex(this)
-        prodLog.debug(`[BaseStorage] GraphAdjacencyIndex instantiated (lazy-loaded), graphIndex=${!!this.graphIndex}`)
-      } catch (error) {
-        prodLog.error('[BaseStorage] Failed to create GraphAdjacencyIndex:', error)
-        throw error
-      }
+      // v6.3.0: GraphAdjacencyIndex is now SINGLETON via getGraphIndex()
+      // - Removed direct creation here to fix dual-ownership bug
+      // - GraphAdjacencyIndex will be created lazily on first getGraphIndex() call
+      // - This ensures there's only ONE instance per storage adapter
+      // - See: https://github.com/soulcraftlabs/brainy/issues/vfs-corruption
+      prodLog.debug('[BaseStorage] init() complete - GraphAdjacencyIndex will be created via getGraphIndex()')
     } catch (error) {
       // Reset flag on failure to allow retry
       this.isInitialized = false
@@ -292,12 +287,28 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @public
    */
   public async rebuildGraphIndex(): Promise<void> {
-    if (!this.graphIndex) {
-      throw new Error('GraphAdjacencyIndex not initialized')
-    }
+    const index = await this.getGraphIndex()
     prodLog.info('[BaseStorage] Rebuilding graph index from existing data...')
-    await this.graphIndex.rebuild()
+    await index.rebuild()
     prodLog.info('[BaseStorage] Graph index rebuild complete')
+  }
+
+  /**
+   * Invalidate GraphAdjacencyIndex (v6.3.0)
+   * Call this when switching branches or clearing data to force re-creation
+   * The next getGraphIndex() call will create a fresh instance and rebuild
+   * @public
+   */
+  public invalidateGraphIndex(): void {
+    if (this.graphIndex) {
+      prodLog.info('[BaseStorage] Invalidating GraphAdjacencyIndex for branch switch/clear')
+      // Stop any pending operations
+      if (typeof (this.graphIndex as any).stopAutoFlush === 'function') {
+        (this.graphIndex as any).stopAutoFlush()
+      }
+      this.graphIndex = undefined
+      this.graphIndexPromise = undefined
+    }
   }
 
   /**
@@ -2823,27 +2834,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // COW-aware write (v5.0.1): Use COW helper for branch isolation
     await this.writeObjectToBranch(path, verb)
 
-    // v6.0.0: Update GraphAdjacencyIndex incrementally (always available after init())
-    // GraphAdjacencyIndex.addVerb() calls ensureInitialized() automatically
-    if (this.graphIndex) {
-      prodLog.debug(`[BaseStorage] Updating GraphAdjacencyIndex with verb ${verb.id}`)
-      await this.graphIndex.addVerb({
-        id: verb.id,
-        sourceId: verb.sourceId,
-        targetId: verb.targetId,
-        vector: verb.vector,
-        source: verb.sourceId,
-        target: verb.targetId,
-        verb: verb.verb,
-        type: verb.verb,
-        createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-        updatedAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-        createdBy: { augmentation: 'storage', version: '6.0.0' }
-      })
-      prodLog.debug(`[BaseStorage] GraphAdjacencyIndex updated successfully`)
-    } else {
-      prodLog.warn(`[BaseStorage] graphIndex is null, cannot update index for verb ${verb.id}`)
-    }
+    // v6.3.0: GraphAdjacencyIndex updates are now handled EXCLUSIVELY by Brainy.relate()
+    // via AddToGraphIndexOperation in the transaction system. This provides:
+    // 1. Singleton pattern - only one graphIndex instance exists (via getGraphIndex())
+    // 2. Transaction rollback - if relate() fails, index update is rolled back
+    // 3. No double-counting - prevents duplicate addVerb() calls
+    // REMOVED: Direct graphIndex.addVerb() call that caused dual-ownership bugs
 
     // Periodically save statistics
     // v6.2.9: Also save on first verb of each type to ensure low-count types are tracked
