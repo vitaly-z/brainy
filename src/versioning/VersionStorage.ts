@@ -1,19 +1,18 @@
 /**
- * VersionStorage - Hybrid Storage for Entity Versions (v5.3.0)
+ * VersionStorage - Hybrid Storage for Entity Versions (v5.3.0, v6.3.0 fix)
  *
  * Implements content-addressable storage for entity versions:
  * - SHA-256 content hashing for deduplication
- * - Stores versions in .brainy/versions/ directory
+ * - Uses BaseStorage.saveMetadata/getMetadata for storage (v6.3.0)
  * - Integrates with COW commit system
  * - Space-efficient: Only stores unique content
  *
- * Storage structure:
- * .brainy/versions/
- *   ├── entities/
- *   │   └── {entityId}/
- *   │       └── {contentHash}.json  # Entity version data
- *   └── index/
- *       └── {entityId}.json         # Version index (managed by VersionIndex)
+ * Storage structure (v6.3.0):
+ * Version content is stored using system metadata keys:
+ *   __system_version_{entityId}_{contentHash}
+ *
+ * This integrates with BaseStorage's routing which places system keys
+ * in the _system/ directory, keeping version data separate from entities.
  *
  * NO MOCKS - Production implementation
  */
@@ -151,33 +150,35 @@ export class VersionStorage {
   }
 
   /**
-   * Get version storage path
+   * Get version storage key
+   *
+   * Uses __system_ prefix so BaseStorage routes to system storage (_system/ directory)
+   * This keeps version data separate from entity data.
    *
    * @param entityId Entity ID
    * @param contentHash Content hash
-   * @returns Storage path
+   * @returns Storage key for version content
    */
   private getVersionPath(entityId: string, contentHash: string): string {
-    return `versions/entities/${entityId}/${contentHash}.json`
+    // v6.3.0: Use system-prefixed key for BaseStorage.saveMetadata/getMetadata
+    // BaseStorage recognizes __system_ prefix and routes to _system/ directory
+    return `__system_version_${entityId}_${contentHash}`
   }
 
   /**
    * Check if content exists in storage
    *
-   * @param path Storage path
+   * @param key Storage key
    * @returns True if exists
    */
-  private async contentExists(path: string): Promise<boolean> {
+  private async contentExists(key: string): Promise<boolean> {
     try {
-      // Use storage adapter's exists check if available
+      // v6.3.0: Use getMetadata to check existence
       const adapter = this.brain.storageAdapter
-      if (adapter && typeof adapter.exists === 'function') {
-        return await adapter.exists(path)
-      }
+      if (!adapter) return false
 
-      // Fallback: Try to read and catch error
-      await this.readVersionData(path)
-      return true
+      const data = await adapter.getMetadata(key)
+      return data !== null
     } catch {
       return false
     }
@@ -186,11 +187,11 @@ export class VersionStorage {
   /**
    * Write version data to storage
    *
-   * @param path Storage path
+   * @param key Storage key
    * @param entity Entity data
    */
   private async writeVersionData(
-    path: string,
+    key: string,
     entity: NounMetadata
   ): Promise<void> {
     const adapter = this.brain.storageAdapter
@@ -199,67 +200,51 @@ export class VersionStorage {
       throw new Error('Storage adapter not available')
     }
 
-    // Serialize entity data
-    const data = JSON.stringify(entity, null, 2)
-
-    // Write to storage using adapter
-    if (typeof adapter.writeFile === 'function') {
-      await adapter.writeFile(path, data)
-    } else if (typeof adapter.set === 'function') {
-      await adapter.set(path, data)
-    } else {
-      throw new Error('Storage adapter does not support write operations')
-    }
+    // v6.3.0: Use saveMetadata for storing version content
+    // The key is system-prefixed so it routes to _system/ directory
+    await adapter.saveMetadata(key, entity)
   }
 
   /**
    * Read version data from storage
    *
-   * @param path Storage path
+   * @param key Storage key
    * @returns Entity data
    */
-  private async readVersionData(path: string): Promise<NounMetadata> {
+  private async readVersionData(key: string): Promise<NounMetadata> {
     const adapter = this.brain.storageAdapter
 
     if (!adapter) {
       throw new Error('Storage adapter not available')
     }
 
-    // Read from storage using adapter
-    let data: string
-
-    if (typeof adapter.readFile === 'function') {
-      data = await adapter.readFile(path)
-    } else if (typeof adapter.get === 'function') {
-      data = await adapter.get(path)
-    } else {
-      throw new Error('Storage adapter does not support read operations')
+    // v6.3.0: Use getMetadata for reading version content
+    const entity = await adapter.getMetadata(key)
+    if (!entity) {
+      throw new Error(`Version data not found: ${key}`)
     }
 
-    // Parse entity data
-    return JSON.parse(data)
+    return entity
   }
 
   /**
    * Delete version data from storage
    *
-   * @param path Storage path
+   * Note: Version content is content-addressed and immutable.
+   * Deleting the version index entry (via VersionIndex.removeVersion) is sufficient.
+   * The content may be shared with other versions (same contentHash).
+   *
+   * v6.3.0: We don't actually delete version content to avoid breaking
+   * other versions that may reference the same content hash.
+   * A separate garbage collection process could clean up unreferenced content.
+   *
+   * @param key Storage key (unused - kept for API compatibility)
    */
-  private async deleteVersionData(path: string): Promise<void> {
-    const adapter = this.brain.storageAdapter
-
-    if (!adapter) {
-      throw new Error('Storage adapter not available')
-    }
-
-    // Delete from storage using adapter
-    if (typeof adapter.deleteFile === 'function') {
-      await adapter.deleteFile(path)
-    } else if (typeof adapter.delete === 'function') {
-      await adapter.delete(path)
-    } else {
-      throw new Error('Storage adapter does not support delete operations')
-    }
+  private async deleteVersionData(_key: string): Promise<void> {
+    // v6.3.0: Version content is content-addressed and may be shared.
+    // We don't delete it here to prevent breaking other versions.
+    // The version INDEX is deleted via VersionIndex.removeVersion().
+    // A GC process could clean up unreferenced content in the future.
   }
 
 }

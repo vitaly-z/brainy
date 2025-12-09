@@ -23,6 +23,16 @@ describe('VersionStorage', () => {
 
     mockBrain = {
       storageAdapter: {
+        // v6.3.0: VersionStorage now uses saveMetadata/getMetadata instead of writeFile/readFile
+        saveMetadata: vi.fn(async (key: string, data: any) => {
+          mockFiles.set(key, JSON.stringify(data))
+        }),
+        getMetadata: vi.fn(async (key: string) => {
+          const data = mockFiles.get(key)
+          if (!data) return null
+          return JSON.parse(data)
+        }),
+        // Legacy methods for tests that still use them
         exists: vi.fn(async (path: string) => mockFiles.has(path)),
         writeFile: vi.fn(async (path: string, data: string) => {
           mockFiles.set(path, data)
@@ -173,10 +183,11 @@ describe('VersionStorage', () => {
 
       await storage.saveVersion(version, entity)
 
-      const expectedPath = `versions/entities/user-123/${version.contentHash}.json`
-      expect(mockFiles.has(expectedPath)).toBe(true)
+      // v6.3.0: Uses __system_version_ prefix for saveMetadata keys
+      const expectedKey = `__system_version_user-123_${version.contentHash}`
+      expect(mockFiles.has(expectedKey)).toBe(true)
 
-      const savedData = mockFiles.get(expectedPath)
+      const savedData = mockFiles.get(expectedKey)
       expect(savedData).toBeDefined()
       expect(JSON.parse(savedData!)).toEqual(entity)
     })
@@ -255,12 +266,13 @@ describe('VersionStorage', () => {
       await storage.saveVersion(version1, entity1)
       await storage.saveVersion(version2, entity2)
 
-      const path1 = `versions/entities/doc-1/${version1.contentHash}.json`
-      const path2 = `versions/entities/doc-1/${version2.contentHash}.json`
+      // v6.3.0: Uses __system_version_ prefix for saveMetadata keys
+      const key1 = `__system_version_doc-1_${version1.contentHash}`
+      const key2 = `__system_version_doc-1_${version2.contentHash}`
 
-      expect(mockFiles.has(path1)).toBe(true)
-      expect(mockFiles.has(path2)).toBe(true)
-      expect(path1).not.toBe(path2)
+      expect(mockFiles.has(key1)).toBe(true)
+      expect(mockFiles.has(key2)).toBe(true)
+      expect(key1).not.toBe(key2)
     })
   })
 
@@ -336,7 +348,12 @@ describe('VersionStorage', () => {
   })
 
   describe('deleteVersion()', () => {
-    it('should delete version from storage', async () => {
+    it('should handle version deletion (content-addressed, no-op)', async () => {
+      // v6.3.0: Version content is content-addressed and may be shared by multiple versions.
+      // The deleteVersion method is a no-op - it doesn't actually delete the content.
+      // Version INDEX is deleted via VersionIndex.removeVersion().
+      // A GC process could clean up unreferenced content in the future.
+
       const entity: NounMetadata = {
         id: 'user-123',
         type: 'user',
@@ -355,12 +372,13 @@ describe('VersionStorage', () => {
 
       // Save
       await storage.saveVersion(version, entity)
-      const path = `versions/entities/user-123/${version.contentHash}.json`
-      expect(mockFiles.has(path)).toBe(true)
+      const key = `__system_version_user-123_${version.contentHash}`
+      expect(mockFiles.has(key)).toBe(true)
 
-      // Delete
+      // Delete is a no-op for content (content-addressed, may be shared)
       await storage.deleteVersion(version)
-      expect(mockFiles.has(path)).toBe(false)
+      // Content is NOT deleted to avoid breaking other versions with same content hash
+      expect(mockFiles.has(key)).toBe(true)  // v6.3.0: Content preserved
     })
 
     it('should handle deleting non-existent version gracefully', async () => {
@@ -402,20 +420,18 @@ describe('VersionStorage', () => {
       expect(loaded).toEqual(entity)
     })
 
-    it('should use adapter.set if writeFile unavailable', async () => {
-      // Mock adapter with set/get instead of writeFile/readFile
+    it('should use adapter.saveMetadata API', async () => {
+      // v6.3.0: VersionStorage now uses saveMetadata/getMetadata exclusively
+      const testStorage = new Map<string, string>()
+
       mockBrain.storageAdapter = {
-        exists: vi.fn(async () => false),
-        set: vi.fn(async (path: string, data: string) => {
-          mockFiles.set(path, data)
+        saveMetadata: vi.fn(async (key: string, data: any) => {
+          testStorage.set(key, JSON.stringify(data))
         }),
-        get: vi.fn(async (path: string) => {
-          const data = mockFiles.get(path)
-          if (!data) throw new Error('Not found')
-          return data
-        }),
-        delete: vi.fn(async (path: string) => {
-          mockFiles.delete(path)
+        getMetadata: vi.fn(async (key: string) => {
+          const data = testStorage.get(key)
+          if (!data) return null
+          return JSON.parse(data)
         })
       }
 
@@ -438,10 +454,10 @@ describe('VersionStorage', () => {
       }
 
       await storage.saveVersion(version, entity)
-      expect(mockBrain.storageAdapter.set).toHaveBeenCalled()
+      expect(mockBrain.storageAdapter.saveMetadata).toHaveBeenCalled()
 
       const loaded = await storage.loadVersion(version)
-      expect(mockBrain.storageAdapter.get).toHaveBeenCalled()
+      expect(mockBrain.storageAdapter.getMetadata).toHaveBeenCalled()
       expect(loaded).toEqual(entity)
     })
 
@@ -471,7 +487,7 @@ describe('VersionStorage', () => {
     })
 
     it('should throw if adapter does not support required operations', async () => {
-      mockBrain.storageAdapter = {}  // No methods
+      mockBrain.storageAdapter = {}  // No methods (no saveMetadata)
       storage = new VersionStorage(mockBrain)
 
       const entity: NounMetadata = {
@@ -490,14 +506,15 @@ describe('VersionStorage', () => {
         contentHash: storage.hashEntity(entity)
       }
 
+      // v6.3.0: Error from calling undefined saveMetadata
       await expect(
         storage.saveVersion(version, entity)
-      ).rejects.toThrow('does not support write operations')
+      ).rejects.toThrow()  // TypeError: adapter.saveMetadata is not a function
     })
   })
 
-  describe('Path Generation', () => {
-    it('should generate correct storage paths', async () => {
+  describe('Key Generation', () => {
+    it('should generate correct storage keys', async () => {
       const entity: NounMetadata = {
         id: 'user-123',
         type: 'user',
@@ -517,8 +534,9 @@ describe('VersionStorage', () => {
 
       await storage.saveVersion(version, entity)
 
-      const expectedPath = `versions/entities/user-123/${contentHash}.json`
-      expect(mockFiles.has(expectedPath)).toBe(true)
+      // v6.3.0: Uses __system_version_ prefix for saveMetadata keys
+      const expectedKey = `__system_version_user-123_${contentHash}`
+      expect(mockFiles.has(expectedKey)).toBe(true)
     })
 
     it('should handle entity IDs with special characters', async () => {
@@ -541,8 +559,9 @@ describe('VersionStorage', () => {
 
       await storage.saveVersion(version, entity)
 
-      const expectedPath = `versions/entities/user:123:profile/${contentHash}.json`
-      expect(mockFiles.has(expectedPath)).toBe(true)
+      // v6.3.0: Uses __system_version_ prefix for saveMetadata keys
+      const expectedKey = `__system_version_user:123:profile_${contentHash}`
+      expect(mockFiles.has(expectedKey)).toBe(true)
     })
   })
 })

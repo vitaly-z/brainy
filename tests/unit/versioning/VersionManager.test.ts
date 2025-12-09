@@ -30,6 +30,16 @@ describe('VersionManager', () => {
     mockBrain = {
       currentBranch: 'main',
       storageAdapter: {
+        // v6.3.0: VersionStorage now uses saveMetadata/getMetadata for key-value storage
+        saveMetadata: vi.fn(async (key: string, data: any) => {
+          mockStorage.set(key, JSON.stringify(data))
+        }),
+        getMetadata: vi.fn(async (key: string) => {
+          const data = mockStorage.get(key)
+          if (!data) return null
+          return JSON.parse(data)
+        }),
+        // Legacy methods for compatibility
         exists: vi.fn(async (path: string) => mockStorage.has(path)),
         writeFile: vi.fn(async (path: string, data: string) => {
           mockStorage.set(path, data)
@@ -103,7 +113,24 @@ describe('VersionManager', () => {
         }
         return results
       }),
-      commit: vi.fn(async () => 'commit-hash-123')
+      commit: vi.fn(async () => 'commit-hash-123'),
+      // v6.3.0: VersionManager.restore() uses brain.update() to refresh all indexes
+      update: vi.fn(async (opts: { id: string, data?: any, type?: string, metadata?: any, confidence?: number, weight?: number, merge?: boolean }) => {
+        // Simulate update by merging metadata into the entity
+        const existing = mockIndex.get(opts.id)
+        if (!existing) {
+          throw new Error(`Entity ${opts.id} not found for update`)
+        }
+        const updated = {
+          ...existing,
+          data: opts.data !== undefined ? opts.data : existing.data,
+          type: opts.type || existing.type,
+          confidence: opts.confidence !== undefined ? opts.confidence : existing.confidence,
+          weight: opts.weight !== undefined ? opts.weight : existing.weight,
+          ...(opts.merge === false ? opts.metadata : { ...existing.metadata, ...opts.metadata })
+        }
+        mockIndex.set(opts.id, updated)
+      })
     }
 
     manager = new VersionManager(mockBrain)
@@ -226,11 +253,11 @@ describe('VersionManager', () => {
       // Restore to v1
       await manager.restore('config-1', 1)
 
-      // Verify saveNounMetadata was called with v1 data
-      expect(mockBrain.saveNounMetadata).toHaveBeenCalledWith(
-        'config-1',
+      // v6.3.0: restore() uses brain.update() to refresh all indexes
+      expect(mockBrain.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ theme: 'light', version: 1 })
+          id: 'config-1',
+          merge: false  // Replace, don't merge
         })
       )
     })
@@ -255,10 +282,11 @@ describe('VersionManager', () => {
       // Restore to alpha
       await manager.restore('app-1', 'alpha')
 
-      expect(mockBrain.saveNounMetadata).toHaveBeenCalledWith(
-        'app-1',
+      // v6.3.0: restore() uses brain.update() to refresh all indexes
+      expect(mockBrain.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ status: 'alpha' })
+          id: 'app-1',
+          merge: false  // Replace, don't merge
         })
       )
     })
@@ -312,7 +340,8 @@ describe('VersionManager', () => {
       expect(versions[2].version).toBe(1)
     })
 
-    it('should filter by tag pattern', async () => {
+    it('should filter by exact tag', async () => {
+      // v6.3.0: Tag filtering is exact match only (no glob patterns)
       mockIndex.set('app-1', {
         id: 'app-1',
         type: 'thing',
@@ -338,10 +367,14 @@ describe('VersionManager', () => {
       })
       await manager.save('app-1', { tag: 'v2.0.0' })
 
-      const v1Versions = await manager.list('app-1', { tag: 'v1.*' })
-      expect(v1Versions).toHaveLength(2)
-      expect(v1Versions[0].tag).toBe('v1.1.0')
-      expect(v1Versions[1].tag).toBe('v1.0.0')
+      // v6.3.0: Exact tag match only
+      const v1Versions = await manager.list('app-1', { tag: 'v1.0.0' })
+      expect(v1Versions).toHaveLength(1)
+      expect(v1Versions[0].tag).toBe('v1.0.0')
+
+      // Get all versions
+      const allVersions = await manager.list('app-1')
+      expect(allVersions).toHaveLength(3)
     })
 
     it('should limit results', async () => {

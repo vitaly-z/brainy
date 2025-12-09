@@ -1,20 +1,26 @@
 /**
- * VersionManager - Entity-Level Versioning Engine (v5.3.0)
+ * VersionManager - Entity-Level Versioning Engine (v5.3.0, v6.3.0 fix)
  *
  * Provides entity-level version control with:
  * - save() - Create entity version
- * - restore() - Restore entity to specific version
+ * - restore() - Restore entity to specific version (v6.3.0: now updates all indexes)
  * - list() - List all versions of an entity
  * - compare() - Deep diff between versions
  * - prune() - Remove old versions (retention policies)
  *
- * Architecture:
- * - Hybrid storage: COW commits for full snapshots + version index for fast queries
+ * Architecture (v6.3.0 - Clean Key-Value Storage):
+ * - Versions stored as key-value pairs, NOT as entities (no index pollution)
  * - Content-addressable: SHA-256 hashing for deduplication
- * - Space-efficient: Only stores changed data
+ * - Space-efficient: Only stores unique content
  * - Branch-aware: Versions tied to current branch
+ * - restore() uses brain.update() to refresh ALL indexes (HNSW, metadata, graph)
  *
- * NO MOCKS - Production implementation
+ * Storage keys:
+ * - Version metadata: __version_meta_{entityId}_{branch}
+ * - Version content:  __system_version_{entityId}_{contentHash}
+ *
+ * ZERO-CONFIG - Works automatically with existing storage infrastructure.
+ * NO MOCKS - Production implementation.
  */
 
 import { BaseStorage } from '../storage/baseStorage.js'
@@ -352,8 +358,31 @@ export class VersionManager {
       )
     }
 
-    // Restore entity in storage
-    await this.brain.saveNounMetadata(entityId, versionedEntity)
+    // Extract standard fields vs custom metadata
+    // NounMetadata has: noun, data, createdAt, updatedAt, createdBy, service, confidence, weight
+    const {
+      noun,
+      data,
+      createdAt,
+      updatedAt,
+      createdBy,
+      service,
+      confidence,
+      weight,
+      ...customMetadata
+    } = versionedEntity
+
+    // Use brain.update() to restore - this updates ALL indexes (HNSW, metadata, graph)
+    // This is critical: saveNounMetadata() only saves to storage without updating indexes
+    await this.brain.update({
+      id: entityId,
+      data: data,
+      type: noun,
+      metadata: customMetadata,
+      confidence: confidence,
+      weight: weight,
+      merge: false  // Replace entirely, don't merge with existing metadata
+    })
 
     return targetVersion
   }

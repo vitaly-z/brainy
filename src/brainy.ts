@@ -4334,6 +4334,101 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.counts.getStats(options)
   }
 
+  // ============= INTERNAL VERSIONING API =============
+  // These methods are used by the versioning system (brain.versions.*)
+  // They expose internal storage and index operations needed for entity versioning
+
+  /**
+   * Search entities by metadata filters (internal API)
+   * Used by versioning system for querying version metadata
+   *
+   * @param filters - Metadata filter object (same format as `where` in find())
+   * @returns Array of matching entities
+   * @internal
+   */
+  async searchByMetadata(filters: Record<string, any>): Promise<any[]> {
+    await this.ensureInitialized()
+
+    const ids = await this.metadataIndex.getIdsForFilter(filters)
+    if (ids.length === 0) return []
+
+    const results: any[] = []
+    const entitiesMap = await this.batchGet(ids)
+    for (const id of ids) {
+      const entity = entitiesMap.get(id)
+      if (entity) {
+        results.push(entity)
+      }
+    }
+    return results
+  }
+
+  /**
+   * Get raw noun metadata (internal API)
+   * Used by versioning system for reading entity state
+   *
+   * @param id - Entity ID
+   * @returns Noun metadata or null if not found
+   * @internal
+   */
+  async getNounMetadata(id: string): Promise<any | null> {
+    await this.ensureInitialized()
+    return this.storage.getNounMetadata(id)
+  }
+
+  /**
+   * Save raw noun metadata (internal API)
+   * Used by versioning system for storing version index entries
+   *
+   * @param id - Entity ID
+   * @param data - Metadata to save
+   * @internal
+   */
+  async saveNounMetadata(id: string, data: any): Promise<void> {
+    await this.ensureInitialized()
+    await this.storage.saveNounMetadata(id, data)
+  }
+
+  /**
+   * Delete noun metadata (internal API)
+   * Used by versioning system for removing version index entries
+   *
+   * @param id - Entity ID
+   * @internal
+   */
+  async deleteNounMetadata(id: string): Promise<void> {
+    await this.ensureInitialized()
+    await this.storage.deleteNounMetadata(id)
+  }
+
+  /**
+   * Current branch name (internal API)
+   * Used by versioning system for branch-aware operations
+   * @internal
+   */
+  get currentBranch(): string {
+    return (this.storage as any).currentBranch || 'main'
+  }
+
+  /**
+   * Reference manager for COW commits (internal API)
+   * Used by versioning system for commit operations
+   * @internal
+   */
+  get refManager(): any {
+    return (this.storage as any).refManager
+  }
+
+  /**
+   * Storage adapter (internal API)
+   * Used by versioning system for direct storage access
+   * Returns BaseStorage which has saveMetadata/getMetadata for key-value storage
+   * @internal
+   */
+  get storageAdapter(): BaseStorage {
+    return this.storage
+  }
+
   // ============= HELPER METHODS =============
 
   /**

@@ -1,36 +1,48 @@
 /**
- * VersionIndex - Fast Version Lookup Using Existing Index Infrastructure (v5.3.0)
+ * VersionIndex - Pure Key-Value Version Storage (v6.3.0)
  *
- * Integrates with Brainy's existing index system:
- * - Uses MetadataIndexManager for field indexing
- * - Leverages UnifiedCache for memory management
- * - Uses EntityIdMapper for efficient ID handling
- * - Uses ChunkManager for adaptive chunking
- * - Leverages Roaring Bitmaps for fast set operations
+ * Stores version metadata using simple key-value storage:
+ * - Version list per entity: __version_meta_{entityId}_{branch}
+ * - Content stored separately by VersionStorage
  *
- * Version metadata is stored as regular entities with type='_version'
- * This allows us to use existing index infrastructure without modification!
- *
- * Fields indexed:
- * - versionEntityId: Entity being versioned
- * - versionBranch: Branch version was created on
- * - versionNumber: Version number
- * - versionTag: Optional user tag
- * - versionTimestamp: Creation timestamp
- * - versionCommitHash: Commit hash
+ * Key Design Decisions:
+ * - Versions are NOT entities (no brain.add())
+ * - Versions do NOT pollute find() results
+ * - Simple O(1) lookups per entity
+ * - Versions per entity is typically small (10-1000)
  *
  * NO MOCKS - Production implementation
  */
 
-import { BaseStorage } from '../storage/baseStorage.js'
-import type { EntityVersion } from './VersionManager.js'
-import type { VersionQuery } from './VersionManager.js'
+import type { EntityVersion, VersionQuery } from './VersionManager.js'
 
 /**
- * VersionIndex - Version lookup and querying using existing indexes
+ * Internal storage structure for version metadata
+ */
+interface VersionMetadataStore {
+  entityId: string
+  branch: string
+  versions: VersionEntry[]
+}
+
+/**
+ * Individual version entry in the store
+ */
+interface VersionEntry {
+  version: number
+  timestamp: number
+  contentHash: string
+  commitHash?: string
+  tag?: string
+  description?: string
+  author?: string
+}
+
+/**
+ * VersionIndex - Pure key-value version metadata storage
  *
- * Strategy: Store version metadata as special entities with type='_version'
- * This leverages ALL existing index infrastructure automatically!
+ * Uses simple JSON storage instead of creating entities.
+ * This ensures versions never appear in find() results.
  */
 export class VersionIndex {
   private brain: any  // Brainy instance
@@ -42,8 +54,6 @@ export class VersionIndex {
 
   /**
    * Initialize version index
-   *
-   * No special setup needed - we use existing entity storage and indexes!
    */
   async initialize(): Promise<void> {
     if (this.initialized) return
@@ -53,93 +63,98 @@ export class VersionIndex {
   /**
    * Add version to index
    *
-   * Stores version metadata as a special entity with type='_version'
-   * This automatically indexes it using existing MetadataIndexManager!
+   * Stores version entry in key-value storage.
+   * Handles deduplication by content hash.
    *
-   * @param version Version metadata
+   * @param version Version metadata to store
    */
   async addVersion(version: EntityVersion): Promise<void> {
     await this.initialize()
 
-    // Generate unique ID for version entity
-    const versionEntityId = this.getVersionEntityId(
-      version.entityId,
-      version.version,
-      version.branch
-    )
+    const key = this.getMetaKey(version.entityId, version.branch)
+    const store = await this.loadStore(key) || {
+      entityId: version.entityId,
+      branch: version.branch,
+      versions: []
+    }
 
-    // Store as special entity with type='state' (version is a snapshot/state)
-    // This automatically gets indexed by MetadataIndexManager!
-    await this.brain.saveNounMetadata(versionEntityId, {
-      id: versionEntityId,
-      type: 'state', // Use standard 'state' type (version = snapshot state)
-      name: `Version ${version.version} of ${version.entityId}`,
-      metadata: {
-        // Flag to identify as version metadata
-        _isVersion: true,
-
-        // These fields are automatically indexed by MetadataIndexManager
-        versionEntityId: version.entityId, // Entity being versioned
-        versionBranch: version.branch, // Branch
-        versionNumber: version.version, // Version number
-        versionTag: version.tag, // Optional tag
-        versionTimestamp: version.timestamp, // Timestamp (indexed with bucketing)
-        versionCommitHash: version.commitHash, // Commit hash
-        versionContentHash: version.contentHash, // Content hash
-        versionAuthor: version.author, // Author
-        versionDescription: version.description, // Description
-        versionMetadata: version.metadata // Additional metadata
+    // Check for duplicate content hash (deduplication)
+    const existing = store.versions.find(v => v.contentHash === version.contentHash)
+    if (existing) {
+      // Update tag/description if provided on duplicate save
+      let updated = false
+      if (version.tag && version.tag !== existing.tag) {
+        existing.tag = version.tag
+        updated = true
       }
+      if (version.description && version.description !== existing.description) {
+        existing.description = version.description
+        updated = true
+      }
+      if (updated) {
+        await this.saveStore(key, store)
+      }
+      return
+    }
+
+    // Add new version entry
+    store.versions.push({
+      version: version.version,
+      timestamp: version.timestamp,
+      contentHash: version.contentHash,
+      commitHash: version.commitHash,
+      tag: version.tag,
+      description: version.description,
+      author: version.author
     })
+
+    await this.saveStore(key, store)
   }
 
   /**
    * Get versions for an entity
    *
-   * Uses existing MetadataIndexManager to query efficiently!
-   *
-   * @param query Version query
+   * @param query Version query with filters
    * @returns List of versions (newest first)
    */
   async getVersions(query: VersionQuery): Promise<EntityVersion[]> {
     await this.initialize()
 
-    // Build metadata filter using existing query system
-    const filters: Record<string, any> = {
-      type: 'state',
-      _isVersion: true,
-      versionEntityId: query.entityId,
-      versionBranch: query.branch
-    }
+    const branch = query.branch || this.brain.currentBranch
+    const key = this.getMetaKey(query.entityId, branch)
+    const store = await this.loadStore(key)
+    if (!store) return []
 
-    // Add optional filters
+    // Convert entries to EntityVersion format
+    let versions: EntityVersion[] = store.versions.map(entry => ({
+      version: entry.version,
+      entityId: store.entityId,
+      branch: store.branch,
+      timestamp: entry.timestamp,
+      contentHash: entry.contentHash,
+      commitHash: entry.commitHash || '',
+      tag: entry.tag,
+      description: entry.description,
+      author: entry.author
+    }))
+
+    // Apply filters
     if (query.tag) {
-      filters.versionTag = query.tag
+      versions = versions.filter(v => v.tag === query.tag)
+    }
+    if (query.startDate) {
+      versions = versions.filter(v => v.timestamp >= query.startDate!)
+    }
+    if (query.endDate) {
+      versions = versions.filter(v => v.timestamp <= query.endDate!)
     }
 
-    // Query using existing search infrastructure
-    const results = await this.brain.searchByMetadata(filters)
-
-    // Convert entities back to EntityVersion format
-    const versions: EntityVersion[] = []
-    for (const entity of results) {
-      const version = this.entityToVersion(entity)
-      if (version) {
-        // Filter by date range if specified
-        if (query.startDate && version.timestamp < query.startDate) continue
-        if (query.endDate && version.timestamp > query.endDate) continue
-
-        versions.push(version)
-      }
-    }
-
-    // Sort by version number (newest first)
+    // Sort newest first (highest version number first)
     versions.sort((a, b) => b.version - a.version)
 
     // Apply pagination
     const start = query.offset || 0
     const end = query.limit ? start + query.limit : undefined
-
     return versions.slice(start, end)
   }
 
@@ -156,14 +171,8 @@ export class VersionIndex {
     version: number,
     branch: string
   ): Promise<EntityVersion | null> {
-    await this.initialize()
-
-    const versionEntityId = this.getVersionEntityId(entityId, version, branch)
-
-    const entity = await this.brain.getNounMetadata(versionEntityId)
-    if (!entity) return null
-
-    return this.entityToVersion(entity)
+    const versions = await this.getVersions({ entityId, branch })
+    return versions.find(v => v.version === version) || null
   }
 
   /**
@@ -179,21 +188,8 @@ export class VersionIndex {
     tag: string,
     branch: string
   ): Promise<EntityVersion | null> {
-    await this.initialize()
-
-    // Query using existing metadata index
-    const results = await this.brain.searchByMetadata({
-      type: 'state',
-      _isVersion: true,
-      versionEntityId: entityId,
-      versionBranch: branch,
-      versionTag: tag
-    })
-
-    if (results.length === 0) return null
-
-    // Return first match (tags should be unique per entity/branch)
-    return this.entityToVersion(results[0])
+    const versions = await this.getVersions({ entityId, branch, tag })
+    return versions[0] || null
   }
 
   /**
@@ -204,17 +200,9 @@ export class VersionIndex {
    * @returns Number of versions
    */
   async getVersionCount(entityId: string, branch: string): Promise<number> {
-    await this.initialize()
-
-    // Use existing search infrastructure
-    const results = await this.brain.searchByMetadata({
-      type: 'state',
-      _isVersion: true,
-      versionEntityId: entityId,
-      versionBranch: branch
-    })
-
-    return results.length
+    const key = this.getMetaKey(entityId, branch)
+    const store = await this.loadStore(key)
+    return store?.versions.length || 0
   }
 
   /**
@@ -231,90 +219,17 @@ export class VersionIndex {
   ): Promise<void> {
     await this.initialize()
 
-    const versionEntityId = this.getVersionEntityId(entityId, version, branch)
+    const key = this.getMetaKey(entityId, branch)
+    const store = await this.loadStore(key)
+    if (!store) return
 
-    // Delete version entity (automatically removed from indexes)
-    await this.brain.deleteNounMetadata(versionEntityId)
-  }
+    const initialLength = store.versions.length
+    store.versions = store.versions.filter(v => v.version !== version)
 
-  /**
-   * Convert entity to EntityVersion format
-   *
-   * @param entity Entity from storage
-   * @returns EntityVersion or null if invalid
-   */
-  private entityToVersion(entity: any): EntityVersion | null {
-    if (!entity || !entity.metadata) return null
-
-    const m = entity.metadata
-
-    if (
-      !m.versionEntityId ||
-      !m.versionBranch ||
-      m.versionNumber === undefined ||
-      !m.versionCommitHash ||
-      !m.versionContentHash ||
-      !m.versionTimestamp
-    ) {
-      return null
+    // Only save if something was removed
+    if (store.versions.length < initialLength) {
+      await this.saveStore(key, store)
     }
-
-    return {
-      version: m.versionNumber,
-      entityId: m.versionEntityId,
-      branch: m.versionBranch,
-      commitHash: m.versionCommitHash,
-      timestamp: m.versionTimestamp,
-      contentHash: m.versionContentHash,
-      tag: m.versionTag,
-      description: m.versionDescription,
-      author: m.versionAuthor,
-      metadata: m.versionMetadata
-    }
-  }
-
-  /**
-   * Generate unique ID for version entity
-   *
-   * Format: _version:{entityId}:{version}:{branch}
-   *
-   * @param entityId Entity ID
-   * @param version Version number
-   * @param branch Branch name
-   * @returns Version entity ID
-   */
-  private getVersionEntityId(
-    entityId: string,
-    version: number,
-    branch: string
-  ): string {
-    return `_version:${entityId}:${version}:${branch}`
-  }
-
-  /**
-   * Get all versioned entities (for cleanup/debugging)
-   *
-   * @returns List of entity IDs that have versions
-   */
-  async getVersionedEntities(): Promise<string[]> {
-    await this.initialize()
-
-    // Query all version entities
-    const results = await this.brain.searchByMetadata({
-      type: 'state',
-      _isVersion: true
-    })
-
-    // Extract unique entity IDs
-    const entityIds = new Set<string>()
-    for (const entity of results) {
-      const version = this.entityToVersion(entity)
-      if (version) {
-        entityIds.add(version.entityId)
-      }
-    }
-
-    return Array.from(entityIds)
   }
 
   /**
@@ -325,14 +240,71 @@ export class VersionIndex {
    * @returns Number of versions deleted
    */
   async clearVersions(entityId: string, branch: string): Promise<number> {
-    await this.initialize()
+    const key = this.getMetaKey(entityId, branch)
+    const store = await this.loadStore(key)
+    if (!store) return 0
 
-    const versions = await this.getVersions({ entityId, branch })
+    const count = store.versions.length
 
-    for (const version of versions) {
-      await this.removeVersion(entityId, version.version, branch)
+    // Delete the store by saving null/empty
+    await this.saveStore(key, { entityId, branch, versions: [] })
+
+    return count
+  }
+
+  /**
+   * Get all versioned entities (for cleanup/debugging)
+   *
+   * Note: This is an expensive operation that requires scanning.
+   * In the simple key-value approach, we don't maintain a global index.
+   * This method returns an empty array - use storage-level scanning if needed.
+   *
+   * @returns Empty array (not supported in simple approach)
+   */
+  async getVersionedEntities(): Promise<string[]> {
+    // In the simple key-value approach, we don't maintain a global index
+    // of all versioned entities. This would require scanning storage.
+    // For most use cases, you know which entities you've versioned.
+    return []
+  }
+
+  // ============= Private Helpers =============
+
+  /**
+   * Generate storage key for version metadata
+   *
+   * @param entityId Entity ID
+   * @param branch Branch name
+   * @returns Storage key
+   */
+  private getMetaKey(entityId: string, branch: string): string {
+    return `__version_meta_${entityId}_${branch}`
+  }
+
+  /**
+   * Load version store from storage
+   *
+   * @param key Storage key
+   * @returns Version store or null
+   */
+  private async loadStore(key: string): Promise<VersionMetadataStore | null> {
+    try {
+      const store = await this.brain.storageAdapter.getMetadata(key)
+      // Handle empty store
+      if (!store || !store.versions) return null
+      return store as VersionMetadataStore
+    } catch {
+      return null
     }
+  }
 
-    return versions.length
+  /**
+   * Save version store to storage
+   *
+   * @param key Storage key
+   * @param store Version store
+   */
+  private async saveStore(key: string, store: VersionMetadataStore): Promise<void> {
+    await this.brain.storageAdapter.saveMetadata(key, store)
   }
 }
