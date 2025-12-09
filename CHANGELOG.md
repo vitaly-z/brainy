@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.3.1](https://github.com/soulcraftlabs/brainy/compare/v6.3.0...v6.3.1) (2025-12-09)
+
+- fix(versioning): clean architecture with index pollution prevention (f145fa1)
+- chore(release): 6.3.0 - singleton GraphAdjacencyIndex architecture fix (292be1b)
+- fix(architecture): singleton GraphAdjacencyIndex via storage.getGraphIndex() (v6.3.0) (c15892e)
+- chore(release): 6.2.9 - fix critical VFS bugs (directory corruption) (810b756)
+- fix(vfs): resolve two critical VFS bugs causing directory listing corruption (2ba69ec)
+- chore(release): 6.2.8 - deferred HNSW persistence for 30-50× faster cloud adds (1da6048)
+- perf(hnsw): deferred persistence mode for 30-50× faster cloud storage adds (4d1d567)
+- chore(release): 6.2.7 - simplify cloud storage to always-on write buffering (a33b759)
+- perf(storage): simplify cloud adapters to always-on write buffering (26510ce)
+- chore(release): 6.2.6 - fix cloud storage read-after-write consistency (6449bb1)
+- fix(storage): populate cache before write buffer for read-after-write consistency (2d27bd0)
+- chore(release): 6.2.5 - fix counts.byType() accumulation bug (e4bbd7f)
+- fix(counts): counts.byType() returns inflated values due to accumulation bug (9456c2c)
+- chore(release): 6.2.4 - fix asOf() COW property name mismatch (ea53c11)
+- fix(cow): asOf() fails with "COW not enabled" due to property name mismatch (b3ae18b)
+- chore(release): 6.2.3 - fix counts.byType({ excludeVFS: true }) returning empty (0ba6da4)
+- fix(counts): counts.byType({ excludeVFS: true }) now returns correct type counts (9b2ff2d)
+
+
 ### [6.2.2](https://github.com/soulcraftlabs/brainy/compare/v6.2.1...v6.2.2) (2025-11-25)
 
 - refactor: remove 3,700+ LOC of unused HNSW implementations (e3146ce)
