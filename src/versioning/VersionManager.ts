@@ -140,6 +140,39 @@ export class VersionManager {
   }
 
   /**
+   * Check if an entity is a VFS file
+   * VFS files store content in BlobStorage, not in entity.data
+   *
+   * @param entity Entity metadata object
+   * @returns True if entity is a VFS file
+   */
+  private isVFSFile(entity: any): boolean {
+    return (
+      entity?.isVFS === true &&
+      entity?.vfsType === 'file' &&
+      typeof entity?.path === 'string'
+    )
+  }
+
+  /**
+   * Check if content is text-based for encoding decisions
+   * @param mimeType MIME type of the content
+   * @returns True if content should be stored as UTF-8 string
+   */
+  private isTextContent(mimeType?: string): boolean {
+    if (!mimeType) return false
+    return (
+      mimeType.startsWith('text/') ||
+      mimeType === 'application/json' ||
+      mimeType === 'application/javascript' ||
+      mimeType === 'application/typescript' ||
+      mimeType === 'application/xml' ||
+      mimeType.includes('+xml') ||
+      mimeType.includes('+json')
+    )
+  }
+
+  /**
    * Initialize versioning system (lazy)
    */
   async initialize(): Promise<void> {
@@ -171,6 +204,31 @@ export class VersionManager {
     const entity = await this.brain.getNounMetadata(entityId)
     if (!entity) {
       throw new Error(`Entity ${entityId} not found`)
+    }
+
+    // v6.3.2 FIX: For VFS file entities, fetch current content from blob storage
+    // The entity.data field contains stale embedding text, not actual file content
+    // VFS files store their real content in BlobStorage (content-addressable)
+    if (this.isVFSFile(entity)) {
+      if (!this.brain.vfs) {
+        throw new Error(
+          `Cannot version VFS file ${entityId}: VFS not initialized. ` +
+          `Ensure brain.vfs is available before versioning VFS files.`
+        )
+      }
+
+      // Read fresh content from blob storage via VFS
+      const freshContent: Buffer = await this.brain.vfs.readFile(entity.path)
+
+      // Store content with appropriate encoding
+      // Text files as UTF-8 string (readable, smaller)
+      // Binary files as base64 (safe for JSON serialization)
+      if (this.isTextContent(entity.mimeType)) {
+        entity.data = freshContent.toString('utf-8')
+      } else {
+        entity.data = freshContent.toString('base64')
+        entity._vfsEncoding = 'base64'  // Flag for restore to decode
+      }
     }
 
     // Get current branch
@@ -358,6 +416,37 @@ export class VersionManager {
       )
     }
 
+    // v6.3.2 FIX: For VFS file entities, write content back to blob storage
+    // The versioned data contains the actual file content (not stale embedding text)
+    // Using vfs.writeFile() ensures proper blob creation and metadata update
+    if (this.isVFSFile(versionedEntity)) {
+      if (!this.brain.vfs) {
+        throw new Error(
+          `Cannot restore VFS file ${entityId}: VFS not initialized. ` +
+          `Ensure brain.vfs is available before restoring VFS files.`
+        )
+      }
+
+      // Decode content based on how it was stored
+      let content: Buffer
+      if (versionedEntity._vfsEncoding === 'base64') {
+        // Binary file stored as base64
+        content = Buffer.from(versionedEntity.data as string, 'base64')
+      } else {
+        // Text file stored as UTF-8 string
+        content = Buffer.from(versionedEntity.data as string, 'utf-8')
+      }
+
+      // Write content back to VFS - this handles:
+      // - BlobStorage write (new hash)
+      // - Entity metadata update
+      // - Path resolver cache update
+      await this.brain.vfs.writeFile(versionedEntity.path, content)
+
+      return targetVersion
+    }
+
+    // For non-VFS entities, use existing brain.update() logic
     // Extract standard fields vs custom metadata
     // NounMetadata has: noun, data, createdAt, updatedAt, createdBy, service, confidence, weight
     const {

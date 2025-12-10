@@ -3,7 +3,7 @@
 > **Complete API documentation for Brainy v5.0+**
 > Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning
 
-**Updated:** 2025-11-06 for v5.5.0
+**Updated:** 2025-12-09 for v6.3.2
 **All APIs verified against actual code**
 
 ---
@@ -515,6 +515,7 @@ Entity Versioning provides time-travel and history tracking for individual entit
 - **Branch-Isolated** - Versions isolated per branch
 - **Selective Auto-Versioning** - Optional augmentation for automatic version creation
 - **Production-Scale** - Designed for billions of entities
+- **VFS File Support (v6.3.2+)** - Full versioning for VFS files with actual blob content
 
 ---
 
@@ -879,6 +880,37 @@ const versions = await brain.versions.list('audit-record-1')
 versions.forEach(v => {
   console.log(`${v.createdAt}: ${v.description}`)
 })
+```
+
+#### VFS File Versioning (v6.3.2+)
+
+```typescript
+// VFS files can be versioned with actual blob content
+await brain.vfs.writeFile('/docs/readme.md', 'Version 1 content')
+
+// Get the file's entity ID
+const stat = await brain.vfs.stat('/docs/readme.md')
+
+// Save version 1
+await brain.versions.save(stat.entityId, { tag: 'v1', description: 'Initial draft' })
+
+// Modify the file
+await brain.vfs.writeFile('/docs/readme.md', 'Version 2 - updated content')
+
+// Save version 2
+await brain.versions.save(stat.entityId, { tag: 'v2', description: 'Updated docs' })
+
+// Compare versions - content is DIFFERENT (fixed in v6.3.2)
+const v1 = await brain.versions.getContent(stat.entityId, 1)
+const v2 = await brain.versions.getContent(stat.entityId, 2)
+console.log(v1.data !== v2.data)  // true
+
+// Restore to v1 - writes content back to blob storage
+await brain.versions.restore(stat.entityId, 'v1')
+
+// File is now back to v1
+const content = await brain.vfs.readFile('/docs/readme.md')
+console.log(content.toString())  // 'Version 1 content'
 ```
 
 ---
