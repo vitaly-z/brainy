@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.3.2](https://github.com/soulcraftlabs/brainy/compare/v6.3.1...v6.3.2) (2025-12-09)
+
+
+### 🐛 Bug Fixes
+
+* **versioning:** VFS file versions now capture actual blob content ([3e0f235](https://github.com/soulcraftlabs/brainy/commit/3e0f235f8b2cfcc6f0792a457879a02e4b93897a))
+
 ### [6.3.1](https://github.com/soulcraftlabs/brainy/compare/v6.3.0...v6.3.1) (2025-12-09)
 
 - fix(versioning): clean architecture with index pollution prevention (f145fa1)
