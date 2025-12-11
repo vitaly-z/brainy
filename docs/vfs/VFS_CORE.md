@@ -13,7 +13,7 @@ The main VFS class (`src/vfs/VirtualFileSystem.ts`) provides all filesystem oper
 ```javascript
 const brain = new Brainy({ storage: { type: 'memory' } })
 await brain.init()
-const vfs = brain.vfs()
+const vfs = brain.vfs
 await vfs.init()
 ```
 
@@ -366,30 +366,89 @@ VFS scales to millions of files:
 All VFS methods are available immediately after initialization:
 
 ```javascript
-const vfs = brain.vfs()
+const vfs = brain.vfs
 await vfs.init()
 
 // Core file operations
 await vfs.writeFile()      // Write files
 await vfs.readFile()       // Read files
+await vfs.appendFile()     // Append to files
 await vfs.mkdir()          // Create directories
 await vfs.readdir()        // List directory contents
+await vfs.rmdir()          // Remove directories
 await vfs.stat()           // Get file metadata
+await vfs.exists()         // Check if path exists
+await vfs.unlink()         // Delete files
+
+// Path operations
+await vfs.copy()           // Copy files/directories
+await vfs.move()           // Move files/directories
+await vfs.rename()         // Rename files/directories
+await vfs.chmod()          // Change permissions
+await vfs.chown()          // Change ownership
+
+// Symlinks
+await vfs.symlink()        // Create symbolic link
+await vfs.readlink()       // Read symlink target
+await vfs.realpath()       // Resolve symlink to real path
 
 // Semantic features
 await vfs.search()         // Semantic search
 await vfs.findSimilar()    // Find similar files
 await vfs.addRelationship()// Add relationships
 
-// Todo management
+// Todo & metadata management
 await vfs.addTodo()        // Add todos
 await vfs.getTodos()       // Get todos
+await vfs.setTodos()       // Set all todos
 await vfs.setMetadata()    // Set metadata
+await vfs.getMetadata()    // Get metadata
 
-// Export
-await vfs.exportToJSON()   // Export to JSON
-await vfs.bulkWrite()      // Bulk operations
+// Tree operations
+await vfs.getTreeStructure()   // Get tree structure
+await vfs.getDirectChildren()  // Get direct children
+
+// Bulk operations
+await vfs.bulkWrite()      // Bulk write operations
+
+// Import
+await vfs.importFile()     // Import file from filesystem
+await vfs.importDirectory()// Import directory from filesystem
 ```
+
+## Bulk Write Operations
+
+**v6.5.0**: `bulkWrite` efficiently processes multiple VFS operations with automatic ordering to prevent race conditions.
+
+```javascript
+const result = await vfs.bulkWrite([
+  { type: 'mkdir', path: '/project/src' },
+  { type: 'mkdir', path: '/project/tests' },
+  { type: 'write', path: '/project/src/index.ts', data: '// main file' },
+  { type: 'write', path: '/project/package.json', data: '{}' },
+  { type: 'delete', path: '/old-file.txt' },
+  { type: 'update', path: '/config.json', options: { metadata: { updated: true } } }
+])
+
+console.log(`Successful: ${result.successful}, Failed: ${result.failed.length}`)
+```
+
+**Supported operation types:**
+- `mkdir` - Create directory (with optional `options: { recursive: true }`)
+- `write` - Write file content
+- `delete` - Delete file
+- `update` - Update file metadata only
+
+**Operation ordering (v6.5.0):**
+1. `mkdir` operations run **first**, sequentially, sorted by path depth (shallowest first)
+2. Other operations (`write`, `delete`, `update`) run **after** in parallel batches of 10
+
+This ordering prevents race conditions where file writes might fail because parent directories haven't been created yet.
+
+**Error handling:**
+- Operations continue on individual failures
+- Failed operations are recorded in `result.failed` with error details
+- Use `recursive: true` on mkdir to make them idempotent
 
 ## Complete Example
 
@@ -404,7 +463,7 @@ async function vfsExample() {
   })
   await brain.init()
 
-  const vfs = brain.vfs()
+  const vfs = brain.vfs
   await vfs.init()
 
   // Create project structure

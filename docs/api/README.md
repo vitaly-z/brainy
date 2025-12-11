@@ -1,9 +1,9 @@
-# 🧠 Brainy v5.0+ API Reference
+# 🧠 Brainy v6.5.0 API Reference
 
-> **Complete API documentation for Brainy v5.0+**
+> **Complete API documentation for Brainy v6.5.0**
 > Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning
 
-**Updated:** 2025-12-09 for v6.3.2
+**Updated:** 2025-12-11 for v6.5.0
 **All APIs verified against actual code**
 
 ---

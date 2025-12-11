@@ -1,4 +1,4 @@
-# Brainy Documentation (v4.0.0)
+# Brainy Documentation (v6.5.0)
 
 Welcome to the comprehensive documentation for Brainy, the multi-dimensional AI database with Triple Intelligence Engine.
 
@@ -77,28 +77,31 @@ await brain.find("recent articles about AI with high ratings")
 ## Quick Example
 
 ```typescript
-import { Brainy } from 'brainy'
+import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
 // Initialize
 const brain = new Brainy()
 await brain.init()
 
 // Add entities (nouns)
-const articleId = await brain.add("Revolutionary AI Breakthrough", {
-  type: "article",
-  category: "technology",
-  rating: 4.8
+const articleId = await brain.add({
+  data: "Revolutionary AI Breakthrough",
+  type: NounType.Document,
+  metadata: { category: "technology", rating: 4.8 }
 })
 
-const authorId = await brain.add("Dr. Sarah Chen", {
-  type: "person",
-  role: "researcher"
+const authorId = await brain.add({
+  data: "Dr. Sarah Chen",
+  type: NounType.Person,
+  metadata: { role: "researcher" }
 })
 
 // Create relationships (verbs)
-await brain.relate(authorId, articleId, "authored", {
-  date: "2024-01-15",
-  contribution: "primary"
+await brain.relate({
+  from: authorId,
+  to: articleId,
+  type: VerbType.CreatedBy,
+  metadata: { date: "2024-01-15", contribution: "primary" }
 })
 
 // Query naturally

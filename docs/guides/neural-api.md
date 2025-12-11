@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Neural API provides advanced AI-powered features for understanding relationships and patterns in your data. Access it through `brain.neural` after initializing Brainy.
+The Neural API provides advanced AI-powered features for understanding relationships and patterns in your data. Access it through `brain.neural()` (method call) after initializing Brainy.
 
 ## Quick Start
 
@@ -14,8 +14,8 @@ import { Brainy } from '@soulcraft/brainy'
 const brain = new Brainy()
 await brain.init()
 
-// Access Neural API
-const neural = brain.neural
+// Access Neural API (note: neural() is a method call)
+const neural = brain.neural()
 
 // Find similar items
 const similarity = await neural.similar('text1', 'text2')
@@ -235,49 +235,64 @@ const sameTopicArticles = currentTopic.members
 ### Customer Feedback Analysis
 
 ```javascript
+import { NounType } from '@soulcraft/brainy'
+
 // Add feedback with metadata
 const feedbackIds = []
 for (const feedback of customerFeedback) {
-  const id = await brain.add(feedback.text, {
-    rating: feedback.rating,
-    date: feedback.date,
-    product: feedback.product
+  const id = await brain.add({
+    data: feedback.text,
+    type: NounType.Document,
+    metadata: {
+      rating: feedback.rating,
+      date: feedback.date,
+      product: feedback.product
+    }
   })
   feedbackIds.push(id)
 }
 
 // Cluster to find themes
+const neural = brain.neural()
 const themes = await neural.clusters(feedbackIds)
 
 // Analyze each theme
 for (const theme of themes) {
-  const items = await brain.getNouns(theme.members)
-  
-  const avgRating = items.reduce((sum, item) => 
-    sum + item.metadata.rating, 0) / items.length
-  
+  // Get items using Promise.all with brain.get()
+  const items = await Promise.all(
+    theme.members.map(id => brain.get(id))
+  )
+
+  const avgRating = items.reduce((sum, item) =>
+    sum + (item?.metadata?.rating || 0), 0) / items.length
+
   console.log(`Theme with ${theme.members.length} items`)
   console.log(`Average rating: ${avgRating}`)
-  
+
   // Find representative feedback for this theme
   const centroidId = theme.members[0] // Closest to center
-  const example = await brain.getNoun(centroidId)
-  console.log(`Example: "${example.data}"`)
+  const example = await brain.get(centroidId)
+  console.log(`Example: "${example?.data}"`)
 }
 ```
 
 ### Knowledge Base Organization
 
 ```javascript
-// Analyze existing knowledge base
-const allDocs = await brain.getNouns({ type: 'document' })
+import { NounType } from '@soulcraft/brainy'
+
+// Analyze existing knowledge base - use find() to get documents
+const allDocs = await brain.find({ type: NounType.Document, limit: 1000 })
+
+// Access neural API
+const neural = brain.neural()
 
 // Find duplicate or highly similar content
 const duplicates = []
 for (let i = 0; i < allDocs.length; i++) {
   for (let j = i + 1; j < allDocs.length; j++) {
     const similarity = await neural.similar(
-      allDocs[i].id, 
+      allDocs[i].id,
       allDocs[j].id
     )
     if (similarity > 0.95) {

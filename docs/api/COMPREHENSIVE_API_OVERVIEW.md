@@ -1,349 +1,503 @@
-# 🧠 **Brainy Complete Public API Overview**
+# Brainy Complete Public API Reference
 
-> **Ultra-comprehensive analysis of Brainy's entire API surface for intuitive, consistent developer experience**
+> **Accurate API documentation for Brainy v6.5.0+**
 
-## 🎯 **API Consistency Analysis**
+## Initialization
 
-### **✅ EXCELLENT Consistency Patterns**
-
-#### **1. Constructor & Initialization**
 ```typescript
-// Clean, consistent initialization
-const brain = new Brainy(config?)
-await brain.init()  // Always required
+import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
-// Storage auto-detection works seamlessly
-const brain = new Brainy({ storage: { forceMemoryStorage: true } })
-const brain = new Brainy({ storage: { path: './my-data' } })
-```
-
-#### **2. Data Operations (CRUD)**
-```typescript
-// ✅ CONSISTENT: Always (data, metadata) pattern with nounType in metadata
-await brain.add(content, { nounType: NounType.Person, role: 'Engineer' })
-await brain.add(content, { nounType: NounType.Document, title: 'API Guide' })
-
-// ✅ CONSISTENT: Always (source, target, type, metadata) pattern
-await brain.relate(sourceId, targetId, VerbType.RelatedTo, { strength: 0.8 })
-await brain.relate(sourceId, targetId, VerbType.Contains, { confidence: 0.9 })
-
-// ✅ CONSISTENT: Batch versions take arrays
-await brain.addNouns([...])  // Array of noun objects
-await brain.addVerbs([...])  // Array of verb objects
-```
-
-#### **3. Query Operations**
-```typescript
-// ✅ CONSISTENT: Always (query, options) pattern
-await brain.search('artificial intelligence', { limit: 10, threshold: 0.7 })
-await brain.find('recent documents about AI', { limit: 5 })  // Triple Intelligence
-
-// ✅ CONSISTENT: Get methods with filters
-await brain.getNouns(filter?)     // Optional filtering
-await brain.getVerbs(filter?)     // Optional filtering
-await brain.getNoun(id)           // Single item by ID
-await brain.getVerb(id)           // Single item by ID
-```
-
-#### **4. Main Class Shortcuts (Simple & Common)**
-```typescript
-// ✅ CONSISTENT: Simple shortcuts for most common operations
-await brain.similar(a, b)         // Returns simple number
-await brain.clusters()            // Returns simple array
-await brain.related(id, limit?)   // Returns simple array
-```
-
-### **🎨 EXCELLENT API Namespacing**
-
-#### **Main Data Operations** (Direct on `brain`)
-```typescript
-// Core CRUD - most common operations
-brain.add(content, metadata)
-brain.addNouns(items[])  // Batch operation - unchanged
-brain.relate(source, target, type, metadata?)
-brain.addVerbs(items[])  // Batch operation - unchanged
-
-brain.search(query, options?)
-brain.find(naturalLanguageQuery, options?)  // Triple Intelligence
-brain.get(id)
-brain.getNouns(filter?)
-brain.getVerbs(filter?)
-
-brain.delete(id)
-brain.deleteNouns(ids[])
-brain.deleteVerbs(ids[])
-brain.clear()
-
-// Simple shortcuts for common AI operations
-brain.similar(a, b)               // Simple similarity
-brain.clusters()                  // Simple clustering
-brain.related(id, limit?)         // Simple neighbors
-```
-
-#### **Neural AI Namespace** (`brain.neural.*`)
-```typescript
-// Advanced AI & Machine Learning operations
-brain.neural.similar(a, b, options?)           // Full similarity with options
-brain.neural.clusters(items?, options?)        // Advanced clustering
-brain.neural.neighbors(id, options?)           // K-nearest neighbors
-brain.neural.hierarchy(id, options?)           // Semantic hierarchy
-brain.neural.outliers(options?)                // Anomaly detection
-brain.neural.visualize(options?)               // Visualization data
-
-// Advanced clustering methods
-brain.neural.clusterByDomain(field, options?)  // Domain-aware clustering
-brain.neural.clusterByTime(field, windows, options?) // Temporal clustering
-brain.neural.clusterStream(options?)           // Streaming clustering
-brain.neural.updateClusters(items, options?)   // Incremental clustering
-
-// Utility & monitoring
-brain.neural.getPerformanceMetrics(operation?) // Performance stats
-brain.neural.clearCaches()                     // Cache management
-brain.neural.getCacheStats()                   // Cache statistics
-```
-
-#### **Triple Intelligence Namespace** (`brain.triple.*`)
-```typescript
-// Advanced natural language & complex queries
-brain.triple.find(query, options?)             // Natural language search
-brain.triple.analyze(text, options?)           // Text analysis
-brain.triple.understand(query, options?)       // Query understanding
-```
-
-#### **Augmentation System** (`brain.augmentations.*`)
-```typescript
-// Plugin/extension system
-brain.augmentations.add(augmentation)
-brain.augmentations.remove(name)
-brain.augmentations.get(name)
-brain.augmentations.list()
-brain.augmentations.execute(operation, params)
-```
-
-#### **Storage & System** (`brain.storage.*`)
-```typescript
-// Storage management
-brain.storage.backup(path?)
-brain.storage.restore(path?)
-brain.storage.getStatistics()
-brain.storage.optimize()
-brain.storage.vacuum()
-```
-
-### **🚀 API Flow & Developer Experience**
-
-#### **1. Beginner Flow (Simple & Intuitive)**
-```typescript
-// Dead simple - just works
+// Zero-config (just works)
 const brain = new Brainy()
 await brain.init()
 
-await brain.add('My first document', { nounType: NounType.Document })
-const results = await brain.search('document')
-const similar = await brain.similar('text1', 'text2')
-const groups = await brain.clusters()
-```
-
-#### **2. Intermediate Flow (More Control)**
-```typescript
-// Add configuration and options
+// With configuration
 const brain = new Brainy({
-  storage: { path: './my-brainy-db' },
-  neural: { cacheSize: 5000 }
+  storage: { type: 'memory' },  // or { path: './my-data' } for filesystem
+  embeddingModel: 'Q8',         // Q4, Q8, F16, F32
+  silent: true                  // Suppress logs
 })
 await brain.init()
+```
 
-// Use options for better control
-const results = await brain.search('AI research', {
-  limit: 20,
-  threshold: 0.8,
-  filters: { type: 'Document', year: 2024 }
+## Core CRUD Operations
+
+### `brain.add(params)` - Add Entity
+
+```typescript
+// Add with data (auto-embedded)
+const id = await brain.add({
+  data: 'Machine learning is a subset of AI',
+  type: NounType.Document,
+  metadata: { author: 'Alice', tags: ['ml', 'ai'] }
 })
 
-// Use neural namespace for advanced features
-const clusters = await brain.neural.clusters({
+// Add with pre-computed vector
+const id = await brain.add({
+  data: 'Content here',
+  vector: [0.1, 0.2, ...],  // 384 dimensions
+  type: NounType.Concept
+})
+```
+
+**Parameters:**
+- `data` (required): Content to embed (string, object, or any serializable data)
+- `type?`: NounType enum value
+- `metadata?`: Custom key-value pairs
+- `vector?`: Pre-computed embedding vector
+- `id?`: Custom ID (auto-generated if not provided)
+
+### `brain.get(id, options?)` - Get Entity
+
+```typescript
+const entity = await brain.get('entity-id')
+
+// Include vector embeddings (not loaded by default for performance)
+const entity = await brain.get('entity-id', { includeVectors: true })
+```
+
+### `brain.update(params)` - Update Entity
+
+```typescript
+await brain.update({
+  id: 'entity-id',
+  data: 'Updated content',      // Re-embeds if changed
+  metadata: { reviewed: true }  // Merges with existing
+})
+```
+
+### `brain.delete(id)` - Delete Entity
+
+```typescript
+await brain.delete('entity-id')
+```
+
+### `brain.clear()` - Clear All Data
+
+```typescript
+await brain.clear()
+```
+
+## Relationships
+
+### `brain.relate(params)` - Create Relationship
+
+```typescript
+const relationId = await brain.relate({
+  from: 'source-entity-id',
+  to: 'target-entity-id',
+  type: VerbType.RelatedTo,
+  metadata: { strength: 0.9 }
+})
+```
+
+**Parameters:**
+- `from` (required): Source entity ID
+- `to` (required): Target entity ID
+- `type` (required): VerbType enum value
+- `metadata?`: Custom relationship metadata
+
+### `brain.getRelations(params)` - Query Relationships
+
+```typescript
+// Get all relationships from an entity
+const relations = await brain.getRelations({ from: 'entity-id' })
+
+// Get relationships to an entity
+const relations = await brain.getRelations({ to: 'entity-id' })
+
+// Filter by type
+const relations = await brain.getRelations({
+  from: 'entity-id',
+  type: VerbType.Contains
+})
+```
+
+### `brain.unrelate(id)` - Delete Relationship
+
+```typescript
+await brain.unrelate('relationship-id')
+```
+
+## Search & Query
+
+### `brain.find(query)` - Semantic Search
+
+The primary search method with Triple Intelligence (semantic + graph + metadata).
+
+```typescript
+// Simple text search
+const results = await brain.find('machine learning algorithms')
+
+// With options
+const results = await brain.find({
+  query: 'machine learning',
+  limit: 10,
+  threshold: 0.7,
+  type: NounType.Document,
+  where: { author: 'Alice' },
+  excludeVFS: true  // Exclude VFS files from results
+})
+
+// Natural language query (Triple Intelligence)
+const results = await brain.find(
+  'Show me documents about AI written by Alice in 2024'
+)
+```
+
+**Parameters:**
+- `query`: Search text (required)
+- `limit?`: Max results (default: 10)
+- `threshold?`: Minimum similarity (0-1)
+- `type?`: Filter by NounType
+- `where?`: Metadata filters
+- `excludeVFS?`: Exclude VFS entities
+
+### `brain.similar(params)` - Find Similar Entities
+
+```typescript
+// Find similar to entity ID
+const similar = await brain.similar({
+  to: 'entity-id',
+  limit: 5
+})
+
+// Find similar to vector
+const similar = await brain.similar({
+  to: [0.1, 0.2, ...],  // Vector
+  limit: 10,
+  type: NounType.Document
+})
+```
+
+## Batch Operations
+
+### `brain.addMany(params)` - Batch Add
+
+```typescript
+const result = await brain.addMany({
+  items: [
+    { data: 'First item', type: NounType.Document },
+    { data: 'Second item', type: NounType.Concept },
+    { data: 'Third item', metadata: { priority: 'high' } }
+  ],
+  continueOnError: true,  // Don't stop on failures
+  onProgress: (completed, total) => {
+    console.log(`${completed}/${total} complete`)
+  }
+})
+
+console.log(`Added: ${result.successful.length}, Failed: ${result.failed.length}`)
+```
+
+### `brain.deleteMany(params)` - Batch Delete
+
+```typescript
+// Delete by IDs
+const result = await brain.deleteMany({
+  ids: ['id1', 'id2', 'id3'],
+  continueOnError: true
+})
+
+// Delete by type
+const result = await brain.deleteMany({
+  type: NounType.TempData
+})
+
+// Delete by metadata filter
+const result = await brain.deleteMany({
+  where: { status: 'archived' }
+})
+```
+
+### `brain.relateMany(params)` - Batch Relate
+
+```typescript
+const ids = await brain.relateMany({
+  items: [
+    { from: 'a', to: 'b', type: VerbType.RelatedTo },
+    { from: 'b', to: 'c', type: VerbType.Contains },
+    { from: 'c', to: 'd', type: VerbType.References }
+  ],
+  continueOnError: true
+})
+```
+
+### `brain.updateMany(params)` - Batch Update
+
+```typescript
+const result = await brain.updateMany({
+  items: [
+    { id: 'id1', metadata: { reviewed: true } },
+    { id: 'id2', data: 'Updated content' }
+  ],
+  continueOnError: true
+})
+```
+
+## Neural API
+
+Access advanced AI/ML features via `brain.neural()`:
+
+```typescript
+const neural = brain.neural()
+
+// Similarity calculation
+const similarity = await neural.similar('text1', 'text2')
+const detailed = await neural.similar('text1', 'text2', { detailed: true })
+
+// Clustering
+const clusters = await neural.clusters()
+const clusters = await neural.clusters({
   algorithm: 'hierarchical',
   maxClusters: 10
 })
-```
 
-#### **3. Advanced Flow (Full Power)**
-```typescript
-// Complex natural language queries
-const insights = await brain.find(`
-  Show me documents about machine learning from 2024 
-  that are connected to research papers with high citations
-`)
+// K-nearest neighbors
+const neighbors = await neural.neighbors('entity-id', { k: 5 })
 
-// Advanced temporal analysis
-const trends = await brain.neural.clusterByTime('publishedAt', [
-  { start: new Date('2024-01-01'), end: new Date('2024-06-30'), label: 'H1 2024' },
-  { start: new Date('2024-07-01'), end: new Date('2024-12-31'), label: 'H2 2024' }
+// Semantic hierarchy
+const hierarchy = await neural.hierarchy('entity-id')
+
+// Outlier/anomaly detection
+const outliers = await neural.outliers({ threshold: 2.0 })
+
+// Domain-aware clustering
+const domainClusters = await neural.clusterByDomain('category')
+
+// Temporal clustering
+const temporalClusters = await neural.clusterByTime('createdAt', [
+  { start: new Date('2024-01-01'), end: new Date('2024-06-30'), label: 'H1' },
+  { start: new Date('2024-07-01'), end: new Date('2024-12-31'), label: 'H2' }
 ])
 
-// Real-time streaming clustering
-for await (const batch of brain.neural.clusterStream({ batchSize: 50 })) {
-  console.log(`Processed ${batch.progress.percentage}% - Found ${batch.clusters.length} clusters`)
+// Streaming clusters (for large datasets)
+for await (const batch of neural.clusterStream({ batchSize: 100 })) {
+  console.log(`Progress: ${batch.progress.percentage}%`)
 }
 ```
 
-## 📊 **Parameter Consistency Analysis**
+## Virtual File System (VFS)
 
-### **✅ Excellent Consistency**
+Access via `brain.vfs`:
 
-#### **1. Data-First Pattern**
 ```typescript
-// Always: (data, config/metadata, optional_params)
-brain.add(content, metadata)  // nounType now in metadata
-brain.relate(source, target, VerbType.RelatedTo, metadata?)
-brain.search(query, options?)
-brain.similar(a, b, options?)
+const vfs = brain.vfs
+await vfs.init()
+
+// File operations
+await vfs.writeFile('/docs/readme.md', '# Hello')
+const content = await vfs.readFile('/docs/readme.md')
+await vfs.unlink('/docs/readme.md')
+
+// Directory operations
+await vfs.mkdir('/project/src', { recursive: true })
+const files = await vfs.readdir('/project')
+await vfs.rmdir('/project', { recursive: true })
+
+// Bulk operations (v6.5.0+)
+const result = await vfs.bulkWrite([
+  { type: 'mkdir', path: '/data' },
+  { type: 'write', path: '/data/config.json', data: '{}' },
+  { type: 'write', path: '/data/users.json', data: '[]' }
+])
+// Note: mkdir operations run first (sequentially), then other ops in parallel
+
+// Semantic search
+const results = await vfs.search('authentication code', { path: '/src' })
+
+// File metadata
+const stats = await vfs.stat('/file.txt')
+await vfs.setMetadata('/file.txt', { author: 'Alice' })
 ```
 
-#### **2. Options Objects**
+## Counts (O(1) Performance)
+
 ```typescript
-// Consistent options pattern across all methods
-{
-  limit?: number
-  threshold?: number  
-  filters?: Record<string, any>
-  algorithm?: string
-  includeMetadata?: boolean
+// Entity counts
+const total = brain.counts.entities()
+const byType = await brain.counts.byType(NounType.Document)
+const nonVFS = await brain.counts.byType({ excludeVFS: true })
+
+// Relationship counts
+const relations = brain.counts.relationships()
+const byVerb = await brain.counts.byVerbType(VerbType.Contains)
+```
+
+## Versioning & Branching
+
+```typescript
+// Create branch
+await brain.fork('feature-branch')
+
+// List branches
+const branches = await brain.listBranches()
+
+// Switch branch
+await brain.checkout('feature-branch')
+
+// Get current branch
+const current = await brain.getCurrentBranch()
+
+// Commit changes
+await brain.commit({ message: 'Added new features' })
+
+// View history
+const history = await brain.getHistory({ limit: 10 })
+
+// Time travel (read-only snapshot)
+const snapshot = await brain.asOf('commit-id')
+```
+
+## Streaming API
+
+```typescript
+// Stream all entities
+for await (const entity of brain.streaming.entities()) {
+  console.log(entity.id)
+}
+
+// Stream with filters
+for await (const entity of brain.streaming.entities({
+  type: NounType.Document,
+  where: { status: 'active' }
+})) {
+  // Process each entity
+}
+
+// Stream relationships
+for await (const relation of brain.streaming.relations({
+  from: 'entity-id'
+})) {
+  console.log(relation)
 }
 ```
 
-#### **3. Array Methods**
+## Pagination API
+
 ```typescript
-// Pluralized versions always take arrays
-brain.addNouns([{ vectorOrData: '...', nounType: NounType.Content }])
-brain.addVerbs([{ source: '...', target: '...', type: VerbType.RelatedTo }])
-brain.deleteNouns(['id1', 'id2'])
-brain.deleteVerbs(['id1', 'id2'])
+// Paginated queries
+const page1 = await brain.pagination.find({
+  query: 'machine learning',
+  page: 1,
+  pageSize: 20
+})
+
+console.log(`Page ${page1.page} of ${page1.totalPages}`)
+console.log(`Total results: ${page1.total}`)
+
+// Get next page
+const page2 = await brain.pagination.find({
+  query: 'machine learning',
+  page: 2,
+  pageSize: 20
+})
 ```
 
-### **Return Type Consistency**
+## Augmentations
 
-#### **1. Simple Returns (Shortcuts)**
 ```typescript
-brain.similar(a, b) → Promise<number>           // Always simple number
-brain.clusters() → Promise<SemanticCluster[]>   // Always simple array
-brain.related(id) → Promise<Neighbor[]>         // Always simple array
+// List active augmentations
+const augmentations = brain.augmentations.list()
+
+// Get specific augmentation
+const cache = brain.augmentations.get('cache')
+
+// Augmentations are auto-loaded based on config
+// Common augmentations: cache, display, metrics, intelligent-import
 ```
 
-#### **2. Rich Returns (Neural Namespace)**
+## Utilities
+
 ```typescript
-brain.neural.similar(a, b, { detailed: true }) → Promise<SimilarityResult>
-brain.neural.neighbors(id, options) → Promise<NeighborsResult>
-brain.neural.clusters(options) → Promise<SemanticCluster[]>
+// Manual embedding
+const vector = await brain.embed('text to embed')
+
+// Flush pending writes
+await brain.flush()
+
+// Get statistics
+const stats = await brain.getStats()
+const statsNoVFS = await brain.getStats({ excludeVFS: true })
+
+// Close (cleanup)
+await brain.close()
 ```
 
-#### **3. Consistent Error Handling**
+## Type Enums
+
 ```typescript
-// All methods throw descriptive errors with context
+import { NounType, VerbType } from '@soulcraft/brainy'
+
+// NounType - Entity types
+NounType.Document
+NounType.Person
+NounType.Concept
+NounType.Event
+NounType.Location
+NounType.Organization
+NounType.Product
+NounType.Content
+NounType.Collection
+// ... and more
+
+// VerbType - Relationship types
+VerbType.RelatedTo
+VerbType.Contains
+VerbType.References
+VerbType.DependsOn
+VerbType.Precedes
+VerbType.Follows
+VerbType.CreatedBy
+VerbType.ModifiedBy
+// ... and more
+```
+
+## Error Handling
+
+```typescript
 try {
-  await brain.neural.similar('invalid', 'data')  
+  await brain.get('nonexistent-id')
 } catch (error) {
-  // error.code: 'SIMILARITY_ERROR'
-  // error.context: { inputA: '...', inputB: '...' }
+  if (error.message.includes('not found')) {
+    // Handle missing entity
+  }
+}
+
+// VFS errors use POSIX codes
+try {
+  await vfs.readFile('/nonexistent')
+} catch (error) {
+  if (error.code === 'ENOENT') {
+    // File not found
+  }
 }
 ```
 
-## 🎯 **Key Strengths of Current API**
+## Configuration Reference
 
-### **✅ 1. Progressive Disclosure**
-- **Simple**: `brain.similar()` → just returns a number
-- **Advanced**: `brain.neural.similar()` → full options & detailed results
-
-### **✅ 2. Intuitive Namespacing**
-- **Core data**: Direct on `brain` (addNoun, search, delete)
-- **AI features**: `brain.neural.*` (clustering, similarity, analysis)  
-- **System**: `brain.storage.*`, `brain.augmentations.*`
-
-### **✅ 3. Consistent Patterns**
-- **Always** `(data, options?)` parameter order
-- **Always** async/Promise-based
-- **Always** descriptive error messages with context
-
-### **✅ 4. Type Safety**
 ```typescript
-// Excellent TypeScript support
-import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
-
-const brain = new Brainy()
-await brain.add('content', { nounType: NounType.Document, title: 'My Doc' })
-//                          ^^^^^^^^^^^^^^^^  // IDE autocomplete!
-```
-
-### **✅ 5. Flexible Configuration**
-```typescript
-// Zero-config (just works)
-const brain = new Brainy()
-
-// Full control when needed
 const brain = new Brainy({
-  storage: { 
-    adapter: 'file',
-    path: './my-data',
-    encryption: true
+  // Storage
+  storage: {
+    type: 'memory' | 'filesystem',
+    path: './data',              // For filesystem
+    forceMemoryStorage: false    // Force memory even if path exists
   },
-  neural: {
-    cacheSize: 10000,
-    defaultAlgorithm: 'hierarchical'
-  },
-  logging: { verbose: true }
+
+  // Embeddings
+  embeddingModel: 'Q8',          // Q4, Q8, F16, F32
+  dimensions: 384,               // Auto-detected
+
+  // Performance
+  silent: false,                 // Suppress console output
+  verbose: false,                // Extra logging
+
+  // Augmentations (auto-enabled by default)
+  augmentations: {
+    cache: true,
+    display: true,
+    metrics: true
+  }
 })
 ```
-
-## 🔍 **Minor Improvement Opportunities**
-
-### **1. Documentation Consistency**
-```typescript
-// ✅ GREAT: Clear, descriptive JSDoc
-/**
- * Add semantic relationship between two items
- * @param source - Source item ID
- * @param target - Target item ID  
- * @param type - Relationship type (VerbType enum)
- * @param metadata - Optional relationship metadata
- */
-brain.relate(source, target, type, metadata?)
-```
-
-### **2. Error Context Enhancement**
-```typescript
-// Current: Good error messages
-// Improvement: Add suggested fixes
-throw new SimilarityError('Failed to calculate similarity', {
-  inputA: 'invalid-id',
-  inputB: 'valid-id',
-  suggestion: 'Check that both IDs exist in the database'
-})
-```
-
-## 🎖️ **Overall API Grade: A+ (Excellent)**
-
-### **Strengths:**
-- **🎯 Intuitive**: Natural method names, clear hierarchy
-- **🔄 Consistent**: Same patterns everywhere  
-- **📈 Progressive**: Simple → advanced as needed
-- **🛡️ Type-safe**: Full TypeScript support
-- **📚 Well-documented**: Clear examples & guides
-- **🚀 Performant**: Smart caching, batching, streaming
-
-### **Neural API Fits Perfectly:**
-- **✅ Namespace consistency**: `brain.neural.*` is clear and logical
-- **✅ Parameter consistency**: Follows same `(data, options?)` pattern
-- **✅ Return consistency**: Rich objects when needed, simple types for shortcuts
-- **✅ Progressive disclosure**: `brain.similar()` → `brain.neural.similar()`
-- **✅ Advanced features**: Domain/temporal clustering, streaming, analysis
-
-### **Developer Experience Score: 🌟🌟🌟🌟🌟 (5/5 stars)**
-
-The API surface is **exceptionally well designed** with:
-- **Beginner-friendly** shortcuts that "just work"
-- **Advanced features** available when needed  
-- **Consistent patterns** across all methods
-- **Logical namespacing** that guides developers naturally
-- **Rich ecosystem** with augmentations, Triple Intelligence, and neural features
-
-**The neural namespace integrates seamlessly and enhances rather than complicates the overall API experience.**

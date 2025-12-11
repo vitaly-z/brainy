@@ -2339,7 +2339,47 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
+   * Sort bulk operations to prevent race conditions
+   *
+   * Strategy:
+   * 1. mkdir operations first, sorted by path depth (shallowest first)
+   * 2. Other operations (write, delete, update) after, in original order
+   *
+   * This ensures parent directories exist before files are written,
+   * preventing duplicate entity creation from concurrent mkdir calls.
+   */
+  private sortBulkOperations(operations: Array<{
+    type: 'write' | 'delete' | 'mkdir' | 'update'
+    path: string
+    data?: Buffer | string
+    options?: any
+  }>): Array<typeof operations[number]> {
+    const mkdirOps: typeof operations = []
+    const otherOps: typeof operations = []
+
+    for (const op of operations) {
+      if (op.type === 'mkdir') {
+        mkdirOps.push(op)
+      } else {
+        otherOps.push(op)
+      }
+    }
+
+    // Sort mkdir by path depth (shallowest first)
+    mkdirOps.sort((a, b) => {
+      const depthA = (a.path.match(/\//g) || []).length
+      const depthB = (b.path.match(/\//g) || []).length
+      return depthA !== depthB ? depthA - depthB : a.path.localeCompare(b.path)
+    })
+
+    return [...mkdirOps, ...otherOps]
+  }
+
+  /**
    * Bulk write operations for performance
+   *
+   * v6.5.0: Prevents race condition by processing mkdir operations
+   * sequentially before parallel batch processing of other operations.
    */
   async bulkWrite(operations: Array<{
     type: 'write' | 'delete' | 'mkdir' | 'update'
@@ -2357,10 +2397,33 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       failed: [] as Array<{ operation: any, error: string }>
     }
 
-    // Process operations in batches for better performance
+    // Sort operations: mkdirs first (by depth), then others
+    const sortedOps = this.sortBulkOperations(operations)
+
+    // Separate mkdir operations for sequential processing
+    const mkdirOps = sortedOps.filter(op => op.type === 'mkdir')
+    const otherOps = sortedOps.filter(op => op.type !== 'mkdir')
+
+    // Phase 1: Process mkdir operations SEQUENTIALLY
+    // This prevents the race condition where parallel mkdir calls
+    // create duplicate directory entities due to mutex timing window
+    for (const op of mkdirOps) {
+      try {
+        await this.mkdir(op.path, op.options)
+        result.successful++
+      } catch (error: any) {
+        result.failed.push({
+          operation: op,
+          error: error.message || 'Unknown error'
+        })
+      }
+    }
+
+    // Phase 2: Process other operations in parallel batches
+    // These can safely run in parallel since parent directories now exist
     const batchSize = 10
-    for (let i = 0; i < operations.length; i += batchSize) {
-      const batch = operations.slice(i, i + batchSize)
+    for (let i = 0; i < otherOps.length; i += batchSize) {
+      const batch = otherOps.slice(i, i + batchSize)
 
       // Process batch in parallel
       const promises = batch.map(async (op) => {
@@ -2371,9 +2434,6 @@ export class VirtualFileSystem implements IVirtualFileSystem {
               break
             case 'delete':
               await this.unlink(op.path)
-              break
-            case 'mkdir':
-              await this.mkdir(op.path, op.options)
               break
             case 'update': {
               // Update only metadata without changing content
