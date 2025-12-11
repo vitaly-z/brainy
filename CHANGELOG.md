@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [6.4.0](https://github.com/soulcraftlabs/brainy/compare/v6.3.2...v6.4.0) (2025-12-11)
+
+### ⚡ Performance
+
+**Optimized VFS directory operations for cloud storage (GCS, S3, Azure, R2)**
+
+**Issue:** `vfs.rmdir({ recursive: true })` took ~2 minutes for 15 files on GCS due to sequential operations. Each file deletion was a separate storage round-trip.
+
+**Solution:** Replace sequential loops with batch operations using existing optimized primitives:
+
+* **`rmdir()`**: Use `gatherDescendants()` + `deleteMany()` + parallel blob cleanup
+* **`copyDirectory()`**: Use `gatherDescendants()` + `addMany()` + `relateMany()`
+* **`move()`**: Inherits improvements from both (no code change needed)
+
+**PROJECTED Performance Improvement:**
+
+| Operation | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| rmdir 15 files | ~120s | ~15-30s | 4-8x faster |
+| copy 15 files | ~120s | ~20-40s | 3-6x faster |
+| move 15 files | ~240s | ~40-60s | 4-6x faster |
+
+Requested by: Soulcraft Workshop team (BRAINY-VFS-RMDIR-PERFORMANCE)
+
 ### [6.3.2](https://github.com/soulcraftlabs/brainy/compare/v6.3.1...v6.3.2) (2025-12-09)
 
 
