@@ -632,14 +632,7 @@ export interface BrainyConfig {
     options?: any
     branch?: string              // COW branch name (default: 'main')
   }
-  
-  // Model configuration
-  model?: {
-    type: 'fast' | 'accurate' | 'balanced' | 'custom'
-    name?: string           // Custom model name
-    precision?: 'q8'
-  }
-  
+
   // Index configuration
   index?: {
     m?: number              // HNSW M parameter

@@ -3,18 +3,12 @@
  * Main entry point for all auto-configuration features
  */
 
-// Model configuration
-export { 
-  autoSelectModelPrecision, 
-  ModelPrecision as ModelPrecisionType,  // Avoid conflict
-  ModelPreset,
+// Model configuration (simplified - always Q8 WASM)
+export {
+  getModelPrecision,
   shouldAutoDownloadModels,
-  getModelPath,
-  logModelConfig
+  getModelPath
 } from './modelAutoConfig.js'
-
-// Model precision - Always Q8 now (99% accuracy, 75% smaller)
-export const getModelPrecision = () => 'q8' as const
 
 // Storage configuration
 export { 

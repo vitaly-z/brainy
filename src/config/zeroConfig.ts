@@ -3,7 +3,7 @@
  * Provides intelligent defaults while preserving full control
  */
 
-import { autoSelectModelPrecision, ModelPrecision, ModelPreset, getModelPath, shouldAutoDownloadModels } from './modelAutoConfig.js'
+import { getModelPrecision, getModelPath, shouldAutoDownloadModels } from './modelAutoConfig.js'
 import { autoDetectStorage, StorageType, StoragePreset } from './storageAutoConfig.js'
 import { AutoConfiguration } from '../utils/autoConfiguration.js'
 
@@ -22,16 +22,6 @@ export interface BrainyZeroConfig {
    * - 'reader': Read-only instance for distributed setups (no write operations)
    */
   mode?: 'production' | 'development' | 'minimal' | 'zero' | 'writer' | 'reader'
-  
-  /**
-   * Model precision configuration
-   * - 'fp32': Full precision (best quality, larger size)
-   * - 'q8': Quantized 8-bit (smaller size, slightly lower quality)
-   * - 'fast': Alias for fp32
-   * - 'small': Alias for q8
-   * - 'auto': Auto-detect based on environment (default)
-   */
-  model?: ModelPrecision | ModelPreset
   
   /**
    * Storage configuration  
@@ -72,31 +62,26 @@ export interface BrainyZeroConfig {
 const PRESETS = {
   production: {
     storage: 'disk' as const,
-    model: 'auto' as const,
     features: 'default' as const,
     verbose: false
   },
   development: {
     storage: 'memory' as const,
-    model: 'q8' as const,  // Q8 is now the default for all presets
     features: 'full' as const,
     verbose: true
   },
   minimal: {
     storage: 'memory' as const,
-    model: 'q8' as const,
     features: 'minimal' as const,
     verbose: false
   },
   zero: {
     storage: 'auto' as const,
-    model: 'auto' as const,
     features: 'default' as const,
     verbose: false
   },
   writer: {
     storage: 'auto' as const,
-    model: 'auto' as const,
     features: 'minimal' as const,
     verbose: false,
     // Writer-specific settings
@@ -107,7 +92,6 @@ const PRESETS = {
   },
   reader: {
     storage: 'auto' as const,
-    model: 'auto' as const,
     features: 'default' as const,
     verbose: false,
     // Reader-specific settings
@@ -180,18 +164,17 @@ export async function processZeroConfig(input?: string | BrainyZeroConfig): Prom
       ...preset,
       ...config,
       // Preserve explicit overrides
-      model: config.model ?? preset.model,
       storage: config.storage ?? preset.storage,
       features: config.features ?? preset.features,
       verbose: config.verbose ?? preset.verbose
     }
   }
-  
+
   // Auto-detect environment if not in preset mode
   const environment = detectEnvironmentMode()
-  
-  // Process model configuration
-  const modelConfig = autoSelectModelPrecision(config.model)
+
+  // Get model configuration (always Q8 WASM)
+  const modelConfig = getModelPrecision()
   
   // Process storage configuration
   const storageConfig = await autoDetectStorage(config.storage)
@@ -376,15 +359,14 @@ function logConfigurationSummary(config: any): void {
 }
 
 /**
- * Create embedding function with specified precision
- * This ensures the model precision is respected
+ * Create embedding function (always Q8 WASM)
  */
-export async function createEmbeddingFunctionWithPrecision(precision: ModelPrecision): Promise<any> {
+export async function createEmbeddingFunctionWithPrecision(): Promise<any> {
   const { createEmbeddingFunction } = await import('../utils/embedding.js')
-  
-  // Create embedding function with specified precision
+
+  // Create embedding function - always Q8 WASM
   return createEmbeddingFunction({
-    precision: precision,
+    precision: 'q8',
     verbose: false // Silent by default in zero-config
   })
 }

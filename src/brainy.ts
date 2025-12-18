@@ -177,7 +177,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...this.config,
         ...configOverrides,
         storage: { ...this.config.storage, ...configOverrides.storage },
-        model: { ...this.config.model, ...configOverrides.model },
         index: { ...this.config.index, ...configOverrides.index },
         augmentations: { ...this.config.augmentations, ...configOverrides.augmentations },
         verbose: configOverrides.verbose ?? this.config.verbose,
@@ -4972,11 +4971,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Both 'gcs' and 'gcs-native' can now use either gcsStorage or gcsNativeStorage
     }
 
-    // Validate model configuration
-    if (config?.model?.type && !['fast', 'accurate', 'custom'].includes(config.model.type)) {
-      throw new Error(`Invalid model type: ${config.model.type}. Must be one of: fast, accurate, custom`)
-    }
-
     // Validate numeric configurations
     if (config?.index?.m && (config.index.m < 1 || config.index.m > 128)) {
       throw new Error(`Invalid index m parameter: ${config.index.m}. Must be between 1 and 128`)
@@ -4995,7 +4989,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return {
       storage: config?.storage || { type: 'auto' },
-      model: config?.model || { type: 'fast' },
       index: config?.index || {},
       cache: config?.cache ?? true,
       augmentations: config?.augmentations || {},

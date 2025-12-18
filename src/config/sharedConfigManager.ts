@@ -3,14 +3,13 @@
  * Ensures configuration consistency across multiple instances using shared storage
  */
 
-import { ModelPrecision } from './modelAutoConfig.js'
 import { StorageType } from './storageAutoConfig.js'
 import { getBrainyVersion } from '../utils/version.js'
 
 export interface SharedConfig {
   // Critical parameters that MUST match across instances
   version: string
-  precision: ModelPrecision
+  precision: 'q8'
   dimensions: number
   hnswM: number
   hnswEfConstruction: number
