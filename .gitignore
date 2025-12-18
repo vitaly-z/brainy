@@ -73,6 +73,9 @@ DISTRIBUTED_*.md
 models/
 models-cache/
 
+# But include bundled WASM model assets
+!assets/models/
+
 # Development planning files (not for commit)
 PLAN.md
 CLAUDE.md

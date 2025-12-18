@@ -64,7 +64,8 @@
     "./dist/cortex/backupRestore.js": false
   },
   "engines": {
-    "node": "22.x"
+    "node": "22.x",
+    "bun": ">=1.0.0"
   },
   "scripts": {
     "build": "npm run build:types:if-needed && npm run build:patterns:if-needed && npm run build:keywords:if-needed && tsc && tsc -p tsconfig.cli.json",
@@ -90,6 +91,10 @@
     "test:ci-unit": "CI=true vitest run --config tests/configs/vitest.unit.config.ts",
     "test:ci-integration": "NODE_OPTIONS='--max-old-space-size=16384' CI=true vitest run --config tests/configs/vitest.integration.config.ts",
     "test:ci": "npm run test:ci-unit",
+    "test:bun": "bun tests/integration/bun-compile-test.ts",
+    "test:bun:compile": "bun build tests/integration/bun-compile-test.ts --compile --outfile /tmp/brainy-bun-test && /tmp/brainy-bun-test",
+    "test:wasm": "npx vitest run tests/integration/wasm-embeddings.test.ts",
+    "download-model": "node scripts/download-model.cjs",
     "download-models": "node scripts/download-models.cjs",
     "download-models:q8": "node scripts/download-models.cjs",
     "models:verify": "node scripts/ensure-models.js",
@@ -142,7 +147,9 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "bin/",
+    "assets/models/**/*",
     "scripts/download-models.cjs",
+    "scripts/download-model.cjs",
     "scripts/ensure-models.js",
     "scripts/prepare-models.js",
     "brainy.png",
@@ -180,7 +187,7 @@
     "@azure/identity": "^4.0.0",
     "@azure/storage-blob": "^12.17.0",
     "@google-cloud/storage": "^7.14.0",
-    "@huggingface/transformers": "^3.7.2",
+    "onnxruntime-web": "^1.22.0",
     "@msgpack/msgpack": "^3.1.2",
     "@types/js-yaml": "^4.0.9",
     "boxen": "^8.0.1",
