@@ -1201,7 +1201,15 @@ export class MetadataIndexManager {
    */
   async addToIndex(id: string, entityOrMetadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(entityOrMetadata)
-    
+
+    // v6.7.0: Sanity check for excessive indexed fields (indicates possible data issue)
+    if (fields.length > 100) {
+      prodLog.warn(
+        `Entity ${id} has ${fields.length} indexed fields (expected ~30). ` +
+        `Possible deeply nested metadata or data issue. First 10 fields: ${fields.slice(0, 10).map(f => f.field).join(', ')}`
+      )
+    }
+
     // Sort fields to process 'noun' field first for type-field affinity tracking
     fields.sort((a, b) => {
       if (a.field === 'noun') return -1
@@ -2245,6 +2253,103 @@ export class MetadataIndexManager {
   }
 
   /**
+   * Get list of persisted fields from storage (not in-memory)
+   * v6.7.0: Used during rebuild to discover which chunk files need deletion
+   *
+   * @returns Array of field names that have persisted sparse indices
+   */
+  private async getPersistedFieldList(): Promise<string[]> {
+    try {
+      const registry = await this.storage.getMetadata('__metadata_field_registry__')
+
+      if (!registry?.fields || !Array.isArray(registry.fields)) {
+        return []
+      }
+
+      return registry.fields.filter((f: unknown) => typeof f === 'string' && f.length > 0)
+    } catch (error) {
+      prodLog.debug('Could not load persisted field list:', error)
+      return []
+    }
+  }
+
+  /**
+   * Delete all chunk files for a specific field
+   * v6.7.0: Used during rebuild to ensure clean slate
+   *
+   * @param field Field name whose chunks should be deleted
+   */
+  private async deleteFieldChunks(field: string): Promise<void> {
+    try {
+      // Load sparse index to get chunk IDs
+      const indexPath = `__sparse_index__${field}`
+      const sparseData = await this.storage.getMetadata(indexPath)
+
+      if (sparseData) {
+        const sparseIndex = SparseIndex.fromJSON(sparseData)
+
+        // Delete all chunk files for this field
+        for (const chunkId of sparseIndex.getAllChunkIds()) {
+          await this.chunkManager.deleteChunk(field, chunkId)
+        }
+
+        // Delete the sparse index file itself
+        await this.storage.saveMetadata(indexPath, null as any)
+      }
+    } catch (error) {
+      // Silent failure - if we can't delete old chunks, rebuild will still work
+      // (new chunks will be created, old ones become orphaned)
+      prodLog.debug(`Could not clear chunks for field '${field}':`, error)
+    }
+  }
+
+  /**
+   * Clear ALL metadata index data from storage (for recovery)
+   * v6.7.0: Nuclear option for recovering from corrupted index state
+   *
+   * WARNING: This deletes all indexed data - requires full rebuild after!
+   * Use when index is corrupted beyond normal rebuild repair.
+   */
+  public async clearAllIndexData(): Promise<void> {
+    prodLog.warn('🗑️ Clearing ALL metadata index data from storage...')
+
+    // Get all persisted fields
+    const fields = await this.getPersistedFieldList()
+
+    // Delete chunks and sparse indices for each field
+    let deletedCount = 0
+    for (const field of fields) {
+      await this.deleteFieldChunks(field)
+      deletedCount++
+    }
+
+    // Delete field registry
+    try {
+      await this.storage.saveMetadata('__metadata_field_registry__', null as any)
+    } catch (error) {
+      prodLog.debug('Could not delete field registry:', error)
+    }
+
+    // Clear in-memory state
+    this.fieldIndexes.clear()
+    this.dirtyFields.clear()
+    this.unifiedCache.clear('metadata')
+    this.totalEntitiesByType.clear()
+    this.entityCountsByTypeFixed.fill(0)
+    this.verbCountsByTypeFixed.fill(0)
+    this.typeFieldAffinity.clear()
+
+    // Clear EntityIdMapper
+    await this.idMapper.clear()
+
+    // Clear chunk manager cache
+    this.chunkManager.clearCache()
+
+    prodLog.info(`✅ Cleared ${deletedCount} field indexes and all in-memory state`)
+    prodLog.info('⚠️ Run brain.index.rebuild() to recreate the index from entity data')
+  }
+
+  /**
    * Get count of entities by type - O(1) operation using existing tracking
    * This exposes the production-ready counting that's already maintained
    */
@@ -2479,6 +2584,18 @@ export class MetadataIndexManager {
       }
     }
 
+    // v6.7.0: Sanity check for index corruption (77x overcounting bug detection)
+    const entityCount = this.idMapper.size
+    if (entityCount > 0) {
+      const avgIdsPerEntity = totalIds / entityCount
+      if (avgIdsPerEntity > 100) {
+        prodLog.warn(
+          `⚠️ Metadata index may be corrupted: ${avgIdsPerEntity.toFixed(1)} avg entries/entity (expected ~30). ` +
+          `Try running brain.index.clearAllIndexData() followed by brain.index.rebuild() to fix.`
+        )
+      }
+    }
+
     return {
       totalEntries,
       totalIds,
@@ -2517,6 +2634,33 @@ export class MetadataIndexManager {
       // Clear all cached sparse indices in UnifiedCache
       // This ensures rebuild starts fresh (v3.44.1)
       this.unifiedCache.clear('metadata')
+
+      // v6.7.0: CRITICAL FIX - Delete existing chunk files from storage
+      // Without this, old chunk data accumulates with each rebuild causing 77x overcounting!
+      // Previous fix (v6.2.4) cleared type counts but missed chunk file accumulation.
+      prodLog.info('🗑️ Clearing existing metadata index chunks from storage...')
+      const existingFields = await this.getPersistedFieldList()
+
+      if (existingFields.length > 0) {
+        for (const field of existingFields) {
+          await this.deleteFieldChunks(field)
+        }
+
+        // Delete field registry (will be recreated on flush)
+        try {
+          await this.storage.saveMetadata('__metadata_field_registry__', null as any)
+        } catch (error) {
+          prodLog.debug('Could not delete field registry:', error)
+        }
+
+        prodLog.info(`✅ Cleared ${existingFields.length} field indexes from storage`)
+      }
+
+      // Clear EntityIdMapper to start fresh (v6.7.0)
+      await this.idMapper.clear()
+
+      // Clear chunk manager cache
+      this.chunkManager.clearCache()
 
       // Adaptive rebuild strategy based on storage adapter (v4.2.3)
       // FileSystem/Memory/OPFS: Load all at once (avoids getAllShardedFiles() overhead on every batch)
