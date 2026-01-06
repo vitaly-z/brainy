@@ -858,8 +858,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     validateUpdateParams(params)
 
     return this.augmentationRegistry.execute('update', params, async () => {
-      // Get existing entity
-      const existing = await this.get(params.id)
+      // Get existing entity with vectors (v6.7.0: fix for v5.11.1 regression)
+      // We need includeVectors: true because:
+      // 1. SaveNounOperation requires the vector
+      // 2. HNSW reindexing operations need the original vector
+      const existing = await this.get(params.id, { includeVectors: true })
       if (!existing) {
         throw new Error(`Entity ${params.id} not found`)
       }

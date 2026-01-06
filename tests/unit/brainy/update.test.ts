@@ -163,17 +163,19 @@ describe('Brainy.update()', () => {
         data: 'Original text',
         type: 'document'
       }))
-      
-      const original = await brain.get(id)
-      
+
+      // v5.11.1: Need includeVectors to check vectors
+      const original = await brain.get(id, { includeVectors: true })
+
       // Act
       await brain.update({
         id,
         data: 'Completely different text'
       })
-      
+
       // Assert
-      const updated = await brain.get(id)
+      // v5.11.1: Need includeVectors to check vectors
+      const updated = await brain.get(id, { includeVectors: true })
       expect(updated).not.toBeNull()
       // Vector should be different after re-embedding
       expect(updated!.vector).not.toEqual(original!.vector)
@@ -257,21 +259,23 @@ describe('Brainy.update()', () => {
         data: 'Test',
         type: 'thing'
       }))
-      
-      const original = await brain.get(id)
+
+      // v5.11.1: Need includeVectors to get actual vector
+      const original = await brain.get(id, { includeVectors: true })
       const originalVector = original!.vector
-      
+
       // Create a properly dimensioned but different vector
       const differentVector = originalVector.map(v => v * 2)
-      
+
       // Act - Update with vector param (not supported)
       await brain.update({
         id,
         vector: differentVector
       })
-      
+
       // Assert - Vector should not change (update ignores vector param)
-      const updated = await brain.get(id)
+      // v5.11.1: Need includeVectors to check vector
+      const updated = await brain.get(id, { includeVectors: true })
       expect(updated).not.toBeNull()
       expect(updated!.vector).toEqual(originalVector)
     })
