@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [6.6.2](https://github.com/soulcraftlabs/brainy/compare/v6.6.1...v6.6.2) (2026-01-05)
+
+- fix: resolve update() v5.11.1 regression + skip flaky tests for release (106f654)
+- fix(metadata-index): delete chunk files during rebuild to prevent 77x overcounting (386666d)
+
+
 ## [6.4.0](https://github.com/soulcraftlabs/brainy/compare/v6.3.2...v6.4.0) (2025-12-11)
 
 ### ⚡ Performance
