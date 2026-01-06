@@ -2,9 +2,39 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [7.1.0](https://github.com/soulcraftlabs/brainy/compare/v7.0.1...v7.1.0) (2026-01-06)
+## [7.1.0](https://github.com/soulcraftlabs/brainy/compare/v7.0.1...v7.1.0) (2026-01-06)
 
-- feat: add new embedding and analysis APIs for v7.1.0 (d8514ab)
+### Features
+
+**6 New Public APIs** leveraging the Candle WASM embedding engine and optimized indexes:
+
+| API | Description | Performance |
+|-----|-------------|-------------|
+| `embedBatch(texts)` | Batch embed multiple texts | Batch WASM processing - avoids N separate JS↔WASM calls |
+| `similarity(textA, textB)` | Semantic similarity score (0-1) | Single call vs manual embed + embed + cosine |
+| `indexStats()` | Comprehensive index statistics | O(1) - aggregates pre-computed stats |
+| `neighbors(entityId, options)` | Graph traversal with filters | O(log n) - LSM-tree with bloom filters, sub-5ms |
+| `findDuplicates(options)` | Find semantic duplicates | O(k log n) - uses HNSW for ANN search |
+| `cluster(options)` | Cluster by similarity | O(k log n) - greedy algorithm with HNSW |
+
+### Performance Stack (v7.0.0+)
+
+The new APIs leverage the optimized infrastructure introduced in v7.0.0:
+
+| Component | Technology | Benefit |
+|-----------|------------|---------|
+| **Embeddings** | Candle WASM (Rust) | 93MB binary with embedded MiniLM-L6-v2, zero downloads |
+| **Vector Search** | HNSW Index | O(log n) approximate nearest neighbor |
+| **Graph Traversal** | LSM-tree + Bloom Filters | 90% of queries skip disk I/O, sub-5ms lookups |
+| **Metadata Filtering** | RoaringBitmap32 | Compressed bitmaps for fast AND/OR operations |
+
+### Migration from v6.x
+
+v7.0.0 introduced **breaking changes** to the embedding system:
+- Removed: `onnxruntime-node` dependency (was 200MB+ with external model downloads)
+- Added: Candle WASM with embedded model weights (93MB, zero-config)
+- Removed: Semantic type inference (NLP-based type detection)
+- Works in: Node.js, Bun, Bun --compile, browsers
 
 
 ### [7.0.1](https://github.com/soulcraftlabs/brainy/compare/v7.0.0...v7.0.1) (2026-01-06)
