@@ -9,6 +9,7 @@
 
 import { Vector } from '../coreTypes.js'
 import { AddParams, RelateParams, Result, Entity, FindParams, SimilarParams } from './brainy.types.js'
+import { NounType, VerbType } from './graphTypes.js'
 
 export interface BrainyInterface<T = unknown> {
   /**
@@ -53,8 +54,87 @@ export interface BrainyInterface<T = unknown> {
 
   /**
    * Generate embedding vector from text
-   * @param text The text to embed
-   * @returns Vector representation of the text
+   * @param data The data to embed (text, array, or object)
+   * @returns Vector representation of the data
    */
-  embed(text: string): Promise<Vector>
+  embed(data: any): Promise<Vector>
+
+  /**
+   * Batch embed multiple texts at once
+   * @param texts Array of texts to embed
+   * @returns Array of embedding vectors (384 dimensions each)
+   */
+  embedBatch(texts: string[]): Promise<number[][]>
+
+  /**
+   * Calculate semantic similarity between two texts
+   * @param textA First text
+   * @param textB Second text
+   * @returns Similarity score between 0 and 1
+   */
+  similarity(textA: string, textB: string): Promise<number>
+
+  /**
+   * Get comprehensive index statistics
+   * @returns Index statistics object
+   */
+  indexStats(): Promise<{
+    entities: number
+    vectors: number
+    relationships: number
+    metadataFields: string[]
+    memoryUsage: {
+      vectors: number
+      graph: number
+      metadata: number
+      total: number
+    }
+  }>
+
+  /**
+   * Get graph neighbors of an entity
+   * @param entityId The entity to get neighbors for
+   * @param options Optional traversal options
+   * @returns Array of neighbor entity IDs
+   */
+  neighbors(
+    entityId: string,
+    options?: {
+      direction?: 'outgoing' | 'incoming' | 'both'
+      depth?: number
+      verbType?: VerbType
+      limit?: number
+    }
+  ): Promise<string[]>
+
+  /**
+   * Find semantic duplicates in the database
+   * @param options Optional search options
+   * @returns Array of duplicate groups with similarity scores
+   */
+  findDuplicates(options?: {
+    threshold?: number
+    type?: NounType
+    limit?: number
+  }): Promise<Array<{
+    entity: Entity<any>
+    duplicates: Array<{ entity: Entity<any>; similarity: number }>
+  }>>
+
+  /**
+   * Cluster entities by semantic similarity
+   * @param options Optional clustering options
+   * @returns Array of clusters with entities and optional centroids
+   */
+  cluster(options?: {
+    threshold?: number
+    type?: NounType
+    minClusterSize?: number
+    limit?: number
+    includeCentroid?: boolean
+  }): Promise<Array<{
+    clusterId: string
+    entities: Entity<any>[]
+    centroid?: number[]
+  }>>
 }

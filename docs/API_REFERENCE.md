@@ -491,6 +491,195 @@ for (const result of similar) {
 
 ---
 
+### `async embed(data: any): Promise<Vector>` ✨ *v7.1.0*
+Generates an embedding vector from data.
+
+**Parameters:**
+- `data` - Text, array, or object to embed
+
+**Returns:** 384-dimensional embedding vector
+
+**Example:**
+```typescript
+const vector = await brain.embed('Machine learning concepts')
+console.log(vector.length) // 384
+```
+
+---
+
+### `async embedBatch(texts: string[]): Promise<number[][]>` ✨ *v7.1.0*
+Batch embed multiple texts efficiently.
+
+**Parameters:**
+- `texts` - Array of strings to embed
+
+**Returns:** Array of 384-dimensional vectors
+
+**Example:**
+```typescript
+const embeddings = await brain.embedBatch([
+  'Machine learning is fascinating',
+  'Deep neural networks',
+  'Natural language processing'
+])
+console.log(embeddings.length)    // 3
+console.log(embeddings[0].length) // 384
+```
+
+---
+
+### `async similarity(textA: string, textB: string): Promise<number>` ✨ *v7.1.0*
+Calculate semantic similarity between two texts.
+
+**Parameters:**
+- `textA` - First text
+- `textB` - Second text
+
+**Returns:** Similarity score between 0 (different) and 1 (identical)
+
+**Example:**
+```typescript
+const score = await brain.similarity(
+  'The cat sat on the mat',
+  'A feline was resting on the rug'
+)
+console.log(score) // ~0.85 (high semantic similarity)
+```
+
+---
+
+### `async neighbors(entityId: string, options?): Promise<string[]>` ✨ *v7.1.0*
+Get graph neighbors of an entity.
+
+**Parameters:**
+- `entityId` - Entity to get neighbors for
+- `options.direction` - 'outgoing', 'incoming', or 'both' (default: 'both')
+- `options.depth` - Traversal depth (default: 1)
+- `options.verbType` - Filter by relationship type
+- `options.limit` - Maximum neighbors to return
+
+**Returns:** Array of neighbor entity IDs
+
+**Example:**
+```typescript
+// Get all connected entities
+const neighbors = await brain.neighbors(entityId)
+
+// Get outgoing connections only
+const outgoing = await brain.neighbors(entityId, {
+  direction: 'outgoing',
+  limit: 10
+})
+
+// Multi-hop traversal
+const extended = await brain.neighbors(entityId, {
+  depth: 2,
+  direction: 'both'
+})
+```
+
+---
+
+### `async findDuplicates(options?): Promise<DuplicateResult[]>` ✨ *v7.1.0*
+Find semantic duplicates in the database.
+
+**Parameters:**
+- `options.threshold` - Minimum similarity (default: 0.85)
+- `options.type` - Filter by NounType
+- `options.limit` - Maximum duplicate groups (default: 100)
+
+**Returns:** Array of duplicate groups with similarity scores
+
+**Example:**
+```typescript
+// Find all duplicates
+const duplicates = await brain.findDuplicates()
+
+for (const group of duplicates) {
+  console.log('Original:', group.entity.id)
+  for (const dup of group.duplicates) {
+    console.log(`  Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
+  }
+}
+
+// Find person duplicates with higher threshold
+const personDupes = await brain.findDuplicates({
+  type: NounType.PERSON,
+  threshold: 0.9,
+  limit: 50
+})
+```
+
+---
+
+### `async indexStats(): Promise<IndexStats>` ✨ *v7.1.0*
+Get comprehensive index statistics.
+
+**Returns:**
+- `entities` - Total entity count
+- `vectors` - Total vectors in HNSW index
+- `relationships` - Total relationships in graph
+- `metadataFields` - Indexed metadata fields
+- `memoryUsage.vectors` - Vector memory in bytes
+- `memoryUsage.graph` - Graph memory in bytes
+- `memoryUsage.metadata` - Metadata index memory in bytes
+- `memoryUsage.total` - Total memory usage
+
+**Example:**
+```typescript
+const stats = await brain.indexStats()
+console.log(`Entities: ${stats.entities}`)
+console.log(`Vectors: ${stats.vectors}`)
+console.log(`Relationships: ${stats.relationships}`)
+console.log(`Memory: ${(stats.memoryUsage.total / 1024 / 1024).toFixed(1)}MB`)
+console.log(`Fields: ${stats.metadataFields.join(', ')}`)
+```
+
+---
+
+### `async cluster(options?): Promise<ClusterResult[]>` ✨ *v7.1.0*
+Cluster entities by semantic similarity.
+
+Groups entities into clusters based on their embedding similarity using
+a greedy algorithm with HNSW-based neighbor lookup.
+
+**Parameters:**
+- `options.threshold` - Similarity threshold (default: 0.8)
+- `options.type` - Filter by NounType
+- `options.minClusterSize` - Minimum entities per cluster (default: 2)
+- `options.limit` - Maximum clusters to return (default: 100)
+- `options.includeCentroid` - Calculate cluster centroids (default: false)
+
+**Returns:** Array of clusters with entities
+
+**Example:**
+```typescript
+// Find all clusters
+const clusters = await brain.cluster()
+
+for (const cluster of clusters) {
+  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+}
+
+// Find document clusters with centroids
+const docClusters = await brain.cluster({
+  type: NounType.Document,
+  threshold: 0.85,
+  minClusterSize: 3,
+  includeCentroid: true
+})
+
+// Use centroids for cluster comparison
+for (const cluster of docClusters) {
+  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+  if (cluster.centroid) {
+    console.log(`  Centroid dimensions: ${cluster.centroid.length}`)
+  }
+}
+```
+
+---
+
 ### `async insights(): Promise<InsightsResult>`
 Gets statistics and insights about the data.
 

@@ -4311,6 +4311,429 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.counts.getStats(options)
   }
 
+  // ============= NEW EMBEDDING & ANALYSIS APIs (v7.1.0) =============
+
+  /**
+   * Batch embed multiple texts at once
+   *
+   * More efficient than calling embed() multiple times due to
+   * WASM batch processing optimizations.
+   *
+   * @param texts Array of texts to embed
+   * @returns Array of embedding vectors (384 dimensions each)
+   *
+   * @example
+   * const embeddings = await brain.embedBatch([
+   *   'Machine learning is fascinating',
+   *   'Deep neural networks',
+   *   'Natural language processing'
+   * ])
+   * // embeddings.length === 3
+   * // embeddings[0].length === 384
+   */
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    await this.ensureInitialized()
+
+    if (texts.length === 0) {
+      return []
+    }
+
+    // Use the underlying embedder for each text
+    // The WASM engine handles batching internally
+    const embeddings = await Promise.all(
+      texts.map(text => this.embedder(text))
+    )
+
+    return embeddings
+  }
+
+  /**
+   * Calculate semantic similarity between two texts
+   *
+   * Returns a score from 0 (completely different) to 1 (identical meaning).
+   * Uses cosine similarity on embedding vectors.
+   *
+   * @param textA First text
+   * @param textB Second text
+   * @returns Similarity score between 0 and 1
+   *
+   * @example
+   * const score = await brain.similarity(
+   *   'The cat sat on the mat',
+   *   'A feline was resting on the rug'
+   * )
+   * // score ≈ 0.85 (high semantic similarity)
+   */
+  async similarity(textA: string, textB: string): Promise<number> {
+    await this.ensureInitialized()
+
+    // Embed both texts
+    const [vectorA, vectorB] = await Promise.all([
+      this.embedder(textA),
+      this.embedder(textB)
+    ])
+
+    // Calculate cosine similarity (convert from distance)
+    // cosineDistance returns 1 - similarity, so similarity = 1 - distance
+    const distance = this.distance(vectorA, vectorB)
+    return 1 - distance
+  }
+
+  /**
+   * Get comprehensive index statistics
+   *
+   * Returns detailed stats about all internal indexes including
+   * entity counts, vector index size, graph relationships, and
+   * estimated memory usage.
+   *
+   * @returns Index statistics object
+   *
+   * @example
+   * const stats = await brain.indexStats()
+   * console.log(`Entities: ${stats.entities}`)
+   * console.log(`Vectors: ${stats.vectors}`)
+   * console.log(`Relationships: ${stats.relationships}`)
+   */
+  async indexStats(): Promise<{
+    entities: number
+    vectors: number
+    relationships: number
+    metadataFields: string[]
+    memoryUsage: {
+      vectors: number
+      graph: number
+      metadata: number
+      total: number
+    }
+  }> {
+    await this.ensureInitialized()
+
+    const metadataStats = await this.metadataIndex.getStats()
+    const graphStats = this.graphIndex.getStats()
+    const vectorCount = this.index.size()
+
+    // Get unique metadata field names
+    const metadataFields = metadataStats.fieldsIndexed || []
+
+    return {
+      entities: metadataStats.totalEntries,
+      vectors: vectorCount,
+      relationships: graphStats.totalRelationships,
+      metadataFields,
+      memoryUsage: {
+        vectors: vectorCount * 384 * 4, // 384 dimensions * 4 bytes per float32
+        graph: graphStats.memoryUsage,
+        metadata: metadataStats.indexSize || 0,
+        total: (vectorCount * 384 * 4) + graphStats.memoryUsage + (metadataStats.indexSize || 0)
+      }
+    }
+  }
+
+  /**
+   * Get graph neighbors of an entity
+   *
+   * Traverses the relationship graph to find connected entities.
+   * Supports filtering by direction and relationship type.
+   *
+   * @param entityId The entity to get neighbors for
+   * @param options Optional traversal options
+   * @returns Array of neighbor entity IDs
+   *
+   * @example
+   * // Get all connected entities
+   * const allNeighbors = await brain.neighbors(entityId)
+   *
+   * // Get only outgoing connections
+   * const outgoing = await brain.neighbors(entityId, { direction: 'outgoing' })
+   *
+   * // Get incoming connections with specific verb type
+   * const incoming = await brain.neighbors(entityId, {
+   *   direction: 'incoming',
+   *   verbType: VerbType.RELATES_TO
+   * })
+   */
+  async neighbors(
+    entityId: string,
+    options?: {
+      direction?: 'outgoing' | 'incoming' | 'both'
+      depth?: number
+      verbType?: VerbType
+      limit?: number
+    }
+  ): Promise<string[]> {
+    await this.ensureInitialized()
+
+    const direction = options?.direction || 'both'
+    const limit = options?.limit
+
+    // Map our API direction to graphIndex direction
+    const graphDirection = direction === 'outgoing' ? 'out' :
+                           direction === 'incoming' ? 'in' : 'both'
+
+    // Get neighbors from graph index
+    let neighbors = await this.graphIndex.getNeighbors(entityId, {
+      direction: graphDirection,
+      limit
+    })
+
+    // Filter by verb type if specified
+    if (options?.verbType) {
+      const filteredNeighbors: string[] = []
+      const verbIds = direction !== 'incoming'
+        ? await this.graphIndex.getVerbIdsBySource(entityId)
+        : await this.graphIndex.getVerbIdsByTarget(entityId)
+
+      // Load verbs to check their types
+      const verbs = await this.graphIndex.getVerbsBatchCached(verbIds)
+
+      for (const [, verb] of verbs) {
+        if (verb.type === options.verbType || verb.verb === options.verbType) {
+          const neighborId = verb.sourceId === entityId ? verb.targetId : verb.sourceId
+          if (neighbors.includes(neighborId)) {
+            filteredNeighbors.push(neighborId)
+          }
+        }
+      }
+
+      neighbors = filteredNeighbors
+    }
+
+    // Handle depth > 1 (multi-hop traversal)
+    if (options?.depth && options.depth > 1) {
+      const visited = new Set<string>([entityId, ...neighbors])
+      let currentLevel = neighbors
+
+      for (let d = 1; d < options.depth; d++) {
+        const nextLevel: string[] = []
+
+        for (const nodeId of currentLevel) {
+          const nodeNeighbors = await this.graphIndex.getNeighbors(nodeId, {
+            direction: graphDirection
+          })
+
+          for (const neighbor of nodeNeighbors) {
+            if (!visited.has(neighbor)) {
+              visited.add(neighbor)
+              nextLevel.push(neighbor)
+            }
+          }
+        }
+
+        if (nextLevel.length === 0) break
+        currentLevel = nextLevel
+        neighbors.push(...nextLevel)
+      }
+
+      // Apply limit after multi-hop traversal
+      if (limit && neighbors.length > limit) {
+        neighbors = neighbors.slice(0, limit)
+      }
+    }
+
+    return neighbors
+  }
+
+  /**
+   * Find semantic duplicates in the database
+   *
+   * Uses embedding similarity to identify entities that may be
+   * duplicates or near-duplicates based on their content.
+   *
+   * @param options Optional search options
+   * @returns Array of duplicate groups with similarity scores
+   *
+   * @example
+   * // Find all duplicates with default threshold (0.85)
+   * const duplicates = await brain.findDuplicates()
+   *
+   * // Find duplicates of a specific type with custom threshold
+   * const personDupes = await brain.findDuplicates({
+   *   type: NounType.PERSON,
+   *   threshold: 0.9,
+   *   limit: 100
+   * })
+   */
+  async findDuplicates(options?: {
+    threshold?: number
+    type?: NounType
+    limit?: number
+  }): Promise<Array<{
+    entity: Entity<any>
+    duplicates: Array<{ entity: Entity<any>; similarity: number }>
+  }>> {
+    await this.ensureInitialized()
+
+    const threshold = options?.threshold ?? 0.85
+    const limit = options?.limit ?? 100
+
+    // Get entities to check
+    const findParams: FindParams<any> = {
+      limit: Math.min(limit * 10, 1000), // Get more entities to find duplicates within
+      type: options?.type
+    }
+
+    const entities = await this.find(findParams)
+    const results: Array<{
+      entity: Entity<any>
+      duplicates: Array<{ entity: Entity<any>; similarity: number }>
+    }> = []
+
+    const processedIds = new Set<string>()
+
+    for (const result of entities) {
+      if (processedIds.has(result.id)) continue
+
+      // Find similar entities
+      const similar = await this.similar({
+        to: result.id,
+        limit: 20, // Check top 20 similar entities
+        type: options?.type
+      })
+
+      // Filter to those above threshold (excluding self)
+      const duplicates = similar
+        .filter(s => s.id !== result.id && s.score >= threshold)
+        .map(s => ({
+          entity: s.entity,
+          similarity: s.score
+        }))
+
+      if (duplicates.length > 0) {
+        results.push({
+          entity: result.entity,
+          duplicates
+        })
+
+        // Mark all duplicates as processed to avoid reverse matches
+        duplicates.forEach(d => processedIds.add(d.entity.id))
+      }
+
+      processedIds.add(result.id)
+
+      // Stop if we have enough results
+      if (results.length >= limit) break
+    }
+
+    return results
+  }
+
+  /**
+   * Cluster entities by semantic similarity
+   *
+   * Groups entities into clusters based on their embedding similarity.
+   * Uses a greedy algorithm that finds densely connected components
+   * using the HNSW index for efficient neighbor lookup.
+   *
+   * @param options Optional clustering options
+   * @returns Array of clusters with entities and optional centroids
+   *
+   * @example
+   * // Find all clusters with default threshold
+   * const clusters = await brain.cluster()
+   *
+   * // Find document clusters with higher threshold
+   * const docClusters = await brain.cluster({
+   *   type: NounType.Document,
+   *   threshold: 0.85,
+   *   minClusterSize: 3
+   * })
+   *
+   * for (const cluster of docClusters) {
+   *   console.log(`Cluster ${cluster.clusterId}: ${cluster.entities.length} entities`)
+   * }
+   */
+  async cluster(options?: {
+    threshold?: number
+    type?: NounType
+    minClusterSize?: number
+    limit?: number
+    includeCentroid?: boolean
+  }): Promise<Array<{
+    clusterId: string
+    entities: Entity<any>[]
+    centroid?: number[]
+  }>> {
+    await this.ensureInitialized()
+
+    const threshold = options?.threshold ?? 0.8
+    const minClusterSize = options?.minClusterSize ?? 2
+    const limit = options?.limit ?? 100
+    const includeCentroid = options?.includeCentroid ?? false
+
+    // Get entities to cluster
+    const findParams: FindParams<any> = {
+      limit: 1000, // Process up to 1000 entities
+      type: options?.type
+    }
+
+    const allEntities = await this.find(findParams)
+    const clustered = new Set<string>()
+    const clusters: Array<{
+      clusterId: string
+      entities: Entity<any>[]
+      centroid?: number[]
+    }> = []
+
+    // Greedy clustering: for each unclustered entity, find its similar neighbors
+    for (const result of allEntities) {
+      if (clustered.has(result.id)) continue
+
+      // Find similar entities to this one
+      const similar = await this.similar({
+        to: result.id,
+        limit: 50,
+        threshold,
+        type: options?.type
+      })
+
+      // Filter to unclustered entities (including self)
+      const clusterMembers = similar.filter(s => !clustered.has(s.id))
+
+      // Only create cluster if it meets minimum size
+      if (clusterMembers.length >= minClusterSize) {
+        const entities = clusterMembers.map(s => s.entity)
+
+        // Mark all as clustered
+        clusterMembers.forEach(s => clustered.add(s.id))
+
+        // Calculate centroid if requested
+        let centroid: number[] | undefined
+        if (includeCentroid && entities.length > 0) {
+          const vectors = entities
+            .filter(e => e.vector && e.vector.length > 0)
+            .map(e => e.vector as number[])
+
+          if (vectors.length > 0) {
+            // Average all vectors to get centroid
+            const dim = vectors[0].length
+            centroid = new Array(dim).fill(0)
+            for (const vec of vectors) {
+              for (let i = 0; i < dim; i++) {
+                centroid[i] += vec[i]
+              }
+            }
+            for (let i = 0; i < dim; i++) {
+              centroid[i] /= vectors.length
+            }
+          }
+        }
+
+        clusters.push({
+          clusterId: `cluster-${clusters.length + 1}`,
+          entities,
+          centroid
+        })
+
+        if (clusters.length >= limit) break
+      } else {
+        // Mark single entity as processed (not in a cluster)
+        clustered.add(result.id)
+      }
+    }
+
+    return clusters
+  }
+
   // ============= INTERNAL VERSIONING API =============
   // These methods are used by the versioning system (brain.versions.*)
   // They expose internal storage and index operations needed for entity versioning

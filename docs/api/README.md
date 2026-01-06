@@ -1,9 +1,9 @@
-# 🧠 Brainy v6.5.0 API Reference
+# 🧠 Brainy v7.1.0 API Reference
 
-> **Complete API documentation for Brainy v6.5.0**
-> Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning
+> **Complete API documentation for Brainy v7.1.0**
+> Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning • Candle WASM Embeddings
 
-**Updated:** 2025-12-11 for v6.5.0
+**Updated:** 2026-01-06 for v7.1.0
 **All APIs verified against actual code**
 
 ---
@@ -76,6 +76,7 @@ Time-travel and history tracking for individual entities - Git-like version cont
 - [Configuration](#configuration)
 - [Storage Adapters](#storage-adapters)
 - [Utility Methods](#utility-methods)
+- [Embedding & Analysis APIs (v7.1.0)](#embedding--analysis-apis-v710)
 - [Type System Reference](#type-system-reference)
 
 ---
@@ -1560,14 +1561,166 @@ const count = await brain.getVerbCount()
 
 ---
 
-### `embed(data)` → `Promise<number[]>`
+### `embed(data)` → `Promise<number[]>` ✨ *Enhanced v7.1.0*
 
-Generate embedding vector from text.
+Generate embedding vector from text or data.
 
 ```typescript
 const vector = await brain.embed('Hello world')
-// [0.1, -0.3, 0.8, ...]
+// 384-dimensional vector
+console.log(vector.length) // 384
 ```
+
+---
+
+### `embedBatch(texts)` → `Promise<number[][]>` ✨ *New v7.1.0*
+
+Batch embed multiple texts efficiently.
+
+```typescript
+const embeddings = await brain.embedBatch([
+  'Machine learning is fascinating',
+  'Deep neural networks',
+  'Natural language processing'
+])
+console.log(embeddings.length)    // 3
+console.log(embeddings[0].length) // 384
+```
+
+---
+
+### `similarity(textA, textB)` → `Promise<number>` ✨ *New v7.1.0*
+
+Calculate semantic similarity between two texts.
+
+```typescript
+const score = await brain.similarity(
+  'The cat sat on the mat',
+  'A feline was resting on the rug'
+)
+console.log(score) // ~0.85 (high semantic similarity)
+```
+
+**Returns:** Score from 0 (different) to 1 (identical meaning)
+
+---
+
+### `neighbors(entityId, options?)` → `Promise<string[]>` ✨ *New v7.1.0*
+
+Get graph neighbors of an entity.
+
+```typescript
+// Get all connected entities
+const neighbors = await brain.neighbors(entityId)
+
+// Get outgoing connections only
+const outgoing = await brain.neighbors(entityId, {
+  direction: 'outgoing',
+  limit: 10
+})
+
+// Multi-hop traversal
+const extended = await brain.neighbors(entityId, {
+  depth: 2,
+  direction: 'both'
+})
+```
+
+**Options:**
+- `direction`: `'outgoing' | 'incoming' | 'both'` (default: 'both')
+- `depth`: `number` - Traversal depth (default: 1)
+- `verbType`: `VerbType` - Filter by relationship type
+- `limit`: `number` - Maximum neighbors to return
+
+---
+
+### `findDuplicates(options?)` → `Promise<DuplicateResult[]>` ✨ *New v7.1.0*
+
+Find semantic duplicates in the database.
+
+```typescript
+// Find all duplicates
+const duplicates = await brain.findDuplicates()
+
+for (const group of duplicates) {
+  console.log('Original:', group.entity.id)
+  for (const dup of group.duplicates) {
+    console.log(`  Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
+  }
+}
+
+// Find person duplicates with higher threshold
+const personDupes = await brain.findDuplicates({
+  type: NounType.PERSON,
+  threshold: 0.9,
+  limit: 50
+})
+```
+
+**Options:**
+- `threshold`: `number` - Minimum similarity (default: 0.85)
+- `type`: `NounType` - Filter by entity type
+- `limit`: `number` - Maximum duplicate groups (default: 100)
+
+---
+
+### `indexStats()` → `Promise<IndexStats>` ✨ *New v7.1.0*
+
+Get comprehensive index statistics.
+
+```typescript
+const stats = await brain.indexStats()
+console.log(`Entities: ${stats.entities}`)
+console.log(`Vectors: ${stats.vectors}`)
+console.log(`Relationships: ${stats.relationships}`)
+console.log(`Memory: ${(stats.memoryUsage.total / 1024 / 1024).toFixed(1)}MB`)
+console.log(`Fields: ${stats.metadataFields.join(', ')}`)
+```
+
+**Returns:**
+- `entities` - Total entity count
+- `vectors` - Total vectors in HNSW index
+- `relationships` - Total relationships in graph
+- `metadataFields` - Indexed metadata fields
+- `memoryUsage.vectors` - Vector memory (bytes)
+- `memoryUsage.graph` - Graph memory (bytes)
+- `memoryUsage.metadata` - Metadata index memory (bytes)
+- `memoryUsage.total` - Total memory usage
+
+---
+
+### `cluster(options?)` → `Promise<ClusterResult[]>` ✨ *New v7.1.0*
+
+Cluster entities by semantic similarity.
+
+```typescript
+// Find all clusters
+const clusters = await brain.cluster()
+
+for (const cluster of clusters) {
+  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+}
+
+// Find document clusters with centroids
+const docClusters = await brain.cluster({
+  type: NounType.Document,
+  threshold: 0.85,
+  minClusterSize: 3,
+  includeCentroid: true
+})
+```
+
+**Options:**
+- `threshold`: `number` - Similarity threshold (default: 0.8)
+- `type`: `NounType` - Filter by entity type
+- `minClusterSize`: `number` - Minimum cluster size (default: 2)
+- `limit`: `number` - Maximum clusters to return (default: 100)
+- `includeCentroid`: `boolean` - Calculate cluster centroids (default: false)
+
+**Returns:**
+- `clusterId` - Unique cluster identifier
+- `entities` - Array of entities in the cluster
+- `centroid` - Average embedding vector (if includeCentroid is true)
 
 ---
 
