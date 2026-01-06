@@ -13,11 +13,10 @@
  */
 
 import { EmbeddingResult, EngineStats, MODEL_CONSTANTS } from './types.js'
+import { loadWasmBytes, isWasmEmbedded } from './wasmLoader.js'
 
-// Type declaration for Bun global
-declare const Bun: {
-  file(path: string): { arrayBuffer(): Promise<ArrayBuffer> }
-} | undefined
+// Type declaration for Bun global (for environment detection)
+declare const Bun: unknown
 
 // Type definitions for the WASM module
 interface CandleWasmModule {
@@ -133,50 +132,33 @@ export class CandleEmbeddingEngine {
    * Load the WASM module
    *
    * The WASM file contains everything: runtime code + model weights.
+   * Uses wasmLoader.ts for cross-environment compatibility.
    */
   private async loadWasmModule(): Promise<CandleWasmModule> {
     try {
-      // Dynamic import of the WASM package
+      // Dynamic import of the WASM glue code
       const wasmPkg = await import('./pkg/candle_embeddings.js')
 
-      // Determine if we're in Node.js or browser
-      const isNode = typeof process !== 'undefined' && process.versions?.node
+      // Detect browser environment (not Node.js, not Bun)
+      // Note: Bun defines 'self' so we check for 'document' instead
+      const isServerSide =
+        typeof process !== 'undefined' && process.versions?.node ||
+        typeof Bun !== 'undefined'
 
-      if (isNode) {
-        // Server-side: load WASM bytes from file and use initSync
-        const path = await import('node:path')
-        const { fileURLToPath } = await import('node:url')
-
-        const thisDir = path.dirname(fileURLToPath(import.meta.url))
-        const wasmPath = path.join(thisDir, 'pkg', 'candle_embeddings_bg.wasm')
-
-        // Check if running in Bun (for Bun.file() support in compiled binaries)
-        const isBun = typeof Bun !== 'undefined'
-        let wasmBytes: Buffer | ArrayBuffer
-
-        if (isBun) {
-          // Bun runtime or compiled: Use Bun.file() which works in compiled binaries
-          wasmBytes = await Bun.file(wasmPath).arrayBuffer()
-        } else {
-          // Node.js: Use fs.readFileSync()
-          const fs = await import('node:fs')
-          if (!fs.existsSync(wasmPath)) {
-            throw new Error(`WASM file not found: ${wasmPath}`)
-          }
-          wasmBytes = fs.readFileSync(wasmPath)
-        }
-
+      if (isServerSide) {
+        // Server-side (Node.js, Bun, Bun compile): load bytes via wasmLoader
+        const wasmBytes = await loadWasmBytes()
         wasmPkg.initSync({ module: wasmBytes })
       } else {
-        // In browser: use default async init which uses fetch
+        // Browser: use default async init which uses fetch
         await wasmPkg.default()
       }
 
       return wasmPkg as unknown as CandleWasmModule
     } catch (error) {
       throw new Error(
-        `Failed to load Candle WASM module. Make sure to run 'npm run build:candle' first. ` +
-          `Error: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to load Candle WASM module. ` +
+        `Error: ${error instanceof Error ? error.message : String(error)}`
       )
     }
   }

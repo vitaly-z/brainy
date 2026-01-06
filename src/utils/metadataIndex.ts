@@ -24,7 +24,7 @@ import {
   ZoneMap
 } from './metadataIndexChunking.js'
 import { EntityIdMapper } from './entityIdMapper.js'
-import { RoaringBitmap32 } from 'roaring-wasm'
+import { RoaringBitmap32, roaringLibraryInitialize } from './roaring/index.js'
 import { FieldTypeInference, FieldType } from './fieldTypeInference.js'
 
 export interface MetadataIndexEntry {
@@ -202,6 +202,9 @@ export class MetadataIndexManager {
    * This must be called after construction and before any queries
    */
   async init(): Promise<void> {
+    // Initialize roaring-wasm library (browser bundle requires async init)
+    await roaringLibraryInitialize()
+
     // Load field registry to discover persisted indices (v4.2.1)
     // Must run first to populate fieldIndexes directory before warming cache
     await this.loadFieldRegistry()
