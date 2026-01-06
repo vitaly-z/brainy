@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.1](https://github.com/soulcraftlabs/brainy/compare/v7.0.0...v7.0.1) (2026-01-06)
+
+- fix: resolve WASM loading for Bun --compile single-binary executables (5d9ec5b)
+
+
 ### [7.0.0](https://github.com/soulcraftlabs/brainy/compare/v6.6.2...v7.0.0) (2026-01-06)
 
 - feat: migrate embeddings to Candle WASM + remove semantic type inference (da7d2ed)
