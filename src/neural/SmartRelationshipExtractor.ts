@@ -10,10 +10,9 @@
  * - Comprehensive relationship intelligence built-in
  *
  * Ensemble Architecture:
- * - VerbExactMatchSignal (40%) - Explicit keywords and phrases
- * - VerbEmbeddingSignal (35%) - Neural similarity with verb embeddings
- * - VerbPatternSignal (20%) - Regex patterns and structures
- * - VerbContextSignal (5%) - Entity type pair hints
+ * - VerbEmbeddingSignal (55%) - Neural similarity with verb embeddings
+ * - VerbPatternSignal (30%) - Regex patterns and structures
+ * - VerbContextSignal (15%) - Entity type pair hints
  *
  * Performance:
  * - Parallel signal execution (~15-20ms total)
@@ -24,11 +23,9 @@
 
 import type { Brainy } from '../brainy.js'
 import type { VerbType, NounType } from '../types/graphTypes.js'
-import { VerbExactMatchSignal } from './signals/VerbExactMatchSignal.js'
 import { VerbEmbeddingSignal } from './signals/VerbEmbeddingSignal.js'
 import { VerbPatternSignal } from './signals/VerbPatternSignal.js'
 import { VerbContextSignal } from './signals/VerbContextSignal.js'
-import type { VerbSignal as ExactVerbSignal } from './signals/VerbExactMatchSignal.js'
 import type { VerbSignal as EmbeddingVerbSignal } from './signals/VerbEmbeddingSignal.js'
 import type { VerbSignal as PatternVerbSignal } from './signals/VerbPatternSignal.js'
 import type { VerbSignal as ContextVerbSignal } from './signals/VerbContextSignal.js'
@@ -40,7 +37,7 @@ export interface RelationshipExtractionResult {
   type: VerbType
   confidence: number
   weight: number
-  source: 'ensemble' | 'exact-match' | 'pattern' | 'embedding' | 'context'
+  source: 'ensemble' | 'pattern' | 'embedding' | 'context'
   evidence: string
   metadata?: {
     signalResults?: Array<{
@@ -61,10 +58,9 @@ export interface SmartRelationshipExtractorOptions {
   enableEnsemble?: boolean      // Use ensemble vs single best signal (default: true)
   cacheSize?: number           // LRU cache size (default: 2000)
   weights?: {                  // Custom signal weights (must sum to 1.0)
-    exactMatch?: number        // Default: 0.40
-    embedding?: number         // Default: 0.35
-    pattern?: number           // Default: 0.20
-    context?: number           // Default: 0.05
+    embedding?: number         // Default: 0.55
+    pattern?: number           // Default: 0.30
+    context?: number           // Default: 0.15
   }
 }
 
@@ -72,7 +68,7 @@ export interface SmartRelationshipExtractorOptions {
  * Internal signal result wrapper
  */
 interface SignalResult {
-  signal: 'exact-match' | 'embedding' | 'pattern' | 'context'
+  signal: 'embedding' | 'pattern' | 'context'
   type: VerbType | null
   confidence: number
   weight: number
@@ -97,7 +93,6 @@ export class SmartRelationshipExtractor {
   private options: Required<Omit<SmartRelationshipExtractorOptions, 'weights'>> & { weights: Required<NonNullable<SmartRelationshipExtractorOptions['weights']>> }
 
   // Signal instances
-  private exactMatchSignal: VerbExactMatchSignal
   private embeddingSignal: VerbEmbeddingSignal
   private patternSignal: VerbPatternSignal
   private contextSignal: VerbContextSignal
@@ -110,7 +105,6 @@ export class SmartRelationshipExtractor {
   private stats = {
     calls: 0,
     cacheHits: 0,
-    exactMatchWins: 0,
     embeddingWins: 0,
     patternWins: 0,
     contextWins: 0,
@@ -129,10 +123,9 @@ export class SmartRelationshipExtractor {
       enableEnsemble: options?.enableEnsemble ?? true,
       cacheSize: options?.cacheSize ?? 2000,
       weights: {
-        exactMatch: options?.weights?.exactMatch ?? 0.40,
-        embedding: options?.weights?.embedding ?? 0.35,
-        pattern: options?.weights?.pattern ?? 0.20,
-        context: options?.weights?.context ?? 0.05
+        embedding: options?.weights?.embedding ?? 0.55,
+        pattern: options?.weights?.pattern ?? 0.30,
+        context: options?.weights?.context ?? 0.15
       }
     }
 
@@ -143,24 +136,19 @@ export class SmartRelationshipExtractor {
     }
 
     // Initialize signals
-    this.exactMatchSignal = new VerbExactMatchSignal(brain, {
-      minConfidence: 0.50, // Lower threshold, ensemble will filter
-      cacheSize: Math.floor(this.options.cacheSize / 4)
-    })
-
     this.embeddingSignal = new VerbEmbeddingSignal(brain, {
       minConfidence: 0.50,
-      cacheSize: Math.floor(this.options.cacheSize / 4)
+      cacheSize: Math.floor(this.options.cacheSize / 3)
     })
 
     this.patternSignal = new VerbPatternSignal(brain, {
       minConfidence: 0.50,
-      cacheSize: Math.floor(this.options.cacheSize / 4)
+      cacheSize: Math.floor(this.options.cacheSize / 3)
     })
 
     this.contextSignal = new VerbContextSignal(brain, {
       minConfidence: 0.50,
-      cacheSize: Math.floor(this.options.cacheSize / 4)
+      cacheSize: Math.floor(this.options.cacheSize / 3)
     })
   }
 
@@ -197,8 +185,7 @@ export class SmartRelationshipExtractor {
 
     try {
       // Execute all signals in parallel
-      const [exactMatch, embeddingMatch, patternMatch, contextMatch] = await Promise.all([
-        this.exactMatchSignal.classify(context).catch(() => null),
+      const [embeddingMatch, patternMatch, contextMatch] = await Promise.all([
         this.embeddingSignal.classify(context, options?.contextVector).catch(() => null),
         this.patternSignal.classify(subject, object, context).catch(() => null),
         this.contextSignal.classify(options?.subjectType, options?.objectType).catch(() => null)
@@ -206,13 +193,6 @@ export class SmartRelationshipExtractor {
 
       // Wrap results with weights
       const signalResults: SignalResult[] = [
-        {
-          signal: 'exact-match',
-          type: exactMatch?.type || null,
-          confidence: exactMatch?.confidence || 0,
-          weight: this.options.weights.exactMatch,
-          evidence: exactMatch?.evidence || ''
-        },
         {
           signal: 'embedding',
           type: embeddingMatch?.type || null,
@@ -368,7 +348,7 @@ export class SmartRelationshipExtractor {
       type: best.type!,
       confidence: best.confidence,
       weight: best.confidence,
-      source: best.signal as any,
+      source: best.signal,
       evidence: best.evidence,
       metadata: undefined
     }
@@ -381,8 +361,6 @@ export class SmartRelationshipExtractor {
     // Track win counts
     if (result.source === 'ensemble') {
       this.stats.ensembleWins++
-    } else if (result.source === 'exact-match') {
-      this.stats.exactMatchWins++
     } else if (result.source === 'embedding') {
       this.stats.embeddingWins++
     } else if (result.source === 'pattern') {
@@ -445,7 +423,6 @@ export class SmartRelationshipExtractor {
       cacheHitRate: this.stats.calls > 0 ? this.stats.cacheHits / this.stats.calls : 0,
       ensembleRate: this.stats.calls > 0 ? this.stats.ensembleWins / this.stats.calls : 0,
       signalStats: {
-        exactMatch: this.exactMatchSignal.getStats(),
         embedding: this.embeddingSignal.getStats(),
         pattern: this.patternSignal.getStats(),
         context: this.contextSignal.getStats()
@@ -460,7 +437,6 @@ export class SmartRelationshipExtractor {
     this.stats = {
       calls: 0,
       cacheHits: 0,
-      exactMatchWins: 0,
       embeddingWins: 0,
       patternWins: 0,
       contextWins: 0,
@@ -470,7 +446,6 @@ export class SmartRelationshipExtractor {
       averageSignalsUsed: 0
     }
 
-    this.exactMatchSignal.resetStats()
     this.embeddingSignal.resetStats()
     this.patternSignal.resetStats()
     this.contextSignal.resetStats()
@@ -483,7 +458,6 @@ export class SmartRelationshipExtractor {
     this.cache.clear()
     this.cacheOrder = []
 
-    this.exactMatchSignal.clearCache()
     this.embeddingSignal.clearCache()
     this.patternSignal.clearCache()
     this.contextSignal.clearCache()

@@ -1,25 +1,23 @@
 /**
  * WASM Embedding Engine
  *
- * The main embedding engine that combines all components:
- * - WordPieceTokenizer: Text → Token IDs
- * - ONNXInferenceEngine: Token IDs → Hidden States
- * - EmbeddingPostProcessor: Hidden States → Normalized Embedding
- *
- * This replaces transformers.js with a clean, production-grade implementation.
+ * The main embedding engine using Candle (Rust/WASM) for inference.
+ * This provides sentence embeddings using the all-MiniLM-L6-v2 model.
  *
  * Features:
  * - Singleton pattern (one model instance)
  * - Lazy initialization
  * - Batch processing support
- * - Zero runtime dependencies
+ * - Works with Bun compile (no dynamic imports)
+ * - Pure WASM - no native dependencies
+ *
+ * Migration from ONNX Runtime:
+ * This implementation replaces the previous ONNX-based engine with Candle WASM.
+ * The interface remains identical for backward compatibility.
  */
 
-import { WordPieceTokenizer } from './WordPieceTokenizer.js'
-import { ONNXInferenceEngine } from './ONNXInferenceEngine.js'
-import { EmbeddingPostProcessor } from './EmbeddingPostProcessor.js'
-import { getAssetLoader } from './AssetLoader.js'
-import { EmbeddingResult, EngineStats, MODEL_CONSTANTS } from './types.js'
+import { CandleEmbeddingEngine } from './CandleEmbeddingEngine.js'
+import { EmbeddingResult, EngineStats } from './types.js'
 
 // Global singleton instance
 let globalInstance: WASMEmbeddingEngine | null = null
@@ -27,17 +25,17 @@ let globalInitPromise: Promise<void> | null = null
 
 /**
  * WASM-based embedding engine
+ *
+ * Uses Candle (HuggingFace's Rust ML framework) for inference.
+ * Supports all-MiniLM-L6-v2 with 384-dimensional embeddings.
  */
 export class WASMEmbeddingEngine {
-  private tokenizer: WordPieceTokenizer | null = null
-  private inference: ONNXInferenceEngine | null = null
-  private postProcessor: EmbeddingPostProcessor | null = null
+  private candleEngine: CandleEmbeddingEngine
   private initialized = false
-  private embedCount = 0
-  private totalProcessingTimeMs = 0
 
   private constructor() {
-    // Private constructor for singleton
+    // Get the Candle engine singleton
+    this.candleEngine = CandleEmbeddingEngine.getInstance()
   }
 
   /**
@@ -51,7 +49,7 @@ export class WASMEmbeddingEngine {
   }
 
   /**
-   * Initialize all components
+   * Initialize the engine
    */
   async initialize(): Promise<void> {
     // Already initialized
@@ -79,178 +77,50 @@ export class WASMEmbeddingEngine {
    * Perform actual initialization
    */
   private async performInit(): Promise<void> {
-    const startTime = Date.now()
-    console.log('🚀 Initializing WASM Embedding Engine...')
-
-    try {
-      const assetLoader = getAssetLoader()
-
-      // Verify assets exist
-      const verification = await assetLoader.verifyAssets()
-      if (!verification.valid) {
-        throw new Error(
-          `Missing model assets:\n${verification.errors.join('\n')}\n\n` +
-          `Expected model at: ${verification.modelPath}\n` +
-          `Expected vocab at: ${verification.vocabPath}\n\n` +
-          `Run 'npm run download-model' to download the model files.`
-        )
-      }
-
-      // Load vocabulary and create tokenizer
-      console.log('📖 Loading vocabulary...')
-      const vocab = await assetLoader.loadVocab()
-      this.tokenizer = new WordPieceTokenizer(vocab)
-      console.log(`✅ Vocabulary loaded: ${this.tokenizer.vocabSize} tokens`)
-
-      // Initialize ONNX inference engine
-      console.log('🧠 Loading ONNX model...')
-      const modelPath = await assetLoader.getModelPath()
-      this.inference = new ONNXInferenceEngine({ modelPath })
-      await this.inference.initialize(modelPath)
-      console.log('✅ ONNX model loaded')
-
-      // Create post-processor
-      this.postProcessor = new EmbeddingPostProcessor(MODEL_CONSTANTS.HIDDEN_SIZE)
-
-      this.initialized = true
-      const initTime = Date.now() - startTime
-      console.log(`✅ WASM Embedding Engine ready in ${initTime}ms`)
-
-    } catch (error) {
-      this.initialized = false
-      this.tokenizer = null
-      this.inference = null
-      this.postProcessor = null
-      throw new Error(
-        `Failed to initialize WASM Embedding Engine: ${error instanceof Error ? error.message : String(error)}`
-      )
-    }
+    await this.candleEngine.initialize()
+    this.initialized = true
   }
 
   /**
    * Generate embedding for text
    */
   async embed(text: string): Promise<number[]> {
-    const result = await this.embedWithMetadata(text)
-    return result.embedding
+    return this.candleEngine.embed(text)
   }
 
   /**
    * Generate embedding with metadata
    */
   async embedWithMetadata(text: string): Promise<EmbeddingResult> {
-    // Ensure initialized
-    if (!this.initialized) {
-      await this.initialize()
-    }
-
-    if (!this.tokenizer || !this.inference || !this.postProcessor) {
-      throw new Error('Engine not properly initialized')
-    }
-
-    const startTime = Date.now()
-
-    // 1. Tokenize
-    const tokenized = this.tokenizer.encode(text)
-
-    // 2. Run inference
-    const hiddenStates = await this.inference.inferSingle(
-      tokenized.inputIds,
-      tokenized.attentionMask,
-      tokenized.tokenTypeIds
-    )
-
-    // 3. Post-process (mean pool + normalize)
-    const embedding = this.postProcessor.process(
-      hiddenStates,
-      tokenized.attentionMask,
-      tokenized.inputIds.length
-    )
-
-    const processingTimeMs = Date.now() - startTime
-    this.embedCount++
-    this.totalProcessingTimeMs += processingTimeMs
-
-    return {
-      embedding: Array.from(embedding),
-      tokenCount: tokenized.tokenCount,
-      processingTimeMs,
-    }
+    return this.candleEngine.embedWithMetadata(text)
   }
 
   /**
    * Batch embed multiple texts
    */
   async embedBatch(texts: string[]): Promise<number[][]> {
-    // Ensure initialized
-    if (!this.initialized) {
-      await this.initialize()
-    }
-
-    if (!this.tokenizer || !this.inference || !this.postProcessor) {
-      throw new Error('Engine not properly initialized')
-    }
-
-    if (texts.length === 0) {
-      return []
-    }
-
-    // Tokenize all texts
-    const batch = this.tokenizer.encodeBatch(texts)
-    const seqLen = batch.inputIds[0].length
-
-    // Run batch inference
-    const hiddenStates = await this.inference.infer(
-      batch.inputIds,
-      batch.attentionMask,
-      batch.tokenTypeIds
-    )
-
-    // Post-process each result
-    const embeddings = this.postProcessor.processBatch(
-      hiddenStates,
-      batch.attentionMask,
-      texts.length,
-      seqLen
-    )
-
-    this.embedCount += texts.length
-
-    return embeddings.map(e => Array.from(e))
+    return this.candleEngine.embedBatch(texts)
   }
 
   /**
    * Check if initialized
    */
   isInitialized(): boolean {
-    return this.initialized
+    return this.initialized && this.candleEngine.isInitialized()
   }
 
   /**
    * Get engine statistics
    */
   getStats(): EngineStats {
-    return {
-      initialized: this.initialized,
-      embedCount: this.embedCount,
-      totalProcessingTimeMs: this.totalProcessingTimeMs,
-      avgProcessingTimeMs: this.embedCount > 0
-        ? this.totalProcessingTimeMs / this.embedCount
-        : 0,
-      modelName: MODEL_CONSTANTS.MODEL_NAME,
-    }
+    return this.candleEngine.getStats()
   }
 
   /**
    * Dispose and free resources
    */
   async dispose(): Promise<void> {
-    if (this.inference) {
-      await this.inference.dispose()
-      this.inference = null
-    }
-    this.tokenizer = null
-    this.postProcessor = null
+    await this.candleEngine.dispose()
     this.initialized = false
   }
 
@@ -263,6 +133,7 @@ export class WASMEmbeddingEngine {
     }
     globalInstance = null
     globalInitPromise = null
+    CandleEmbeddingEngine.resetInstance()
   }
 }
 

@@ -197,7 +197,7 @@ const brain = new Brainy({
 })
 ```
 **Scale:** Thousands to hundreds of thousands • **Performance:** <5ms queries
-**→ [Production Service Architecture](docs/PRODUCTION_SERVICE_ARCHITECTURE.md)** — Singleton patterns, caching, and scaling for Express/Node.js services
+**→ [Production Service Architecture](docs/PRODUCTION_SERVICE_ARCHITECTURE.md)** — Singleton patterns, caching, and scaling for Bun/Node.js services
 
 ### 🏢 Growing Company → Multi-Million Scale
 ```javascript
@@ -685,11 +685,17 @@ This comprehensive guide includes:
 
 ## Requirements
 
-**Node.js 22 LTS** (recommended) or **Node.js 20 LTS**
+**Bun 1.0+** (recommended) or **Node.js 22 LTS**
 
 ```bash
-nvm use  # We provide .nvmrc
+# Bun (recommended - best performance, single-binary deployment)
+bun install @soulcraft/brainy
+
+# Node.js (fully supported)
+npm install @soulcraft/brainy
 ```
+
+> **Why Bun?** Brainy's Candle WASM engine works seamlessly with `bun --compile` for standalone binary deployment. No external model files, no runtime downloads.
 
 ---
 

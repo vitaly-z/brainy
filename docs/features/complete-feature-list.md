@@ -256,9 +256,9 @@ if (device === 'webgpu') {
   // Transformer models use WebGPU automatically
 }
 
-// CUDA in Node.js (requires ONNX Runtime GPU)
+// CUDA in Node.js (future GPU support)
 if (device === 'cuda') {
-  // Automatically uses GPU for embeddings
+  // Future: GPU acceleration for embeddings
 }
 ```
 

@@ -486,18 +486,6 @@ import { getNounTypes, getVerbTypes, getNounTypeMap, getVerbTypeMap } from './ut
 // Export BrainyTypes for complete type management
 import { BrainyTypes, TypeSuggestion, suggestType } from './utils/brainyTypes.js'
 
-// Export Semantic Type Inference - THE ONE unified system (nouns + verbs)
-import {
-  inferTypes,
-  inferNouns,
-  inferVerbs,
-  inferIntent,
-  getSemanticTypeInference,
-  SemanticTypeInference,
-  type TypeInference,
-  type SemanticTypeInferenceOptions
-} from './query/semanticTypeInference.js'
-
 export {
   NounType,
   VerbType,
@@ -507,20 +495,11 @@ export {
   getVerbTypeMap,
   // BrainyTypes - complete type management
   BrainyTypes,
-  suggestType,
-  // Semantic Type Inference - Unified noun + verb inference
-  inferTypes,        // Main function - returns all types (nouns + verbs)
-  inferNouns,        // Convenience - noun types only
-  inferVerbs,        // Convenience - verb types only
-  inferIntent,       // Best for query understanding - returns {nouns, verbs}
-  getSemanticTypeInference,
-  SemanticTypeInference
+  suggestType
 }
 
 export type {
-  TypeSuggestion,
-  TypeInference,
-  SemanticTypeInferenceOptions
+  TypeSuggestion
 }
 
 // Export MCP (Model Control Protocol) components

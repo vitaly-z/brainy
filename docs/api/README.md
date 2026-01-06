@@ -1373,12 +1373,9 @@ const brain = new Brainy({
     typeAware: true              // Enable type-aware indexing (v4.0+)
   },
 
-  // Model configuration
-  model: {
-    type: 'transformers',        // transformers | custom
-    name: 'Xenova/all-MiniLM-L6-v2',
-    device: 'auto'               // auto | cpu | gpu
-  },
+  // Model configuration (embedded in WASM - zero config needed)
+  // Model: all-MiniLM-L6-v2 (384 dimensions)
+  // Device: CPU via WASM (works everywhere)
 
   // Cache configuration
   cache: {

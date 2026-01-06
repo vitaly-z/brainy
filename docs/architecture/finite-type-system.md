@@ -80,7 +80,7 @@ const entity = {
 - ✅ **Semantic Understanding**: Types have meaning, not just structure
 - ✅ **Tool Compatibility**: All augmentations understand core types
 - ✅ **Concept Extraction**: NLP can map text to known types
-- ✅ **Type Inference**: Automatic type detection via keywords/synonyms
+- ✅ **Explicit Types**: Clear type specification in API
 - ✅ **Query Optimization**: Type-aware query planning
 - ✅ **Flexible Metadata**: Any fields within typed structure
 - ✅ **Billion-Scale Ready**: Type tracking scales linearly
@@ -121,45 +121,51 @@ class TypeAwareMetadataIndex {
 - **After**: PROJECTED 1.2MB memory for same dataset (385x reduction - calculated from Uint32Array size, not measured)
 - **Scales to billions**: Memory grows with entity count, not key diversity
 
-### 2. Semantic Type Inference
+### 2. Explicit Type System
 
-**The Magic**: Map natural language to structured types:
+**The Design**: Specify types clearly in your API calls:
 
 ```typescript
-import { getSemanticTypeInference } from '@soulcraft/brainy'
+import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
-const inference = getSemanticTypeInference()
+// Add entity with explicit type
+await brain.add({
+  data: { name: 'Alice', role: 'CEO of Acme Corp' },
+  type: NounType.Person  // Explicit type specification
+})
 
-// Automatic type detection
-await inference.inferNounType('CEO of Acme Corp')
-// → 'person'
-
-await inference.inferNounType('San Francisco office building')
-// → 'place'
-
-await inference.inferVerbType('Alice manages Bob')
-// → 'manages' (relationship type)
+// Query with type filtering
+await brain.find({
+  query: 'Alice',
+  type: NounType.Person  // Type-optimized search
+})
 ```
 
-**How It Works**:
-1. **Keyword Matching**: "CEO", "manager" → 'person'
-2. **Synonym Detection**: "building", "office" → 'place'
-3. **Semantic Embeddings**: Vector similarity to type prototypes
-4. **Context Analysis**: Surrounding words provide hints
+**Why Explicit Types?**:
+1. **Deterministic**: You control exactly how entities are classified
+2. **Predictable**: No inference surprises or edge cases
+3. **Fast**: No neural processing overhead on every add/query
+4. **Smaller**: No embedded keyword models needed
 
 **Real-World Use Case**:
 ```typescript
-// Import unstructured data
-const text = "Apple announced a new product line in Cupertino"
+// Import data with known types
+await brain.add({
+  data: { name: 'Apple Inc.', industry: 'Technology' },
+  type: NounType.Organization
+})
 
-// Brainy automatically infers:
-// - "Apple" → noun type: 'organization'
-// - "product line" → noun type: 'product'
-// - "Cupertino" → noun type: 'place'
-// - "announced" → verb type: 'announces'
-// - "in" → verb type: 'locatedIn'
+await brain.add({
+  data: { name: 'Cupertino', country: 'USA' },
+  type: NounType.Location
+})
 
-// Creates typed, queryable knowledge graph automatically!
+// Create relationship
+await brain.relate({
+  from: appleId,
+  to: cupertinoId,
+  type: VerbType.LocatedIn
+})
 ```
 
 ### 3. Tool & Augmentation Compatibility
@@ -364,42 +370,47 @@ function processNoun(noun: Noun) {
 
 ---
 
-## Public API: Semantic Type Inference
+## Public API: Type System
 
-The type inference system is **fully public** for augmentation developers and external tools:
+The type system is **fully public** for developers and augmentation authors:
 
 ```typescript
 import {
-  getSemanticTypeInference,
-  SemanticTypeInference
+  NounType,
+  VerbType,
+  getNounTypes,
+  getVerbTypes,
+  BrainyTypes,
+  suggestType
 } from '@soulcraft/brainy'
 
-// Get singleton instance
-const inference = getSemanticTypeInference()
+// Get all available noun types
+const nounTypes = getNounTypes()
+// → ['Person', 'Organization', 'Location', 'Thing', 'Concept', ...]
 
-// Infer noun type from text
-const nounType = await inference.inferNounType('Software Engineer')
-// → 'person'
+// Get all available verb types
+const verbTypes = getVerbTypes()
+// → ['RelatedTo', 'Contains', 'CreatedBy', 'LocatedIn', ...]
 
-// Infer verb type from relationship text
-const verbType = await inference.inferVerbType('works at')
-// → 'worksAt'
+// Use types directly
+await brain.add({
+  data: { name: 'Alice' },
+  type: NounType.Person
+})
 
-// Get type keywords for reverse lookup
-const keywords = inference.getNounTypeKeywords('person')
-// → ['person', 'human', 'individual', 'user', 'employee', ...]
-
-// Get type synonyms
-const synonyms = inference.getNounTypeSynonyms('organization')
-// → ['company', 'corporation', 'business', 'firm', 'enterprise', ...]
+// Query by type
+await brain.find({
+  type: NounType.Person,
+  where: { name: 'Alice' }
+})
 ```
 
 **Use Cases**:
-- **Import Tools**: Auto-detect entity types during data import
-- **Query Builders**: Suggest types based on user input
+- **Type-Safe Code**: Use TypeScript enums for compile-time checking
+- **Import Tools**: Specify entity types during data import
+- **Query Builders**: Filter by known types
 - **Augmentations**: Type-specific processing pipelines
 - **Visualization**: Type-appropriate rendering
-- **Data Validation**: Ensure correct type assignments
 
 ---
 
@@ -415,7 +426,7 @@ const synonyms = inference.getNounTypeSynonyms('organization')
 | **Query Planning** | Impossible | Table statistics | Type statistics |
 | **Tool Compatibility** | None | SQL only | Full ecosystem |
 | **Semantic Understanding** | None | None | Built-in |
-| **Concept Extraction** | Manual | Manual | Automatic |
+| **Concept Extraction** | Manual | Manual | Via SmartExtractor |
 | **Flexibility** | Infinite | Zero | Optimal balance |
 
 ---
@@ -483,7 +494,7 @@ Brainy's **Finite Noun/Verb Type System** is revolutionary because it achieves t
 2. ✅ **Semantic understanding** (NLP integration)
 3. ✅ **Tool compatibility** (ecosystem interoperability)
 4. ✅ **Query optimization** (type-aware planning)
-5. ✅ **Concept extraction** (automatic type inference)
+5. ✅ **Concept extraction** (via SmartExtractor for imports)
 6. ✅ **Developer experience** (clean architecture)
 7. ✅ **Flexibility** (metadata freedom within types)
 
@@ -493,11 +504,10 @@ It's not schemaless chaos. It's not rigid relational constraints. It's **semanti
 
 ## Further Reading
 
-- [Type Inference System](../api/type-inference.md) - API reference for semantic type detection
 - [Storage Architecture](./storage-architecture.md) - How types enable billion-scale storage
 - [Augmentation System](./augmentations.md) - Building type-aware augmentations
-- [Concept Extraction](../guides/natural-language.md) - NLP integration with typed entities
 - [Query Optimization](../api/query-optimization.md) - Type-aware query planning
+- [Import Flow](../guides/import-flow.md) - How types work in the import pipeline
 
 ---
 

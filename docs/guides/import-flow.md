@@ -470,7 +470,7 @@ const verbType = await this.inferRelationship(
 
 **Location**: `src/neural/SmartRelationshipExtractor.ts:100`
 
-The SmartRelationshipExtractor runs **4 signals in parallel** (just like entity extraction):
+The SmartRelationshipExtractor runs **3 signals in parallel**:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -480,40 +480,34 @@ The SmartRelationshipExtractor runs **4 signals in parallel** (just like entity 
 │  Input Context:                                          │
 │  "Famous painting created by Leonardo da Vinci"          │
 │                                                          │
-│  1. VerbExactMatchSignal (40%)                          │
-│     → Searches 334 verb keywords                         │
-│     → Finds phrase: "created by"                         │
-│     → Maps to: VerbType.CreatedBy                        │
-│     → Confidence: 0.95                                   │
-│                                                          │
-│  2. VerbEmbeddingSignal (35%)                           │
+│  1. VerbEmbeddingSignal (55%)                           │
 │     → Embeds context: [0.23, -0.45, 0.78, ...]          │
 │     → Compares to 40 verb embeddings                     │
 │     → Closest match: CreatedBy (similarity: 0.89)        │
 │     → Confidence: 0.89                                   │
 │                                                          │
-│  3. VerbPatternSignal (20%)                             │
+│  2. VerbPatternSignal (30%)                             │
 │     → Tests 48+ regex patterns                           │
 │     → Matches: /\bcreated?\s+by\b/i                     │
 │     → Maps to: VerbType.CreatedBy                        │
 │     → Confidence: 0.90                                   │
 │                                                          │
-│  4. VerbContextSignal (5%)                              │
+│  3. VerbContextSignal (15%)                             │
 │     → Type pair: (Product, Person)                       │
 │     → Hint suggests: CreatedBy                           │
 │     → Confidence: 0.80                                   │
 │                                                          │
 │  Ensemble Vote:                                          │
-│  CreatedBy: 0.95×0.40 + 0.89×0.35 + 0.90×0.20 + 0.80×0.05│
-│           = 0.38 + 0.31 + 0.18 + 0.04                   │
-│           = 0.91                                         │
+│  CreatedBy: 0.89×0.55 + 0.90×0.30 + 0.80×0.15           │
+│           = 0.49 + 0.27 + 0.12                          │
+│           = 0.88                                         │
 │                                                          │
 │  Agreement Boost:                                        │
-│  → 4 signals agree on CreatedBy!                         │
-│  → Boost: +0.05 × (4-1) = +0.15                         │
-│  → Final: 0.91 + 0.15 = 1.06 → capped at 0.99          │
+│  → 3 signals agree on CreatedBy!                         │
+│  → Boost: +0.05 × (3-1) = +0.10                         │
+│  → Final: 0.88 + 0.10 = 0.98                            │
 │                                                          │
-│  Winner: CreatedBy (0.99 confidence) 🎯                 │
+│  Winner: CreatedBy (0.98 confidence) 🎯                 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -897,8 +891,8 @@ const vector = await this.embed('Mona Lisa')
 ```
 
 **Embedding Service**:
-- Default: Uses `@xenova/transformers` (local, no API calls!)
-- Model: `Xenova/all-MiniLM-L6-v2` (384 dimensions)
+- Uses Candle WASM (local, no API calls, no downloads!)
+- Model: `all-MiniLM-L6-v2` embedded in WASM (384 dimensions)
 - Performance: ~5-15ms per embedding
 
 **Output**:
@@ -1868,10 +1862,9 @@ groupBy: 'type'
     │  └─ ContextSignal (5%)                        │
     │                                               │
     │  SmartRelationshipExtractor (Verb Types):     │
-    │  ├─ VerbExactMatchSignal (40%)                │
-    │  ├─ VerbEmbeddingSignal (35%)                 │
-    │  ├─ VerbPatternSignal (20%)                   │
-    │  └─ VerbContextSignal (5%)                    │
+    │  ├─ VerbEmbeddingSignal (55%)                 │
+    │  ├─ VerbPatternSignal (30%)                   │
+    │  └─ VerbContextSignal (15%)                   │
     │                                               │
     │  Result: Intelligent entities + relationships │
     └───────────────────────────────────────────────┘

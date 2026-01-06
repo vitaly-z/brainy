@@ -4,47 +4,48 @@ Common issues and solutions for Brainy.
 
 ## 🤖 Model Loading Issues
 
-### "Failed to load embedding model"
+### "Failed to initialize Candle Embedding Engine"
 
-**Symptoms**: Error during `brain.init()` with model loading failure.
+**Symptoms**: Error during `brain.init()` with WASM loading failure.
 
 **Causes & Solutions**:
 
-1. **No local models + remote downloads blocked**
+1. **WASM file missing**
    ```bash
-   # Solution: Download models manually
-   npm run download-models
+   # Verify WASM exists (~90MB with embedded model)
+   ls -lh dist/embeddings/wasm/pkg/candle_embeddings_bg.wasm
+
+   # Rebuild if missing
+   npm run build
    ```
 
-2. **Network connectivity issues**
+2. **Memory too low**
    ```bash
-   # Solution: Allow remote models
-   export BRAINY_ALLOW_REMOTE_MODELS=true
-   
-   # Or pre-download in connected environment
-   npm run download-models
+   # Ensure at least 256MB available
+   # For Docker:
+   docker run -m 512m my-app
    ```
 
-3. **Incorrect model path**
+3. **Corrupted WASM**
    ```bash
-   # Check if models exist
-   ls ./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx
-   
-   # Set correct path
-   export BRAINY_MODELS_PATH=/correct/path/to/models
+   # Rebuild the Candle WASM
+   npm run build:candle
+   npm run build
    ```
 
-### Models Download Very Slowly
+### Slow Initialization (>500ms)
 
-**Symptoms**: Long wait times during first initialization.
+**Symptoms**: Long wait times during first `brain.init()`.
+
+**Cause**: WASM parsing takes ~200ms, which is normal for the 90MB file.
 
 **Solutions**:
-```bash
-# Pre-download during build/CI
-npm run download-models
+```typescript
+// Initialize once at startup, not per-request
+await brain.init()  // Do this once
 
-# For Docker - download during image build
-RUN npm run download-models
+// Reuse for all requests
+const results = await brain.find(query)
 ```
 
 ### Container Out of Memory During Model Load
@@ -388,8 +389,8 @@ node -e "console.log(process.memoryUsage())"
 # Platform info
 node -e "console.log(process.platform, process.arch)"
 
-# Brainy models
-ls -la ./models/Xenova/all-MiniLM-L6-v2/
+# Verify WASM file exists (model embedded inside)
+ls -la dist/embeddings/wasm/pkg/candle_embeddings_bg.wasm
 ```
 
 ### Report Issues

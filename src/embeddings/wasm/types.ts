@@ -1,11 +1,13 @@
 /**
  * Type definitions for WASM Embedding Engine
  *
- * Clean, production-grade types for direct ONNX WASM embeddings.
+ * Clean, production-grade types for Candle WASM embeddings.
+ * Model weights are embedded in WASM at compile time.
  */
 
 /**
  * Tokenizer configuration for WordPiece
+ * @deprecated Tokenization now happens in Rust/WASM - kept for backward compatibility
  */
 export interface TokenizerConfig {
   /** Vocabulary mapping word → token ID */
@@ -18,7 +20,7 @@ export interface TokenizerConfig {
   sepTokenId: number
   /** [PAD] token ID (0 for BERT-based models) */
   padTokenId: number
-  /** Maximum sequence length (512 for all-MiniLM-L6-v2) */
+  /** Maximum sequence length (256 for all-MiniLM-L6-v2 in Candle) */
   maxLength: number
   /** Whether to lowercase input (true for uncased models) */
   doLowerCase: boolean
@@ -26,6 +28,7 @@ export interface TokenizerConfig {
 
 /**
  * Result of tokenization
+ * @deprecated Tokenization now happens in Rust/WASM - kept for backward compatibility
  */
 export interface TokenizedInput {
   /** Token IDs including [CLS] and [SEP] */
@@ -39,10 +42,11 @@ export interface TokenizedInput {
 }
 
 /**
- * ONNX inference engine configuration
+ * Inference engine configuration
+ * @deprecated Model is now embedded in WASM - kept for backward compatibility
  */
 export interface InferenceConfig {
-  /** Path to ONNX model file */
+  /** Path to model file (not used with embedded model) */
   modelPath: string
   /** Path to WASM files directory */
   wasmPath?: string
@@ -50,7 +54,7 @@ export interface InferenceConfig {
   numThreads: number
   /** Enable SIMD if available */
   enableSimd: boolean
-  /** Enable CPU memory arena (false for memory efficiency) */
+  /** Enable CPU memory arena */
   enableCpuMemArena: boolean
 }
 
@@ -60,7 +64,7 @@ export interface InferenceConfig {
 export interface EmbeddingResult {
   /** 384-dimensional embedding vector */
   embedding: number[]
-  /** Number of tokens processed */
+  /** Number of tokens processed (0 when using Candle - handled internally) */
   tokenCount: number
   /** Processing time in milliseconds */
   processingTimeMs: number
@@ -116,7 +120,7 @@ export const SPECIAL_TOKENS = {
  */
 export const MODEL_CONSTANTS = {
   HIDDEN_SIZE: 384,
-  MAX_SEQUENCE_LENGTH: 512,
+  MAX_SEQUENCE_LENGTH: 256, // Candle uses 256 for efficiency
   VOCAB_SIZE: 30522,
   MODEL_NAME: 'all-MiniLM-L6-v2',
 } as const

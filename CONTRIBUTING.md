@@ -43,15 +43,38 @@ Feature requests are welcome! Please provide:
 
 #### Development Setup
 
+**Quick Setup (Recommended):**
 ```bash
 # Clone your fork
 git clone https://github.com/your-username/brainy.git
 cd brainy
 
-# Install dependencies
+# Run setup script (installs all dependencies including Rust)
+./scripts/setup-dev.sh
+```
+
+**Manual Setup:**
+```bash
+# Clone your fork
+git clone https://github.com/your-username/brainy.git
+cd brainy
+
+# Install system dependencies (Ubuntu/Debian)
+sudo apt-get install -y build-essential pkg-config libssl-dev
+
+# Install Rust (for WASM embedding engine)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+
+# Install Node.js dependencies
 npm install
 
-# Build the project
+# Build Candle WASM embedding engine
+npm run build:candle
+
+# Build TypeScript
 npm run build
 
 # Run tests

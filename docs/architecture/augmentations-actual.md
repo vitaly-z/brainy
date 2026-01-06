@@ -206,7 +206,7 @@ if (device === 'webgpu') {
 
 // CUDA detection in Node:
 if (device === 'cuda') {
-  // Requires ONNX Runtime GPU packages
+  // Future: GPU acceleration support
 }
 ```
 

@@ -25,7 +25,9 @@ Built-in authentication and rate limiting when needed.
 
 The APIServerAugmentation is included in Brainy core. No additional installation required.
 
-For Node.js environments, you may want to install optional dependencies:
+**Bun** (recommended): No additional dependencies needed - use `Bun.serve()` directly.
+
+**Node.js**: Install optional Express dependencies:
 ```bash
 npm install express cors ws
 ```
@@ -258,6 +260,30 @@ Authorization: Bearer your-token
 ```
 
 ## Environment Support
+
+### Bun ✅ (Recommended)
+Native performance with Bun.serve() - no Express required. Works with `bun --compile` for single-binary deployment.
+
+```typescript
+// Simple Bun server with Brainy
+import { Brainy } from '@soulcraft/brainy'
+
+const brain = new Brainy()
+await brain.init()
+
+Bun.serve({
+  port: 3000,
+  async fetch(req) {
+    const url = new URL(req.url)
+    if (url.pathname === '/api/search') {
+      const { query } = await req.json()
+      const results = await brain.search(query)
+      return Response.json(results)
+    }
+    return new Response('Not Found', { status: 404 })
+  }
+})
+```
 
 ### Node.js ✅
 Full support with Express, WebSocket, and all features.

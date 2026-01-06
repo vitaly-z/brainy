@@ -1,358 +1,236 @@
-# 🤖 Model Loading Guide
+# Model Loading Guide
 
-Brainy uses AI embedding models to understand and process your data. This guide explains how model loading works and how to handle different scenarios.
+Brainy uses AI embedding models to understand and process your data. With the Candle WASM engine, the model is **embedded at compile time** - no downloads, no configuration, no external dependencies.
 
-## 🚀 Zero Configuration (Default)
+## Zero Configuration (Default)
 
-**For most developers, no configuration is needed:**
+**For all developers, no configuration is needed:**
 
 ```typescript
 const brain = new Brainy()
-await brain.init() // Models load automatically
+await brain.init() // Model is already embedded - nothing to download!
 ```
 
 **What happens automatically:**
-1. Checks for local models in `./models/`
-2. Downloads All-MiniLM-L6-v2 if needed (384 dimensions)
-3. Configures optimal settings for your environment
-4. Ready to use immediately
+1. Candle WASM module loads (~90MB, includes model weights)
+2. Model initializes in ~200ms
+3. Ready to use immediately
 
-## 📦 Model Loading Cascade
+**No downloads. No CDN. No configuration. Just works.**
 
-Brainy tries multiple sources in this order:
+## How It Works
+
+The all-MiniLM-L6-v2 model is embedded in the WASM binary using Rust's `include_bytes!` macro:
 
 ```
-1. LOCAL CACHE (./models/) 
-   ↓ (if not found)
-2. CDN DOWNLOAD (fast mirrors)
-   ↓ (if fails)  
-3. GITHUB RELEASES (github.com/xenova/transformers.js)
-   ↓ (if fails)
-4. HUGGINGFACE HUB (huggingface.co)
-   ↓ (if fails)
-5. FALLBACK STRATEGIES (different model variants)
+candle_embeddings_bg.wasm (~90MB)
+├── Candle ML Runtime (~3MB)
+├── Model Weights (safetensors format, ~87MB)
+└── Tokenizer (HuggingFace tokenizers, ~450KB)
 ```
 
-## 🌍 Environment-Specific Behavior
+This single WASM file contains everything needed for sentence embeddings.
+
+## Environments
+
+### Bun (Recommended)
+
+```typescript
+// Works with Bun runtime
+bun run server.ts
+
+// Works with bun --compile (single binary deployment!)
+bun build --compile --target=bun server.ts
+./server  // Self-contained binary with embedded model
+```
+
+### Node.js
+
+```typescript
+// Standard Node.js
+node dist/server.js
+
+// Runs identically to Bun
+```
 
 ### Browser
-```typescript
-// Automatically configured for browsers
-const brain = new Brainy() // Works in React, Vue, vanilla JS
-await brain.init() // Downloads models via CDN
-```
 
-### Node.js Development
 ```typescript
-// Zero config - downloads to ./models/
+// Model loads via WASM (single file, no additional assets)
 const brain = new Brainy()
-await brain.init() // Downloads once, cached forever
-```
-
-### Production Server
-```typescript
-// Preload models during build/deployment
-const brain = new Brainy()
-await brain.init() // Uses cached local models
+await brain.init()
 ```
 
 ### Docker/Kubernetes
+
 ```dockerfile
-# Dockerfile - preload models
-RUN npm run download-models
-ENV BRAINY_ALLOW_REMOTE_MODELS=false
-```
-
-## 🛠️ Manual Model Management
-
-### Pre-download Models
-```bash
-# Download models during build/deployment
-npm run download-models
-
-# Custom location
-BRAINY_MODELS_PATH=./my-models npm run download-models
-```
-
-### Verify Models
-```bash
-# Check if models exist
-ls ./models/Xenova/all-MiniLM-L6-v2/
-
-# Should see:
-# - config.json
-# - tokenizer.json  
-# - onnx/model.onnx
-```
-
-### Custom Model Path
-```typescript
-const brain = new Brainy({
-  embedding: {
-    cacheDir: './custom-models'
-  }
-})
-```
-
-## 🔒 Offline & Air-Gapped Environments
-
-### Complete Offline Setup
-```bash
-# 1. Download models on connected machine
-npm run download-models
-
-# 2. Copy models to offline machine
-cp -r ./models /path/to/offline/project/
-
-# 3. Force local-only mode
-export BRAINY_ALLOW_REMOTE_MODELS=false
-```
-
-### Container/Server Deployment
-```dockerfile
-FROM node:18
+FROM oven/bun:1.1
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
-
-# Download models during build
-RUN npm run download-models
-
-# Force local-only in production
-ENV BRAINY_ALLOW_REMOTE_MODELS=false
-
+RUN bun install
 COPY . .
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["bun", "run", "server.ts"]
+
+# That's it! No model download step needed.
+# Model is embedded in the npm package.
 ```
 
-## ⚙️ Environment Variables
+## Model Information
 
-### BRAINY_ALLOW_REMOTE_MODELS
-Controls whether remote model downloads are allowed:
+### all-MiniLM-L6-v2 (Embedded)
+- **Dimensions**: 384 (fixed)
+- **Format**: Safetensors (FP32)
+- **Size**: ~87MB (embedded in WASM)
+- **Total WASM Size**: ~90MB
+- **Language**: English-optimized, works with all languages
+- **Inference**: ~2-10ms per embedding
+- **Initialization**: ~200ms
 
-```bash
-# Allow remote downloads (default in most environments)
-export BRAINY_ALLOW_REMOTE_MODELS=true
+### Memory Usage
+- **Loaded WASM**: ~90MB
+- **Inference peak**: ~140MB total
+- **Steady state**: ~100MB
 
-# Force local-only (recommended for production)
-export BRAINY_ALLOW_REMOTE_MODELS=false
-```
+## Comparing to Previous Architecture
 
-### BRAINY_MODELS_PATH
-Custom model storage location:
+| Feature | Before (ONNX) | Now (Candle WASM) |
+|---------|--------------|-------------------|
+| Model downloads | Required on first use | None - embedded |
+| External dependencies | onnxruntime-web | None |
+| Model files | model.onnx, tokenizer.json | Embedded in WASM |
+| Offline support | Required setup | Works by default |
+| Bun compile | Broken | Works |
+| Configuration | Environment variables | None needed |
 
-```bash
-# Custom model path
-export BRAINY_MODELS_PATH=/opt/brainy/models
+## Troubleshooting
 
-# Relative path
-export BRAINY_MODELS_PATH=./my-custom-models
-```
+### "Failed to initialize Candle Embedding Engine"
 
-## 🚨 Troubleshooting
-
-### "Failed to load embedding model" Error
-
-**Cause**: Models not found locally and remote download blocked/failed.
+**Cause**: WASM loading issue.
 
 **Solutions**:
 ```bash
-# Option 1: Allow remote downloads
-export BRAINY_ALLOW_REMOTE_MODELS=true
+# Rebuild the WASM
+npm run build:candle
 
-# Option 2: Download models manually
-npm run download-models
-
-# Option 3: Check internet connectivity
-ping huggingface.co
-
-# Option 4: Use custom model path
-export BRAINY_MODELS_PATH=/path/to/existing/models
+# Verify WASM exists
+ls dist/embeddings/wasm/pkg/candle_embeddings_bg.wasm
+# Should be ~90MB
 ```
 
-### Models Download Very Slowly
+### Out of Memory
 
-**Cause**: Network issues or regional restrictions.
-
-**Solutions**:
-```bash
-# Pre-download during build/CI
-npm run download-models
-
-# Use faster mirrors (automatic in newer versions)
-# No action needed - Brainy tries multiple CDNs
-```
-
-### Container Out of Memory During Model Load
-
-**Cause**: Limited container memory during model initialization.
+**Cause**: Container/environment has less than 256MB RAM.
 
 **Solutions**:
 ```dockerfile
-# Increase memory limit
-docker run -m 2g my-app
-
-# Use quantized models (default)
-ENV BRAINY_MODEL_DTYPE=q8
-
-# Pre-load models at build time (recommended)
-RUN npm run download-models
+# Increase memory limit (recommended: 512MB+)
+docker run -m 512m my-app
 ```
 
-### Permission Denied Creating Model Cache
+### Slow Initialization (>500ms)
 
-**Cause**: Write permissions for model cache directory.
+**Cause**: Cold start, large WASM parsing.
 
 **Solutions**:
-```bash
-# Make directory writable
-chmod 755 ./models
+```typescript
+// Initialize once at startup, not per-request
+await brain.init()  // Do this once
 
-# Use custom writable path
-export BRAINY_MODELS_PATH=/tmp/brainy-models
-
-# Or use memory-only storage
-const brain = new Brainy({
-  storage: { forceMemoryStorage: true }
+// Then reuse for all requests
+app.get('/api', async (req, res) => {
+  const results = await brain.find(req.query)
+  res.json(results)
 })
 ```
 
-## 🎯 Best Practices
+## Migration from Previous Versions
+
+### From v6.x (ONNX)
+
+No changes needed for most users:
+
+```typescript
+// Same API - just upgrade
+const brain = new Brainy()
+await brain.init()
+```
+
+**What's removed:**
+- `BRAINY_ALLOW_REMOTE_MODELS` - no downloads
+- `BRAINY_MODELS_PATH` - no external model files
+- `npm run download-models` - no longer needed
+
+**What's new:**
+- Faster initialization
+- Works with `bun --compile`
+- No network requirements
+
+### From Custom Embedding Functions
+
+If you provided a custom embedding function, it still works:
+
+```typescript
+const brain = new Brainy({
+  embeddingFunction: myCustomEmbedder  // Still supported
+})
+```
+
+## Advanced: Building Custom WASM
+
+For contributors who want to modify the embedding engine:
+
+```bash
+# Navigate to Candle WASM source
+cd src/embeddings/candle-wasm
+
+# Build with wasm-pack
+wasm-pack build --target web --release
+
+# Copy to pkg folder
+cp pkg/* ../wasm/pkg/
+
+# Build TypeScript
+npm run build
+```
+
+## Best Practices
 
 ### Development
 ```typescript
-// ✅ Zero config - just works
+// Just works - no setup
 const brain = new Brainy()
 await brain.init()
 ```
 
 ### Production
-```dockerfile
-# ✅ Pre-download models
-RUN npm run download-models
-
-# ✅ Force local-only
-ENV BRAINY_ALLOW_REMOTE_MODELS=false
-
-# ✅ Verify models exist
-RUN test -f ./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx
-```
-
-### CI/CD Pipeline
-```yaml
-# .github/workflows/build.yml
-- name: Download AI Models
-  run: npm run download-models
-  
-- name: Verify Models
-  run: |
-    test -f ./models/Xenova/all-MiniLM-L6-v2/onnx/model.onnx
-    echo "✅ Models verified"
-
-- name: Test Offline Mode
-  env:
-    BRAINY_ALLOW_REMOTE_MODELS: false
-  run: npm test
-```
-
-### Lambda/Serverless
 ```typescript
-// ✅ Models in deployment package
-const brain = new Brainy({
-  embedding: {
-    localFilesOnly: true, // No downloads in lambda
-    cacheDir: './models'  // Bundled with deployment
-  }
-})
-```
-
-## 📊 Model Information
-
-### All-MiniLM-L6-v2 (Default)
-- **Dimensions**: 384 (fixed)
-- **Size**: ~80MB compressed, ~330MB uncompressed
-- **Language**: English (optimized)
-- **Speed**: Very fast inference
-- **Quality**: High quality for most use cases
-
-### Model Files Structure
-```
-models/
-└── Xenova/
-    └── all-MiniLM-L6-v2/
-        ├── config.json          # Model configuration
-        ├── tokenizer.json       # Text tokenizer
-        ├── tokenizer_config.json
-        └── onnx/
-            ├── model.onnx       # Main model file
-            └── model_quantized.onnx  # Optimized version
-```
-
-## 🔄 Migration from Other Embedding Solutions
-
-### From OpenAI Embeddings
-```typescript
-// Before: OpenAI API calls
-const response = await openai.embeddings.create({
-  model: "text-embedding-ada-002",
-  input: "Your text"
-})
-
-// After: Local Brainy embeddings
+// Initialize once at startup
 const brain = new Brainy()
-await brain.init() // One-time setup
-const id = await brain.add("Your text", { nounType: 'content' }) // Embedded automatically
-```
-
-### From Sentence Transformers
-```python
-# Before: Python sentence-transformers
-from sentence_transformers import SentenceTransformer
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-# After: JavaScript Brainy (same model!)
-const brain = new Brainy() // Uses same all-MiniLM-L6-v2
 await brain.init()
+
+// Singleton pattern recommended
+export { brain }
 ```
 
-## 🚀 Advanced Configuration
+### Deployment
+```bash
+# Option 1: Bun compile (single binary)
+bun build --compile server.ts
+./server  # Contains everything
 
-### Custom Embedding Options
-```typescript
-const brain = new Brainy({
-  embedding: {
-    model: 'Xenova/all-MiniLM-L6-v2', // Default
-    dtype: 'q8',                       // Quantized for speed
-    device: 'cpu',                     // CPU inference
-    localFilesOnly: false,             // Allow downloads
-    verbose: true                      // Debug logging
-  }
-})
-```
-
-### Multiple Model Support (Advanced)
-```typescript
-// Use custom embedding function
-import { createEmbeddingFunction } from 'brainy'
-
-const customEmbedder = createEmbeddingFunction({
-  model: 'Xenova/all-MiniLM-L12-v2', // Larger model
-  dtype: 'fp32' // Higher precision
-})
-
-const brain = new Brainy({
-  embeddingFunction: customEmbedder
-})
+# Option 2: Docker
+docker build -t my-app .
+docker run -p 3000:3000 my-app
 ```
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
-- [Zero Configuration Guide](./zero-config.md)
-- [Enterprise Deployment](./enterprise-deployment.md)
+- [Production Service Architecture](../PRODUCTION_SERVICE_ARCHITECTURE.md)
+- [Zero Configuration Guide](../architecture/zero-config.md)
 - [Troubleshooting Guide](../troubleshooting.md)
-- [API Reference](../api/README.md)
 
-**Need help?** Check our [troubleshooting guide](../troubleshooting.md) or [open an issue](https://github.com/your-repo/brainy/issues).
+**Need help?** [Open an issue](https://github.com/soulcraftlabs/brainy/issues)

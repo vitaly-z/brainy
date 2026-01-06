@@ -1,11 +1,15 @@
 /**
  * WASM Embedding Engine - Public Exports
  *
- * Clean, production-grade embedding engine using direct ONNX WASM.
- * No transformers.js dependency, no runtime downloads, works everywhere.
+ * Clean, production-grade embedding engine using Candle (Rust/WASM).
+ * No ONNX Runtime dependency, no dynamic imports, works everywhere.
+ *
+ * Bun Compile Support:
+ * When compiled with `bun build --compile`, the WASM module is automatically
+ * embedded into the binary. No external files or runtime downloads needed.
  */
 
-// Main engine
+// Main engine (delegates to Candle)
 export {
   WASMEmbeddingEngine,
   wasmEmbeddingEngine,
@@ -14,9 +18,15 @@ export {
   getEmbeddingStats,
 } from './WASMEmbeddingEngine.js'
 
-// Components (for advanced use)
+// Candle engine (direct access)
+export {
+  CandleEmbeddingEngine,
+  candleEmbeddingEngine,
+  cosineSimilarity,
+} from './CandleEmbeddingEngine.js'
+
+// Legacy components (for backward compatibility - not needed with Candle)
 export { WordPieceTokenizer, createTokenizer } from './WordPieceTokenizer.js'
-export { ONNXInferenceEngine, createInferenceEngine } from './ONNXInferenceEngine.js'
 export { EmbeddingPostProcessor, createPostProcessor } from './EmbeddingPostProcessor.js'
 export { AssetLoader, getAssetLoader, createAssetLoader } from './AssetLoader.js'
 

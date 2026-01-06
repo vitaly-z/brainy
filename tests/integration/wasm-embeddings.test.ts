@@ -1,8 +1,8 @@
 /**
  * WASM Embedding Integration Test
  *
- * Tests the actual WASM embedding engine with real model inference.
- * NO mocks - this loads the real ONNX model and generates real embeddings.
+ * Tests the Candle WASM embedding engine with real model inference.
+ * NO mocks - this loads the real embedded model and generates real embeddings.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest'

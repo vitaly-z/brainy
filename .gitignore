@@ -90,6 +90,16 @@ docs/internal/
 # Cache files
 *.cache
 
+# Rust/Cargo build artifacts
+src/embeddings/candle-wasm/target/
+src/embeddings/candle-wasm/Cargo.lock
+src/embeddings/wasm/pkg/
+
+# But keep the pre-built WASM (committed for users without Rust)
+!src/embeddings/wasm/pkg/*.wasm
+!src/embeddings/wasm/pkg/*.js
+!src/embeddings/wasm/pkg/*.d.ts
+
 # Log files (redundant but explicit)
 *.log
 

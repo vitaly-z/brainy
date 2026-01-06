@@ -1,6 +1,8 @@
 # Production Service Architecture Guide
 
-**How to use Brainy optimally in production Express/Node.js services**
+**How to use Brainy optimally in production services (Bun, Node.js, Deno)**
+
+> **Recommended Runtime:** [Bun](https://bun.sh) provides best performance with Brainy's Candle WASM engine. All examples work with both Bun and Node.js.
 
 ---
 
@@ -168,7 +170,57 @@ process.on('SIGTERM', async () => {
 
 ---
 
-### Pattern 3: Express Middleware
+### Pattern 3: Bun Server (Recommended)
+
+```typescript
+// server.ts - Clean Bun implementation
+import { Brainy } from '@soulcraft/brainy'
+
+let brain: Brainy | null = null
+
+async function getBrain(): Promise<Brainy> {
+  if (!brain) {
+    brain = new Brainy({ storage: { path: './brainy-data' } })
+    await brain.init()
+  }
+  return brain
+}
+
+// Initialize before server starts
+await getBrain()
+
+Bun.serve({
+  port: 3000,
+  async fetch(req) {
+    const url = new URL(req.url)
+
+    if (url.pathname === '/api/entities') {
+      const b = await getBrain()
+      const entities = await b.find({})
+      return Response.json(entities)
+    }
+
+    if (url.pathname === '/api/entity' && req.method === 'POST') {
+      const b = await getBrain()
+      const body = await req.json()
+      const id = await b.add(body)
+      return Response.json({ id })
+    }
+
+    return new Response('Not Found', { status: 404 })
+  }
+})
+
+console.log('Server running on http://localhost:3000')
+```
+
+**Benefits:**
+- ✅ Native Bun performance (~2x faster than Node.js)
+- ✅ No framework dependencies
+- ✅ Works with `bun --compile` for single-binary deployment
+- ✅ Built-in TypeScript support
+
+### Pattern 4: Express/Node.js Middleware (Legacy)
 
 ```typescript
 // middleware/brainy.ts

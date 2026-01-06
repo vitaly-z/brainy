@@ -1,13 +1,11 @@
 /**
  * Asset Loader
  *
- * Resolves paths to model files (ONNX model, vocabulary) across environments.
- * Handles Node.js, Bun, and bundled scenarios.
+ * @deprecated This class is no longer used. Model weights are now embedded
+ * in the Candle WASM binary at compile time. Kept for backward compatibility.
  *
- * Asset Resolution Order:
- * 1. Environment variable: BRAINY_MODEL_PATH
- * 2. Package-relative: node_modules/@soulcraft/brainy/assets/models/
- * 3. Project-relative: ./assets/models/
+ * Previously: Resolved paths to ONNX model files across environments.
+ * Now: Use CandleEmbeddingEngine which loads embedded model automatically.
  */
 
 import { MODEL_CONSTANTS } from './types.js'

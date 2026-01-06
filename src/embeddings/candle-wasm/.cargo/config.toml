@@ -1,0 +1,7 @@
+# Cargo configuration for WASM builds
+#
+# This enables getrandom's WASM support for both 0.2 and 0.3 versions
+
+[target.wasm32-unknown-unknown]
+# Enable getrandom JS support for WASM (for getrandom 0.3)
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

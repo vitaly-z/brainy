@@ -49,10 +49,9 @@ else:
 System Memory:        2048 MB
 OS Reserved (20%):    -410 MB
 Available:            1638 MB
-Model Memory (Q8):    -150 MB
-  ├─ Weights:         22 MB
-  ├─ ONNX Runtime:    30 MB
-  └─ Workspace:       98 MB
+Model Memory:         -140 MB
+  ├─ WASM + Weights:  90 MB
+  └─ Workspace:       50 MB
 ───────────────────────────
 Available for Cache:  1488 MB
 Dev Allocation (25%): 372 MB UnifiedCache

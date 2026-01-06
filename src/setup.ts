@@ -2,8 +2,8 @@
  * Brainy Setup - Minimal Polyfills
  *
  * ARCHITECTURE (v7.0.0):
- * Brainy uses direct ONNX WASM for embeddings.
- * No transformers.js dependency, no hacks required.
+ * Brainy uses Candle WASM (Rust-based) for embeddings.
+ * No transformers.js or ONNX Runtime dependency, no hacks required.
  *
  * This file provides minimal polyfills for cross-environment compatibility:
  * - TextEncoder/TextDecoder for older environments

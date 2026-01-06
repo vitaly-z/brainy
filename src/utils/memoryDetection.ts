@@ -371,51 +371,35 @@ export function getRecommendedCacheConfig(options: {
 /**
  * Detect embedding model memory usage
  *
- * Returns estimated runtime memory for the embedding model:
- * - Q8 (quantized, default): ~150MB runtime (22MB on disk)
- * - FP32 (full precision): ~250MB runtime (86MB on disk)
+ * Returns estimated runtime memory for the Candle WASM embedding engine:
+ * - WASM module: ~90MB (includes model weights embedded at compile time)
+ * - Session workspace: ~50MB (peak during inference)
+ * - Total: ~140MB
  *
- * Breakdown for Q8:
- * - Model weights: 22MB
- * - ONNX Runtime: 15-30MB
- * - Session workspace: 50-100MB (peak during inference)
- * - Total: ~100-150MB (we use 150MB conservative)
+ * The model (all-MiniLM-L6-v2) is embedded in the WASM binary,
+ * so there's no separate model download or loading.
  */
 export function detectModelMemory(options: {
-  /** Model precision (default: 'q8') */
+  /** Model precision (default: 'q8') - kept for backward compatibility */
   precision?: 'q8' | 'fp32'
 } = {}): {
   bytes: number
   precision: 'q8' | 'fp32'
   breakdown: {
     modelWeights: number
-    onnxRuntime: number
+    wasmRuntime: number
     sessionWorkspace: number
   }
 } {
-  const precision = options.precision || 'q8'
-
-  if (precision === 'q8') {
-    // Q8 quantized model (default)
-    return {
-      bytes: 150 * 1024 * 1024,  // 150MB
-      precision: 'q8',
-      breakdown: {
-        modelWeights: 22 * 1024 * 1024,      // 22MB
-        onnxRuntime: 30 * 1024 * 1024,       // 30MB (conservative)
-        sessionWorkspace: 98 * 1024 * 1024   // 98MB (peak during inference)
-      }
-    }
-  } else {
-    // FP32 full precision model
-    return {
-      bytes: 250 * 1024 * 1024,  // 250MB
-      precision: 'fp32',
-      breakdown: {
-        modelWeights: 86 * 1024 * 1024,      // 86MB
-        onnxRuntime: 30 * 1024 * 1024,       // 30MB
-        sessionWorkspace: 134 * 1024 * 1024  // 134MB (peak during inference)
-      }
+  // Candle WASM uses FP32 internally (safetensors format)
+  // Model is embedded in WASM binary (~90MB total)
+  return {
+    bytes: 140 * 1024 * 1024,  // 140MB total runtime
+    precision: 'q8',  // Kept for API compatibility
+    breakdown: {
+      modelWeights: 87 * 1024 * 1024,      // 87MB (safetensors format)
+      wasmRuntime: 3 * 1024 * 1024,        // 3MB (Candle runtime code)
+      sessionWorkspace: 50 * 1024 * 1024   // 50MB (peak during inference)
     }
   }
 }

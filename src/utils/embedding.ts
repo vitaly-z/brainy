@@ -1,8 +1,8 @@
 /**
  * Embedding functions for converting data to vectors
  *
- * Uses direct ONNX WASM for universal compatibility.
- * No transformers.js dependency - clean, production-grade implementation.
+ * Uses Candle WASM for universal compatibility.
+ * No transformers.js or ONNX Runtime dependency - clean, production-grade implementation.
  */
 
 import { EmbeddingFunction, EmbeddingModel, Vector } from '../coreTypes.js'
@@ -27,10 +27,10 @@ export interface TransformerEmbeddingOptions {
 }
 
 /**
- * TransformerEmbedding - Sentence embeddings using WASM ONNX
+ * TransformerEmbedding - Sentence embeddings using Candle WASM
  *
  * This class delegates all work to EmbeddingManager which uses
- * the direct ONNX WASM engine. Kept for backward compatibility.
+ * the Candle WASM engine. Kept for backward compatibility.
  */
 export class TransformerEmbedding implements EmbeddingModel {
   private initialized = false
@@ -40,7 +40,7 @@ export class TransformerEmbedding implements EmbeddingModel {
     this.verbose = options.verbose !== undefined ? options.verbose : true
 
     if (this.verbose) {
-      console.log('[TransformerEmbedding] Using WASM ONNX backend (delegating to EmbeddingManager)')
+      console.log('[TransformerEmbedding] Using Candle WASM backend (delegating to EmbeddingManager)')
     }
   }
 

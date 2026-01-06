@@ -18,7 +18,6 @@ import { TypeAwareHNSWIndex } from '../hnsw/typeAwareHNSWIndex.js'
 import { MetadataIndexManager } from '../utils/metadataIndex.js'
 import { Vector } from '../coreTypes.js'
 import { NounType } from '../types/graphTypes.js'
-import { getQueryPlanner, TypeAwareQueryPlan } from '../query/typeAwareQueryPlanner.js'
 
 // Triple Intelligence types
 export interface TripleQuery {
@@ -277,34 +276,12 @@ export class TripleIntelligenceSystem {
   
   /**
    * Main find method - executes Triple Intelligence queries
-   * Phase 3: Now with automatic type inference for 40% latency reduction
    */
   async find(query: TripleQuery, options?: TripleOptions): Promise<TripleResult[]> {
     const startTime = performance.now()
 
     // Validate query
     this.validateQuery(query)
-
-    // Phase 3: Infer types from natural language if not explicitly provided
-    let typeAwarePlan: TypeAwareQueryPlan | undefined
-    if (!query.types && (query.similar || query.like) && this.hnswIndex instanceof TypeAwareHNSWIndex) {
-      const queryText = query.similar || query.like!
-      const planner = getQueryPlanner()
-      typeAwarePlan = await planner.planQuery(queryText)
-
-      // Use inferred types if confidence is sufficient
-      if (typeAwarePlan.confidence > 0.6) {
-        query.types = typeAwarePlan.targetTypes
-
-        // Log for analytics
-        console.log(
-          `[Phase 3] Type inference: ${typeAwarePlan.routing} ` +
-          `(${typeAwarePlan.targetTypes.length} types, ` +
-          `confidence: ${(typeAwarePlan.confidence * 100).toFixed(0)}%, ` +
-          `estimated ${typeAwarePlan.estimatedSpeedup.toFixed(1)}x speedup)`
-        )
-      }
-    }
 
     // Build optimized query plan
     const plan = this.planner.buildPlan(query)
@@ -318,14 +295,6 @@ export class TripleIntelligenceSystem {
     // Record metrics
     const elapsed = performance.now() - startTime
     this.metrics.recordOperation('find_query', elapsed, results.length)
-
-    // Log Phase 3 performance impact
-    if (typeAwarePlan && typeAwarePlan.confidence > 0.6) {
-      console.log(
-        `[Phase 3] Query completed in ${elapsed.toFixed(2)}ms ` +
-        `(${results.length} results, ${typeAwarePlan.routing})`
-      )
-    }
 
     // ASSERT performance guarantees
     this.assertPerformance(elapsed, results.length)

@@ -2,11 +2,11 @@
  * Unified Embedding Manager
  *
  * THE single source of truth for all embedding operations in Brainy.
- * Uses direct ONNX WASM inference for universal compatibility.
+ * Uses Candle WASM inference for universal compatibility.
  *
  * Features:
  * - Singleton pattern ensures ONE model instance
- * - Direct ONNX WASM (no transformers.js dependency)
+ * - Candle WASM (no transformers.js or ONNX Runtime dependency)
  * - Bundled model (no runtime downloads)
  * - Works everywhere: Node.js, Bun, Bun --compile, browsers
  * - Memory monitoring
@@ -34,7 +34,7 @@ let globalInitPromise: Promise<void> | null = null
 /**
  * Unified Embedding Manager - Clean, simple, reliable
  *
- * Now powered by direct ONNX WASM for universal compatibility.
+ * Now powered by Candle WASM for universal compatibility.
  */
 export class EmbeddingManager {
   private engine: WASMEmbeddingEngine
