@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.1.0](https://github.com/soulcraftlabs/brainy/compare/v7.0.1...v7.1.0) (2026-01-06)
+
+- feat: add new embedding and analysis APIs for v7.1.0 (d8514ab)
+
+
 ### [7.0.1](https://github.com/soulcraftlabs/brainy/compare/v7.0.0...v7.0.1) (2026-01-06)
 
 - fix: resolve WASM loading for Bun --compile single-binary executables (5d9ec5b)
