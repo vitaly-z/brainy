@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.0.0](https://github.com/soulcraftlabs/brainy/compare/v6.6.2...v7.0.0) (2026-01-06)
+
+- feat: migrate embeddings to Candle WASM + remove semantic type inference (da7d2ed)
+
+
 ### [6.6.2](https://github.com/soulcraftlabs/brainy/compare/v6.6.1...v6.6.2) (2026-01-05)
 
 - fix: resolve update() v5.11.1 regression + skip flaky tests for release (106f654)
