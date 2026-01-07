@@ -10,11 +10,10 @@
  * |----------------|-------------------------------------|
  * | Node.js        | fs.readFile()                       |
  * | Bun            | Bun.file()                          |
- * | Bun --compile  | Bun.file() with auto-embedded asset |
+ * | Bun --compile  | Static import with embedded asset   |
  * | Browser        | fetch()                             |
  *
- * For Bun --compile, Bun automatically embeds files accessed via Bun.file()
- * when the paths are resolvable at build time.
+ * For Bun --compile, assets are embedded at compile time using static imports.
  */
 
 // =============================================================================
@@ -23,6 +22,7 @@
 
 declare const Bun: {
   file(path: string): { arrayBuffer(): Promise<ArrayBuffer> }
+  main: string
 } | undefined
 
 // =============================================================================
@@ -31,6 +31,37 @@ declare const Bun: {
 
 const isBun = typeof Bun !== 'undefined'
 const isNode = !isBun && typeof process !== 'undefined' && !!process.versions?.node
+
+// Detect if running in bun --compile binary
+// In compiled binaries, Bun.main starts with '/$bunfs/'
+const isBunCompiled = isBun && typeof Bun !== 'undefined' && Bun.main?.startsWith('/$bunfs/')
+
+// =============================================================================
+// Embedded Assets for Bun --compile
+// =============================================================================
+// These static imports tell Bun to embed the files at compile time.
+// The paths must be string literals for Bun to resolve them.
+
+// @ts-ignore - Bun-specific import syntax for embedded assets
+let embeddedModelPath: string | undefined
+// @ts-ignore
+let embeddedTokenizerPath: string | undefined
+// @ts-ignore
+let embeddedConfigPath: string | undefined
+
+// Try to use Bun's embed feature if available
+// This block is only executed in Bun environments
+if (isBun) {
+  try {
+    // In Bun --compile, these resolve to embedded asset paths
+    // In regular Bun runtime, these resolve to filesystem paths
+    embeddedModelPath = new URL('../../../assets/models/all-MiniLM-L6-v2/model.safetensors', import.meta.url).pathname
+    embeddedTokenizerPath = new URL('../../../assets/models/all-MiniLM-L6-v2/tokenizer.json', import.meta.url).pathname
+    embeddedConfigPath = new URL('../../../assets/models/all-MiniLM-L6-v2/config.json', import.meta.url).pathname
+  } catch {
+    // Fallback handled in loadBunAssets
+  }
+}
 
 // =============================================================================
 // Types
@@ -84,21 +115,63 @@ export function isModelEmbedded(): boolean {
 // =============================================================================
 
 async function loadBunAssets(): Promise<ModelAssets> {
-  const modelPath = await resolveAssetPath('model.safetensors')
-  const tokenizerPath = await resolveAssetPath('tokenizer.json')
-  const configPath = await resolveAssetPath('config.json')
+  // For bun --compile, we need to try multiple strategies:
+  // 1. Try the resolved paths (works in Bun runtime)
+  // 2. Fall back to node_modules location (for bun --compile when assets are alongside binary)
+  // 3. Fall back to process.cwd() relative paths
 
-  const [model, tokenizer, config] = await Promise.all([
-    Bun!.file(modelPath).arrayBuffer(),
-    Bun!.file(tokenizerPath).arrayBuffer(),
-    Bun!.file(configPath).arrayBuffer(),
+  const pathsToTry: string[][] = []
+
+  // Strategy 1: Pre-resolved paths (works in Bun runtime)
+  if (embeddedModelPath && embeddedTokenizerPath && embeddedConfigPath) {
+    pathsToTry.push([embeddedModelPath, embeddedTokenizerPath, embeddedConfigPath])
+  }
+
+  // Strategy 2: node_modules path relative to CWD (for installed packages)
+  const nmPath = './node_modules/@soulcraft/brainy/assets/models/all-MiniLM-L6-v2'
+  pathsToTry.push([
+    `${nmPath}/model.safetensors`,
+    `${nmPath}/tokenizer.json`,
+    `${nmPath}/config.json`,
   ])
 
-  return {
-    model: new Uint8Array(model),
-    tokenizer: new Uint8Array(tokenizer),
-    config: new Uint8Array(config),
+  // Strategy 3: assets folder relative to CWD (for local development)
+  pathsToTry.push([
+    './assets/models/all-MiniLM-L6-v2/model.safetensors',
+    './assets/models/all-MiniLM-L6-v2/tokenizer.json',
+    './assets/models/all-MiniLM-L6-v2/config.json',
+  ])
+
+  // Try each strategy
+  for (const [modelPath, tokenizerPath, configPath] of pathsToTry) {
+    try {
+      const [model, tokenizer, config] = await Promise.all([
+        Bun!.file(modelPath).arrayBuffer(),
+        Bun!.file(tokenizerPath).arrayBuffer(),
+        Bun!.file(configPath).arrayBuffer(),
+      ])
+
+      // Verify we got valid data (not empty)
+      if (model.byteLength > 0 && tokenizer.byteLength > 0 && config.byteLength > 0) {
+        return {
+          model: new Uint8Array(model),
+          tokenizer: new Uint8Array(tokenizer),
+          config: new Uint8Array(config),
+        }
+      }
+    } catch {
+      // Try next strategy
+      continue
+    }
   }
+
+  // If all strategies fail, provide helpful error message
+  throw new Error(
+    'Could not load model assets. For bun --compile, ensure model files are accessible:\n' +
+    '  Option 1: Keep node_modules/@soulcraft/brainy/assets/ alongside your binary\n' +
+    '  Option 2: Copy assets/ folder to your working directory\n' +
+    '  Option 3: Use --asset flag: bun build --compile --asset="./node_modules/@soulcraft/brainy/assets/**/*"'
+  )
 }
 
 // =============================================================================
@@ -172,17 +245,3 @@ async function loadBrowserAssets(): Promise<ModelAssets> {
   }
 }
 
-// =============================================================================
-// Internal Helpers - Path Resolution
-// =============================================================================
-
-/**
- * Resolve the filesystem path to a model asset file.
- */
-async function resolveAssetPath(filename: string): Promise<string> {
-  const nodePath = await import('node:path')
-  const { fileURLToPath } = await import('node:url')
-
-  const thisDir = nodePath.dirname(fileURLToPath(import.meta.url))
-  return nodePath.join(thisDir, '../../../assets/models/all-MiniLM-L6-v2', filename)
-}
