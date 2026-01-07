@@ -83,6 +83,7 @@
     "test:watch": "NODE_OPTIONS='--max-old-space-size=8192' vitest --config tests/configs/vitest.unit.config.ts",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=8192' vitest run --config tests/configs/vitest.unit.config.ts --coverage",
     "test:unit": "NODE_OPTIONS='--max-old-space-size=8192' vitest run --config tests/configs/vitest.unit.config.ts",
+    "test:perf": "vitest run tests/unit/performance --reporter=basic",
     "test:integration": "NODE_OPTIONS='--max-old-space-size=32768' vitest run --config tests/configs/vitest.integration.config.ts",
     "test:s3": "vitest run tests/integration/s3-storage.test.ts",
     "test:distributed": "vitest run tests/integration/distributed.test.ts",

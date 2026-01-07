@@ -5277,6 +5277,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Detect storage type from the storage instance class name
+   *
+   * v7.1.1: Fixes storage type detection for HNSW persistence mode.
+   * Previously relied on this.config.storage.type which was often not set
+   * after storage creation, causing cloud storage to use 'immediate' mode
+   * and resulting in 50-100x slower add() operations.
+   *
+   * @returns Storage type string ('gcs', 's3', 'memory', etc.)
+   */
+  private getStorageType(): string {
+    if (!this.storage) return 'memory'
+
+    const className = this.storage.constructor.name
+    if (className.includes('Gcs') || className.includes('GCS')) return 'gcs'
+    if (className.includes('S3')) return 's3'
+    if (className.includes('R2')) return 'r2'
+    if (className.includes('Azure')) return 'azure'
+    if (className.includes('OPFS')) return 'opfs'
+    if (className.includes('FileSystem')) return 'filesystem'
+    if (className.includes('Memory')) return 'memory'
+
+    return 'unknown'
+  }
+
+  /**
    * Setup index
    *
    * Phase 2: Uses TypeAwareHNSWIndex for billion-scale optimization
@@ -5295,11 +5320,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     // v6.2.8: Determine persist mode (user config > smart default)
+    // v7.1.1: Fixed to use getStorageType() for reliable detection
     let persistMode: 'immediate' | 'deferred' = this.config.hnswPersistMode || 'immediate'
 
     // Smart default: Use deferred mode for cloud storage adapters
     if (!this.config.hnswPersistMode) {
-      const storageType = this.config.storage?.type || 'auto'
+      // v7.1.1 FIX: Use instance-based detection as fallback
+      // Previously this.config.storage.type was often undefined after storage creation,
+      // causing cloud storage to incorrectly use 'immediate' mode (50-100x slower)
+      const storageType = this.config.storage?.type || this.getStorageType()
       const cloudStorageTypes = ['gcs', 's3', 'r2', 'azure']
       if (cloudStorageTypes.includes(storageType)) {
         persistMode = 'deferred'
@@ -5307,7 +5336,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     // Phase 2: Use TypeAwareHNSWIndex for billion-scale optimization
-    if (this.config.storage?.type !== 'memory') {
+    const detectedStorageType = this.config.storage?.type || this.getStorageType()
+    if (detectedStorageType !== 'memory') {
       return new TypeAwareHNSWIndex(indexConfig, this.distance, {
         storage: this.storage,
         useParallelization: true,
