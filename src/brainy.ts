@@ -33,7 +33,14 @@ import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
-import { ValidationConfig } from './utils/paramValidation.js'
+import {
+  ValidationConfig,
+  validateAddParams,
+  validateUpdateParams,
+  validateRelateParams,
+  validateFindParams,
+  recordQueryPerformance
+} from './utils/paramValidation.js'
 import {
   SaveNounMetadataOperation,
   SaveNounOperation,
@@ -121,6 +128,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _tripleIntelligence?: TripleIntelligenceSystem
   private _versions?: VersioningAPI
   private _vfs?: VirtualFileSystem
+  private _vfsInitialized = false  // v7.3.0: Track VFS init completion separately
 
   // State
   private initialized = false
@@ -288,6 +296,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // This eliminates need for separate vfs.init() calls - zero additional complexity
       this._vfs = new VirtualFileSystem(this)
       await this._vfs.init()
+      this._vfsInitialized = true  // v7.3.0: Mark VFS as fully initialized
 
       // v7.1.2: Eager embedding initialization for cloud deployments
       // When eagerEmbeddings is true, initialize the WASM embedding engine now
@@ -440,8 +449,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async add(params: AddParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Zero-config validation
-    const { validateAddParams } = await import('./utils/paramValidation.js')
+    // Zero-config validation (v7.3.0: static import for performance)
     validateAddParams(params)
 
     // Generate ID if not provided
@@ -865,8 +873,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async update(params: UpdateParams<T>): Promise<void> {
     await this.ensureInitialized()
 
-    // Zero-config validation
-    const { validateUpdateParams } = await import('./utils/paramValidation.js')
+    // Zero-config validation (v7.3.0: static import for performance)
     validateUpdateParams(params)
 
     return this.augmentationRegistry.execute('update', params, async () => {
@@ -1169,8 +1176,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async relate(params: RelateParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Zero-config validation
-    const { validateRelateParams } = await import('./utils/paramValidation.js')
+    // Zero-config validation (v7.3.0: static import for performance)
     validateRelateParams(params)
 
     // Verify entities exist
@@ -1198,7 +1204,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       for (const [verbId, verb] of verbsMap.entries()) {
         if (verb.targetId === params.to && verb.verb === params.type) {
           // Relationship already exists - return existing ID instead of creating duplicate
-          console.log(`[DEBUG] Skipping duplicate relationship: ${params.from} → ${params.to} (${params.type})`)
           return verb.id
         }
       }
@@ -1612,8 +1617,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const params: FindParams<T> =
       typeof query === 'string' ? await this.parseNaturalQuery(query) : query
 
-    // Zero-config validation - only enforces universal truths
-    const { validateFindParams, recordQueryPerformance } = await import('./utils/paramValidation.js')
+    // Zero-config validation (v7.3.0: static import for performance)
     validateFindParams(params)
 
     const startTime = Date.now()
@@ -3669,6 +3673,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // If not initialized yet, create instance but user should call brain.init() first
       this._vfs = new VirtualFileSystem(this)
     }
+    // v7.3.0: Warn if VFS accessed before init() completed
+    if (!this._vfsInitialized && this.initialized) {
+      console.warn('[Brainy] VFS accessed before initialization complete. Call await brain.init() first.')
+    }
     return this._vfs
   }
 
@@ -4921,16 +4929,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const searchResults = this.index instanceof TypeAwareHNSWIndex
       ? await this.index.search(vector, limit * 2, params.type as any)
       : await this.index.search(vector, limit * 2)
+
+    // v7.3.0: Batch-load entities for 10-50x faster cloud storage performance
+    // GCS: 10 results = 1×50ms vs 10×50ms = 500ms (10x faster)
+    const ids = searchResults.map(([id]) => id)
+    const entitiesMap = await this.batchGet(ids)
+
     const results: Result<T>[] = []
-    
     for (const [id, distance] of searchResults) {
-      const entity = await this.get(id)
+      const entity = entitiesMap.get(id)
       if (entity) {
         const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
         results.push(this.createResult(id, score, entity))
       }
     }
-    
+
     return results
   }
   
@@ -4947,19 +4960,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const nearResults = this.index instanceof TypeAwareHNSWIndex
       ? await this.index.search(nearEntity.vector, params.limit || 10, params.type as any)
       : await this.index.search(nearEntity.vector, params.limit || 10)
-    
-    const results: Result<T>[] = []
-    for (const [id, distance] of nearResults) {
-      const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
 
-      if (score >= (params.near.threshold || 0.7)) {
-        const entity = await this.get(id)
-        if (entity) {
-          results.push(this.createResult(id, score, entity))
-        }
+    // Filter by threshold first to minimize batch fetch
+    const threshold = params.near.threshold || 0.7
+    const filteredResults = nearResults.filter(([, distance]) => {
+      const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
+      return score >= threshold
+    })
+
+    // v7.3.0: Batch-load entities for 10-50x faster cloud storage performance
+    const ids = filteredResults.map(([id]) => id)
+    const entitiesMap = await this.batchGet(ids)
+
+    const results: Result<T>[] = []
+    for (const [id, distance] of filteredResults) {
+      const entity = entitiesMap.get(id)
+      if (entity) {
+        const score = Math.max(0, Math.min(1, 1 / (1 + distance)))
+        results.push(this.createResult(id, score, entity))
       }
     }
-    
+
     return results
   }
   

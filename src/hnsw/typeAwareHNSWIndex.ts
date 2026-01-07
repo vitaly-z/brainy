@@ -509,7 +509,7 @@ export class TypeAwareHNSWIndex {
 
     while (hasMore) {
       const result: {
-        items: Array<{ id: string; vector: number[]; nounType?: NounType }>
+        items: Array<{ id: string; vector: number[]; type?: NounType }>
         hasMore: boolean
         nextCursor?: string
         totalCount?: number
@@ -521,12 +521,10 @@ export class TypeAwareHNSWIndex {
       // Route each noun to its type index
       for (const nounData of result.items) {
         try {
-          // v4.0.0: Load metadata separately to get noun type
-          let nounType = nounData.nounType
-          if (!nounType) {
-            const metadata = await this.storage.getNounMetadata(nounData.id)
-            nounType = (metadata?.noun || (metadata as any)?.type) as NounType | undefined
-          }
+          // v7.3.0: Use 'type' property from HNSWNounWithMetadata (not 'nounType')
+          // Previously accessed wrong property, causing N+1 metadata fetches
+          // getNounsWithPagination already includes type in response
+          const nounType = nounData.type
 
           // Skip if type not in rebuild list
           if (!nounType || !typesToRebuild.includes(nounType as NounType)) {
