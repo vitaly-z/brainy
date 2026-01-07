@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.1.1](https://github.com/soulcraftlabs/brainy/compare/v7.1.0...v7.1.1) (2026-01-06)
+
+### Bug Fixes
+
+**CRITICAL: Fixed 50-100x slower add() operations on cloud storage (GCS/S3/R2/Azure)**
+
+**Symptoms:**
+- add() taking 7-12 seconds instead of 50-200ms
+- Only affects cloud storage with auto-detection (not explicit `type: 'gcs'`)
+
+**Root Cause:**
+Storage type detection in `setupIndex()` relied on `this.config.storage.type` which was never set after `createStorage()` auto-detected the storage type. This caused cloud storage to use `'immediate'` persistence mode instead of `'deferred'`, resulting in 20-30 GCS writes per add() operation.
+
+**Fix:**
+Added `getStorageType()` helper that detects storage type from the storage instance class name (e.g., `GcsStorage` → `'gcs'`), used as fallback when `config.storage.type` is not explicitly set.
+
+**Workaround for v7.1.0 users:**
+```typescript
+const brain = new Brainy({
+  storage: {
+    type: 'gcs',  // Explicit type fixes the issue
+    gcsNativeStorage: { bucketName: 'your-bucket' }
+  },
+  hnswPersistMode: 'deferred'  // Or explicitly set this
+})
+```
+
+### Performance Tests
+
+Added performance regression tests to prevent future issues:
+- Single add() < 500ms
+- 10 add() operations < 5 seconds
+- Storage type detection verification for GCS/S3/R2/Azure
+
+
 ## [7.1.0](https://github.com/soulcraftlabs/brainy/compare/v7.0.1...v7.1.0) (2026-01-06)
 
 ### Features
