@@ -20,6 +20,66 @@ const brain = new Brainy({
 await brain.init()
 ```
 
+## Readiness API (v7.3.0+)
+
+For reliable initialization detection, especially in cloud environments with progressive initialization:
+
+### `brain.ready` - Await Initialization
+
+```typescript
+const brain = new Brainy()
+brain.init()  // Fire and forget
+
+// Elsewhere (e.g., API handler)
+await brain.ready  // Wait until init() completes
+const results = await brain.find({ query: 'test' })
+```
+
+### `brain.isInitialized` - Check Basic Readiness
+
+```typescript
+if (brain.isInitialized) {
+  // Safe to use brain methods
+}
+```
+
+### `brain.isFullyInitialized()` - Check Background Tasks
+
+```typescript
+// Returns true when ALL initialization is complete, including background tasks
+// Useful for cloud storage adapters with progressive initialization
+if (brain.isFullyInitialized()) {
+  console.log('All background tasks complete')
+}
+```
+
+### `brain.awaitBackgroundInit()` - Wait for Background Tasks
+
+```typescript
+const brain = new Brainy({ storage: { type: 'gcs', ... } })
+await brain.init()  // Fast return in cloud (<200ms)
+
+// Optional: wait for all background tasks (bucket validation, count sync)
+await brain.awaitBackgroundInit()
+console.log('Fully initialized including background tasks')
+```
+
+### Health Check Pattern
+
+```typescript
+app.get('/health', async (req, res) => {
+  try {
+    await brain.ready
+    res.json({
+      status: 'ready',
+      fullyInitialized: brain.isFullyInitialized()
+    })
+  } catch (error) {
+    res.status(503).json({ status: 'initializing', error: error.message })
+  }
+})
+```
+
 ## Core CRUD Operations
 
 ### `brain.add(params)` - Add Entity

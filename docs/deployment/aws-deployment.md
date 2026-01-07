@@ -386,12 +386,101 @@ jobs:
    ```
 
 3. **Cold Starts (Lambda)**
+
+   **v7.3.0+ Progressive Initialization (Zero-Config)**
+
+   Brainy automatically detects Lambda environments (AWS_LAMBDA_FUNCTION_NAME)
+   and uses progressive initialization for <200ms cold starts:
+
    ```javascript
-   // Warm-up configuration
+   // Zero-config - Brainy auto-detects Lambda
+   const brain = new Brainy({
+     storage: {
+       type: 's3',
+       s3Storage: {
+         bucketName: 'my-bucket',
+         region: 'us-east-1',
+         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+       }
+     }
+   })
+   await brain.init() // Returns in <200ms
+
+   // First write validates bucket (lazy validation)
+   await brain.add('noun', { name: 'test' }) // Validates here
+   ```
+
+   **Manual Override (if needed)**
+   ```javascript
+   const brain = new Brainy({
+     storage: {
+       type: 's3',
+       s3Storage: {
+         bucketName: 'my-bucket',
+         // Force specific mode
+         initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
+       }
+     }
+   })
+   ```
+
+   | Mode | Cold Start | Best For |
+   |------|------------|----------|
+   | `auto` (default) | <200ms in Lambda | Zero-config, auto-detects |
+   | `progressive` | <200ms always | Force fast init everywhere |
+   | `strict` | 100-500ms+ | Local dev, tests, debugging |
+
+   **Warm-up (Alternative)**
+   ```javascript
    exports.warmup = async () => {
      if (!brain) {
        brain = new Brainy({ warmup: true })
        await brain.init()
+     }
+   }
+   ```
+
+   **Readiness Detection (v7.3.0+)**
+
+   Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
+
+   ```javascript
+   let brain
+
+   exports.handler = async (event) => {
+     if (!brain) {
+       brain = new Brainy({ storage: { type: 's3', ... } })
+       brain.init()  // Fire and forget
+     }
+
+     // Wait for initialization to complete
+     await brain.ready
+
+     // Now safe to use brain methods
+     const results = await brain.find({ query: event.queryStringParameters.q })
+     return { statusCode: 200, body: JSON.stringify(results) }
+   }
+   ```
+
+   For health checks, use `isFullyInitialized()` to verify all background tasks are complete:
+
+   ```javascript
+   exports.healthCheck = async () => {
+     try {
+       await brain.ready
+       return {
+         statusCode: 200,
+         body: JSON.stringify({
+           status: 'ready',
+           fullyInitialized: brain.isFullyInitialized()
+         })
+       }
+     } catch (error) {
+       return {
+         statusCode: 503,
+         body: JSON.stringify({ status: 'initializing' })
+       }
      }
    }
    ```

@@ -92,6 +92,20 @@ export interface StorageOptions {
      * AWS session token (optional)
      */
     sessionToken?: string
+
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Lambda),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Bucket validation and
+     *   count loading happen in background. First write validates bucket.
+     * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: 'progressive' | 'strict' | 'auto'
   }
 
   /**
@@ -196,8 +210,23 @@ export interface StorageOptions {
      * Skip loading and saving the counts file entirely
      * Useful for very large datasets where counts aren't critical
      * @default false
+     * @deprecated Use `initMode: 'progressive'` instead
      */
     skipCountsFile?: boolean
+
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Cloud Run),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Bucket validation and
+     *   count loading happen in background. First write validates bucket.
+     * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: 'progressive' | 'strict' | 'auto'
   }
 
   /**
@@ -228,6 +257,20 @@ export interface StorageOptions {
      * SAS token (optional, alternative to account key)
      */
     sasToken?: string
+
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Azure Functions),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Container validation and
+     *   count loading happen in background. First write validates container.
+     * - `'strict'`: Traditional blocking init. Validates container and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: 'progressive' | 'strict' | 'auto'
   }
 
   /**
@@ -504,6 +547,7 @@ export async function createStorage(
             accessKeyId: options.s3Storage.accessKeyId,
             secretAccessKey: options.s3Storage.secretAccessKey,
             sessionToken: options.s3Storage.sessionToken,
+            initMode: options.s3Storage.initMode,
             serviceType: 's3',
             operationConfig: options.operationConfig,
             cacheConfig: options.cacheConfig
@@ -597,6 +641,7 @@ export async function createStorage(
           secretAccessKey: config.secretAccessKey,
           skipInitialScan: gcsNative?.skipInitialScan,
           skipCountsFile: gcsNative?.skipCountsFile,
+          initMode: gcsNative?.initMode,
           cacheConfig: options.cacheConfig
         })
         configureCOW(storage, options)
@@ -612,6 +657,7 @@ export async function createStorage(
             accountKey: options.azureStorage.accountKey,
             connectionString: options.azureStorage.connectionString,
             sasToken: options.azureStorage.sasToken,
+            initMode: options.azureStorage.initMode,
             cacheConfig: options.cacheConfig
           })
           configureCOW(storage, options)
@@ -691,6 +737,7 @@ export async function createStorage(
       accessKeyId: options.s3Storage.accessKeyId,
       secretAccessKey: options.s3Storage.secretAccessKey,
       sessionToken: options.s3Storage.sessionToken,
+      initMode: options.s3Storage.initMode,
       serviceType: 's3',
       cacheConfig: options.cacheConfig
     })
@@ -738,6 +785,7 @@ export async function createStorage(
       secretAccessKey: config.secretAccessKey,
       skipInitialScan: gcsNative?.skipInitialScan,
       skipCountsFile: gcsNative?.skipCountsFile,
+      initMode: gcsNative?.initMode,
       cacheConfig: options.cacheConfig
     })
     configureCOW(storage, options)
@@ -753,6 +801,7 @@ export async function createStorage(
       accountKey: options.azureStorage.accountKey,
       connectionString: options.azureStorage.connectionString,
       sasToken: options.azureStorage.sasToken,
+      initMode: options.azureStorage.initMode,
       cacheConfig: options.cacheConfig
     })
     configureCOW(storage, options)

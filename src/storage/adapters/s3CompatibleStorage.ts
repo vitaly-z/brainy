@@ -40,6 +40,7 @@ import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
 import { getShardIdFromUuid, getAllShardIds, getShardIdByIndex, TOTAL_SHARDS } from '../sharding.js'
+import { InitMode } from './baseStorageAdapter.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -169,7 +170,28 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
    * @param options Configuration options for the S3-compatible storage
+   *
+   * @example Zero-config (recommended) - auto-detects Lambda/Cloud Run for fast init
+   * ```typescript
+   * const storage = new S3CompatibleStorage({
+   *   bucketName: 'my-bucket',
+   *   accessKeyId: 'key',
+   *   secretAccessKey: 'secret'
+   * })
+   * await storage.init() // <200ms in Lambda, blocking locally
+   * ```
+   *
+   * @example Force progressive mode for all environments
+   * ```typescript
+   * const storage = new S3CompatibleStorage({
+   *   bucketName: 'my-bucket',
+   *   accessKeyId: 'key',
+   *   secretAccessKey: 'secret',
+   *   initMode: 'progressive' // Always <200ms init
+   * })
+   * ```
    */
   constructor(options: {
     bucketName: string
@@ -186,6 +208,21 @@ export class S3CompatibleStorage extends BaseStorage {
       hotCacheEvictionThreshold?: number
       warmCacheTTL?: number
     }
+
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Lambda, Cloud Run),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Bucket validation and
+     *   count loading happen in background. First write validates bucket.
+     * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: InitMode
+
     readOnly?: boolean
   }) {
     super()
@@ -198,6 +235,11 @@ export class S3CompatibleStorage extends BaseStorage {
     this.sessionToken = options.sessionToken
     this.serviceType = options.serviceType || 's3'
     this.readOnly = options.readOnly || false
+
+    // v7.3.0: Handle initMode
+    if (options.initMode) {
+      this.initMode = options.initMode
+    }
 
     // Initialize operation executors with timeout and retry configuration
     this.operationExecutors = new StorageOperationExecutors(
@@ -315,6 +357,22 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
+   * v7.3.0: Supports progressive initialization for fast cold starts
+   *
+   * | Mode | Init Time | When |
+   * |------|-----------|------|
+   * | `progressive` | <200ms | Lambda, Cloud Run, Azure Functions |
+   * | `strict` | 100-500ms+ | Local development, tests |
+   * | `auto` | Detected | Default - best of both |
+   *
+   * In progressive mode:
+   * - SDK import and client creation: ~50ms (unavoidable)
+   * - Write buffers and caches: ~10ms
+   * - Mark as initialized: READY
+   * - Background: validate bucket, load counts
+   *
+   * First write operation validates bucket existence (lazy validation).
    */
   public async init(): Promise<void> {
     if (this.isInitialized) {
@@ -322,7 +380,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
 
     try {
-      // Import AWS SDK modules only when needed
+      // Import AWS SDK modules only when needed (~50ms)
       const { S3Client } = await import('@aws-sdk/client-s3')
 
       // Configure the S3 client based on the service type
@@ -354,17 +412,15 @@ export class S3CompatibleStorage extends BaseStorage {
         clientConfig.endpoint = `https://${this.accountId}.r2.cloudflarestorage.com`
       }
 
-      // Create the S3 client
+      // Create the S3 client (no network calls)
       this.s3Client = new S3Client(clientConfig)
 
-      // Ensure the bucket exists and is accessible
-      const { HeadBucketCommand } = await import('@aws-sdk/client-s3')
-      await this.s3Client.send(
-        new HeadBucketCommand({
-          Bucket: this.bucketName
-        })
-      )
-      
+      // Determine initialization mode
+      const effectiveMode = this.resolveInitMode()
+      const isCloud = this.detectCloudEnvironment()
+
+      prodLog.info(`🚀 S3 init mode: ${effectiveMode} (detected cloud: ${isCloud})`)
+
       // Create storage adapter proxies for the cache managers
       const nounStorageAdapter = {
         get: async (id: string) => this.getNoun_internal(id),
@@ -375,13 +431,13 @@ export class S3CompatibleStorage extends BaseStorage {
           // Process in batches to avoid overwhelming the S3 API
           const batchSize = this.getBatchSize()
           const batches: string[][] = []
-          
+
           // Split into batches
           for (let i = 0; i < ids.length; i += batchSize) {
             const batch = ids.slice(i, i + batchSize)
             batches.push(batch)
           }
-          
+
           // Process each batch
           for (const batch of batches) {
             const batchResults = await Promise.all(
@@ -390,7 +446,7 @@ export class S3CompatibleStorage extends BaseStorage {
                 return { id, node }
               })
             )
-            
+
             // Add results to map
             for (const { id, node } of batchResults) {
               if (node) {
@@ -398,7 +454,7 @@ export class S3CompatibleStorage extends BaseStorage {
               }
             }
           }
-          
+
           return result
         },
         clear: async () => {
@@ -406,7 +462,7 @@ export class S3CompatibleStorage extends BaseStorage {
           // This would be implemented if needed
         }
       }
-      
+
       const verbStorageAdapter = {
         get: async (id: string) => this.getVerb_internal(id),
         set: async (id: string, edge: Edge) => this.saveVerb_internal(edge),
@@ -416,13 +472,13 @@ export class S3CompatibleStorage extends BaseStorage {
           // Process in batches to avoid overwhelming the S3 API
           const batchSize = this.getBatchSize()
           const batches: string[][] = []
-          
+
           // Split into batches
           for (let i = 0; i < ids.length; i += batchSize) {
             const batch = ids.slice(i, i + batchSize)
             batches.push(batch)
           }
-          
+
           // Process each batch
           for (const batch of batches) {
             const batchResults = await Promise.all(
@@ -431,7 +487,7 @@ export class S3CompatibleStorage extends BaseStorage {
                 return { id, edge }
               })
             )
-            
+
             // Add results to map
             for (const { id, edge } of batchResults) {
               if (edge) {
@@ -439,7 +495,7 @@ export class S3CompatibleStorage extends BaseStorage {
               }
             }
           }
-          
+
           return result
         },
         clear: async () => {
@@ -447,22 +503,16 @@ export class S3CompatibleStorage extends BaseStorage {
           // This would be implemented if needed
         }
       }
-      
+
       // Set storage adapters for cache managers
       this.nounCacheManager.setStorageAdapters(nounStorageAdapter, nounStorageAdapter)
       this.verbCacheManager.setStorageAdapters(verbStorageAdapter, verbStorageAdapter)
 
       // Initialize write buffers for high-volume scenarios
       this.initializeBuffers()
-      
+
       // Initialize request coalescer
       this.initializeCoalescer()
-      
-      // Auto-cleanup legacy /index folder on initialization
-      await this.cleanupLegacyIndexFolder()
-
-      // Initialize counts from storage
-      await this.initializeCounts()
 
       // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
       // This prevents cache poisoning from causing silent failures on container restart
@@ -474,14 +524,175 @@ export class S3CompatibleStorage extends BaseStorage {
         prodLog.info('🧹 Node cache is empty - starting fresh')
       }
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
-      await super.init()
+      // v7.3.0: Progressive vs Strict initialization
+      if (effectiveMode === 'progressive') {
+        // PROGRESSIVE MODE: Fast init, background validation
+        // Mark as initialized immediately - ready to accept operations
+        // Bucket validation happens lazily on first write
+        // Count loading happens in background
+
+        prodLog.info(`✅ S3 progressive init complete: ${this.bucketName} (validation deferred)`)
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Schedule background tasks (non-blocking)
+        this.scheduleBackgroundInit()
+      } else {
+        // STRICT MODE: Traditional blocking initialization
+        // Ensure the bucket exists and is accessible (blocking)
+        const { HeadBucketCommand } = await import('@aws-sdk/client-s3')
+        await this.s3Client.send(
+          new HeadBucketCommand({
+            Bucket: this.bucketName
+          })
+        )
+        this.bucketValidated = true
+
+        // Auto-cleanup legacy /index folder on initialization
+        await this.cleanupLegacyIndexFolder()
+
+        // Initialize counts from storage (blocking)
+        await this.initializeCounts()
+        this.countsLoaded = true
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Mark background tasks as complete (nothing to do in background)
+        this.backgroundTasksComplete = true
+      }
+
       this.logger.info(`Initialized ${this.serviceType} storage with bucket ${this.bucketName}`)
     } catch (error) {
       this.logger.error(`Failed to initialize ${this.serviceType} storage:`, error)
       throw new Error(
         `Failed to initialize ${this.serviceType} storage: ${error}`
       )
+    }
+  }
+
+  // =============================================
+  // Progressive Initialization (v7.3.0+)
+  // =============================================
+
+  /**
+   * Run background initialization tasks for S3.
+   *
+   * Called in progressive mode after init() returns. Performs:
+   * 1. Bucket validation (in background)
+   * 2. Legacy folder cleanup (in background)
+   * 3. Count loading from storage (in background)
+   *
+   * These tasks don't block the main thread, allowing fast cold starts.
+   *
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async runBackgroundInit(): Promise<void> {
+    const startTime = Date.now()
+    prodLog.info('[S3 Background] Starting background initialization...')
+
+    // Run validation, cleanup, and count loading in parallel
+    const validationPromise = this.validateBucketInBackground()
+    const cleanupPromise = this.cleanupLegacyIndexFolder().catch((err) => {
+      prodLog.warn(`[S3 Background] Legacy cleanup failed (non-fatal): ${err.message}`)
+    })
+    const countsPromise = this.loadCountsInBackground()
+
+    // Wait for all to complete (but we're already initialized)
+    await Promise.all([validationPromise, cleanupPromise, countsPromise])
+
+    const elapsed = Date.now() - startTime
+    prodLog.info(`[S3 Background] Background init complete in ${elapsed}ms`)
+  }
+
+  /**
+   * Validate bucket existence in background.
+   *
+   * Stores result in bucketValidated/bucketValidationError for lazy use.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async validateBucketInBackground(): Promise<void> {
+    try {
+      const { HeadBucketCommand } = await import('@aws-sdk/client-s3')
+      await this.s3Client!.send(
+        new HeadBucketCommand({
+          Bucket: this.bucketName
+        })
+      )
+      this.bucketValidated = true
+      prodLog.info(`[S3 Background] Bucket validated: ${this.bucketName}`)
+    } catch (error: any) {
+      this.bucketValidationError = new Error(
+        `Bucket ${this.bucketName} does not exist or is not accessible: ${error.message || error}`
+      )
+      prodLog.warn(`[S3 Background] Bucket validation failed: ${this.bucketName}`)
+    }
+  }
+
+  /**
+   * Load counts from storage in background.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async loadCountsInBackground(): Promise<void> {
+    try {
+      await this.initializeCounts()
+      this.countsLoaded = true
+      prodLog.info(`[S3 Background] Counts loaded: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+    } catch (error: any) {
+      // Non-fatal in progressive mode - counts start at 0
+      prodLog.warn(`[S3 Background] Failed to load counts (starting at 0): ${error.message}`)
+      this.countsLoaded = true // Mark as loaded even on error (0 is valid)
+    }
+  }
+
+  /**
+   * Ensure bucket is validated before write operations.
+   *
+   * In progressive mode, bucket validation is deferred until the first
+   * write operation. This method validates the bucket and caches the
+   * result (or error) for subsequent calls.
+   *
+   * @throws Error if bucket does not exist or is not accessible
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async ensureValidatedForWrite(): Promise<void> {
+    // If already validated, nothing to do
+    if (this.bucketValidated) {
+      return
+    }
+
+    // If we have a cached validation error from background init, throw it
+    if (this.bucketValidationError) {
+      throw this.bucketValidationError
+    }
+
+    // Perform synchronous validation (first write in progressive mode)
+    try {
+      prodLog.info(`[S3] Lazy bucket validation on first write: ${this.bucketName}`)
+      const { HeadBucketCommand } = await import('@aws-sdk/client-s3')
+      await this.s3Client!.send(
+        new HeadBucketCommand({
+          Bucket: this.bucketName
+        })
+      )
+      this.bucketValidated = true
+      prodLog.info(`[S3] Bucket validated successfully: ${this.bucketName}`)
+    } catch (error: any) {
+      // Cache the error for fast-fail on subsequent writes
+      const wrappedError = new Error(
+        `Bucket ${this.bucketName} does not exist or is not accessible: ${error.message || error}`
+      )
+      this.bucketValidationError = wrappedError
+      throw wrappedError
     }
   }
 
@@ -1588,9 +1799,13 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Primitive operation: Write object to path
    * All metadata operations use this internally via base class routing
+   *
+   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
 
     // Apply backpressure before starting operation
     const requestId = await this.applyBackpressure()
@@ -1681,9 +1896,13 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Primitive operation: Delete object from path
    * All metadata operations use this internally via base class routing
+   *
+   * v7.3.0: Performs lazy bucket validation on first delete in progressive mode.
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
 
     try {
       const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')

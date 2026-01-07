@@ -39,6 +39,7 @@ import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
 import { getShardIdFromUuid, getAllShardIds, getShardIdByIndex, TOTAL_SHARDS } from '../sharding.js'
+import { InitMode } from './baseStorageAdapter.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -128,7 +129,30 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
    * @param options Configuration options for Google Cloud Storage
+   *
+   * @example Zero-config (recommended) - auto-detects Cloud Run/Lambda for fast init
+   * ```typescript
+   * const storage = new GcsStorage({ bucketName: 'my-bucket' })
+   * await storage.init() // <200ms in Cloud Run, blocking locally
+   * ```
+   *
+   * @example Force progressive mode for all environments
+   * ```typescript
+   * const storage = new GcsStorage({
+   *   bucketName: 'my-bucket',
+   *   initMode: 'progressive' // Always <200ms init
+   * })
+   * ```
+   *
+   * @example Force strict validation (useful for tests)
+   * ```typescript
+   * const storage = new GcsStorage({
+   *   bucketName: 'my-bucket',
+   *   initMode: 'strict' // Always validate during init
+   * })
+   * ```
    */
   constructor(options: {
     bucketName: string
@@ -141,8 +165,30 @@ export class GcsStorage extends BaseStorage {
     accessKeyId?: string
     secretAccessKey?: string
 
-    // Initialization configuration
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Cloud Run, Lambda),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Bucket validation and
+     *   count loading happen in background. First write validates bucket.
+     * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: InitMode
+
+    /**
+     * @deprecated Use `initMode: 'progressive'` instead.
+     * Will be removed in v8.0.0.
+     */
     skipInitialScan?: boolean
+
+    /**
+     * @deprecated Use `initMode: 'progressive'` instead.
+     * Will be removed in v8.0.0.
+     */
     skipCountsFile?: boolean
 
     // Cache and operation configuration
@@ -159,8 +205,28 @@ export class GcsStorage extends BaseStorage {
     this.credentials = options.credentials
     this.accessKeyId = options.accessKeyId
     this.secretAccessKey = options.secretAccessKey
-    this.skipInitialScan = options.skipInitialScan || false
-    this.skipCountsFile = options.skipCountsFile || false
+
+    // v7.3.0: Handle initMode and deprecated skip* flags
+    if (options.initMode) {
+      this.initMode = options.initMode
+    }
+
+    // Deprecation warnings for skip* flags
+    if (options.skipInitialScan) {
+      console.warn(
+        '[GcsStorage] DEPRECATION WARNING: skipInitialScan is deprecated. ' +
+        'Use initMode: "progressive" instead. Will be removed in v8.0.0.'
+      )
+      this.skipInitialScan = true
+    }
+    if (options.skipCountsFile) {
+      console.warn(
+        '[GcsStorage] DEPRECATION WARNING: skipCountsFile is deprecated. ' +
+        'Use initMode: "progressive" instead. Will be removed in v8.0.0.'
+      )
+      this.skipCountsFile = true
+    }
+
     this.readOnly = options.readOnly || false
 
     // Set up prefixes for different types of data using entity-based structure
@@ -179,6 +245,22 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
+   * v7.3.0: Supports progressive initialization for fast cold starts
+   *
+   * | Mode | Init Time | When |
+   * |------|-----------|------|
+   * | `progressive` | <200ms | Cloud Run, Lambda, Azure Functions |
+   * | `strict` | 100-500ms+ | Local development, tests |
+   * | `auto` | Detected | Default - best of both |
+   *
+   * In progressive mode:
+   * - SDK import and bucket reference: ~50ms (unavoidable)
+   * - Write buffers and caches: ~10ms
+   * - Mark as initialized: READY
+   * - Background: validate bucket, load counts
+   *
+   * First write operation validates bucket existence (lazy validation).
    */
   public async init(): Promise<void> {
     if (this.isInitialized) {
@@ -186,7 +268,7 @@ export class GcsStorage extends BaseStorage {
     }
 
     try {
-      // Import Google Cloud Storage SDK only when needed
+      // Import Google Cloud Storage SDK only when needed (~50ms)
       const { Storage } = await import('@google-cloud/storage')
 
       // Configure the GCS client based on available credentials
@@ -216,19 +298,17 @@ export class GcsStorage extends BaseStorage {
         prodLog.info('🔐 GCS: Using Application Default Credentials (ADC)')
       }
 
-      // Create the GCS client
+      // Create the GCS client (no network calls)
       this.storage = new Storage(clientConfig)
 
-      // Get reference to the bucket
+      // Get reference to the bucket (no network calls)
       this.bucket = this.storage.bucket(this.bucketName)
 
-      // Verify bucket exists and is accessible
-      const [exists] = await this.bucket.exists()
-      if (!exists) {
-        throw new Error(`Bucket ${this.bucketName} does not exist or is not accessible`)
-      }
+      // Determine initialization mode
+      const effectiveMode = this.resolveInitMode()
+      const isCloud = this.detectCloudEnvironment()
 
-      prodLog.info(`✅ Connected to GCS bucket: ${this.bucketName}`)
+      prodLog.info(`🚀 GCS init mode: ${effectiveMode} (detected cloud: ${isCloud})`)
 
       // Initialize write buffers for high-volume mode
       const storageId = `gcs-${this.bucketName}`
@@ -257,9 +337,6 @@ export class GcsStorage extends BaseStorage {
         }
       )
 
-      // Initialize counts from storage
-      await this.initializeCounts()
-
       // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
       // This prevents cache poisoning from causing silent failures on container restart
       prodLog.info('🧹 Clearing cache from previous run to prevent cache poisoning')
@@ -267,11 +344,167 @@ export class GcsStorage extends BaseStorage {
       this.verbCacheManager.clear()
       prodLog.info('✅ Cache cleared - starting fresh')
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
-      await super.init()
+      // v7.3.0: Progressive vs Strict initialization
+      if (effectiveMode === 'progressive') {
+        // PROGRESSIVE MODE: Fast init, background validation
+        // Mark as initialized immediately - ready to accept operations
+        // Bucket validation happens lazily on first write
+        // Count loading happens in background
+
+        prodLog.info(`✅ GCS progressive init complete: ${this.bucketName} (validation deferred)`)
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Schedule background tasks (non-blocking)
+        this.scheduleBackgroundInit()
+      } else {
+        // STRICT MODE: Traditional blocking initialization
+        // Verify bucket exists and is accessible (blocking)
+        const [exists] = await this.bucket.exists()
+        if (!exists) {
+          throw new Error(`Bucket ${this.bucketName} does not exist or is not accessible`)
+        }
+        this.bucketValidated = true
+
+        prodLog.info(`✅ Connected to GCS bucket: ${this.bucketName}`)
+
+        // Initialize counts from storage (blocking)
+        await this.initializeCounts()
+        this.countsLoaded = true
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Mark background tasks as complete (nothing to do in background)
+        this.backgroundTasksComplete = true
+      }
     } catch (error) {
       this.logger.error('Failed to initialize GCS storage:', error)
       throw new Error(`Failed to initialize GCS storage: ${error}`)
+    }
+  }
+
+  // =============================================
+  // Progressive Initialization (v7.3.0+)
+  // =============================================
+
+  /**
+   * Run background initialization tasks for GCS.
+   *
+   * Called in progressive mode after init() returns. Performs:
+   * 1. Bucket validation (in background)
+   * 2. Count loading from storage (in background)
+   *
+   * These tasks don't block the main thread, allowing fast cold starts.
+   *
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async runBackgroundInit(): Promise<void> {
+    const startTime = Date.now()
+    prodLog.info('[GCS Background] Starting background initialization...')
+
+    // Run validation and count loading in parallel
+    const validationPromise = this.validateBucketInBackground()
+    const countsPromise = this.loadCountsInBackground()
+
+    // Wait for both to complete (but we're already initialized)
+    await Promise.all([validationPromise, countsPromise])
+
+    const elapsed = Date.now() - startTime
+    prodLog.info(`[GCS Background] Background init complete in ${elapsed}ms`)
+  }
+
+  /**
+   * Validate bucket existence in background.
+   *
+   * Stores result in bucketValidated/bucketValidationError for lazy use.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async validateBucketInBackground(): Promise<void> {
+    try {
+      const [exists] = await this.bucket!.exists()
+      if (exists) {
+        this.bucketValidated = true
+        prodLog.info(`[GCS Background] Bucket validated: ${this.bucketName}`)
+      } else {
+        this.bucketValidationError = new Error(
+          `Bucket ${this.bucketName} does not exist or is not accessible`
+        )
+        prodLog.warn(`[GCS Background] Bucket validation failed: ${this.bucketName}`)
+      }
+    } catch (error: any) {
+      this.bucketValidationError = new Error(
+        `Bucket validation failed: ${error.message || error}`
+      )
+      prodLog.error(`[GCS Background] Bucket validation error:`, error)
+    }
+  }
+
+  /**
+   * Load counts from storage in background.
+   *
+   * Uses the existing initializeCounts() logic but in background.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async loadCountsInBackground(): Promise<void> {
+    try {
+      await this.initializeCounts()
+      this.countsLoaded = true
+      prodLog.info(`[GCS Background] Counts loaded: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+    } catch (error: any) {
+      // Non-fatal in progressive mode - counts start at 0
+      prodLog.warn(`[GCS Background] Failed to load counts (starting at 0): ${error.message}`)
+      this.countsLoaded = true // Mark as loaded even on error (0 is valid)
+    }
+  }
+
+  /**
+   * Ensure bucket is validated before write operations.
+   *
+   * In progressive mode, bucket validation is deferred until the first
+   * write operation. This method validates the bucket and caches the
+   * result (or error) for subsequent calls.
+   *
+   * @throws Error if bucket does not exist or is not accessible
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async ensureValidatedForWrite(): Promise<void> {
+    // If already validated, nothing to do
+    if (this.bucketValidated) {
+      return
+    }
+
+    // If we have a cached validation error from background init, throw it
+    if (this.bucketValidationError) {
+      throw this.bucketValidationError
+    }
+
+    // Perform synchronous validation (first write in progressive mode)
+    try {
+      prodLog.info(`[GCS] Lazy bucket validation on first write: ${this.bucketName}`)
+      const [exists] = await this.bucket!.exists()
+      if (!exists) {
+        const error = new Error(`Bucket ${this.bucketName} does not exist or is not accessible`)
+        this.bucketValidationError = error
+        throw error
+      }
+      this.bucketValidated = true
+      prodLog.info(`[GCS] Bucket validated successfully: ${this.bucketName}`)
+    } catch (error: any) {
+      // Cache the error for fast-fail on subsequent writes
+      if (!this.bucketValidationError) {
+        this.bucketValidationError = error
+      }
+      throw error
     }
   }
 
@@ -423,8 +656,13 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save a node directly to GCS (bypass buffer)
+   *
+   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
    */
   private async saveNodeDirect(node: HNSWNode): Promise<void> {
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
+
     // Apply backpressure before starting operation
     const requestId = await this.applyBackpressure()
 
@@ -598,10 +836,14 @@ export class GcsStorage extends BaseStorage {
   /**
    * Write an object to a specific path in GCS
    * Primitive operation required by base class
+   *
+   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
    * @protected
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
 
     try {
       this.logger.trace(`Writing object to path: ${path}`)
@@ -741,10 +983,14 @@ export class GcsStorage extends BaseStorage {
   /**
    * Delete an object from a specific path in GCS
    * Primitive operation required by base class
+   *
+   * v7.3.0: Performs lazy bucket validation on first delete in progressive mode.
    * @protected
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
 
     try {
       this.logger.trace(`Deleting object at path: ${path}`)
@@ -814,8 +1060,13 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Save an edge directly to GCS (bypass buffer)
+   *
+   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
    */
   private async saveEdgeDirect(edge: Edge): Promise<void> {
+    // v7.3.0: Lazy bucket validation for progressive init
+    await this.ensureValidatedForWrite()
+
     const requestId = await this.applyBackpressure()
 
     try {

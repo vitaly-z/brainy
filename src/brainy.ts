@@ -134,6 +134,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private initialized = false
   private dimensions?: number
 
+  // Ready Promise state (v7.3.0 - Unified readiness API)
+  // Allows consumers to await brain.ready for initialization completion
+  private _readyPromise: Promise<void> | null = null
+  private _readyResolve: (() => void) | null = null
+  private _readyReject: ((error: Error) => void) | null = null
+
   // Lazy rebuild state (v5.7.7 - Production-scale lazy loading)
   // Prevents race conditions when multiple queries trigger rebuild simultaneously
   private lazyRebuildInProgress = false
@@ -163,6 +169,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (this.config.distributed?.enabled) {
       this.setupDistributedComponents()
     }
+
+    // Initialize ready Promise (v7.3.0)
+    // This allows consumers to await brain.ready before using the database
+    this._readyPromise = new Promise<void>((resolve, reject) => {
+      this._readyResolve = resolve
+      this._readyReject = reject
+    })
 
     // Track this instance for shutdown hooks
     Brainy.instances.push(this)
@@ -308,7 +321,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         await embeddingManager.init()
         console.log('✅ Embedding engine ready')
       }
+
+      // v7.3.0: Resolve ready Promise - consumers awaiting brain.ready will now proceed
+      if (this._readyResolve) {
+        this._readyResolve()
+      }
     } catch (error) {
+      // v7.3.0: Reject ready Promise - consumers awaiting brain.ready will receive error
+      if (this._readyReject) {
+        this._readyReject(error instanceof Error ? error : new Error(String(error)))
+      }
       throw new Error(`Failed to initialize Brainy: ${error}`)
     }
   }
@@ -376,6 +398,128 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   get isInitialized(): boolean {
     return this.initialized
+  }
+
+  /**
+   * Promise that resolves when Brainy is fully initialized and ready to use
+   *
+   * This Promise is created in the constructor and resolves when init() completes.
+   * It can be awaited multiple times safely - the result is cached.
+   *
+   * **v7.3.0 Feature**: This enables reliable readiness detection for consumers,
+   * especially in cloud environments where progressive initialization means
+   * init() returns quickly but background tasks may still be running.
+   *
+   * @example Waiting for readiness before API calls
+   * ```typescript
+   * const brain = new Brainy({ storage: { type: 'gcs', ... } })
+   * brain.init() // Fire and forget
+   *
+   * // Elsewhere in your code (e.g., API handler)
+   * await brain.ready
+   * const results = await brain.find({ query: 'test' })
+   * ```
+   *
+   * @example Server startup pattern
+   * ```typescript
+   * const brain = new Brainy()
+   * await brain.init()
+   *
+   * // For health check endpoint
+   * app.get('/health', async (req, res) => {
+   *   try {
+   *     await brain.ready
+   *     res.json({ status: 'ready' })
+   *   } catch (error) {
+   *     res.status(503).json({ status: 'initializing', error: error.message })
+   *   }
+   * })
+   * ```
+   *
+   * @returns Promise that resolves when init() completes, or rejects if init fails
+   */
+  get ready(): Promise<void> {
+    if (!this._readyPromise) {
+      // This should never happen if constructor ran, but handle gracefully
+      return Promise.reject(new Error('Brainy not constructed properly'))
+    }
+    return this._readyPromise
+  }
+
+  /**
+   * Check if Brainy is fully initialized including all background tasks
+   *
+   * This checks both:
+   * 1. Basic initialization complete (init() returned)
+   * 2. Storage background tasks complete (bucket validation, count sync)
+   *
+   * Useful for determining if all lazy/progressive initialization is done.
+   *
+   * @returns true if all initialization including background tasks is complete
+   *
+   * @example Health check with background status
+   * ```typescript
+   * app.get('/health', (req, res) => {
+   *   res.json({
+   *     ready: brain.isInitialized,
+   *     fullyInitialized: brain.isFullyInitialized(),
+   *     status: brain.isFullyInitialized() ? 'ready' : 'warming'
+   *   })
+   * })
+   * ```
+   */
+  isFullyInitialized(): boolean {
+    if (!this.initialized) return false
+
+    // Check if storage has background init methods (cloud storage adapters)
+    const storage = this.storage as any
+    if (typeof storage?.isBackgroundInitComplete === 'function') {
+      return storage.isBackgroundInitComplete()
+    }
+
+    // Non-cloud storage adapters are fully initialized after init()
+    return true
+  }
+
+  /**
+   * Wait for all background initialization tasks to complete
+   *
+   * For cloud storage adapters with progressive initialization (v7.3.0+),
+   * this waits for:
+   * - Bucket/container validation
+   * - Count synchronization
+   * - Any other background tasks
+   *
+   * For non-cloud storage, this resolves immediately.
+   *
+   * **Use Case**: Call this when you need guaranteed consistency, such as:
+   * - Before running batch operations
+   * - Before reporting full system health
+   * - When transitioning from "initializing" to "ready" status
+   *
+   * @returns Promise that resolves when all background tasks complete
+   *
+   * @example Ensuring full initialization
+   * ```typescript
+   * const brain = new Brainy({ storage: { type: 'gcs', ... } })
+   * await brain.init()  // Fast return in cloud (<200ms)
+   *
+   * // Optional: wait for background tasks if needed
+   * await brain.awaitBackgroundInit()
+   * console.log('All background tasks complete')
+   * ```
+   */
+  async awaitBackgroundInit(): Promise<void> {
+    // Must be initialized first
+    await this.ready
+
+    // Check if storage has background init methods (cloud storage adapters)
+    const storage = this.storage as any
+    if (typeof storage?.awaitBackgroundInit === 'function') {
+      await storage.awaitBackgroundInit()
+    }
+
+    // Non-cloud storage: no background init to wait for
   }
 
   // ============= CORE CRUD OPERATIONS =============

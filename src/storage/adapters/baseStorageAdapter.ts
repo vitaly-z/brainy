@@ -18,6 +18,45 @@ import { StorageBatchConfig } from '../baseStorage.js'
 import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/fieldNameTracking.js'
 import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
+// =============================================================================
+// Progressive Initialization Types (v7.3.0+)
+// =============================================================================
+
+/**
+ * Initialization mode for cloud storage adapters.
+ *
+ * Controls how storage adapters initialize during startup, enabling
+ * fast cold starts in serverless environments while maintaining strict
+ * validation for local development.
+ *
+ * @since v7.3.0
+ *
+ * | Mode | Description | Use Case |
+ * |------|-------------|----------|
+ * | `'auto'` | Auto-detect environment (progressive in cloud, strict locally) | Default, zero-config |
+ * | `'progressive'` | Fast init (<200ms), validate lazily on first write | Serverless, Cloud Run |
+ * | `'strict'` | Blocking validation during init (traditional behavior) | Local dev, testing |
+ *
+ * @example
+ * ```typescript
+ * // Zero-config: auto-detects Cloud Run, Lambda, etc.
+ * const storage = new GCSStorageAdapter({ bucket: 'my-bucket' })
+ *
+ * // Force progressive mode for all environments
+ * const storage = new GCSStorageAdapter({
+ *   bucket: 'my-bucket',
+ *   initMode: 'progressive'
+ * })
+ *
+ * // Force strict validation (useful for testing)
+ * const storage = new GCSStorageAdapter({
+ *   bucket: 'my-bucket',
+ *   initMode: 'strict'
+ * })
+ * ```
+ */
+export type InitMode = 'progressive' | 'strict' | 'auto'
+
 /**
  * Base class for storage adapters that implements statistics tracking
  */
@@ -254,6 +293,77 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     lastThrottle: number
     status: 'normal' | 'throttled' | 'recovering'
   }> = new Map()
+
+  // =============================================
+  // Progressive Initialization State (v7.3.0+)
+  // =============================================
+  // These properties enable fast cold starts in cloud environments
+  // by deferring validation and count loading to background tasks.
+
+  /**
+   * Initialization mode for this storage adapter.
+   *
+   * - `'auto'` (default): Progressive in cloud environments, strict locally
+   * - `'progressive'`: Always use fast init with lazy validation
+   * - `'strict'`: Always validate during init (traditional behavior)
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected initMode: InitMode = 'auto'
+
+  /**
+   * Whether the bucket/container has been validated to exist.
+   *
+   * In progressive mode, this starts as `false` and is set to `true`
+   * after the first successful write operation or background validation.
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected bucketValidated = false
+
+  /**
+   * Error from bucket validation, if any.
+   *
+   * Stored here so subsequent operations can fail fast with the same error.
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected bucketValidationError: Error | null = null
+
+  /**
+   * Whether counts have been loaded from storage.
+   *
+   * In progressive mode, counts start at 0 and are loaded in the background.
+   * Operations work immediately; counts become accurate after background load.
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected countsLoaded = false
+
+  /**
+   * Whether all background initialization tasks have completed.
+   *
+   * Useful for tests and diagnostics to ensure full initialization.
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected backgroundTasksComplete = false
+
+  /**
+   * Promise that resolves when background initialization completes.
+   *
+   * Can be awaited by callers who need to ensure full initialization
+   * before proceeding (e.g., in tests).
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected backgroundInitPromise: Promise<void> | null = null
 
   // Statistics-specific methods that must be implemented by subclasses
   protected abstract saveStatisticsData(
@@ -1122,6 +1232,169 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     // Default: assume local storage (conservative, prefers reliability over performance)
     // Subclasses should override this for accurate detection
     return false
+  }
+
+  // =============================================
+  // Progressive Initialization Methods (v7.3.0+)
+  // =============================================
+
+  /**
+   * Detect if running in a cloud/serverless environment.
+   *
+   * Cloud environments benefit from progressive initialization to minimize
+   * cold start times. This method checks for common environment variables
+   * set by cloud providers.
+   *
+   * | Provider | Environment Variable |
+   * |----------|---------------------|
+   * | Cloud Run | `K_SERVICE`, `K_REVISION` |
+   * | Lambda | `AWS_LAMBDA_FUNCTION_NAME` |
+   * | Cloud Functions | `FUNCTIONS_TARGET` |
+   * | Azure Functions | `AZURE_FUNCTIONS_ENVIRONMENT` |
+   *
+   * @returns `true` if running in a detected cloud environment
+   * @protected
+   * @since v7.3.0
+   */
+  protected detectCloudEnvironment(): boolean {
+    return !!(
+      process.env.K_SERVICE ||                     // Google Cloud Run
+      process.env.K_REVISION ||                    // Google Cloud Run (revision)
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||      // AWS Lambda
+      process.env.FUNCTIONS_TARGET ||              // Google Cloud Functions
+      process.env.AZURE_FUNCTIONS_ENVIRONMENT      // Azure Functions
+    )
+  }
+
+  /**
+   * Determine the effective initialization mode.
+   *
+   * Resolves `'auto'` to either `'progressive'` or `'strict'` based on
+   * the detected environment.
+   *
+   * @returns The resolved init mode (`'progressive'` or `'strict'`)
+   * @protected
+   * @since v7.3.0
+   */
+  protected resolveInitMode(): 'progressive' | 'strict' {
+    if (this.initMode === 'auto') {
+      return this.detectCloudEnvironment() ? 'progressive' : 'strict'
+    }
+    return this.initMode
+  }
+
+  /**
+   * Schedule background initialization tasks.
+   *
+   * This method is called in progressive mode after the adapter is marked
+   * as initialized. It schedules non-blocking tasks to:
+   * 1. Validate bucket/container existence
+   * 2. Load counts from storage
+   *
+   * Override in subclasses to add storage-specific background tasks.
+   * Always call `super.scheduleBackgroundInit()` first.
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected scheduleBackgroundInit(): void {
+    // Create a promise that tracks all background work
+    this.backgroundInitPromise = this.runBackgroundInit()
+
+    // Don't await - let it run in background
+    this.backgroundInitPromise
+      .then(() => {
+        this.backgroundTasksComplete = true
+      })
+      .catch((error) => {
+        // Log but don't throw - progressive mode is best-effort
+        console.error('[Progressive Init] Background initialization failed:', error)
+        this.backgroundTasksComplete = true // Mark complete even on error
+      })
+  }
+
+  /**
+   * Run background initialization tasks.
+   *
+   * Override in subclasses to add storage-specific tasks.
+   * The default implementation does nothing (for local storage adapters).
+   *
+   * @protected
+   * @since v7.3.0
+   */
+  protected async runBackgroundInit(): Promise<void> {
+    // Default implementation: nothing to do for local storage
+    // Cloud storage adapters override this to:
+    // 1. Validate bucket/container
+    // 2. Load counts from storage
+  }
+
+  /**
+   * Wait for background initialization to complete.
+   *
+   * Useful in tests or when you need to ensure all background tasks
+   * have finished before proceeding.
+   *
+   * @example
+   * ```typescript
+   * const storage = new GCSStorageAdapter({ bucket: 'my-bucket' })
+   * await storage.init()
+   *
+   * // Wait for background validation and count loading
+   * await storage.awaitBackgroundInit()
+   *
+   * // Now counts are accurate and bucket is validated
+   * const count = await storage.getNounCount()
+   * ```
+   *
+   * @public
+   * @since v7.3.0
+   */
+  public async awaitBackgroundInit(): Promise<void> {
+    if (this.backgroundInitPromise) {
+      await this.backgroundInitPromise
+    }
+  }
+
+  /**
+   * Check if background initialization has completed.
+   *
+   * @returns `true` if all background tasks are complete
+   * @public
+   * @since v7.3.0
+   */
+  public isBackgroundInitComplete(): boolean {
+    return this.backgroundTasksComplete
+  }
+
+  /**
+   * Ensure bucket/container is validated before write operations.
+   *
+   * In progressive mode, bucket validation is deferred until the first
+   * write operation. This method performs lazy validation and caches
+   * the result (or error) for subsequent calls.
+   *
+   * Override in subclasses to implement storage-specific validation.
+   * The base implementation does nothing (for local storage adapters).
+   *
+   * @throws Error if bucket validation fails
+   * @protected
+   * @since v7.3.0
+   */
+  protected async ensureValidatedForWrite(): Promise<void> {
+    // If already validated, nothing to do
+    if (this.bucketValidated) {
+      return
+    }
+
+    // If we have a cached validation error, throw it
+    if (this.bucketValidationError) {
+      throw this.bucketValidationError
+    }
+
+    // Default implementation: no validation needed (local storage)
+    // Cloud storage adapters override this to validate bucket/container
+    this.bucketValidated = true
   }
 
   /**

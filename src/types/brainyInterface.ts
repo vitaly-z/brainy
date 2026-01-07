@@ -18,6 +18,28 @@ export interface BrainyInterface<T = unknown> {
   init(): Promise<void>
 
   /**
+   * Promise that resolves when initialization is complete (v7.3.0+)
+   * Can be awaited multiple times safely.
+   */
+  readonly ready: Promise<void>
+
+  /**
+   * Check if basic initialization is complete
+   */
+  readonly isInitialized: boolean
+
+  /**
+   * Check if all initialization including background tasks is complete (v7.3.0+)
+   */
+  isFullyInitialized(): boolean
+
+  /**
+   * Wait for all background initialization tasks to complete (v7.3.0+)
+   * For cloud storage adapters, this waits for bucket validation and count sync.
+   */
+  awaitBackgroundInit(): Promise<void>
+
+  /**
    * Modern add method - unified entity creation
    * @param params Parameters for adding entities
    * @returns The ID of the created entity

@@ -41,6 +41,7 @@ import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
 import { getCoalescer, RequestCoalescer } from '../../utils/requestCoalescer.js'
 import { getShardIdFromUuid, getAllShardIds, getShardIdByIndex, TOTAL_SHARDS } from '../sharding.js'
+import { InitMode } from './baseStorageAdapter.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -119,7 +120,26 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
    * @param options Configuration options for Azure Blob Storage
+   *
+   * @example Zero-config (recommended) - auto-detects Azure Functions for fast init
+   * ```typescript
+   * const storage = new AzureBlobStorage({
+   *   containerName: 'my-container',
+   *   accountName: 'myaccount'
+   * })
+   * await storage.init() // <200ms in Azure Functions, blocking locally
+   * ```
+   *
+   * @example Force progressive mode for all environments
+   * ```typescript
+   * const storage = new AzureBlobStorage({
+   *   containerName: 'my-container',
+   *   accountName: 'myaccount',
+   *   initMode: 'progressive' // Always <200ms init
+   * })
+   * ```
    */
   constructor(options: {
     containerName: string
@@ -140,6 +160,21 @@ export class AzureBlobStorage extends BaseStorage {
       hotCacheEvictionThreshold?: number
       warmCacheTTL?: number
     }
+
+    /**
+     * Initialization mode for fast cold starts (v7.3.0+)
+     *
+     * - `'auto'` (default): Progressive in cloud environments (Azure Functions),
+     *   strict locally. Zero-config optimization.
+     * - `'progressive'`: Always use fast init (<200ms). Container validation and
+     *   count loading happen in background. First write validates container.
+     * - `'strict'`: Traditional blocking init. Validates container and loads counts
+     *   before init() returns.
+     *
+     * @since v7.3.0
+     */
+    initMode?: InitMode
+
     readOnly?: boolean
   }) {
     super()
@@ -149,6 +184,11 @@ export class AzureBlobStorage extends BaseStorage {
     this.accountKey = options.accountKey
     this.sasToken = options.sasToken
     this.readOnly = options.readOnly || false
+
+    // v7.3.0: Handle initMode
+    if (options.initMode) {
+      this.initMode = options.initMode
+    }
 
     // Set up prefixes for different types of data using entity-based structure
     this.nounPrefix = `${getDirectoryPath('noun', 'vector')}/`
@@ -256,6 +296,22 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
+   *
+   * v7.3.0: Supports progressive initialization for fast cold starts
+   *
+   * | Mode | Init Time | When |
+   * |------|-----------|------|
+   * | `progressive` | <200ms | Azure Functions |
+   * | `strict` | 100-500ms+ | Local development, tests |
+   * | `auto` | Detected | Default - best of both |
+   *
+   * In progressive mode:
+   * - SDK import and client creation: ~50ms (unavoidable)
+   * - Write buffers and caches: ~10ms
+   * - Mark as initialized: READY
+   * - Background: validate container, load counts
+   *
+   * First write operation validates container existence (lazy validation).
    */
   public async init(): Promise<void> {
     if (this.isInitialized) {
@@ -263,7 +319,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
 
     try {
-      // Import Azure Storage SDK only when needed
+      // Import Azure Storage SDK only when needed (~50ms)
       const { BlobServiceClient } = await import('@azure/storage-blob')
 
       // Configure the Azure Blob Storage client based on available credentials
@@ -306,17 +362,14 @@ export class AzureBlobStorage extends BaseStorage {
         throw new Error('Azure Blob Storage requires either connectionString, accountName+accountKey, accountName+sasToken, or accountName (for Managed Identity)')
       }
 
-      // Get reference to the container
+      // Get reference to the container (no network calls)
       this.containerClient = this.blobServiceClient.getContainerClient(this.containerName)
 
-      // Create container if it doesn't exist
-      const exists = await this.containerClient.exists()
-      if (!exists) {
-        await this.containerClient.create()
-        prodLog.info(`✅ Created Azure container: ${this.containerName}`)
-      } else {
-        prodLog.info(`✅ Connected to Azure container: ${this.containerName}`)
-      }
+      // Determine initialization mode
+      const effectiveMode = this.resolveInitMode()
+      const isCloud = this.detectCloudEnvironment()
+
+      prodLog.info(`🚀 Azure init mode: ${effectiveMode} (detected cloud: ${isCloud})`)
 
       // Initialize write buffers for high-volume mode
       const storageId = `azure-${this.containerName}`
@@ -345,20 +398,180 @@ export class AzureBlobStorage extends BaseStorage {
         }
       )
 
-      // Initialize counts from storage
-      await this.initializeCounts()
-
       // Clear any stale cache entries from previous runs
       prodLog.info('🧹 Clearing cache from previous run to prevent cache poisoning')
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
       prodLog.info('✅ Cache cleared - starting fresh')
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
-      await super.init()
+      // v7.3.0: Progressive vs Strict initialization
+      if (effectiveMode === 'progressive') {
+        // PROGRESSIVE MODE: Fast init, background validation
+        // Mark as initialized immediately - ready to accept operations
+        // Container validation happens lazily on first write
+        // Count loading happens in background
+
+        prodLog.info(`✅ Azure progressive init complete: ${this.containerName} (validation deferred)`)
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Schedule background tasks (non-blocking)
+        this.scheduleBackgroundInit()
+      } else {
+        // STRICT MODE: Traditional blocking initialization
+        // Verify container exists or create it (blocking)
+        const exists = await this.containerClient.exists()
+        if (!exists) {
+          await this.containerClient.create()
+          prodLog.info(`✅ Created Azure container: ${this.containerName}`)
+        } else {
+          prodLog.info(`✅ Connected to Azure container: ${this.containerName}`)
+        }
+        this.bucketValidated = true
+
+        // Initialize counts from storage (blocking)
+        await this.initializeCounts()
+        this.countsLoaded = true
+
+        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        await super.init()
+
+        // Mark background tasks as complete (nothing to do in background)
+        this.backgroundTasksComplete = true
+      }
     } catch (error) {
       this.logger.error('Failed to initialize Azure Blob Storage:', error)
       throw new Error(`Failed to initialize Azure Blob Storage: ${error}`)
+    }
+  }
+
+  // =============================================
+  // Progressive Initialization (v7.3.0+)
+  // =============================================
+
+  /**
+   * Run background initialization tasks for Azure.
+   *
+   * Called in progressive mode after init() returns. Performs:
+   * 1. Container validation (in background)
+   * 2. Count loading from storage (in background)
+   *
+   * These tasks don't block the main thread, allowing fast cold starts.
+   *
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async runBackgroundInit(): Promise<void> {
+    const startTime = Date.now()
+    prodLog.info('[Azure Background] Starting background initialization...')
+
+    // Run validation and count loading in parallel
+    const validationPromise = this.validateContainerInBackground()
+    const countsPromise = this.loadCountsInBackground()
+
+    // Wait for both to complete (but we're already initialized)
+    await Promise.all([validationPromise, countsPromise])
+
+    const elapsed = Date.now() - startTime
+    prodLog.info(`[Azure Background] Background init complete in ${elapsed}ms`)
+  }
+
+  /**
+   * Validate container existence in background.
+   *
+   * Creates container if it doesn't exist. Stores result in
+   * bucketValidated/bucketValidationError for lazy use.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async validateContainerInBackground(): Promise<void> {
+    try {
+      const exists = await this.containerClient!.exists()
+      if (!exists) {
+        // Try to create container
+        try {
+          await this.containerClient!.create()
+          prodLog.info(`[Azure Background] Created container: ${this.containerName}`)
+        } catch (createError: any) {
+          // Another process might have created it - check again
+          const existsNow = await this.containerClient!.exists()
+          if (!existsNow) {
+            throw createError
+          }
+        }
+      }
+      this.bucketValidated = true
+      prodLog.info(`[Azure Background] Container validated: ${this.containerName}`)
+    } catch (error: any) {
+      this.bucketValidationError = new Error(
+        `Container ${this.containerName} validation failed: ${error.message || error}`
+      )
+      prodLog.warn(`[Azure Background] Container validation failed: ${this.containerName}`)
+    }
+  }
+
+  /**
+   * Load counts from storage in background.
+   *
+   * @private
+   * @since v7.3.0
+   */
+  private async loadCountsInBackground(): Promise<void> {
+    try {
+      await this.initializeCounts()
+      this.countsLoaded = true
+      prodLog.info(`[Azure Background] Counts loaded: ${this.totalNounCount} nouns, ${this.totalVerbCount} verbs`)
+    } catch (error: any) {
+      // Non-fatal in progressive mode - counts start at 0
+      prodLog.warn(`[Azure Background] Failed to load counts (starting at 0): ${error.message}`)
+      this.countsLoaded = true // Mark as loaded even on error (0 is valid)
+    }
+  }
+
+  /**
+   * Ensure container is validated before write operations.
+   *
+   * In progressive mode, container validation is deferred until the first
+   * write operation. This method validates the container and caches the
+   * result (or error) for subsequent calls.
+   *
+   * @throws Error if container validation fails
+   * @protected
+   * @override
+   * @since v7.3.0
+   */
+  protected async ensureValidatedForWrite(): Promise<void> {
+    // If already validated, nothing to do
+    if (this.bucketValidated) {
+      return
+    }
+
+    // If we have a cached validation error from background init, throw it
+    if (this.bucketValidationError) {
+      throw this.bucketValidationError
+    }
+
+    // Perform synchronous validation (first write in progressive mode)
+    try {
+      prodLog.info(`[Azure] Lazy container validation on first write: ${this.containerName}`)
+      const exists = await this.containerClient!.exists()
+      if (!exists) {
+        // Try to create container
+        await this.containerClient!.create()
+        prodLog.info(`[Azure] Created container: ${this.containerName}`)
+      }
+      this.bucketValidated = true
+      prodLog.info(`[Azure] Container validated successfully: ${this.containerName}`)
+    } catch (error: any) {
+      // Cache the error for fast-fail on subsequent writes
+      const wrappedError = new Error(
+        `Container ${this.containerName} validation failed: ${error.message || error}`
+      )
+      this.bucketValidationError = wrappedError
+      throw wrappedError
     }
   }
 
@@ -681,10 +894,14 @@ export class AzureBlobStorage extends BaseStorage {
   /**
    * Write an object to a specific path in Azure
    * Primitive operation required by base class
+   *
+   * v7.3.0: Performs lazy container validation on first write in progressive mode.
    * @protected
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy container validation for progressive init
+    await this.ensureValidatedForWrite()
 
     try {
       this.logger.trace(`Writing object to path: ${path}`)
@@ -736,10 +953,14 @@ export class AzureBlobStorage extends BaseStorage {
   /**
    * Delete an object from a specific path in Azure
    * Primitive operation required by base class
+   *
+   * v7.3.0: Performs lazy container validation on first delete in progressive mode.
    * @protected
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
+    // v7.3.0: Lazy container validation for progressive init
+    await this.ensureValidatedForWrite()
 
     try {
       this.logger.trace(`Deleting object at path: ${path}`)

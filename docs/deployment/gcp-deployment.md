@@ -506,12 +506,92 @@ const brain = new Brainy({
    ```
 
 2. **Cold Starts**
+
+   **v7.3.0+ Progressive Initialization (Zero-Config)**
+
+   Brainy automatically detects Cloud Run and Cloud Functions environments
+   and uses progressive initialization for <200ms cold starts:
+
+   ```javascript
+   // Zero-config - Brainy auto-detects Cloud Run (K_SERVICE env var)
+   const brain = new Brainy({
+     storage: {
+       type: 'gcs',
+       gcsNativeStorage: { bucketName: 'my-bucket' }
+     }
+   })
+   await brain.init() // Returns in <200ms
+
+   // First write validates bucket (lazy validation)
+   await brain.add('noun', { name: 'test' }) // Validates here
+   ```
+
+   **Manual Override (if needed)**
+   ```javascript
+   const brain = new Brainy({
+     storage: {
+       type: 'gcs',
+       gcsNativeStorage: {
+         bucketName: 'my-bucket',
+         // Force specific mode
+         initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
+       }
+     }
+   })
+   ```
+
+   | Mode | Cold Start | Best For |
+   |------|------------|----------|
+   | `auto` (default) | <200ms in cloud | Zero-config, auto-detects |
+   | `progressive` | <200ms always | Force fast init everywhere |
+   | `strict` | 100-500ms+ | Local dev, tests, debugging |
+
+   **Keep Warm (Alternative)**
    ```javascript
    // Keep minimum instances warm
    const brain = new Brainy({
      warmup: {
        enabled: true,
        interval: 60000 // Ping every minute
+     }
+   })
+   ```
+
+   **Readiness Detection (v7.3.0+)**
+
+   Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
+
+   ```javascript
+   let brain
+
+   async function handleRequest(req, res) {
+     if (!brain) {
+       brain = new Brainy({ storage: { type: 'gcs', ... } })
+       brain.init()  // Fire and forget
+     }
+
+     // Wait for initialization to complete
+     await brain.ready
+
+     // Now safe to use brain methods
+     const results = await brain.find({ query: req.query.q })
+     res.json(results)
+   }
+   ```
+
+   For Cloud Run health checks, use `isFullyInitialized()` to verify all background tasks are complete:
+
+   ```javascript
+   // Health check endpoint for Cloud Run
+   app.get('/health', async (req, res) => {
+     try {
+       await brain.ready
+       res.json({
+         status: 'ready',
+         fullyInitialized: brain.isFullyInitialized()
+       })
+     } catch (error) {
+       res.status(503).json({ status: 'initializing' })
      }
    })
    ```
