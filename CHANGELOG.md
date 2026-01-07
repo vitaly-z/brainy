@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.2.0](https://github.com/soulcraftlabs/brainy/compare/v7.1.1...v7.2.0) (2026-01-06)
+
+- perf: 580x faster embedding init - separate model from WASM (677e2d6)
+
+
 ## [7.2.0](https://github.com/soulcraftlabs/brainy/compare/v7.1.1...v7.2.0) (2026-01-06)
 
 ### Performance
