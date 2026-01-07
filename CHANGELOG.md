@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.3.0](https://github.com/soulcraftlabs/brainy/compare/v7.2.2...v7.3.0) (2026-01-07)
+
+- feat: progressive init and readiness API for cloud storage (d938a6b)
+
+
 ### [7.2.2](https://github.com/soulcraftlabs/brainy/compare/v7.2.1...v7.2.2) (2026-01-07)
 
 - test: increase timing threshold for flaky updateMany test (9fbefd4)
