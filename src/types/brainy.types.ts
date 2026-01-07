@@ -685,6 +685,14 @@ export interface BrainyConfig {
   maxQueryLimit?: number           // Override auto-detected query result limit (max: 100000)
   reservedQueryMemory?: number     // Memory reserved for queries in bytes (e.g., 1073741824 = 1GB)
 
+  // Embedding initialization (v7.1.2)
+  // Controls when the WASM embedding engine is initialized
+  // - false (default): Lazy initialization on first embed() call
+  // - true: Eager initialization during brain.init()
+  // Set to true for cloud deployments (Cloud Run, Lambda) where you want
+  // WASM compilation to happen during container startup, not on first request
+  eagerEmbeddings?: boolean
+
   // Logging configuration
   verbose?: boolean         // Enable verbose logging
   silent?: boolean          // Suppress all logging output

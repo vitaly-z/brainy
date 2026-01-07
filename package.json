@@ -145,6 +145,7 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.wasm",
+    "assets/models/all-MiniLM-L6-v2/**",
     "bin/",
     "brainy.png",
     "LICENSE",

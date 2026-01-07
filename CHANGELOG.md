@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.2.0](https://github.com/soulcraftlabs/brainy/compare/v7.1.1...v7.2.0) (2026-01-06)
+
+### Performance
+
+**CRITICAL: 580x faster embedding initialization (139 seconds → 240ms)**
+
+**Symptom:**
+- Cloud Run cold starts taking 2+ minutes
+- Container restart loops due to 503 errors
+- Logs showing: `✅ Candle Embedding Engine ready in 139124ms`
+
+**Root Cause:**
+The 90MB WASM file contained 87MB of embedded model weights. WASM parsing/compilation scales with file size, and Cloud Run's throttled CPU during cold starts extends this to 139 seconds.
+
+**Solution: Separate Model from WASM (v7.2.0 architecture)**
+- WASM file: 90MB → 2.4MB (inference code only)
+- Model files: Loaded separately as raw bytes (~88MB)
+- Total init time: 139 seconds → 240ms (Node.js) / 136ms (Bun)
+
+| Component | Before | After |
+|-----------|--------|-------|
+| WASM size | 90MB | 2.4MB |
+| WASM compile | 139,000ms | 6-8ms |
+| Model load | (embedded) | 30-115ms |
+| **Total init** | **139,000ms** | **136-240ms** |
+
+**Environment Support:**
+- Node.js: Model loaded from filesystem via `fs.readFile()`
+- Bun: Model loaded via `Bun.file()`
+- Bun --compile: Model files auto-embedded in binary
+- Browser: Model fetched via `fetch()`
+
+**No Breaking Changes:**
+- Same API as v7.1.x
+- Zero configuration required
+- npm package includes model files automatically
+
+### Technical Details
+
+New files:
+- `src/embeddings/wasm/modelLoader.ts` - Universal model loading for all environments
+
+Modified:
+- `src/embeddings/candle-wasm/src/lib.rs` - Removed `include_bytes!()` for model weights
+- `src/embeddings/wasm/CandleEmbeddingEngine.ts` - Uses external model loading
+- `package.json` - Includes `assets/models/all-MiniLM-L6-v2/**` in npm package
+
+
 ### [7.1.1](https://github.com/soulcraftlabs/brainy/compare/v7.1.0...v7.1.1) (2026-01-06)
 
 ### Bug Fixes

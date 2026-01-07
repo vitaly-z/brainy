@@ -15,6 +15,7 @@ import {
   defaultEmbeddingFunction,
   cosineDistance
 } from './utils/index.js'
+import { embeddingManager } from './embeddings/EmbeddingManager.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
 import { AugmentationRegistry, AugmentationContext } from './augmentations/brainyAugmentation.js'
 import { createDefaultAugmentations } from './augmentations/defaultAugmentations.js'
@@ -287,6 +288,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // This eliminates need for separate vfs.init() calls - zero additional complexity
       this._vfs = new VirtualFileSystem(this)
       await this._vfs.init()
+
+      // v7.1.2: Eager embedding initialization for cloud deployments
+      // When eagerEmbeddings is true, initialize the WASM embedding engine now
+      // instead of lazily on first embed() call. This moves the 90-140 second
+      // WASM compilation to container startup rather than first request.
+      // Recommended for: Cloud Run, Lambda, Fargate, Kubernetes
+      if (this.config.eagerEmbeddings) {
+        console.log('🚀 Eager embedding initialization enabled...')
+        await embeddingManager.init()
+        console.log('✅ Embedding engine ready')
+      }
     } catch (error) {
       throw new Error(`Failed to initialize Brainy: ${error}`)
     }
@@ -5258,6 +5270,51 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Explicitly warm up the embedding engine (v7.1.2)
+   *
+   * Use this to pre-initialize the Candle WASM embedding engine before
+   * processing requests. The WASM module (93MB with embedded model) takes
+   * 90-140 seconds to compile on throttled CPU environments like Cloud Run.
+   *
+   * Calling this during container startup ensures the first real request
+   * doesn't pay the compilation cost.
+   *
+   * @example
+   * ```typescript
+   * // Option 1: Use eagerEmbeddings config (automatic during init)
+   * const brain = new Brainy({ eagerEmbeddings: true })
+   * await brain.init() // Embedding engine initialized here
+   *
+   * // Option 2: Manual warmup (more control)
+   * const brain = new Brainy()
+   * await brain.init()
+   * await brain.warmupEmbeddings() // Explicit control over timing
+   * ```
+   *
+   * @returns Promise that resolves when embedding engine is ready
+   */
+  async warmupEmbeddings(): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('Brain must be initialized before warming up embeddings. Call init() first.')
+    }
+
+    console.log('🚀 Warming up embedding engine...')
+    const start = Date.now()
+    await embeddingManager.init()
+    const elapsed = Date.now() - start
+    console.log(`✅ Embedding engine ready in ${elapsed}ms`)
+  }
+
+  /**
+   * Check if embedding engine is initialized (v7.1.2)
+   *
+   * @returns true if embedding engine is ready for immediate use
+   */
+  isEmbeddingReady(): boolean {
+    return embeddingManager.isInitialized()
+  }
+
+  /**
    * Setup embedder
    */
   private setupEmbedder(): EmbeddingFunction {
@@ -5440,7 +5497,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       maxQueryLimit: config?.maxQueryLimit ?? undefined as any,
       reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any,
       // HNSW persistence mode (v6.2.8) - undefined = smart default in setupIndex
-      hnswPersistMode: config?.hnswPersistMode ?? undefined as any
+      hnswPersistMode: config?.hnswPersistMode ?? undefined as any,
+      // Embedding initialization (v7.1.2) - false = lazy init on first embed()
+      eagerEmbeddings: config?.eagerEmbeddings ?? false
     }
   }
 

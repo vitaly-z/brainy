@@ -26,12 +26,20 @@ use js_sys::{Array, Float32Array};
 use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 
-/// Embedded model assets (compiled into WASM at build time)
-/// These files are included from assets/models/all-MiniLM-L6-v2/
-/// Path is relative to this lib.rs file: src/embeddings/candle-wasm/src/lib.rs
-const EMBEDDED_MODEL: &[u8] = include_bytes!("../../../../assets/models/all-MiniLM-L6-v2/model.safetensors");
-const EMBEDDED_TOKENIZER: &[u8] = include_bytes!("../../../../assets/models/all-MiniLM-L6-v2/tokenizer.json");
-const EMBEDDED_CONFIG: &[u8] = include_bytes!("../../../../assets/models/all-MiniLM-L6-v2/config.json");
+// v7.2.0: Model weights are NO LONGER embedded in WASM
+//
+// Previous design: 90MB WASM with model weights embedded via include_bytes!()
+// Problem: WASM parsing/compilation took 139+ seconds on throttled CPU (Cloud Run)
+//
+// New design: 3MB WASM (inference code only) + external model files
+// Model files are loaded at runtime via load() method
+// Result: ~5-7 second init instead of 139 seconds
+//
+// The load() method accepts external model bytes for all environments:
+// - Node.js: Load from filesystem
+// - Bun: Load from filesystem
+// - Bun --compile: Load from embedded assets
+// - Browser: Fetch from server
 
 /// Model configuration constants for all-MiniLM-L6-v2
 const HIDDEN_SIZE: usize = 384;
@@ -68,22 +76,10 @@ impl EmbeddingEngine {
         }
     }
 
-    /// Create a new engine with the embedded model already loaded
-    /// This is the recommended way to create an engine - zero external dependencies
-    #[wasm_bindgen]
-    pub fn create_with_embedded_model() -> Result<EmbeddingEngine, JsValue> {
-        let mut engine = EmbeddingEngine::new();
-        engine.load_embedded()?;
-        Ok(engine)
-    }
-
-    /// Load the embedded model (compiled into WASM)
-    #[wasm_bindgen]
-    pub fn load_embedded(&mut self) -> Result<(), JsValue> {
-        self.load(EMBEDDED_MODEL, EMBEDDED_TOKENIZER, EMBEDDED_CONFIG)
-    }
-
-    /// Load the model and tokenizer from bytes (for custom models)
+    /// Load the model and tokenizer from bytes
+    ///
+    /// v7.2.0: This is now the ONLY way to initialize the engine.
+    /// Model weights are no longer embedded in WASM for faster initialization.
     ///
     /// # Arguments
     /// * `model_bytes` - SafeTensors format model weights
