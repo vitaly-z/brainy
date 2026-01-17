@@ -160,6 +160,7 @@ export class MemoryStorage extends BaseStorage {
   /**
    * Clear all data from storage
    * v5.4.0: Clears objectStore (type-first paths)
+   * v7.3.1: Also clears writeCache to prevent stale data after clear
    */
   public async clear(): Promise<void> {
     this.objectStore.clear()
@@ -172,6 +173,11 @@ export class MemoryStorage extends BaseStorage {
     // Clear the statistics cache
     this.statisticsCache = null
     this.statisticsModified = false
+
+    // v7.3.1: Clear write-through cache (inherited from BaseStorage)
+    // Without this, readWithInheritance() would return stale cached data
+    // after clear(), causing "ghost" entities to appear
+    this.clearWriteCache()
   }
 
   /**

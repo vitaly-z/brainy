@@ -155,6 +155,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   // Memory footprint: Bounded by batch size (typically <1000 items during imports)
   private writeCache = new Map<string, any>()
 
+  /**
+   * v7.3.1: Clear the write-through cache
+   * MUST be called by all storage adapter clear() implementations to ensure
+   * read-after-write consistency cache doesn't return stale data after clear.
+   * @protected - Available to subclasses for clear() implementation
+   */
+  protected clearWriteCache(): void {
+    this.writeCache.clear()
+  }
+
   // COW (Copy-on-Write) support - v5.0.0
   public refManager?: RefManager
   public blobStorage?: BlobStorage

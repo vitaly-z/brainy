@@ -1039,6 +1039,11 @@ export class FileSystemStorage extends BaseStorage {
     // These in-memory counters must be reset to 0 after clearing all data
     ;(this as any).totalNounCount = 0
     ;(this as any).totalVerbCount = 0
+
+    // v7.3.1: Clear write-through cache (inherited from BaseStorage)
+    // Without this, readWithInheritance() would return stale cached data
+    // after clear(), causing "ghost" entities to appear
+    this.clearWriteCache()
   }
 
   /**

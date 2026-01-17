@@ -2638,6 +2638,34 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._neural = undefined
       this._nlp = undefined
       this._tripleIntelligence = undefined
+
+      // v7.3.1: Re-initialize COW (BlobStorage) after storage.clear()
+      // storage.clear() sets blobStorage=undefined for FileSystem/cloud adapters
+      // VFS depends on blobStorage being available (unified blob storage for all files)
+      // Must be done BEFORE VFS reinitialization
+      if (typeof (this.storage as any).initializeCOW === 'function') {
+        await (this.storage as any).initializeCOW({
+          branch: (this.config.storage as any)?.branch || 'main',
+          enableCompression: true
+        })
+      }
+
+      // v7.3.1: Reset VFS state - root entity was deleted by storage.clear()
+      // Bug: VFS instance remained in memory pointing to deleted root entity
+      // Following checkout() pattern exactly (see lines 2907-2914)
+      if (this._vfs) {
+        // Clear PathResolver caches (including UnifiedCache VFS entries)
+        if ((this._vfs as any).pathResolver?.invalidateAllCaches) {
+          (this._vfs as any).pathResolver.invalidateAllCaches()
+        }
+        // Recreate and reinitialize VFS so it's ready for use
+        this._vfs = new VirtualFileSystem(this)
+        await this._vfs.init()
+        // _vfsInitialized remains true since we just initialized
+      } else {
+        // VFS was never used, reset flag for clean state
+        this._vfsInitialized = false
+      }
     })
   }
 
