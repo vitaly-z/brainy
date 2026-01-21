@@ -623,6 +623,42 @@ export type AggregateMetric =
 // ============= Configuration =============
 
 /**
+ * Integration Hub configuration (v7.4.0)
+ *
+ * Enables external tool integrations: Excel, Power BI, Google Sheets, etc.
+ * Works in all environments with zero external dependencies.
+ *
+ * @example
+ * ```typescript
+ * // Enable all integrations with defaults
+ * new Brainy({ integrations: true })
+ *
+ * // Custom configuration
+ * new Brainy({
+ *   integrations: {
+ *     basePath: '/api/v1',
+ *     enable: ['odata', 'sheets']
+ *   }
+ * })
+ * ```
+ */
+export interface IntegrationsConfig {
+  /** Base path for all integration endpoints (default: '') */
+  basePath?: string
+
+  /** Which integrations to enable (default: all) */
+  enable?: ('odata' | 'sheets' | 'sse' | 'webhooks')[] | 'all'
+
+  /** Per-integration config overrides */
+  config?: {
+    odata?: { basePath?: string }
+    sheets?: { basePath?: string }
+    sse?: { basePath?: string; heartbeatInterval?: number }
+    webhooks?: { maxRetries?: number }
+  }
+}
+
+/**
  * Brainy configuration
  */
 export interface BrainyConfig {
@@ -696,6 +732,13 @@ export interface BrainyConfig {
   // Logging configuration
   verbose?: boolean         // Enable verbose logging
   silent?: boolean          // Suppress all logging output
+
+  // Integration Hub (v7.4.0)
+  // Enable external tool integrations: Excel, Power BI, Google Sheets, etc.
+  // - true: Enable all integrations with default paths
+  // - false/undefined: Disable integrations (default)
+  // - IntegrationsConfig: Custom configuration
+  integrations?: boolean | IntegrationsConfig
 }
 
 // ============= Neural API Types =============

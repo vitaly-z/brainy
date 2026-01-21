@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      padding: 12px;
+      margin: 0;
+      font-size: 13px;
+      color: #333;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    .status {
+      margin-left: auto;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ccc;
+    }
+    .status.connected {
+      background: #34a853;
+    }
+    .status.disconnected {
+      background: #ea4335;
+    }
+    .section {
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #5f6368;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #4285f4;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button.primary {
+      background: #4285f4;
+      color: white;
+    }
+    button.primary:hover {
+      background: #3367d6;
+    }
+    button.secondary {
+      background: #f1f3f4;
+      color: #5f6368;
+    }
+    button.secondary:hover {
+      background: #e8eaed;
+    }
+    button.danger {
+      background: #ea4335;
+      color: white;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+    .results {
+      margin-top: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .result-item {
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .result-item:hover {
+      background: #e8f0fe;
+    }
+    .result-item .type {
+      font-size: 10px;
+      color: #5f6368;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .result-item .title {
+      font-weight: 500;
+      color: #1967d2;
+    }
+    .result-item .id {
+      font-size: 11px;
+      color: #80868b;
+      font-family: monospace;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 12px;
+    }
+    .tab {
+      padding: 8px 16px;
+      cursor: pointer;
+      color: #5f6368;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      color: #4285f4;
+      border-bottom-color: #4285f4;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .loading {
+      text-align: center;
+      color: #5f6368;
+      padding: 20px;
+    }
+    .error {
+      background: #fce8e6;
+      color: #c5221f;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+    .success {
+      background: #e6f4ea;
+      color: #137333;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🧠 Brainy</h1>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div id="message"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="search">Search</div>
+    <div class="tab" data-tab="add">Add</div>
+    <div class="tab" data-tab="sync">Sync</div>
+  </div>
+
+  <!-- Search Tab -->
+  <div class="tab-content active" id="tab-search">
+    <div class="section">
+      <input type="text" id="searchQuery" placeholder="Search entities...">
+      <select id="searchType">
+        <option value="">All Types</option>
+      </select>
+      <div class="btn-row">
+        <button class="primary" onclick="search()">Search</button>
+        <button class="secondary" onclick="insertResults()">Insert to Sheet</button>
+      </div>
+    </div>
+    <div class="results" id="searchResults">
+      <div class="loading">Enter a search query</div>
+    </div>
+  </div>
+
+  <!-- Add Tab -->
+  <div class="tab-content" id="tab-add">
+    <div class="section">
+      <div class="section-title">Entity Type</div>
+      <select id="addType"></select>
+    </div>
+    <div class="section">
+      <div class="section-title">Name</div>
+      <input type="text" id="addName" placeholder="Entity name">
+    </div>
+    <div class="section">
+      <div class="section-title">Description</div>
+      <textarea id="addDescription" rows="3" placeholder="Description (optional)"></textarea>
+    </div>
+    <div class="section">
+      <div class="section-title">Additional Fields (JSON)</div>
+      <textarea id="addMetadata" rows="3" placeholder='{"email": "john@example.com"}'></textarea>
+    </div>
+    <button class="primary" onclick="addEntity()">Add Entity</button>
+  </div>
+
+  <!-- Sync Tab -->
+  <div class="tab-content" id="tab-sync">
+    <div class="section">
+      <p>Select a range with entity data and sync it to Brainy.</p>
+      <p style="font-size: 11px; color: #5f6368;">
+        First row should be headers. Include an "Id" column for updates.
+      </p>
+    </div>
+    <div class="section">
+      <div class="section-title">Type for New Entities</div>
+      <select id="syncType"></select>
+    </div>
+    <button class="primary" onclick="syncSelection()">Sync Selection</button>
+  </div>
+
+  <script>
+    // State
+    let schema = { nounTypes: [], verbTypes: [] };
+    let searchResults = [];
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      checkConnection();
+      loadSchema();
+      setupTabs();
+    });
+
+    function setupTabs() {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        });
+      });
+    }
+
+    function checkConnection() {
+      google.script.run
+        .withSuccessHandler(result => {
+          const status = document.getElementById('status');
+          status.className = 'status ' + (result.connected ? 'connected' : 'disconnected');
+        })
+        .withFailureHandler(err => {
+          document.getElementById('status').className = 'status disconnected';
+        })
+        .getConnectionStatus();
+    }
+
+    function loadSchema() {
+      google.script.run
+        .withSuccessHandler(result => {
+          schema = result;
+          populateTypeDropdowns();
+        })
+        .sidebarGetSchema();
+    }
+
+    function populateTypeDropdowns() {
+      const selects = ['searchType', 'addType', 'syncType'];
+      selects.forEach(id => {
+        const select = document.getElementById(id);
+        const currentValue = select.value;
+        select.innerHTML = id === 'searchType' ? '<option value="">All Types</option>' : '';
+        schema.nounTypes.forEach(type => {
+          const option = document.createElement('option');
+          option.value = type;
+          option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+          select.appendChild(option);
+        });
+        if (currentValue) select.value = currentValue;
+      });
+    }
+
+    function showMessage(text, type) {
+      const el = document.getElementById('message');
+      el.innerHTML = `<div class="${type}">${text}</div>`;
+      setTimeout(() => el.innerHTML = '', 3000);
+    }
+
+    function search() {
+      const query = document.getElementById('searchQuery').value;
+      const type = document.getElementById('searchType').value;
+      const resultsEl = document.getElementById('searchResults');
+
+      resultsEl.innerHTML = '<div class="loading">Searching...</div>';
+
+      google.script.run
+        .withSuccessHandler(result => {
+          searchResults = result;
+          renderResults(result);
+        })
+        .withFailureHandler(err => {
+          resultsEl.innerHTML = `<div class="error">${err.message}</div>`;
+        })
+        .sidebarQuery(query, type, 50);
+    }
+
+    function renderResults(result) {
+      const resultsEl = document.getElementById('searchResults');
+
+      if (!result.rows || result.rows.length === 0) {
+        resultsEl.innerHTML = '<div class="loading">No results found</div>';
+        return;
+      }
+
+      // Find column indices
+      const headers = result.headers;
+      const idCol = headers.indexOf('Id');
+      const typeCol = headers.indexOf('Type');
+      const nameCol = headers.findIndex(h => h.toLowerCase().includes('name'));
+
+      resultsEl.innerHTML = result.rows.map((row, i) => `
+        <div class="result-item" onclick="selectResult(${i})">
+          <div class="type">${row[typeCol] || 'unknown'}</div>
+          <div class="title">${row[nameCol] || row[idCol] || 'Untitled'}</div>
+          <div class="id">${row[idCol]}</div>
+        </div>
+      `).join('');
+    }
+
+    function selectResult(index) {
+      const row = searchResults.rows[index];
+      const headers = searchResults.headers;
+
+      // Show details or insert into sheet
+      console.log('Selected:', row);
+    }
+
+    function insertResults() {
+      const query = document.getElementById('searchQuery').value;
+      const type = document.getElementById('searchType').value;
+
+      google.script.run
+        .withSuccessHandler(result => {
+          showMessage(`Inserted ${result.inserted} rows`, 'success');
+        })
+        .withFailureHandler(err => {
+          showMessage(err.message, 'error');
+        })
+        .insertQueryResult(query, type, 100);
+    }
+
+    function addEntity() {
+      const type = document.getElementById('addType').value;
+      const name = document.getElementById('addName').value;
+      const description = document.getElementById('addDescription').value;
+      const metadataStr = document.getElementById('addMetadata').value;
+
+      if (!type) {
+        showMessage('Please select a type', 'error');
+        return;
+      }
+
+      let metadata = { name };
+      if (description) metadata.description = description;
+
+      try {
+        if (metadataStr) {
+          const extra = JSON.parse(metadataStr);
+          metadata = { ...metadata, ...extra };
+        }
+      } catch (e) {
+        showMessage('Invalid JSON in additional fields', 'error');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(result => {
+          showMessage('Entity created!', 'success');
+          document.getElementById('addName').value = '';
+          document.getElementById('addDescription').value = '';
+          document.getElementById('addMetadata').value = '';
+        })
+        .withFailureHandler(err => {
+          showMessage(err.message, 'error');
+        })
+        .sidebarAddEntity(type, null, metadata);
+    }
+
+    function syncSelection() {
+      const type = document.getElementById('syncType').value;
+
+      if (!type) {
+        showMessage('Please select a type for new entities', 'error');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(result => {
+          showMessage(`Synced ${result.successful} entities (${result.failed} failed)`, 'success');
+        })
+        .withFailureHandler(err => {
+          showMessage(err.message, 'error');
+        })
+        .syncRangeToBrainy(type);
+    }
+  </script>
+</body>
+</html>

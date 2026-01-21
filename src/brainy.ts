@@ -84,6 +84,7 @@ import {
 } from './types/brainy.types.js'
 import { NounType, VerbType } from './types/graphTypes.js'
 import { BrainyInterface } from './types/brainyInterface.js'
+import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
 
 /**
  * The main Brainy class - Clean, Beautiful, Powerful
@@ -129,6 +130,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _versions?: VersioningAPI
   private _vfs?: VirtualFileSystem
   private _vfsInitialized = false  // v7.3.0: Track VFS init completion separately
+  private _hub?: IntegrationHub     // v7.4.0: Integration Hub for external tools
 
   // State
   private initialized = false
@@ -320,6 +322,22 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         console.log('🚀 Eager embedding initialization enabled...')
         await embeddingManager.init()
         console.log('✅ Embedding engine ready')
+      }
+
+      // v7.4.0: Integration Hub initialization
+      // Creates the hub when integrations are enabled in config
+      // Uses dynamic import for tree-shaking when integrations are disabled
+      if (this.config.integrations) {
+        const hubConfig = this.config.integrations === true
+          ? { enable: 'all' as const }
+          : this.config.integrations
+
+        const { IntegrationHub } = await import('./integrations/core/IntegrationHub.js')
+        this._hub = await IntegrationHub.create(this, {
+          basePath: hubConfig.basePath,
+          enable: hubConfig.enable,
+          config: hubConfig.config as any  // Type flexibility for user config
+        })
       }
 
       // v7.3.0: Resolve ready Promise - consumers awaiting brain.ready will now proceed
@@ -3853,6 +3871,52 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Integration Hub for external tools (Excel, Power BI, Google Sheets)
+   *
+   * Provides HTTP endpoints that external tools can connect to:
+   * - OData API for Excel Power Query, Power BI, Tableau
+   * - REST API for Google Sheets custom functions
+   * - SSE streaming for real-time dashboards
+   * - Webhooks for push notifications
+   *
+   * Only available when `integrations: true` is set in config.
+   *
+   * @example Basic usage
+   * ```typescript
+   * const brain = new Brainy({ integrations: true })
+   * await brain.init()
+   *
+   * // Get endpoint URLs
+   * console.log(brain.hub.endpoints)
+   * // { odata: '/odata', sheets: '/sheets', sse: '/events', webhooks: '/webhooks' }
+   *
+   * // Handle requests (use with Express, Hono, etc.)
+   * app.all('/odata/*', async (req, res) => {
+   *   const response = await brain.hub.handleRequest({
+   *     method: req.method,
+   *     path: req.path,
+   *     query: req.query,
+   *     headers: req.headers,
+   *     body: req.body
+   *   })
+   *   res.status(response.status).set(response.headers).json(response.body)
+   * })
+   * ```
+   *
+   * @since v7.4.0
+   * @throws Error if integrations are not enabled in config
+   */
+  get hub(): IntegrationHub {
+    if (!this._hub) {
+      throw new Error(
+        'Integration Hub not enabled. Set integrations: true in config:\n' +
+        'new Brainy({ integrations: true })'
+      )
+    }
+    return this._hub
+  }
+
+  /**
    * Data Management API - backup, restore, import, export
    */
   async data() {
@@ -5692,7 +5756,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // HNSW persistence mode (v6.2.8) - undefined = smart default in setupIndex
       hnswPersistMode: config?.hnswPersistMode ?? undefined as any,
       // Embedding initialization (v7.1.2) - false = lazy init on first embed()
-      eagerEmbeddings: config?.eagerEmbeddings ?? false
+      eagerEmbeddings: config?.eagerEmbeddings ?? false,
+      // Integration Hub (v7.4.0) - undefined/false = disabled
+      integrations: config?.integrations ?? undefined as any
     }
   }
 

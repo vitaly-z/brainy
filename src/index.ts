@@ -542,3 +542,86 @@ export type {
   MCPServiceOptions,
   MCPTool
 }
+
+// ============= Integration Hub (v7.4.0) =============
+// Connect Brainy to Excel, Power BI, Google Sheets, and more
+// Enable with: new Brainy({ integrations: true })
+
+// Hub class (used internally by brain.hub, also available for advanced use)
+export {
+  IntegrationHub,
+  createIntegrationHub
+} from './integrations/index.js'
+
+export type {
+  IntegrationHubConfig,
+  IntegrationRequest,
+  IntegrationResponse
+} from './integrations/index.js'
+
+// Re-export IntegrationsConfig from types (for TypeScript users)
+export type { IntegrationsConfig } from './types/brainy.types.js'
+
+// Core infrastructure
+export {
+  EventBus,
+  TabularExporter,
+  IntegrationBase,
+  IntegrationLoader,
+  createIntegrationLoader,
+  detectEnvironment,
+  INTEGRATION_CATALOG
+} from './integrations/index.js'
+
+// Integration types
+export type {
+  BrainyEvent,
+  EventFilter,
+  EventHandler,
+  EventSubscription,
+  TabularRow,
+  RelationTabularRow,
+  TabularExporterConfig,
+  IntegrationConfig,
+  IntegrationHealthStatus,
+  HTTPIntegration,
+  StreamingIntegration,
+  IntegrationType,
+  RuntimeEnvironment,
+  IntegrationInfo,
+  IntegrationLoaderConfig,
+  ODataQueryOptions,
+  WebhookRegistration,
+  WebhookDeliveryResult
+} from './integrations/index.js'
+
+// Concrete integrations
+export {
+  GoogleSheetsIntegration,
+  ODataIntegration,
+  SSEIntegration,
+  WebhookIntegration
+} from './integrations/index.js'
+
+export type {
+  GoogleSheetsConfig,
+  ODataConfig,
+  SSEConfig,
+  WebhookConfig
+} from './integrations/index.js'
+
+// OData utilities (advanced)
+export {
+  parseODataQuery,
+  parseFilter,
+  parseOrderBy,
+  parseSelect,
+  odataToFindParams,
+  applyFilter,
+  applySelect,
+  applyOrderBy,
+  applyPagination,
+  generateEdmx,
+  generateMetadataJson,
+  generateServiceDocument
+} from './integrations/index.js'
