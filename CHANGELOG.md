@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.4.0](https://github.com/soulcraftlabs/brainy/compare/v7.3.1...v7.4.0) (2026-01-20)
+
+- feat: Integration Hub for external tool connectivity (b5bc900)
+
+
 ### [7.3.1](https://github.com/soulcraftlabs/brainy/compare/v7.3.0...v7.3.1) (2026-01-16)
 
 - fix: clear() now properly resets VFS and COW state (79ae349)
