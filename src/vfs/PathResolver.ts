@@ -307,8 +307,20 @@ export class PathResolver {
     const childIds = relations.map(r => r.to)
     const childrenMap = await this.brain.batchGet(childIds)
 
+    // v7.4.1: Deduplicate by entity ID to handle duplicate relationship records
+    // This can occur when multiple Brainy instances create relationships concurrently
+    // for the same storage path (each instance has its own in-memory GraphAdjacencyIndex).
+    // The Set lookup is O(1), adding negligible overhead.
+    const seenEntityIds = new Set<string>()
+
     // Process batched results
     for (const relation of relations) {
+      // Skip if we've already processed this entity
+      if (seenEntityIds.has(relation.to)) {
+        continue
+      }
+      seenEntityIds.add(relation.to)
+
       const entity = childrenMap.get(relation.to)
       if (entity && entity.metadata?.vfsType && entity.metadata?.name) {
         validChildren.push(entity as VFSEntity)

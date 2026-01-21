@@ -2636,6 +2636,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Clear storage
       await this.storage.clear()
 
+      // v7.4.1: Invalidate GraphAdjacencyIndex to prevent stale in-memory data
+      // The index has LSMTree data and verbIdSet pointing to deleted entities.
+      // Without this, relate()'s duplicate check uses stale data, potentially
+      // allowing duplicate relationships or missing valid duplicates.
+      if (typeof (this.storage as any).invalidateGraphIndex === 'function') {
+        ;(this.storage as any).invalidateGraphIndex()
+      }
+      this.graphIndex = undefined as any
+
       // Reset index
       if ('clear' in this.index && typeof this.index.clear === 'function') {
         await this.index.clear()
