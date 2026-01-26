@@ -223,6 +223,40 @@ export class MetadataIndexManager {
     // Phase 1b: Sync loaded counts to fixed-size arrays
     // Now correctly happens AFTER lazyLoadCounts() finishes
     this.syncTypeCountsToFixed()
+
+    // v7.5.0: Detect index corruption and auto-rebuild if necessary
+    // The update() field asymmetry bug caused indexes to accumulate stale entries
+    // This check runs on startup to detect and repair corrupted indexes automatically
+    await this.detectAndRepairCorruption()
+  }
+
+  /**
+   * v7.5.0: Detect index corruption and automatically repair via rebuild
+   * This catches the update() field asymmetry bug that causes 7 fields to accumulate per update
+   * Corruption threshold: 100 avg entries/entity (expected ~30)
+   */
+  private async detectAndRepairCorruption(): Promise<void> {
+    const validation = await this.validateConsistency()
+
+    if (!validation.healthy) {
+      prodLog.warn(`⚠️ Index corruption detected (${validation.avgEntriesPerEntity.toFixed(1)} avg entries/entity)`)
+      prodLog.warn('🔄 Auto-rebuilding index to repair...')
+
+      // Clear and rebuild
+      await this.clearAllIndexData()
+      await this.rebuild()
+
+      // Re-validate after rebuild
+      const postRebuild = await this.validateConsistency()
+      if (postRebuild.healthy) {
+        prodLog.info(`✅ Index rebuilt successfully (${postRebuild.avgEntriesPerEntity.toFixed(1)} avg entries/entity)`)
+      } else {
+        prodLog.error(
+          `❌ Index still appears corrupted after rebuild (${postRebuild.avgEntriesPerEntity.toFixed(1)} avg entries/entity). ` +
+          `This may indicate a different issue.`
+        )
+      }
+    }
   }
 
   /**
@@ -2605,6 +2639,71 @@ export class MetadataIndexManager {
       fieldsIndexed: Array.from(fields),
       lastRebuild: Date.now(),
       indexSize: totalEntries * 100 // rough estimate
+    }
+  }
+
+  /**
+   * v7.5.0: Validate index consistency and detect corruption
+   * Returns health status and recommendations for repair
+   *
+   * Corruption typically manifests as high avg entries/entity (expected ~30, corrupted can be 100+)
+   * caused by the update() field asymmetry bug (fixed in v7.5.0)
+   */
+  async validateConsistency(): Promise<{
+    healthy: boolean
+    avgEntriesPerEntity: number
+    entityCount: number
+    indexEntryCount: number
+    recommendation: string | null
+  }> {
+    const entityCount = this.idMapper.size
+
+    // If no entities, index is trivially healthy
+    if (entityCount === 0) {
+      return {
+        healthy: true,
+        avgEntriesPerEntity: 0,
+        entityCount: 0,
+        indexEntryCount: 0,
+        recommendation: null
+      }
+    }
+
+    // Count total index entries across all fields
+    let indexEntryCount = 0
+    for (const field of this.fieldIndexes.keys()) {
+      const sparseIndex = await this.loadSparseIndex(field)
+      if (sparseIndex) {
+        for (const chunkId of sparseIndex.getAllChunkIds()) {
+          const chunk = await this.chunkManager.loadChunk(field, chunkId)
+          if (chunk) {
+            for (const ids of chunk.entries.values()) {
+              indexEntryCount += ids.size
+            }
+          }
+        }
+      }
+    }
+
+    const avgEntriesPerEntity = indexEntryCount / entityCount
+
+    // Threshold: 100 entries/entity is clearly corrupted (expected ~30)
+    // This catches the update() asymmetry bug which causes 7 fields to accumulate per update
+    const CORRUPTION_THRESHOLD = 100
+    const healthy = avgEntriesPerEntity <= CORRUPTION_THRESHOLD
+
+    let recommendation: string | null = null
+    if (!healthy) {
+      recommendation = `Index corruption detected (${avgEntriesPerEntity.toFixed(1)} avg entries/entity, expected ~30). ` +
+        `Run brain.index.clearAllIndexData() followed by brain.index.rebuild() to repair.`
+    }
+
+    return {
+      healthy,
+      avgEntriesPerEntity,
+      entityCount,
+      indexEntryCount,
+      recommendation
     }
   }
 

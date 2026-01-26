@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.5.0](https://github.com/soulcraftlabs/brainy/compare/v7.4.1...v7.5.0) (2026-01-26)
+
+### Bug Fixes
+
+**CRITICAL: Fixed metadata index corruption on update() operations**
+
+**Symptoms:**
+- `find()` queries returning 0 results after many updates
+- Index entry count growing with each update (7 extra entries per update)
+- At scale (77+ updates), queries fail due to overcounting in intersection logic
+
+**Root Cause:**
+In `update()`, the `removalMetadata` object only contained custom metadata + type, while `entityForIndexing` contained ALL indexed fields (confidence, weight, createdAt, updatedAt, service, data, createdBy). This asymmetry caused 7 fields to accumulate as orphaned index entries on every update.
+
+The `updatedAt` field was the worst offender - creating a NEW unique orphan on every update since the timestamp always changes.
+
+**Solution (src/brainy.ts:1163-1173):**
+```typescript
+// BEFORE (broken): Only removed custom metadata + type
+const removalMetadata = {
+  ...existing.metadata,
+  type: existing.type
+}
+
+// AFTER (fixed): Removes ALL indexed fields
+const removalMetadata = {
+  type: existing.type,
+  confidence: existing.confidence,
+  weight: existing.weight,
+  createdAt: existing.createdAt,
+  updatedAt: existing.updatedAt,  // CRITICAL: removes old timestamp
+  service: existing.service,
+  data: existing.data,
+  createdBy: existing.createdBy,
+  metadata: existing.metadata     // Nested to match entityForIndexing structure
+}
+```
+
+### Features
+
+**Index health monitoring and auto-repair**
+
+- `validateIndexConsistency()` - Public API to check index health
+- `getIndexStats()` - Public API to get index statistics
+- Auto-detection of index corruption on startup (>100 avg entries/entity)
+- Automatic rebuild when corruption is detected
+
+**EntityIdMapper persistence improvements**
+
+- Added `getOrAssignSync()` for immediate persistence of UUID→int mappings
+- Prevents mapping divergence on process crash
+
+### Tests
+
+- Added comprehensive integration tests for update field asymmetry fix
+- Tests verify query accuracy, no duplicates, and entity integrity after many updates
+
 ### [7.4.1](https://github.com/soulcraftlabs/brainy/compare/v7.4.0...v7.4.1) (2026-01-20)
 
 - fix: VFS readdir() no longer returns duplicate entries (2bd4031)

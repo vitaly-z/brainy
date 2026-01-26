@@ -1147,11 +1147,29 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
 
         // Operation 5-6: Update metadata index (remove old, add new)
-        // v6.2.1: Fix - Include type in removal metadata so noun index is properly updated
-        // existing.metadata only contains custom fields, not 'type' which maps to 'noun'
+        // v7.5.0 FIX: Include ALL indexed fields in removalMetadata (not just type)
+        // Previously, only metadata + type was removed, but entityForIndexing includes:
+        // confidence, weight, createdAt, updatedAt, service, data, createdBy
+        // This asymmetry caused 7 fields to accumulate on EVERY update, eventually
+        // making queries return 0 results (77x overcounting at scale).
+        //
+        // DEBUG: Log what we're removing and adding
+        // console.log('[UPDATE DEBUG] existing.metadata:', JSON.stringify(existing.metadata))
+        // console.log('[UPDATE DEBUG] entityForIndexing keys:', Object.keys(entityForIndexing))
+        //
+        // v7.5.0 FIX: removalMetadata must MATCH entityForIndexing structure
+        // entityForIndexing has: { type, confidence, ..., metadata: {...} }
+        // So removalMetadata must also have: { type, confidence, ..., metadata: {...} }
         const removalMetadata = {
-          ...existing.metadata,
-          type: existing.type // Include type so it maps to 'noun' during removal
+          type: existing.type,
+          confidence: existing.confidence,
+          weight: existing.weight,
+          createdAt: existing.createdAt,
+          updatedAt: existing.updatedAt, // CRITICAL: removes old timestamp
+          service: existing.service,
+          data: existing.data,
+          createdBy: existing.createdBy,
+          metadata: existing.metadata  // CRITICAL: keep as nested 'metadata' property!
         }
         tx.addOperation(
           new RemoveFromMetadataIndexOperation(this.metadataIndex, params.id, removalMetadata)
@@ -4692,6 +4710,52 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         total: (vectorCount * 384 * 4) + graphStats.memoryUsage + (metadataStats.indexSize || 0)
       }
     }
+  }
+
+  /**
+   * v7.5.0: Validate metadata index consistency and detect corruption
+   *
+   * Returns health status and recommendations for repair. Corruption typically
+   * manifests as high avg entries/entity (expected ~30, corrupted can be 100+)
+   * caused by the update() field asymmetry bug (fixed in v7.5.0).
+   *
+   * @returns Promise resolving to validation results
+   *
+   * @example
+   * const validation = await brain.validateIndexConsistency()
+   * if (!validation.healthy) {
+   *   console.log(validation.recommendation)
+   *   // Run brain.rebuildIndex() to repair
+   * }
+   */
+  async validateIndexConsistency(): Promise<{
+    healthy: boolean
+    avgEntriesPerEntity: number
+    entityCount: number
+    indexEntryCount: number
+    recommendation: string | null
+  }> {
+    await this.ensureInitialized()
+    return this.metadataIndex.validateConsistency()
+  }
+
+  /**
+   * v7.5.0: Get metadata index statistics
+   *
+   * Returns detailed statistics about the metadata index including
+   * total entries, IDs indexed, and fields indexed.
+   *
+   * @returns Promise resolving to index statistics
+   */
+  async getIndexStats(): Promise<{
+    totalEntries: number
+    totalIds: number
+    fieldsIndexed: string[]
+    lastRebuild: number
+    indexSize: number
+  }> {
+    await this.ensureInitialized()
+    return this.metadataIndex.getStats()
   }
 
   /**

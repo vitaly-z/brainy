@@ -87,6 +87,26 @@ export class EntityIdMapper {
   }
 
   /**
+   * v7.5.0: Get integer ID for UUID with immediate persistence guarantee
+   * Unlike getOrAssign(), this method flushes to storage immediately after assigning
+   * a new ID. This prevents UUID→int mapping divergence if the process crashes
+   * before a normal flush() occurs.
+   *
+   * Use this for critical operations where data integrity is paramount.
+   * Normal operations can use getOrAssign() with batched flushing for better performance.
+   */
+  async getOrAssignSync(uuid: string): Promise<number> {
+    const id = this.getOrAssign(uuid)
+
+    // If a new ID was assigned, immediately persist to storage
+    if (this.dirty) {
+      await this.flush()
+    }
+
+    return id
+  }
+
+  /**
    * Get UUID for integer ID
    */
   getUuid(intId: number): string | undefined {
