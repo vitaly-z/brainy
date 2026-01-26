@@ -6,6 +6,7 @@
 
 [![npm version](https://badge.fury.io/js/%40soulcraft%2Fbrainy.svg)](https://www.npmjs.com/package/@soulcraft/brainy)
 [![npm downloads](https://img.shields.io/npm/dm/@soulcraft/brainy.svg)](https://www.npmjs.com/package/@soulcraft/brainy)
+[![Documentation](https://img.shields.io/badge/docs-soulcraft.com-blue.svg)](https://soulcraft.com/docs)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](https://www.typescriptlang.org/)
 
@@ -37,10 +38,10 @@ await brain.init()
 **New to Brainy? Pick your starting point:**
 
 ### 🚀 Path 1: I want to build something NOW
-**→ [Complete API Reference](docs/api/README.md)** ⭐ **Most developers start here** ⭐
-- Every method documented with examples
-- Quick start in 60 seconds
-- 1,870 lines of copy-paste ready code
+**→ [Full Documentation](https://soulcraft.com/docs)** ⭐ **Most developers start here** ⭐
+- Interactive API reference with examples
+- Quick start guides and tutorials
+- Copy-paste ready code snippets
 - **This is your primary resource**
 
 ### 🧠 Path 2: I want to understand the big picture first
