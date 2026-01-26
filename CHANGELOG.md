@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.5.0](https://github.com/soulcraftlabs/brainy/compare/v7.4.1...v7.5.0) (2026-01-26)
+
+- fix: update() field asymmetry causing index corruption (a94219e)
+
+
 ## [7.5.0](https://github.com/soulcraftlabs/brainy/compare/v7.4.1...v7.5.0) (2026-01-26)
 
 ### Bug Fixes
