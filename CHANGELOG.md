@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.6.1](https://github.com/soulcraftlabs/brainy/compare/v7.6.0...v7.6.1) (2026-01-26)
+
+- docs: add link to hosted API documentation at soulcraft.com/docs
+
 ## [7.6.0](https://github.com/soulcraftlabs/brainy/compare/v7.5.0...v7.6.0) (2026-01-26)
 
 - chore: republish (npm ghost versions in 7.5.x range)
