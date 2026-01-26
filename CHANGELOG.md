@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [7.5.1](https://github.com/soulcraftlabs/brainy/compare/v7.5.0...v7.5.1) (2026-01-26)
+### [7.5.2](https://github.com/soulcraftlabs/brainy/compare/v7.5.0...v7.5.2) (2026-01-26)
 
-- chore: republish (npm registry issue with 7.5.0)
+- chore: republish (npm registry ghost record issue)
 
 ### [7.5.0](https://github.com/soulcraftlabs/brainy/compare/v7.4.1...v7.5.0) (2026-01-26)
 
