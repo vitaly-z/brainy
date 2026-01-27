@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.9.0](https://github.com/soulcraftlabs/brainy/compare/v7.8.0...v7.9.0) (2026-01-27)
+
+- chore: rebuild type embeddings for updated ContentCategory type (3911fa7)
+- feat: expand ContentCategory to universal 6-category set for highlight() (ff80b87)
+
+
 ### [7.8.0](https://github.com/soulcraftlabs/brainy/compare/v7.7.0...v7.8.0) (2026-01-27)
 
 - feat: add structured content extraction and batch embedding optimization to highlight() (cca1cd8)
