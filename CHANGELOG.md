@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.7.0](https://github.com/soulcraftlabs/brainy/compare/v7.6.1...v7.7.0) (2026-01-26)
+
+### Features
+
+**Match Visibility in Search Results**
+
+Search results now include detailed match information:
+- `textMatches: string[]` - Query words found in entity
+- `textScore: number` - Text match quality (0-1)
+- `semanticScore: number` - Semantic similarity (0-1)
+- `matchSource: 'text' | 'semantic' | 'both'` - Where result came from
+
+```typescript
+const results = await brain.find({ query: 'david the warrior' })
+results[0].textMatches    // ["david", "warrior"]
+results[0].semanticScore  // 0.87
+results[0].matchSource    // "both"
+```
+
+**Semantic Highlighting API**
+
+New `highlight()` method shows which concepts matched:
+
+```typescript
+const highlights = await brain.highlight({
+  query: "david the warrior",
+  text: "David Smith is a brave fighter who battles dragons"
+})
+// Returns both exact matches and semantic concepts:
+// [
+//   { text: "David", score: 1.0, matchType: "text" },
+//   { text: "fighter", score: 0.78, matchType: "semantic" },
+//   { text: "battles", score: 0.72, matchType: "semantic" }
+// ]
+```
+
+**Scalable Word Indexing**
+
+- Increased word limit from 50 to 5000 words per entity
+- Supports articles, chapters, and large documents
+- Roaring Bitmaps provide efficient compression at scale
+
+### Performance
+
+- O(1) fast path in `findMatchingWords()` for text results
+- 500 chunk limit in `highlight()` for memory safety
+- Stopword filtering reduces embedding overhead
+
 ### [7.6.1](https://github.com/soulcraftlabs/brainy/compare/v7.6.0...v7.6.1) (2026-01-26)
 
 - docs: add link to hosted API documentation at soulcraft.com/docs
