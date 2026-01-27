@@ -87,6 +87,25 @@ import { BrainyInterface } from './types/brainyInterface.js'
 import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
 
 /**
+ * Stopwords for semantic highlighting (v7.8.0)
+ * These common words are skipped when highlighting individual words
+ * to focus on meaningful content words.
+ */
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
+  'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+  'may', 'might', 'must', 'shall', 'can', 'to', 'of', 'in', 'for', 'on', 'with', 'at',
+  'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+  'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when',
+  'where', 'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such',
+  'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
+  'and', 'but', 'or', 'if', 'because', 'until', 'while', 'although', 'though',
+  'this', 'that', 'these', 'those', 'it', 'its', 'i', 'me', 'my', 'you', 'your',
+  'he', 'him', 'his', 'she', 'her', 'we', 'us', 'our', 'they', 'them', 'their',
+  'what', 'which', 'who', 'whom', 'whose', 'am'
+])
+
+/**
  * The main Brainy class - Clean, Beautiful, Powerful
  * REAL IMPLEMENTATION - No stubs, no mocks
  *
@@ -1921,25 +1940,49 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return results
       }
 
-      // Execute parallel searches for optimal performance
-      const searchPromises: Promise<Result<T>[]>[] = []
-      
-      // Vector search component
-      if (params.query || params.vector) {
-        searchPromises.push(this.executeVectorSearch(params))
+      // v7.7.0: Zero-Config Hybrid Search
+      // Determine search mode: auto (default) combines text + semantic for query searches
+      const searchMode = params.searchMode || 'auto'
+      const limit = params.limit || 10
+
+      // Handle text-only query (user explicitly wants text search)
+      if (searchMode === 'text' && params.query && params.query.trim() !== '') {
+        results = await this.executeTextSearch(params.query, limit * 2)
       }
-      
-      // Proximity search component
-      if (params.near) {
-        searchPromises.push(this.executeProximitySearch(params))
+      // Handle semantic-only query (user explicitly wants vector search)
+      else if ((searchMode === 'semantic' || searchMode === 'vector') && (params.query || params.vector)) {
+        results = await this.executeVectorSearch(params)
       }
-      
-      // Execute searches in parallel
-      if (searchPromises.length > 0) {
-        const searchResults = await Promise.all(searchPromises)
-        for (const batch of searchResults) {
-          results.push(...batch)
-        }
+      // Handle explicit hybrid or auto mode with query
+      else if ((searchMode === 'auto' || searchMode === 'hybrid') && params.query && params.query.trim() !== '' && !params.vector) {
+        // Zero-config hybrid: combine text + semantic search with RRF fusion
+        const [textResults, semanticResults] = await Promise.all([
+          this.executeTextSearch(params.query, limit * 2),
+          this.executeVectorSearch(params)
+        ])
+
+        // Use user-specified alpha or auto-detect based on query length
+        const alpha = params.hybridAlpha ?? this.autoAlpha(params.query)
+
+        // v7.8.0: Tokenize query for match visibility
+        const queryWords = this.metadataIndex.tokenize(params.query)
+
+        // RRF fusion combines both result sets with match visibility
+        results = await this.rrfFusion(textResults, semanticResults, alpha, queryWords)
+      }
+      // Handle direct vector search (no query text) - no hybrid needed
+      else if (params.vector && !params.query) {
+        results = await this.executeVectorSearch(params)
+      }
+      // Handle proximity search
+      else if (params.near) {
+        results = await this.executeProximitySearch(params)
+      }
+
+      // Execute parallel searches for additional criteria (proximity search in addition to query)
+      if (params.near && params.query) {
+        const proximityResults = await this.executeProximitySearch(params)
+        results.push(...proximityResults)
       }
 
       // Remove duplicate results from parallel searches
@@ -2109,11 +2152,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         results.sort((a, b) => b.score - a.score)
       }
 
-      const limit = params.limit || 10
-      const offset = params.offset || 0
+      const finalOffset = params.offset || 0
 
-      // Efficient pagination - only slice what we need
-      return results.slice(offset, offset + limit)
+      // Efficient pagination - only slice what we need (limit already defined above)
+      return results.slice(finalOffset, finalOffset + limit)
     })
     
     // Record performance for auto-tuning
@@ -4663,6 +4705,160 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Zero-config hybrid highlighting (v7.8.0)
+   *
+   * Returns both exact text matches AND semantically similar concepts.
+   * Perfect for UI highlighting at different levels:
+   * - matchType: 'text' = exact word match (highlight strongly)
+   * - matchType: 'semantic' = concept match (highlight softly)
+   *
+   * @param params.query - The search query
+   * @param params.text - The text to highlight (e.g., entity.data)
+   * @param params.granularity - 'word' | 'phrase' | 'sentence' (default: 'word')
+   * @param params.threshold - Minimum similarity for semantic matches (default: 0.5)
+   * @returns Array of highlights with text, score, position, and matchType
+   *
+   * @example
+   * ```typescript
+   * const highlights = await brain.highlight({
+   *   query: "david the warrior",
+   *   text: "David Smith is a brave fighter who battles dragons"
+   * })
+   * // Returns: [
+   * //   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },       // Exact
+   * //   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' }, // Concept
+   * //   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }  // Concept
+   * // ]
+   * ```
+   */
+  async highlight(params: import('./types/brainy.types.js').HighlightParams): Promise<import('./types/brainy.types.js').Highlight[]> {
+    await this.ensureInitialized()
+
+    const { query, text, granularity = 'word', threshold = 0.5 } = params
+
+    if (!query || !text) {
+      return []
+    }
+
+    // Split text into chunks based on granularity
+    const allChunks = this.splitForHighlighting(text, granularity)
+
+    if (allChunks.length === 0) {
+      return []
+    }
+
+    // v7.8.0 Production safety: Limit chunks to prevent memory explosion
+    // At 500 words × 384 dimensions × 4 bytes = 768KB temp memory (acceptable)
+    // At 10,000 words = 15MB temp memory (too much for concurrent requests)
+    const MAX_HIGHLIGHT_CHUNKS = 500
+    const chunks = allChunks.slice(0, MAX_HIGHLIGHT_CHUNKS)
+
+    // Track all highlights (keyed by position to avoid duplicates)
+    const highlightMap = new Map<string, import('./types/brainy.types.js').Highlight>()
+
+    // === PHASE 1: Find exact text matches (score = 1.0, matchType = 'text') ===
+    const queryWords = this.metadataIndex.tokenize(query)
+    const queryWordsLower = new Set(queryWords.map(w => w.toLowerCase()))
+
+    for (const chunk of chunks) {
+      const chunkLower = chunk.text.toLowerCase().replace(/[^\w\s]/g, '')
+      if (queryWordsLower.has(chunkLower)) {
+        const key = `${chunk.position[0]}-${chunk.position[1]}`
+        highlightMap.set(key, {
+          text: chunk.text,
+          score: 1.0,
+          position: chunk.position,
+          matchType: 'text'
+        })
+      }
+    }
+
+    // === PHASE 2: Find semantic matches (score varies, matchType = 'semantic') ===
+    // Get query embedding
+    const queryVector = await this.embed(query)
+
+    // Batch embed all chunks (efficient!)
+    const chunkTexts = chunks.map(c => c.text)
+    const chunkVectors = await this.embedBatch(chunkTexts)
+
+    // Calculate semantic similarities
+    for (let i = 0; i < chunks.length; i++) {
+      const key = `${chunks[i].position[0]}-${chunks[i].position[1]}`
+
+      // Skip if already a text match (text matches take priority)
+      if (highlightMap.has(key)) continue
+
+      const distance = this.distance(queryVector, chunkVectors[i])
+      const similarity = 1 - distance
+
+      if (similarity >= threshold) {
+        highlightMap.set(key, {
+          text: chunks[i].text,
+          score: similarity,
+          position: chunks[i].position,
+          matchType: 'semantic'
+        })
+      }
+    }
+
+    // Sort by score descending (text matches will be first with score=1.0)
+    const highlights = Array.from(highlightMap.values())
+    return highlights.sort((a, b) => b.score - a.score)
+  }
+
+  /**
+   * Split text into chunks for highlighting (v7.8.0)
+   * @internal
+   */
+  private splitForHighlighting(text: string, granularity: string): Array<{ text: string, position: [number, number] }> {
+    const results: Array<{ text: string, position: [number, number] }> = []
+
+    if (granularity === 'word') {
+      // Split on whitespace, track positions
+      const regex = /\S+/g
+      let match
+      while ((match = regex.exec(text)) !== null) {
+        // Skip stopwords
+        if (!STOPWORDS.has(match[0].toLowerCase())) {
+          results.push({ text: match[0], position: [match.index, match.index + match[0].length] })
+        }
+      }
+    } else if (granularity === 'sentence') {
+      // Split on sentence boundaries
+      const regex = /[^.!?]+[.!?]+/g
+      let match
+      while ((match = regex.exec(text)) !== null) {
+        results.push({ text: match[0].trim(), position: [match.index, match.index + match[0].length] })
+      }
+      // Handle text without sentence-ending punctuation
+      if (results.length === 0 && text.trim()) {
+        results.push({ text: text.trim(), position: [0, text.length] })
+      }
+    } else if (granularity === 'phrase') {
+      // Sliding window of 2-4 words
+      const words: Array<{ text: string, start: number, end: number }> = []
+      const regex = /\S+/g
+      let match
+      while ((match = regex.exec(text)) !== null) {
+        words.push({ text: match[0], start: match.index, end: match.index + match[0].length })
+      }
+
+      // Generate 2-4 word phrases
+      for (let windowSize = 2; windowSize <= 4; windowSize++) {
+        for (let i = 0; i <= words.length - windowSize; i++) {
+          const phraseWords = words.slice(i, i + windowSize)
+          const phraseText = phraseWords.map(w => w.text).join(' ')
+          const start = phraseWords[0].start
+          const end = phraseWords[phraseWords.length - 1].end
+          results.push({ text: phraseText, position: [start, end] })
+        }
+      }
+    }
+
+    return results
+  }
+
+  /**
    * Get comprehensive index statistics
    *
    * Returns detailed stats about all internal indexes including
@@ -5368,6 +5564,199 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           score: r.score * (weights.vector || 1.0)
         }))
     }
+  }
+
+  /**
+   * Execute text search using word index (v7.7.0)
+   *
+   * Performs keyword-based search using the __words__ index in MetadataIndexManager.
+   * Returns results ranked by word match count.
+   *
+   * @param query - Text query to search for
+   * @param limit - Maximum results to return
+   * @returns Array of Results with scores based on match count
+   */
+  private async executeTextSearch(query: string, limit: number): Promise<Result<T>[]> {
+    const textMatches = await this.metadataIndex.getIdsForTextQuery(query)
+    if (textMatches.length === 0) return []
+
+    // Take top matches and load entities
+    const topMatches = textMatches.slice(0, limit * 2)  // Get more for filtering
+    const ids = topMatches.map(m => m.id)
+    const entitiesMap = await this.batchGet(ids)
+
+    // Create results with scores based on match count
+    const maxMatches = topMatches[0]?.matchCount || 1
+    const results: Result<T>[] = []
+
+    for (const match of topMatches) {
+      const entity = entitiesMap.get(match.id)
+      if (entity) {
+        // Normalize score to 0-1 range based on match count
+        const score = match.matchCount / maxMatches
+        results.push(this.createResult(match.id, score, entity))
+      }
+    }
+
+    return results
+  }
+
+  /**
+   * Auto-detect optimal alpha for hybrid search (v7.7.0)
+   *
+   * Short queries (1-2 words) favor text search (lower alpha)
+   * Long queries (5+ words) favor semantic search (higher alpha)
+   *
+   * @param query - The search query
+   * @returns Alpha value between 0 (text only) and 1 (semantic only)
+   */
+  private autoAlpha(query: string): number {
+    const wordCount = query.trim().split(/\s+/).filter(w => w.length > 0).length
+    if (wordCount <= 2) return 0.3      // Favor text for short queries
+    if (wordCount <= 5) return 0.5      // Balanced
+    return 0.7                          // Favor semantic for long queries
+  }
+
+  /**
+   * Reciprocal Rank Fusion (RRF) for combining search results (v7.7.0)
+   *
+   * RRF is a proven fusion algorithm that:
+   * - Doesn't require score normalization
+   * - Handles different score distributions
+   * - Gives higher weight to top-ranked items
+   *
+   * Formula: score(d) = sum(1 / (k + rank(d))) for each list
+   *
+   * v7.8.0: Now includes match visibility (textMatches, textScore, semanticScore, matchSource)
+   *
+   * @param textResults - Results from text search
+   * @param semanticResults - Results from semantic search
+   * @param alpha - Weight for semantic (0=text only, 1=semantic only)
+   * @param queryWords - Original query words for match tracking
+   * @param k - RRF constant (default: 60, standard in literature)
+   * @returns Fused results sorted by combined score with match visibility
+   */
+  private async rrfFusion(
+    textResults: Result<T>[],
+    semanticResults: Result<T>[],
+    alpha: number,
+    queryWords: string[],
+    k: number = 60
+  ): Promise<Result<T>[]> {
+    // Track scores and match details per entity
+    interface MatchData {
+      rrf: number
+      textScore?: number
+      semanticScore?: number
+      textMatches: string[]
+      hasText: boolean
+      hasSemantic: boolean
+    }
+    const matchData = new Map<string, MatchData>()
+    const entityMap = new Map<string, Entity<T>>()
+
+    // Text contribution (1 - alpha weight)
+    const textWeight = 1 - alpha
+    textResults.forEach((r, rank) => {
+      const rrfScore = textWeight * (1 / (k + rank + 1))
+      const existing = matchData.get(r.id) || { rrf: 0, textMatches: [], hasText: false, hasSemantic: false }
+      existing.rrf += rrfScore
+      existing.textScore = r.score  // Original text search score (0-1)
+      existing.hasText = true
+      matchData.set(r.id, existing)
+      if (r.entity) entityMap.set(r.id, r.entity)
+    })
+
+    // Semantic contribution (alpha weight)
+    semanticResults.forEach((r, rank) => {
+      const rrfScore = alpha * (1 / (k + rank + 1))
+      const existing = matchData.get(r.id) || { rrf: 0, textMatches: [], hasText: false, hasSemantic: false }
+      existing.rrf += rrfScore
+      existing.semanticScore = r.score  // Original semantic search score (0-1)
+      existing.hasSemantic = true
+      matchData.set(r.id, existing)
+      if (r.entity) entityMap.set(r.id, r.entity)
+    })
+
+    // Sort by fused score
+    const sortedIds = Array.from(matchData.entries())
+      .sort((a, b) => b[1].rrf - a[1].rrf)
+      .map(([id, data]) => ({ id, data }))
+
+    // Build results - need to load any missing entities
+    const missingIds = sortedIds.filter(s => !entityMap.has(s.id)).map(s => s.id)
+    if (missingIds.length > 0) {
+      const loaded = await this.batchGet(missingIds)
+      for (const [id, entity] of loaded) {
+        entityMap.set(id, entity)
+      }
+    }
+
+    // v7.8.0 Performance: Build set of text result IDs for O(1) lookup
+    // This avoids re-extracting text for entities that weren't in text results
+    const textResultIds = new Set(textResults.map(r => r.id))
+
+    // Create final results with match visibility
+    const results: Result<T>[] = []
+    for (const { id, data } of sortedIds) {
+      const entity = entityMap.get(id)
+      if (entity) {
+        // Find which query words matched - uses fast path if entity wasn't in text results
+        const textMatches = this.findMatchingWords(entity, queryWords, textResultIds)
+
+        // Determine match source
+        let matchSource: 'text' | 'semantic' | 'both'
+        if (data.hasText && data.hasSemantic) {
+          matchSource = 'both'
+        } else if (data.hasText) {
+          matchSource = 'text'
+        } else {
+          matchSource = 'semantic'
+        }
+
+        // Create result with match visibility
+        const result = this.createResult(id, data.rrf, entity)
+        result.textMatches = textMatches
+        result.textScore = data.textScore
+        result.semanticScore = data.semanticScore
+        result.matchSource = matchSource
+
+        results.push(result)
+      }
+    }
+
+    return results
+  }
+
+  /**
+   * Find which query words match in an entity's text content (v7.8.0)
+   *
+   * Performance: O(query_words × text_length) - only called when needed
+   * At scale: Use textResultIds set for O(1) lookup instead of re-extracting
+   *
+   * @param entity - Entity to check
+   * @param queryWords - Words from the search query
+   * @param textResultIds - Optional: Set of IDs from text search (O(1) lookup)
+   * @returns Array of matching query words
+   */
+  private findMatchingWords(
+    entity: Entity<T>,
+    queryWords: string[],
+    textResultIds?: Set<string>
+  ): string[] {
+    // Fast path: if entity wasn't in text results, no words matched
+    if (textResultIds && !textResultIds.has(entity.id)) {
+      return []
+    }
+
+    // Slow path: extract text and check each word
+    // Only happens for entities that DID match text search
+    const textContent = this.metadataIndex.extractTextContent({
+      data: entity.data,
+      metadata: entity.metadata
+    }).toLowerCase()
+
+    return queryWords.filter(word => textContent.includes(word.toLowerCase()))
   }
 
   /**

@@ -82,6 +82,12 @@ export interface Result<T = any> {
 
   // Score transparency
   explanation?: ScoreExplanation
+
+  // Match visibility (v7.8.0) - shows what matched in hybrid search
+  textMatches?: string[]      // Query words found in entity (e.g., ["david", "warrior"])
+  textScore?: number          // Normalized text match score (0-1)
+  semanticScore?: number      // Semantic similarity score (0-1)
+  matchSource?: 'text' | 'semantic' | 'both'  // Where this result came from
 }
 
 /**
@@ -192,6 +198,10 @@ export interface FindParams<T = any> {
   includeRelations?: boolean // Include entity relationships
   excludeVFS?: boolean       // v4.7.0: Exclude VFS entities from results (default: false - VFS included)
   service?: string           // Multi-tenancy filter
+
+  // Hybrid search options (v7.7.0)
+  searchMode?: 'auto' | 'text' | 'semantic' | 'vector' | 'hybrid'  // Search strategy: auto (default), text-only, semantic/vector-only, or explicit hybrid
+  hybridAlpha?: number       // Weight between text (0.0) and semantic (1.0) search, default: auto-detected by query length
   
   // Triple Intelligence Fusion
   fusion?: {
@@ -223,12 +233,14 @@ export interface GraphConstraints {
 /**
  * Search modes
  */
-export type SearchMode = 
-  | 'auto'      // Automatically choose best mode
-  | 'vector'    // Pure vector search
+export type SearchMode =
+  | 'auto'      // Automatically choose best mode (default - enables hybrid text+semantic)
+  | 'vector'    // Pure vector search (semantic only)
+  | 'semantic'  // Alias for vector search
+  | 'text'      // Pure text/keyword search
   | 'metadata'  // Pure metadata filtering
   | 'graph'     // Pure graph traversal
-  | 'hybrid'    // Combine all intelligences
+  | 'hybrid'    // Combine all intelligences (explicit hybrid mode)
 
 /**
  * Parameters for similarity search
@@ -775,6 +787,62 @@ export interface NeuralAnomalyParams {
   type?: NounType          // Check specific type
   method?: 'isolation' | 'lof' | 'statistical' | 'autoencoder'
   returnScores?: boolean    // Return anomaly scores
+}
+
+// ============= Semantic Highlighting Types (v7.8.0) =============
+
+/**
+ * Parameters for hybrid highlighting (v7.8.0)
+ *
+ * Zero-config highlighting that returns both text (exact) and semantic (concept) matches.
+ * Perfect for UI highlighting at different levels.
+ *
+ * @example
+ * ```typescript
+ * const highlights = await brain.highlight({
+ *   query: "david the warrior",
+ *   text: "David Smith is a brave fighter who battles dragons"
+ * })
+ * // Returns: [
+ * //   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },      // Exact match
+ * //   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' }, // Concept match
+ * //   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }  // Concept match
+ * // ]
+ * ```
+ */
+export interface HighlightParams {
+  /** The search query to match against */
+  query: string
+
+  /** The text to highlight (e.g., entity.data) */
+  text: string
+
+  /** Granularity of highlighting: 'word' (default), 'phrase', or 'sentence' */
+  granularity?: 'word' | 'phrase' | 'sentence'
+
+  /** Minimum semantic similarity score for semantic matches (default: 0.5) */
+  threshold?: number
+}
+
+/**
+ * A highlight showing which text matched the query
+ *
+ * matchType tells the UI how to style the highlight:
+ * - 'text': Exact word match (strongest signal, highest confidence)
+ * - 'semantic': Conceptually similar match (may need softer highlight)
+ */
+export interface Highlight {
+  /** The text that matched */
+  text: string
+
+  /** Match score (0-1). For text matches, always 1.0. For semantic, varies by similarity. */
+  score: number
+
+  /** Position in original text [start, end] */
+  position: [number, number]
+
+  /** Match type: 'text' (exact word match) or 'semantic' (concept match) */
+  matchType: 'text' | 'semantic'
 }
 
 // ============= Export all types =============

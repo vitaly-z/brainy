@@ -202,8 +202,112 @@ const results = await brain.find({
   - `depth?`: `number` - Traversal depth
 - `limit?`: `number` - Max results (default: 10)
 - `offset?`: `number` - Skip results
+- `searchMode?`: `'auto' | 'text' | 'semantic' | 'hybrid'` - Search strategy (v7.7.0):
+  - `'auto'` (default): Zero-config hybrid combining text + semantic search
+  - `'text'`: Pure keyword/text matching
+  - `'semantic'`: Pure vector similarity
+  - `'hybrid'`: Explicit hybrid mode
+- `hybridAlpha?`: `number` - Balance between text (0.0) and semantic (1.0) search. Auto-detected by query length if not specified.
 
 **Returns:** `Promise<Result[]>` - Matching entities with scores
+
+---
+
+### Hybrid Search (v7.7.0)
+
+Brainy automatically combines text (keyword) and semantic (vector) search for optimal results. No configuration needed.
+
+```typescript
+// Zero-config hybrid search (just works)
+const results = await brain.find({
+  query: 'David Smith'  // Finds both exact text matches AND semantically similar
+})
+
+// Force text-only search (exact keyword matching)
+const textResults = await brain.find({
+  query: 'exact keyword',
+  searchMode: 'text'
+})
+
+// Force semantic-only search (vector similarity)
+const semanticResults = await brain.find({
+  query: 'artificial intelligence concepts',
+  searchMode: 'semantic'
+})
+
+// Custom hybrid weighting (0 = text only, 1 = semantic only)
+const customResults = await brain.find({
+  query: 'David Smith',
+  hybridAlpha: 0.3  // Favor text matching
+})
+```
+
+**How it works:**
+- Short queries (1-2 words) automatically favor text matching
+- Long queries (5+ words) automatically favor semantic search
+- Results are combined using Reciprocal Rank Fusion (RRF)
+
+---
+
+### Match Visibility (v7.8.0)
+
+Search results include detailed match information:
+
+```typescript
+const results = await brain.find({ query: 'david the warrior' })
+
+// Each result now includes:
+results[0].textMatches     // ["david", "warrior"] - exact query words found
+results[0].textScore       // 0.25 - text match quality (0-1)
+results[0].semanticScore   // 0.87 - semantic similarity (0-1)
+results[0].matchSource     // 'both' | 'text' | 'semantic'
+```
+
+**Use cases:**
+- Highlight exact matches in UI (textMatches)
+- Explain why a result ranked high (matchSource)
+- Debug search behavior (separate scores)
+
+---
+
+### `highlight(params)` → `Promise<Highlight[]>` ✨ *New v7.8.0*
+
+Zero-config highlighting for both exact matches AND semantic concepts.
+
+```typescript
+const highlights = await brain.highlight({
+  query: "david the warrior",
+  text: "David Smith is a brave fighter who battles dragons"
+})
+
+// Returns both text matches AND semantic matches:
+// [
+//   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
+//   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
+//   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
+// ]
+```
+
+**Parameters:**
+- `query`: `string` - The search query
+- `text`: `string` - Text to highlight (e.g., entity.data)
+- `granularity?`: `'word' | 'phrase' | 'sentence'` - Highlight unit (default: 'word')
+- `threshold?`: `number` - Min similarity for semantic matches (default: 0.5)
+
+**Returns:** `Promise<Highlight[]>`
+- `text` - The matched text
+- `score` - Match score (1.0 for text matches, varies for semantic)
+- `position` - [start, end] indices in original text
+- `matchType` - `'text'` (exact) or `'semantic'` (concept)
+
+**UI Pattern:**
+```typescript
+// Style differently based on match type
+highlights.forEach(h => {
+  const style = h.matchType === 'text' ? 'font-weight: bold' : 'background: yellow'
+  // Apply style from h.position[0] to h.position[1]
+})
+```
 
 ---
 

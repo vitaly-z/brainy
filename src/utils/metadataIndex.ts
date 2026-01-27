@@ -1222,7 +1222,154 @@ export class MetadataIndexManager {
       extract(data)
     }
 
+    // v7.7.0: Extract words for hybrid text search
+    // v7.8.0: Production-scale word limit (5000 words)
+    // - Handles articles, chapters, and large documents
+    // - Roaring Bitmaps + Chunked Sparse Index + LRU caching
+    // - Int32 hashes store words as 4-byte values, not strings
+    //
+    // Memory managed by existing optimizations:
+    // - Roaring Bitmaps: 90%+ compression for sparse data
+    // - Chunked Sparse Index: ~50 values per chunk, lazy-loaded
+    // - UnifiedCache LRU: Only hot chunks in memory
+    //
+    // Future: Bloom filter hybrid for unlimited words (see .strategy/BILLION-SCALE-PLAN.md)
+    const textContent = this.extractTextContent(data)
+    if (textContent) {
+      const MAX_WORDS_PER_ENTITY = 5000  // Handles articles/chapters, memory-safe at scale
+      const allWords = this.tokenize(textContent)
+      const words = allWords.slice(0, MAX_WORDS_PER_ENTITY)
+
+      if (allWords.length > MAX_WORDS_PER_ENTITY) {
+        // Log once per entity, not per word - avoids log spam
+        prodLog.debug(
+          `Entity text has ${allWords.length} words, indexing first ${MAX_WORDS_PER_ENTITY} for hybrid search`
+        )
+      }
+
+      for (const word of words) {
+        // Hash word to int32 for memory efficiency (saves ~10GB at 1B scale)
+        const wordHash = this.hashWord(word)
+        fields.push({ field: '__words__', value: wordHash })
+      }
+    }
+
     return fields
+  }
+
+  /**
+   * Extract text content from entity data for word indexing (v7.7.0)
+   *
+   * Recursively extracts string values from data, excluding:
+   * - vector, embedding, connections, level, id (internal fields)
+   * - Arrays with more than 10 elements (likely vectors/bulk data)
+   * - Numeric-only keys (array indices)
+   *
+   * @param data - Entity data or metadata
+   * @returns Concatenated text content
+   */
+  extractTextContent(data: any): string {
+    if (data === null || data === undefined) return ''
+    if (typeof data === 'string') return data
+    if (typeof data === 'number' || typeof data === 'boolean') return String(data)
+    if (Array.isArray(data)) {
+      // Skip large arrays (likely vectors)
+      if (data.length > 10) return ''
+      return data.map(d => this.extractTextContent(d)).filter(Boolean).join(' ')
+    }
+    if (typeof data === 'object') {
+      const skipKeys = new Set(['vector', 'embedding', 'embeddings', 'connections', 'level', 'id'])
+      const texts: string[] = []
+      for (const [key, value] of Object.entries(data)) {
+        // Skip internal fields and numeric keys (array indices)
+        if (skipKeys.has(key) || /^\d+$/.test(key)) continue
+        const text = this.extractTextContent(value)
+        if (text) texts.push(text)
+      }
+      return texts.join(' ')
+    }
+    return ''
+  }
+
+  /**
+   * Tokenize text into words for indexing (v7.7.0)
+   *
+   * - Converts to lowercase
+   * - Removes punctuation
+   * - Splits on whitespace
+   * - Filters by length (2-50 chars)
+   * - Deduplicates per entity
+   *
+   * @param text - Text content to tokenize
+   * @returns Array of unique words
+   */
+  tokenize(text: string): string[] {
+    if (!text) return []
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')  // Remove punctuation
+      .split(/\s+/)               // Split on whitespace
+      .filter(w => w.length >= 2 && w.length <= 50)  // Length filter
+      .filter((w, i, arr) => arr.indexOf(w) === i)   // Dedupe per entity
+  }
+
+  /**
+   * Hash word to int32 using FNV-1a (v7.7.0)
+   *
+   * FNV-1a is fast with low collision rate, suitable for word hashing.
+   * Saves ~10GB at billion scale by avoiding string storage.
+   *
+   * @param word - Word to hash
+   * @returns Int32 hash value
+   */
+  hashWord(word: string): number {
+    let hash = 2166136261  // FNV offset basis
+    for (let i = 0; i < word.length; i++) {
+      hash ^= word.charCodeAt(i)
+      hash = Math.imul(hash, 16777619)  // FNV prime
+    }
+    return hash | 0  // Convert to signed int32
+  }
+
+  /**
+   * Get entity IDs matching a text query (v7.7.0)
+   *
+   * Performs word-based text search using the __words__ index.
+   * Returns IDs ranked by match count (entities with more matching words first).
+   *
+   * @param query - Text query to search for
+   * @returns Array of { id, matchCount } sorted by matchCount descending
+   */
+  async getIdsForTextQuery(query: string): Promise<Array<{ id: string; matchCount: number }>> {
+    const queryWords = this.tokenize(query)
+    if (queryWords.length === 0) return []
+
+    // Get IDs for each word hash
+    const wordIdSets: Map<string, number>[] = []
+    for (const word of queryWords) {
+      const wordHash = this.hashWord(word)
+      const ids = await this.getIds('__words__', wordHash)
+      const idSet = new Map<string, number>()
+      for (const id of ids) {
+        idSet.set(id, 1)
+      }
+      wordIdSets.push(idSet)
+    }
+
+    if (wordIdSets.length === 0) return []
+
+    // Count matches per entity
+    const matchCounts = new Map<string, number>()
+    for (const idSet of wordIdSets) {
+      for (const [id] of idSet) {
+        matchCounts.set(id, (matchCounts.get(id) || 0) + 1)
+      }
+    }
+
+    // Sort by match count descending
+    return Array.from(matchCounts.entries())
+      .map(([id, matchCount]) => ({ id, matchCount }))
+      .sort((a, b) => b.matchCount - a.matchCount)
   }
 
   /**
@@ -1240,11 +1387,22 @@ export class MetadataIndexManager {
     const fields = this.extractIndexableFields(entityOrMetadata)
 
     // v6.7.0: Sanity check for excessive indexed fields (indicates possible data issue)
-    if (fields.length > 100) {
+    // v7.8.0: Separate threshold for metadata fields vs word fields
+    // - Metadata fields: warn if > 100 (indicates deeply nested metadata)
+    // - Word fields: expected to be many for large documents, warn only for extreme cases
+    const metadataFields = fields.filter(f => f.field !== '__words__')
+    const wordFields = fields.filter(f => f.field === '__words__')
+
+    if (metadataFields.length > 100) {
       prodLog.warn(
-        `Entity ${id} has ${fields.length} indexed fields (expected ~30). ` +
-        `Possible deeply nested metadata or data issue. First 10 fields: ${fields.slice(0, 10).map(f => f.field).join(', ')}`
+        `Entity ${id} has ${metadataFields.length} metadata fields (expected ~30). ` +
+        `Possible deeply nested metadata. First 10 fields: ${metadataFields.slice(0, 10).map(f => f.field).join(', ')}`
       )
+    }
+
+    // Words are expected to be many for large documents - only log for extreme cases
+    if (wordFields.length > 5000) {
+      prodLog.debug(`Entity ${id} has ${wordFields.length} indexed words (large document)`)
     }
 
     // Sort fields to process 'noun' field first for type-field affinity tracking

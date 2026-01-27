@@ -4,7 +4,7 @@
 
 Brainy's `find()` method is the most advanced query system in any vector database, combining **Triple Intelligence** (vector + metadata + graph) with **Type-Aware NLP** for natural language understanding.
 
-## Architecture: Three Intelligence Systems
+## Architecture: Four Intelligence Systems
 
 ### 1. Vector Intelligence (HNSW Index)
 - **Purpose**: Semantic similarity search using embeddings
@@ -13,14 +13,22 @@ Brainy's `find()` method is the most advanced query system in any vector databas
 - **Data Structure**: Multi-layer graph with 16 connections per node
 - **Use Cases**: "Find similar documents", "Content like this"
 
-### 2. Metadata Intelligence (Incremental Indices)
+### 2. Text Intelligence (Word Index) - v7.7.0
+- **Purpose**: Keyword/exact text matching
+- **Algorithm**: Inverted word index with FNV-1a hashing
+- **Performance**: O(log C) where C = chunks (~50 values each)
+- **Data Structure**: `__words__ → hash → Roaring Bitmap of entity IDs`
+- **Use Cases**: "Find exact name", "Keyword search"
+- **Integration**: Automatically combined with Vector via RRF fusion
+
+### 3. Metadata Intelligence (Incremental Indices)
 - **Purpose**: Fast filtering on structured data
 - **Algorithm**: HashMap for exact matches, Sorted arrays for ranges
 - **Performance**: O(1) exact, O(log n) ranges, <1ms typical
 - **Data Structure**: `Map<field:value, Set<id>>` + sorted value arrays
 - **Use Cases**: "Documents from 2023", "Status equals active"
 
-### 3. Graph Intelligence (Adjacency Maps) 
+### 4. Graph Intelligence (Adjacency Maps) 
 - **Purpose**: Relationship traversal and connection analysis
 - **Algorithm**: Pure O(1) neighbor lookups via Map operations
 - **Performance**: O(1) per hop, ~0.1ms typical
@@ -82,6 +90,84 @@ await brain.find({
   },
   type: NounType.Document
 })
+```
+
+### 4. Hybrid Search (v7.7.0+)
+```typescript
+// Zero-config hybrid: automatically combines text + semantic search
+await brain.find({ query: "David Smith" })
+// Uses Reciprocal Rank Fusion (RRF) to combine results
+
+// Force text-only search
+await brain.find({ query: "exact keyword", searchMode: 'text' })
+
+// Force semantic-only search
+await brain.find({ query: "AI concepts", searchMode: 'semantic' })
+
+// Custom hybrid weighting (0 = text only, 1 = semantic only)
+await brain.find({ query: "search term", hybridAlpha: 0.3 })
+```
+
+**How Auto-Alpha Works:**
+- Short queries (1-2 words): alpha = 0.3 (favor text matching)
+- Medium queries (3-4 words): alpha = 0.5 (balanced)
+- Long queries (5+ words): alpha = 0.7 (favor semantic matching)
+
+### 5. Match Visibility (v7.8.0)
+
+Search results include match details showing what matched:
+
+```typescript
+const results = await brain.find({ query: 'david the warrior' })
+
+// Each result has:
+results[0].textMatches     // ["david", "warrior"] - exact words found
+results[0].textScore       // 0.25 - text match quality (0-1)
+results[0].semanticScore   // 0.87 - semantic similarity (0-1)
+results[0].matchSource     // 'both' | 'text' | 'semantic'
+```
+
+Use this for:
+- **Highlighting** exact matches in UI (textMatches)
+- **Explaining** why a result was found (matchSource)
+- **Debugging** search behavior (separate scores)
+
+### 6. Semantic Highlighting (v7.8.0)
+
+Highlight which concepts/words in text matched your query:
+
+```typescript
+// Find semantically similar words + exact matches
+const highlights = await brain.highlight({
+  query: "david the warrior",
+  text: "David Smith is a brave fighter who battles dragons"
+})
+
+// Returns:
+// [
+//   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
+//   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
+//   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
+// ]
+```
+
+**Features:**
+- `matchType: 'text'` - Exact word match (score = 1.0)
+- `matchType: 'semantic'` - Concept match (score varies)
+- `position` - [start, end] for precise highlighting
+- `granularity` - 'word' (default), 'phrase', or 'sentence'
+- `threshold` - Minimum semantic score (default: 0.5)
+
+**UI Usage Pattern:**
+```typescript
+// Highlight search results with different styles
+function highlightResult(text: string, highlights: Highlight[]) {
+  return highlights.map(h => ({
+    text: h.text,
+    position: h.position,
+    style: h.matchType === 'text' ? 'strong' : 'emphasis'  // Different UI styles
+  }))
+}
 ```
 
 ## Index Usage in Detail
