@@ -789,25 +789,71 @@ export interface NeuralAnomalyParams {
   returnScores?: boolean    // Return anomaly scores
 }
 
+// ============= Content Extraction Types (v7.9.0) =============
+
+/**
+ * Detected content type for smart text extraction
+ *
+ * @since v7.9.0
+ */
+export type ContentType = 'plaintext' | 'richtext-json' | 'html' | 'markdown'
+
+/**
+ * Content category for extracted segments
+ *
+ * Allows UI to apply different styling based on content role:
+ * - 'prose': Regular text content (paragraphs, list items)
+ * - 'heading': Heading/title text (h1-h6)
+ * - 'code': Code blocks or inline code
+ * - 'label': Labels, captions, or metadata-like text
+ *
+ * @since v7.9.0
+ */
+export type ContentCategory = 'prose' | 'heading' | 'code' | 'label'
+
+/**
+ * A segment of extracted text with its content category
+ *
+ * @since v7.9.0
+ */
+export interface ExtractedSegment {
+  /** The extracted text content */
+  text: string
+  /** What role this text plays in the document */
+  contentCategory: ContentCategory
+}
+
 // ============= Semantic Highlighting Types (v7.8.0) =============
 
 /**
- * Parameters for hybrid highlighting (v7.8.0)
+ * Parameters for hybrid highlighting (v7.8.0, enhanced v7.9.0)
  *
  * Zero-config highlighting that returns both text (exact) and semantic (concept) matches.
  * Perfect for UI highlighting at different levels.
  *
+ * v7.9.0: Added contentType hint and contentExtractor callback for structured text
+ * (rich-text JSON, HTML, Markdown). Auto-detects format when not specified.
+ *
  * @example
  * ```typescript
+ * // Plain text (unchanged from v7.8.0)
  * const highlights = await brain.highlight({
  *   query: "david the warrior",
  *   text: "David Smith is a brave fighter who battles dragons"
  * })
- * // Returns: [
- * //   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },      // Exact match
- * //   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' }, // Concept match
- * //   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }  // Concept match
- * // ]
+ *
+ * // Rich-text JSON (auto-detected)
+ * const highlights = await brain.highlight({
+ *   query: "david the warrior",
+ *   text: JSON.stringify(tiptapDocument)
+ * })
+ *
+ * // Custom extractor (for proprietary formats)
+ * const highlights = await brain.highlight({
+ *   query: "function",
+ *   text: sourceCode,
+ *   contentExtractor: (text) => treeSitterParse(text)
+ * })
  * ```
  */
 export interface HighlightParams {
@@ -822,6 +868,21 @@ export interface HighlightParams {
 
   /** Minimum semantic similarity score for semantic matches (default: 0.5) */
   threshold?: number
+
+  /**
+   * Optional content type hint to skip auto-detection.
+   * When omitted, the content type is detected from the text content.
+   * @since v7.9.0
+   */
+  contentType?: ContentType
+
+  /**
+   * Optional custom content extractor function.
+   * When provided, bypasses built-in detection and extraction entirely.
+   * Use this to plug in custom parsers (tree-sitter, Monaco, proprietary formats).
+   * @since v7.9.0
+   */
+  contentExtractor?: (text: string) => ExtractedSegment[]
 }
 
 /**
@@ -843,6 +904,13 @@ export interface Highlight {
 
   /** Match type: 'text' (exact word match) or 'semantic' (concept match) */
   matchType: 'text' | 'semantic'
+
+  /**
+   * Content category of the source segment (heading, code, prose, label).
+   * Present when the input text was structured (JSON, HTML, Markdown).
+   * @since v7.9.0
+   */
+  contentCategory?: ContentCategory
 }
 
 // ============= Export all types =============

@@ -207,6 +207,35 @@ export class EmbeddingManager {
   }
 
   /**
+   * Batch embed multiple texts using native WASM batch API
+   *
+   * Uses the engine's embedBatch() for a single WASM forward pass
+   * instead of N individual embed() calls.
+   *
+   * @param texts Array of strings to embed
+   * @returns Array of embedding vectors (384 dimensions each)
+   */
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return []
+
+    const isTestMode =
+      process.env.BRAINY_UNIT_TEST === 'true' ||
+      (globalThis as any).__BRAINY_UNIT_TEST__
+
+    if (isTestMode) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('CRITICAL: Mock embeddings in production!')
+      }
+      return texts.map(t => this.getMockEmbedding(t))
+    }
+
+    await this.init()
+    const results = await this.engine.embedBatch(texts)
+    this.embedCount += texts.length
+    return results
+  }
+
+  /**
    * Get embedding function for compatibility
    */
   getEmbeddingFunction(): EmbeddingFunction {

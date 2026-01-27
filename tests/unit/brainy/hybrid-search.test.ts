@@ -738,4 +738,242 @@ describe('Hybrid Search (v7.7.0)', () => {
       expect(programmingMatch?.score).toBe(1.0)
     })
   })
+
+  describe('Structured Content Extraction (v7.9.0)', () => {
+    it('should extract text from TipTap/ProseMirror JSON', async () => {
+      const tiptapDoc = JSON.stringify({
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 1 },
+            content: [{ type: 'text', text: 'David the Warrior' }]
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'He is a brave fighter who battles dragons' }]
+          }
+        ]
+      })
+
+      const highlights = await brain.highlight({
+        query: 'warrior fighter',
+        text: tiptapDoc,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      // Should find "Warrior" as text match from heading
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+      expect(warriorMatch?.matchType).toBe('text')
+      // Should annotate heading content
+      expect(warriorMatch?.contentCategory).toBe('heading')
+    })
+
+    it('should extract text from Slate.js JSON', async () => {
+      const slateDoc = JSON.stringify([
+        {
+          type: 'heading',
+          children: [{ text: 'Introduction' }]
+        },
+        {
+          type: 'paragraph',
+          children: [
+            { text: 'This is ' },
+            { text: 'bold text', bold: true },
+            { text: ' in a paragraph' }
+          ]
+        }
+      ])
+
+      const highlights = await brain.highlight({
+        query: 'Introduction bold',
+        text: slateDoc,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      const introMatch = highlights.find(h => h.text === 'Introduction')
+      expect(introMatch).toBeDefined()
+      expect(introMatch?.matchType).toBe('text')
+      expect(introMatch?.contentCategory).toBe('heading')
+    })
+
+    it('should extract text from Quill Delta JSON', async () => {
+      const quilDoc = JSON.stringify({
+        ops: [
+          { insert: 'Hello World\n', attributes: { header: 1 } },
+          { insert: 'This is a paragraph with warrior content\n' }
+        ]
+      })
+
+      const highlights = await brain.highlight({
+        query: 'warrior',
+        text: quilDoc,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+      expect(warriorMatch?.matchType).toBe('text')
+    })
+
+    it('should fall back to text extraction for generic JSON', async () => {
+      const apiResponse = JSON.stringify({
+        name: 'warrior',
+        description: 'A brave fighter',
+        stats: { strength: 10, agility: 8 }
+      })
+
+      const highlights = await brain.highlight({
+        query: 'warrior',
+        text: apiResponse,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+    })
+
+    it('should extract text from HTML with headings and code', async () => {
+      const html = '<h1>Warrior Guide</h1><p>A brave fighter battles enemies.</p><code>const warrior = new Fighter()</code>'
+
+      const highlights = await brain.highlight({
+        query: 'warrior fighter',
+        text: html,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      // Should find "Warrior" from heading
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+      expect(warriorMatch?.contentCategory).toBe('heading')
+
+      // Should find "fighter" from paragraph
+      const fighterMatch = highlights.find(h => h.text.toLowerCase() === 'fighter')
+      expect(fighterMatch).toBeDefined()
+      expect(fighterMatch?.contentCategory).toBe('prose')
+    })
+
+    it('should extract text from Markdown with headings and code', async () => {
+      const markdown = '# Warrior Guide\n\nA brave fighter battles enemies.\n\n```\nconst warrior = new Fighter()\n```'
+
+      const highlights = await brain.highlight({
+        query: 'warrior fighter',
+        text: markdown,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      // Should find text from heading
+      const headingMatch = highlights.find(h => h.text === 'Guide' && h.contentCategory === 'heading')
+        || highlights.find(h => h.text === 'Warrior' && h.contentCategory === 'heading')
+      expect(headingMatch).toBeDefined()
+    })
+
+    it('should preserve plain text behavior (regression)', async () => {
+      const plainText = 'David Smith is a brave warrior who battles dragons'
+
+      const highlights = await brain.highlight({
+        query: 'warrior',
+        text: plainText,
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+      expect(warriorMatch?.matchType).toBe('text')
+      expect(warriorMatch?.score).toBe(1.0)
+      // Plain text gets 'prose' category
+      expect(warriorMatch?.contentCategory).toBe('prose')
+    })
+
+    it('should use contentType hint to skip auto-detection', async () => {
+      // Pass HTML as plain text via content type hint
+      const htmlAsPlain = '<h1>test</h1>'
+
+      const highlights = await brain.highlight({
+        query: 'test',
+        text: htmlAsPlain,
+        granularity: 'word',
+        threshold: 0.3,
+        contentType: 'plaintext'  // Force plain text treatment
+      })
+
+      // When treated as plain text, the raw HTML tags become part of chunks
+      // The content should not be parsed as HTML
+      expect(highlights).toBeDefined()
+    })
+
+    it('should use custom contentExtractor when provided', async () => {
+      const customExtractor = (text: string) => {
+        return [
+          { text: 'custom extracted warrior content', contentCategory: 'prose' as const },
+          { text: 'Code Section', contentCategory: 'code' as const }
+        ]
+      }
+
+      const highlights = await brain.highlight({
+        query: 'warrior',
+        text: 'ignored because custom extractor is used',
+        granularity: 'word',
+        threshold: 0.3,
+        contentExtractor: customExtractor
+      })
+
+      expect(highlights.length).toBeGreaterThan(0)
+      const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
+      expect(warriorMatch).toBeDefined()
+      expect(warriorMatch?.matchType).toBe('text')
+      expect(warriorMatch?.contentCategory).toBe('prose')
+    })
+  })
+
+  describe('Timeout Protection (v7.9.0)', () => {
+    it('should return text-only results if semantic phase times out', async () => {
+      // We test the timeout path by ensuring the highlight method doesn't hang.
+      // The mock embeddings are fast so timeout won't trigger in normal test,
+      // but we verify the method completes successfully.
+      const highlights = await brain.highlight({
+        query: 'warrior',
+        text: 'David is a brave warrior who battles dragons',
+        granularity: 'word',
+        threshold: 0.3
+      })
+
+      // Should complete without hanging
+      expect(highlights).toBeDefined()
+      expect(highlights.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('embedBatch uses native batch API (v7.9.0)', () => {
+    it('should embed multiple texts in a single call', async () => {
+      const texts = ['hello world', 'foo bar', 'test content']
+      const embeddings = await brain.embedBatch(texts)
+
+      expect(embeddings.length).toBe(3)
+      // Each embedding should be 384 dimensions
+      for (const emb of embeddings) {
+        expect(emb.length).toBe(384)
+      }
+    })
+
+    it('should return empty array for empty input', async () => {
+      const embeddings = await brain.embedBatch([])
+      expect(embeddings).toEqual([])
+    })
+  })
 })

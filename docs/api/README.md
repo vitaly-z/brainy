@@ -270,41 +270,85 @@ results[0].matchSource     // 'both' | 'text' | 'semantic'
 
 ---
 
-### `highlight(params)` → `Promise<Highlight[]>` ✨ *New v7.8.0*
+### `highlight(params)` → `Promise<Highlight[]>` ✨ *New v7.8.0, Enhanced v7.9.0*
 
 Zero-config highlighting for both exact matches AND semantic concepts.
+Handles plain text, rich-text JSON (TipTap, Slate, Lexical, Draft.js, Quill), HTML, and Markdown automatically.
 
 ```typescript
+// Plain text (works as before)
 const highlights = await brain.highlight({
   query: "david the warrior",
   text: "David Smith is a brave fighter who battles dragons"
 })
-
-// Returns both text matches AND semantic matches:
 // [
 //   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
 //   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
 //   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
 // ]
+
+// Rich-text JSON (auto-detected, v7.9.0)
+const highlights = await brain.highlight({
+  query: "david the warrior",
+  text: JSON.stringify(tiptapDocument)  // TipTap, Slate, Lexical, Draft.js, Quill
+})
+// Extracts text from nodes, annotates with contentCategory:
+// [
+//   { text: "David", score: 1.0, matchType: 'text', contentCategory: 'heading' },
+//   { text: "fighter", score: 0.78, matchType: 'semantic', contentCategory: 'prose' }
+// ]
+
+// HTML input (auto-detected, v7.9.0)
+const highlights = await brain.highlight({
+  query: "warrior",
+  text: "<h1>David the Warrior</h1><p>A brave fighter.</p>"
+})
+
+// Custom extractor for proprietary formats (v7.9.0)
+const highlights = await brain.highlight({
+  query: "function",
+  text: sourceCode,
+  contentExtractor: (text) => treeSitterParse(text)  // Your custom parser
+})
 ```
 
 **Parameters:**
 - `query`: `string` - The search query
-- `text`: `string` - Text to highlight (e.g., entity.data)
+- `text`: `string` - Text to highlight (plain text, JSON, HTML, or Markdown)
 - `granularity?`: `'word' | 'phrase' | 'sentence'` - Highlight unit (default: 'word')
 - `threshold?`: `number` - Min similarity for semantic matches (default: 0.5)
+- `contentType?`: `ContentType` - Optional hint: `'plaintext' | 'richtext-json' | 'html' | 'markdown'`. Skips auto-detection when provided. *(v7.9.0)*
+- `contentExtractor?`: `(text: string) => ExtractedSegment[]` - Custom parser. Bypasses built-in detection entirely. *(v7.9.0)*
 
 **Returns:** `Promise<Highlight[]>`
 - `text` - The matched text
 - `score` - Match score (1.0 for text matches, varies for semantic)
-- `position` - [start, end] indices in original text
+- `position` - [start, end] indices in extracted text
 - `matchType` - `'text'` (exact) or `'semantic'` (concept)
+- `contentCategory?` - `'prose' | 'heading' | 'code' | 'label'` — Role of the source text in the document. Present when input is structured. *(v7.9.0)*
+
+**Supported Rich-Text Formats (v7.9.0):**
+
+| Format | Detection | Text nodes |
+|--------|-----------|------------|
+| TipTap / ProseMirror | `{ type: 'doc', content: [...] }` | `{ type: 'text', text }` |
+| Slate.js | `[{ type, children }]` | `{ text }` |
+| Lexical | `{ root: { children } }` | `{ type: 'text', text }` |
+| Draft.js | `{ blocks: [{ text }] }` | `{ text }` in block |
+| Quill Delta | `{ ops: [{ insert }] }` | `{ insert }` |
+| HTML | Tags like `<h1>`, `<p>`, `<code>` | Visible text content |
+| Markdown | `#` headings, ` ``` ` code blocks | Stripped markup |
+
+**Timeout Protection (v7.9.0):**
+Semantic matching has a 10-second timeout. If embedding takes too long (e.g., WASM stall), `highlight()` returns text-only matches instead of hanging.
 
 **UI Pattern:**
 ```typescript
-// Style differently based on match type
+// Style differently based on match type and content category
 highlights.forEach(h => {
   const style = h.matchType === 'text' ? 'font-weight: bold' : 'background: yellow'
+  if (h.contentCategory === 'heading') { /* render as heading highlight */ }
+  if (h.contentCategory === 'code') { /* render with code styling */ }
   // Apply style from h.position[0] to h.position[1]
 })
 ```
@@ -1677,9 +1721,9 @@ console.log(vector.length) // 384
 
 ---
 
-### `embedBatch(texts)` → `Promise<number[][]>` ✨ *New v7.1.0*
+### `embedBatch(texts)` → `Promise<number[][]>` ✨ *New v7.1.0, Optimized v7.9.0*
 
-Batch embed multiple texts efficiently.
+Batch embed multiple texts using native WASM batch API (single forward pass).
 
 ```typescript
 const embeddings = await brain.embedBatch([
@@ -1690,6 +1734,8 @@ const embeddings = await brain.embedBatch([
 console.log(embeddings.length)    // 3
 console.log(embeddings[0].length) // 384
 ```
+
+> **v7.9.0**: Now uses the WASM engine's native `embed_batch()` for a single model forward pass instead of N individual calls. This is the same batch API used internally by `highlight()`.
 
 ---
 

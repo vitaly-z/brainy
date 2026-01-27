@@ -26,6 +26,7 @@ import { TripleIntelligenceSystem } from './triple/TripleIntelligenceSystem.js'
 import { VirtualFileSystem } from './vfs/VirtualFileSystem.js'
 import { VersioningAPI } from './versioning/VersioningAPI.js'
 import { MetadataIndexManager } from './utils/metadataIndex.js'
+import { detectContentType, extractForHighlighting } from './utils/contentExtractor.js'
 import { GraphAdjacencyIndex } from './graph/graphAdjacencyIndex.js'
 import { CommitBuilder } from './storage/cow/CommitObject.js'
 import { BlobStorage } from './storage/cow/BlobStorage.js'
@@ -4663,13 +4664,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return []
     }
 
-    // Use the underlying embedder for each text
-    // The WASM engine handles batching internally
-    const embeddings = await Promise.all(
-      texts.map(text => this.embedder(text))
-    )
-
-    return embeddings
+    // Use native WASM batch API: single forward pass instead of N individual calls
+    return await embeddingManager.embedBatch(texts)
   }
 
   /**
@@ -4734,14 +4730,38 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async highlight(params: import('./types/brainy.types.js').HighlightParams): Promise<import('./types/brainy.types.js').Highlight[]> {
     await this.ensureInitialized()
 
-    const { query, text, granularity = 'word', threshold = 0.5 } = params
+    const { query, text, granularity = 'word', threshold = 0.5, contentType, contentExtractor } = params
 
     if (!query || !text) {
       return []
     }
 
-    // Split text into chunks based on granularity
-    const allChunks = this.splitForHighlighting(text, granularity)
+    // v7.9.0: Extract text from structured content (JSON, HTML, Markdown)
+    // Custom extractor takes priority, then built-in detection
+    type ChunkWithCategory = { text: string, position: [number, number], contentCategory?: import('./types/brainy.types.js').ContentCategory }
+
+    let segments: import('./types/brainy.types.js').ExtractedSegment[]
+    if (contentExtractor) {
+      segments = contentExtractor(text)
+    } else {
+      segments = extractForHighlighting(text, contentType)
+    }
+
+    // Build concatenated text from segments for position tracking
+    // and split each segment into chunks based on granularity
+    const allChunks: ChunkWithCategory[] = []
+    let offset = 0
+    for (const segment of segments) {
+      const segmentChunks = this.splitForHighlighting(segment.text, granularity)
+      for (const chunk of segmentChunks) {
+        allChunks.push({
+          text: chunk.text,
+          position: [chunk.position[0] + offset, chunk.position[1] + offset],
+          contentCategory: segment.contentCategory
+        })
+      }
+      offset += segment.text.length + 1 // +1 for space between segments
+    }
 
     if (allChunks.length === 0) {
       return []
@@ -4749,7 +4769,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // v7.8.0 Production safety: Limit chunks to prevent memory explosion
     // At 500 words × 384 dimensions × 4 bytes = 768KB temp memory (acceptable)
-    // At 10,000 words = 15MB temp memory (too much for concurrent requests)
     const MAX_HIGHLIGHT_CHUNKS = 500
     const chunks = allChunks.slice(0, MAX_HIGHLIGHT_CHUNKS)
 
@@ -4768,16 +4787,50 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           text: chunk.text,
           score: 1.0,
           position: chunk.position,
-          matchType: 'text'
+          matchType: 'text',
+          contentCategory: chunk.contentCategory
         })
       }
     }
 
-    // === PHASE 2: Find semantic matches (score varies, matchType = 'semantic') ===
+    // === PHASE 2: Find semantic matches with timeout fallback ===
+    const SEMANTIC_TIMEOUT_MS = 10_000
+    try {
+      const semanticResult = await Promise.race([
+        this.highlightSemanticPhase(query, chunks, threshold, highlightMap),
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), SEMANTIC_TIMEOUT_MS))
+      ])
+
+      if (semanticResult === 'timeout') {
+        // Return Phase 1 text-only results on timeout
+        const textHighlights = Array.from(highlightMap.values())
+        return textHighlights.sort((a, b) => b.score - a.score)
+      }
+    } catch {
+      // On any error in semantic phase, return Phase 1 results
+      const textHighlights = Array.from(highlightMap.values())
+      return textHighlights.sort((a, b) => b.score - a.score)
+    }
+
+    // Sort by score descending (text matches will be first with score=1.0)
+    const highlights = Array.from(highlightMap.values())
+    return highlights.sort((a, b) => b.score - a.score)
+  }
+
+  /**
+   * Phase 2 of highlight(): semantic matching with batch embedding
+   * @internal
+   */
+  private async highlightSemanticPhase(
+    query: string,
+    chunks: Array<{ text: string, position: [number, number], contentCategory?: import('./types/brainy.types.js').ContentCategory }>,
+    threshold: number,
+    highlightMap: Map<string, import('./types/brainy.types.js').Highlight>
+  ): Promise<void> {
     // Get query embedding
     const queryVector = await this.embed(query)
 
-    // Batch embed all chunks (efficient!)
+    // Batch embed all chunks using native WASM batch API
     const chunkTexts = chunks.map(c => c.text)
     const chunkVectors = await this.embedBatch(chunkTexts)
 
@@ -4796,14 +4849,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           text: chunks[i].text,
           score: similarity,
           position: chunks[i].position,
-          matchType: 'semantic'
+          matchType: 'semantic',
+          contentCategory: chunks[i].contentCategory
         })
       }
     }
-
-    // Sort by score descending (text matches will be first with score=1.0)
-    const highlights = Array.from(highlightMap.values())
-    return highlights.sort((a, b) => b.score - a.score)
   }
 
   /**

@@ -215,4 +215,70 @@ describe('MetadataIndexManager Text Indexing (v7.7.0)', () => {
       })
     })
   })
+
+  describe('extractTextContent() array handling (v7.9.0 fix)', () => {
+    let manager: MetadataIndexManager
+
+    beforeEach(() => {
+      const mockStorage = {
+        getMetadata: async () => null,
+        saveMetadata: async () => {},
+        getNoun: async () => null,
+        getNouns: async () => ({ items: [], total: 0, hasMore: false }),
+        getVerbsFromSource: async () => ({ items: [], total: 0, hasMore: false }),
+      } as any
+
+      manager = new MetadataIndexManager(mockStorage, {})
+    })
+
+    it('should skip numeric arrays (vectors/embeddings)', () => {
+      const result = manager.extractTextContent([0.1, 0.2, 0.3, 0.4, 0.5])
+      expect(result).toBe('')
+    })
+
+    it('should extract text from string arrays', () => {
+      const result = manager.extractTextContent(['hello', 'world', 'test'])
+      expect(result).toContain('hello')
+      expect(result).toContain('world')
+      expect(result).toContain('test')
+    })
+
+    it('should extract text from arrays of objects', () => {
+      const result = manager.extractTextContent([
+        { name: 'Alice', role: 'engineer' },
+        { name: 'Bob', role: 'designer' },
+        { name: 'Carol', role: 'manager' },
+        { name: 'Dave', role: 'analyst' },
+        { name: 'Eve', role: 'scientist' },
+        { name: 'Frank', role: 'developer' },
+        { name: 'Grace', role: 'architect' },
+        { name: 'Heidi', role: 'lead' },
+        { name: 'Ivan', role: 'intern' },
+        { name: 'Judy', role: 'director' },
+        { name: 'Karl', role: 'founder' },
+      ])
+      // Should NOT skip arrays of objects even with >10 elements
+      expect(result).toContain('Alice')
+      expect(result).toContain('Karl')
+      expect(result).toContain('engineer')
+      expect(result).toContain('founder')
+    })
+
+    it('should handle large numeric arrays (vectors)', () => {
+      const vector = Array.from({ length: 384 }, (_, i) => Math.sin(i))
+      const result = manager.extractTextContent(vector)
+      expect(result).toBe('')
+    })
+
+    it('should handle empty arrays', () => {
+      const result = manager.extractTextContent([])
+      expect(result).toBe('')
+    })
+
+    it('should handle mixed arrays starting with string', () => {
+      const result = manager.extractTextContent(['text', 42, true])
+      expect(result).toContain('text')
+      expect(result).toContain('42')
+    })
+  })
 })

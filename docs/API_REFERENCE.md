@@ -507,13 +507,15 @@ console.log(vector.length) // 384
 
 ---
 
-### `async embedBatch(texts: string[]): Promise<number[][]>` ✨ *v7.1.0*
-Batch embed multiple texts efficiently.
+### `async embedBatch(texts: string[]): Promise<number[][]>` ✨ *v7.1.0, Optimized v7.9.0*
+Batch embed multiple texts using native WASM batch API (single forward pass).
 
 **Parameters:**
 - `texts` - Array of strings to embed
 
 **Returns:** Array of 384-dimensional vectors
+
+> **v7.9.0**: Uses the engine's native `embed_batch()` for a single model forward pass instead of N individual `embed()` calls.
 
 **Example:**
 ```typescript

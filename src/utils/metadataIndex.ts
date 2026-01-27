@@ -1273,8 +1273,8 @@ export class MetadataIndexManager {
     if (typeof data === 'string') return data
     if (typeof data === 'number' || typeof data === 'boolean') return String(data)
     if (Array.isArray(data)) {
-      // Skip large arrays (likely vectors)
-      if (data.length > 10) return ''
+      // Skip numeric arrays (vectors/embeddings), allow object/string arrays
+      if (data.length > 0 && typeof data[0] === 'number') return ''
       return data.map(d => this.extractTextContent(d)).filter(Boolean).join(' ')
     }
     if (typeof data === 'object') {

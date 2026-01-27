@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [7.8.0](https://github.com/soulcraftlabs/brainy/compare/v7.7.0...v7.8.0) (2026-01-27)
+
+### Bug Fixes
+
+**highlight() hangs on structured text input**
+
+Three root causes fixed:
+
+1. **embedBatch() now uses native WASM batch API** — Previously called `embed()` individually N times via `Promise.all`, each creating a separate forward pass. Now delegates to `engine.embedBatch()` for a single WASM forward pass. Applies globally to all `embedBatch()` callers.
+
+2. **Smart content extraction for structured text** — `highlight()` now auto-detects content type (plain text, rich-text JSON, HTML, Markdown) and extracts meaningful text segments instead of splitting raw JSON/HTML into garbage chunks like `{"type":`. Supports TipTap, Slate.js, Lexical, Draft.js, and Quill Delta formats out of the box.
+
+3. **Timeout protection** — Semantic matching phase now has a 10-second timeout. On timeout or error, `highlight()` returns Phase 1 text-only matches (always fast) instead of hanging indefinitely.
+
+**extractTextContent() skips arrays of objects** — Changed from length-based skip (`data.length > 10`) to type-based check (`typeof data[0] === 'number'`). Arrays of objects (e.g., team members, items) are now properly indexed for text search instead of being silently skipped.
+
+### Features
+
+**Structured Content Highlighting**
+
+`highlight()` now handles structured text formats automatically:
+
+```typescript
+// Rich-text JSON (TipTap, Slate, Lexical, Draft.js, Quill)
+const highlights = await brain.highlight({
+  query: "warrior",
+  text: JSON.stringify(tiptapDocument)
+})
+// Each highlight includes contentCategory: 'heading' | 'prose' | 'code' | 'label'
+
+// HTML
+await brain.highlight({ query: "warrior", text: "<h1>Warriors</h1><p>Brave fighters.</p>" })
+
+// Markdown
+await brain.highlight({ query: "warrior", text: "# Warriors\n\nBrave fighters." })
+```
+
+**Content Category Annotations**
+
+Each `Highlight` now includes `contentCategory` when input is structured:
+- `'heading'` — from `<h1>`-`<h6>`, `# Heading`, or heading nodes
+- `'code'` — from `<code>`/`<pre>`, fenced/indented code blocks, or code nodes
+- `'prose'` — regular paragraph text
+- `'label'` — labels, captions, metadata-like text
+
+**Custom Content Extractors**
+
+New `contentExtractor` parameter lets developers plug in custom parsers:
+
+```typescript
+const highlights = await brain.highlight({
+  query: "function",
+  text: sourceCode,
+  contentExtractor: (text) => treeSitterParse(text)  // Custom parser
+})
+```
+
+**Content Type Hints**
+
+New `contentType` parameter to skip auto-detection:
+
+```typescript
+await brain.highlight({ query: "test", text: input, contentType: 'html' })
+```
+
+### New Types
+
+- `ContentType`: `'plaintext' | 'richtext-json' | 'html' | 'markdown'`
+- `ContentCategory`: `'prose' | 'heading' | 'code' | 'label'`
+- `ExtractedSegment`: `{ text: string, contentCategory: ContentCategory }`
+- `HighlightParams.contentType?` — optional content type hint
+- `HighlightParams.contentExtractor?` — optional custom parser callback
+- `Highlight.contentCategory?` — content role annotation
+
 ## [7.7.0](https://github.com/soulcraftlabs/brainy/compare/v7.6.1...v7.7.0) (2026-01-26)
 
 ### Features

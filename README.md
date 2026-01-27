@@ -412,6 +412,13 @@ const results = await brain.find({ query: 'David Smith' })
 await brain.find({ query: 'exact match', searchMode: 'text' })     // Text only
 await brain.find({ query: 'AI concepts', searchMode: 'semantic' }) // Semantic only
 await brain.find({ query: 'hybrid', hybridAlpha: 0.3 })            // Custom weighting
+
+// Highlight structured content (v7.8.0) — plain text, JSON, HTML, Markdown
+const highlights = await brain.highlight({
+  query: 'warrior',
+  text: entity.data  // Auto-detects TipTap, Slate, Lexical, HTML, Markdown
+})
+// Each highlight has: text, score, position, matchType, contentCategory
 ```
 
 **→ [Hybrid Search Documentation](docs/api/README.md#hybrid-search-v770)**
