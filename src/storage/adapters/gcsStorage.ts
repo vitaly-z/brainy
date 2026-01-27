@@ -65,7 +65,7 @@ const MAX_GCS_PAGE_SIZE = 5000
  * 3. Service Account Credentials Object (if credentials provided)
  * 4. HMAC Keys (if accessKeyId/secretAccessKey provided)
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -110,7 +110,7 @@ export class GcsStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
 
-  // v6.2.7: Write buffering always enabled for consistent performance
+  // Write buffering always enabled for consistent performance
   // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Multi-level cache manager for efficient data access
@@ -120,7 +120,7 @@ export class GcsStorage extends BaseStorage {
   // Module logger
   private logger = createModuleLogger('GcsStorage')
 
-  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  // HNSW mutex locks to prevent read-modify-write races
   private hnswLocks = new Map<string, Promise<void>>()
 
   // Configuration options
@@ -166,7 +166,7 @@ export class GcsStorage extends BaseStorage {
     secretAccessKey?: string
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Cloud Run, Lambda),
      *   strict locally. Zero-config optimization.
@@ -175,19 +175,18 @@ export class GcsStorage extends BaseStorage {
      * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: InitMode
 
     /**
      * @deprecated Use `initMode: 'progressive'` instead.
-     * Will be removed in v8.0.0.
+     * Will be removed in a future version.
      */
     skipInitialScan?: boolean
 
     /**
      * @deprecated Use `initMode: 'progressive'` instead.
-     * Will be removed in v8.0.0.
+     * Will be removed in a future version.
      */
     skipCountsFile?: boolean
 
@@ -206,7 +205,7 @@ export class GcsStorage extends BaseStorage {
     this.accessKeyId = options.accessKeyId
     this.secretAccessKey = options.secretAccessKey
 
-    // v7.3.0: Handle initMode and deprecated skip* flags
+    // Handle initMode and deprecated skip* flags
     if (options.initMode) {
       this.initMode = options.initMode
     }
@@ -215,14 +214,14 @@ export class GcsStorage extends BaseStorage {
     if (options.skipInitialScan) {
       console.warn(
         '[GcsStorage] DEPRECATION WARNING: skipInitialScan is deprecated. ' +
-        'Use initMode: "progressive" instead. Will be removed in v8.0.0.'
+        'Use initMode: "progressive" instead. Will be removed in a future version.'
       )
       this.skipInitialScan = true
     }
     if (options.skipCountsFile) {
       console.warn(
         '[GcsStorage] DEPRECATION WARNING: skipCountsFile is deprecated. ' +
-        'Use initMode: "progressive" instead. Will be removed in v8.0.0.'
+        'Use initMode: "progressive" instead. Will be removed in a future version.'
       )
       this.skipCountsFile = true
     }
@@ -240,13 +239,13 @@ export class GcsStorage extends BaseStorage {
     this.nounCacheManager = new CacheManager<HNSWNode>(options.cacheConfig)
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
-    // v6.2.7: Write buffering always enabled - no env var check needed
+    // Write buffering always enabled - no env var check needed
   }
 
   /**
    * Initialize the storage adapter
    *
-   * v7.3.0: Supports progressive initialization for fast cold starts
+   * Supports progressive initialization for fast cold starts
    *
    * | Mode | Init Time | When |
    * |------|-----------|------|
@@ -337,14 +336,14 @@ export class GcsStorage extends BaseStorage {
         }
       )
 
-      // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
+      // CRITICAL FIX: Clear any stale cache entries from previous runs
       // This prevents cache poisoning from causing silent failures on container restart
       prodLog.info('🧹 Clearing cache from previous run to prevent cache poisoning')
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
       prodLog.info('✅ Cache cleared - starting fresh')
 
-      // v7.3.0: Progressive vs Strict initialization
+      // Progressive vs Strict initialization
       if (effectiveMode === 'progressive') {
         // PROGRESSIVE MODE: Fast init, background validation
         // Mark as initialized immediately - ready to accept operations
@@ -353,7 +352,7 @@ export class GcsStorage extends BaseStorage {
 
         prodLog.info(`✅ GCS progressive init complete: ${this.bucketName} (validation deferred)`)
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Schedule background tasks (non-blocking)
@@ -373,7 +372,7 @@ export class GcsStorage extends BaseStorage {
         await this.initializeCounts()
         this.countsLoaded = true
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Mark background tasks as complete (nothing to do in background)
@@ -386,7 +385,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   // =============================================
-  // Progressive Initialization (v7.3.0+)
+  // Progressive Initialization
   // =============================================
 
   /**
@@ -400,7 +399,6 @@ export class GcsStorage extends BaseStorage {
    *
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async runBackgroundInit(): Promise<void> {
     const startTime = Date.now()
@@ -423,7 +421,6 @@ export class GcsStorage extends BaseStorage {
    * Stores result in bucketValidated/bucketValidationError for lazy use.
    *
    * @private
-   * @since v7.3.0
    */
   private async validateBucketInBackground(): Promise<void> {
     try {
@@ -451,7 +448,6 @@ export class GcsStorage extends BaseStorage {
    * Uses the existing initializeCounts() logic but in background.
    *
    * @private
-   * @since v7.3.0
    */
   private async loadCountsInBackground(): Promise<void> {
     try {
@@ -475,7 +471,6 @@ export class GcsStorage extends BaseStorage {
    * @throws Error if bucket does not exist or is not accessible
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async ensureValidatedForWrite(): Promise<void> {
     // If already validated, nothing to do
@@ -562,7 +557,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Override base class to enable smart batching for cloud storage (v3.32.3+)
+   * Override base class to enable smart batching for cloud storage
    *
    * GCS is cloud storage with network latency (~50ms per write).
    * Smart batching reduces writes from 1000 ops → 100 batches.
@@ -596,7 +591,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
+  // Removed checkVolumeMode() - write buffering always enabled for cloud storage
 
   /**
    * Flush noun buffer to GCS
@@ -628,20 +623,20 @@ export class GcsStorage extends BaseStorage {
     await Promise.all(writes)
   }
 
-  // v5.4.0: Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
@@ -657,10 +652,10 @@ export class GcsStorage extends BaseStorage {
   /**
    * Save a node directly to GCS (bypass buffer)
    *
-   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
+   * Performs lazy bucket validation on first write in progressive mode.
    */
   private async saveNodeDirect(node: HNSWNode): Promise<void> {
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     // Apply backpressure before starting operation
@@ -695,14 +690,14 @@ export class GcsStorage extends BaseStorage {
         resumable: false // For small objects, non-resumable is faster
       })
 
-      // CRITICAL FIX (v3.37.8): Only cache nodes with non-empty vectors
+      // CRITICAL FIX: Only cache nodes with non-empty vectors
       // This prevents cache pollution from HNSW's lazy-loading nodes (vector: [])
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
       // Note: Empty vectors are intentional during HNSW lazy mode - not logged
 
-      // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
+      // Count tracking happens in baseStorage.saveNounMetadata_internal
       // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Node ${node.id} saved successfully`)
@@ -721,7 +716,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get a node from storage
@@ -732,7 +727,7 @@ export class GcsStorage extends BaseStorage {
     // Check cache first
     const cached: HNSWNode | null = await this.nounCacheManager.get(id)
 
-    // Validate cached object before returning (v3.37.8+)
+    // Validate cached object before returning
     if (cached !== undefined && cached !== null) {
       // Validate cached object has required fields (including non-empty vector!)
       if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
@@ -831,18 +826,18 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Write an object to a specific path in GCS
    * Primitive operation required by base class
    *
-   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
+   * Performs lazy bucket validation on first write in progressive mode.
    * @protected
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     try {
@@ -892,7 +887,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Batch read multiple objects from GCS (v5.12.0 - Cloud Storage Optimization)
+   * Batch read multiple objects from GCS
    *
    * **Performance**: GCS-optimized parallel downloads
    * - Uses Promise.all() for concurrent requests
@@ -908,7 +903,6 @@ export class GcsStorage extends BaseStorage {
    * @returns Map of path → data (only successful reads included)
    *
    * @public - Called by baseStorage.readBatchFromAdapter()
-   * @since v5.12.0
    */
   public async readBatch(paths: string[]): Promise<Map<string, any>> {
     await this.ensureInitialized()
@@ -960,12 +954,11 @@ export class GcsStorage extends BaseStorage {
   }
 
   /**
-   * Get GCS-specific batch configuration (v5.12.0)
+   * Get GCS-specific batch configuration
    *
    * GCS performs well with high concurrency due to HTTP/2 multiplexing
    *
    * @public - Overrides BaseStorage.getBatchConfig()
-   * @since v5.12.0
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -984,12 +977,12 @@ export class GcsStorage extends BaseStorage {
    * Delete an object from a specific path in GCS
    * Primitive operation required by base class
    *
-   * v7.3.0: Performs lazy bucket validation on first delete in progressive mode.
+   * Performs lazy bucket validation on first delete in progressive mode.
    * @protected
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     try {
@@ -1034,20 +1027,20 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save an edge to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.verbWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       this.verbCacheManager.set(edge.id, edge)
 
       await this.verbWriteBuffer.add(edge.id, edge)
@@ -1061,10 +1054,10 @@ export class GcsStorage extends BaseStorage {
   /**
    * Save an edge directly to GCS (bypass buffer)
    *
-   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
+   * Performs lazy bucket validation on first write in progressive mode.
    */
   private async saveEdgeDirect(edge: Edge): Promise<void> {
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     const requestId = await this.applyBackpressure()
@@ -1073,7 +1066,7 @@ export class GcsStorage extends BaseStorage {
       this.logger.trace(`Saving edge ${edge.id}`)
 
       // Convert connections Map to serializable format
-      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
+      // ARCHITECTURAL FIX: Include core relational fields in verb vector file
       // These fields are essential for 90% of operations - no metadata lookup needed
       const serializableEdge = {
         id: edge.id,
@@ -1085,7 +1078,7 @@ export class GcsStorage extends BaseStorage {
           ])
         ),
 
-        // CORE RELATIONAL DATA (v3.50.1+)
+        // CORE RELATIONAL DATA
         verb: edge.verb,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
@@ -1107,7 +1100,7 @@ export class GcsStorage extends BaseStorage {
       // Update cache
       this.verbCacheManager.set(edge.id, edge)
 
-      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal
       // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Edge ${edge.id} saved successfully`)
@@ -1125,7 +1118,7 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get an edge from storage
@@ -1161,7 +1154,7 @@ export class GcsStorage extends BaseStorage {
         connections.set(Number(level), new Set(verbIds as string[]))
       }
 
-      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
+      // Return HNSWVerb with core relational fields (NO metadata field)
       const edge: Edge = {
         id: data.id,
         vector: data.vector,
@@ -1172,7 +1165,7 @@ export class GcsStorage extends BaseStorage {
         sourceId: data.sourceId,
         targetId: data.targetId
 
-        // ✅ NO metadata field in v4.0.0
+        // ✅ NO metadata field
         // User metadata retrieved separately via getVerbMetadata()
       }
 
@@ -1201,13 +1194,13 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
 
-  // v5.4.0: Removed pagination overrides - use BaseStorage's type-first implementation
+  // Removed pagination overrides - use BaseStorage's type-first implementation
   // - getNounsWithPagination, getNodesWithPagination, getVerbsWithPagination
   // - getNouns, getVerbs (public wrappers)
 
-  // v5.4.0: Removed 4 query *_internal methods - now inherit from BaseStorage's type-first implementation
+  // Removed 4 query *_internal methods - now inherit from BaseStorage's type-first implementation
   // (getNounsByNounType_internal, getVerbsBySource_internal, getVerbsByTarget_internal, getVerbsByType_internal)
 
   /**
@@ -1280,7 +1273,7 @@ export class GcsStorage extends BaseStorage {
         }
       }
 
-      // v5.11.0: Clear ALL data using correct paths
+      // Clear ALL data using correct paths
       // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
       await deleteObjectsWithPrefix('branches/')
 
@@ -1290,7 +1283,7 @@ export class GcsStorage extends BaseStorage {
       // Delete system metadata
       await deleteObjectsWithPrefix('_system/')
 
-      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // Reset COW managers (but don't disable COW - it's always enabled)
       // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
@@ -1352,12 +1345,12 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker object exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -1413,7 +1406,7 @@ export class GcsStorage extends BaseStorage {
       }
     } catch (error: any) {
       if (error.code === 404) {
-        // CRITICAL FIX (v3.37.4): Statistics file doesn't exist yet (first restart)
+        // CRITICAL FIX: Statistics file doesn't exist yet (first restart)
         // Return minimal stats with counts instead of null
         // This prevents HNSW from seeing entityCount=0 during index rebuild
         this.logger.trace('Statistics file not found - returning minimal stats with counts')
@@ -1607,11 +1600,11 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
 
   /**
    * Get a noun's vector for HNSW rebuild
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
@@ -1621,7 +1614,7 @@ export class GcsStorage extends BaseStorage {
   /**
    * Save HNSW graph data for a noun
    *
-   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * Uses BaseStorage's getNoun/saveNoun (type-first paths)
    * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
@@ -1630,7 +1623,7 @@ export class GcsStorage extends BaseStorage {
   }): Promise<void> {
     const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // CRITICAL FIX: Mutex lock to prevent read-modify-write races
     // Problem: Without mutex, concurrent operations can:
     //   1. Thread A reads noun (connections: [1,2,3])
     //   2. Thread B reads noun (connections: [1,2,3])
@@ -1650,7 +1643,7 @@ export class GcsStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Use BaseStorage's getNoun (type-first paths)
       // Read existing noun data (if exists)
       const existingNoun = await this.getNoun(nounId)
 
@@ -1672,7 +1665,7 @@ export class GcsStorage extends BaseStorage {
         connections: connectionsMap
       }
 
-      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      // Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
       await this.saveNoun(updatedNoun)
     } finally {
       // Release lock (ALWAYS runs, even if error thrown)
@@ -1683,7 +1676,7 @@ export class GcsStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -1713,7 +1706,7 @@ export class GcsStorage extends BaseStorage {
    * Save HNSW system data (entry point, max level)
    * Storage path: system/hnsw-system.json
    *
-   * CRITICAL FIX (v4.10.1): Optimistic locking with generation numbers to prevent race conditions
+   * CRITICAL FIX: Optimistic locking with generation numbers to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -1807,7 +1800,7 @@ export class GcsStorage extends BaseStorage {
   }
 
   // ============================================================================
-  // GCS Lifecycle Management & Autoclass (v4.0.0)
+  // GCS Lifecycle Management & Autoclass
   // Cost optimization through automatic tier transitions and Autoclass
   // ============================================================================
 

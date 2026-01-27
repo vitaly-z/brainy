@@ -9,7 +9,7 @@
  * - NaturalLanguageProcessor for relationship inference
  * - Hierarchical relationship creation based on heading hierarchy
  *
- * v4.2.0: New format handler
+ * New format handler
  * NO MOCKS - Production-ready implementation
  */
 
@@ -187,7 +187,7 @@ export class SmartDOCXImporter {
       await this.init()
     }
 
-    // v4.5.0: Report parsing start
+    // Report parsing start
     options.onProgress?.({
       processed: 0,
       entities: 0,
@@ -200,7 +200,7 @@ export class SmartDOCXImporter {
     // Extract HTML for structure analysis (headings, tables)
     const htmlResult = await mammoth.convertToHtml({ buffer })
 
-    // v4.5.0: Report parsing complete
+    // Report parsing complete
     options.onProgress?.({
       processed: 0,
       entities: 0,

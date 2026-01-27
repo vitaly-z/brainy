@@ -28,17 +28,17 @@
 ```typescript
 // THE PUBLIC API - Same for ALL 7 formats!
 brain.import(buffer, {
-  onProgress: (progress: ImportProgress) => {
-    // These fields work for CSV, PDF, Excel, JSON, Markdown, YAML, DOCX
-    progress.stage          // 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'complete'
-    progress.message        // Human-readable status (varies by format, always readable)
-    progress.processed      // Items processed (optional)
-    progress.total          // Total items (optional)
-    progress.entities       // Entities extracted (optional)
-    progress.relationships  // Relationships inferred (optional)
-    progress.throughput     // Items/sec (optional, during extraction)
-    progress.eta            // Time remaining in ms (optional)
-  }
+ onProgress: (progress: ImportProgress) => {
+ // These fields work for CSV, PDF, Excel, JSON, Markdown, YAML, DOCX
+ progress.stage // 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'complete'
+ progress.message // Human-readable status (varies by format, always readable)
+ progress.processed // Items processed (optional)
+ progress.total // Total items (optional)
+ progress.entities // Entities extracted (optional)
+ progress.relationships // Relationships inferred (optional)
+ progress.throughput // Items/sec (optional, during extraction)
+ progress.eta // Time remaining in ms (optional)
+ }
 })
 ```
 
@@ -49,14 +49,14 @@ The table below shows how formats implement progress *internally*. Normal develo
 ```typescript
 // Internal: Binary formats use handler hooks (you added these!)
 interface FormatHandlerProgressHooks {
-  onBytesProcessed?: (bytes: number) => void
-  onCurrentItem?: (message: string) => void
-  onDataExtracted?: (count: number, total?: number) => void
+ onBytesProcessed?: (bytes: number) => void
+ onCurrentItem?: (message: string) => void
+ onDataExtracted?: (count: number, total?: number) => void
 }
 
 // Internal: Text formats use importer callbacks
 interface ImporterProgressCallback {
-  onProgress?: (stats: { processed, total, entities, relationships }) => void
+ onProgress?: (stats: { processed, total, entities, relationships }) => void
 }
 
 // Both are converted to ImportProgress by ImportCoordinator!
@@ -74,7 +74,7 @@ interface ImporterProgressCallback {
 
 ## 🎯 Overview
 
-As of v4.5.0, Brainy supports comprehensive, multi-dimensional progress tracking for imports:
+Brainy supports comprehensive, multi-dimensional progress tracking for imports:
 - **Bytes processed** (always available, most deterministic)
 - **Entities extracted** (AI extraction phase)
 - **Stage-specific metrics** (parsing: MB/s, extraction: entities/s)
@@ -91,23 +91,23 @@ All handlers follow a simple, consistent pattern using **progress hooks**.
 
 ```typescript
 export interface FormatHandlerProgressHooks {
-  /**
-   * Report bytes processed
-   * Call this as you read/parse the file
-   */
-  onBytesProcessed?: (bytes: number) => void
+ /**
+ * Report bytes processed
+ * Call this as you read/parse the file
+ */
+ onBytesProcessed?: (bytes: number) => void
 
-  /**
-   * Set current processing context
-   * Examples: "Processing page 5", "Reading sheet: Q2 Sales"
-   */
-  onCurrentItem?: (item: string) => void
+ /**
+ * Set current processing context
+ * Examples: "Processing page 5", "Reading sheet: Q2 Sales"
+ */
+ onCurrentItem?: (item: string) => void
 
-  /**
-   * Report structured data extraction progress
-   * Examples: "Extracted 100 rows", "Parsed 50 paragraphs"
-   */
-  onDataExtracted?: (count: number, total?: number) => void
+ /**
+ * Report structured data extraction progress
+ * Examples: "Extracted 100 rows", "Parsed 50 paragraphs"
+ */
+ onDataExtracted?: (count: number, total?: number) => void
 }
 ```
 
@@ -117,19 +117,19 @@ Progress hooks are automatically passed to your handler via `FormatHandlerOption
 
 ```typescript
 export interface FormatHandlerOptions {
-  // ... existing options ...
+ // ... existing options ...
 
-  /**
-   * Progress hooks (v4.5.0)
-   * Handlers call these to report progress during processing
-   */
-  progressHooks?: FormatHandlerProgressHooks
+ /**
+ * Progress hooks
+ * Handlers call these to report progress during processing
+ */
+ progressHooks?: FormatHandlerProgressHooks
 
-  /**
-   * Total file size in bytes (v4.5.0)
-   * Used for progress percentage calculation
-   */
-  totalBytes?: number
+ /**
+ * Total file size in bytes
+ * Used for progress percentage calculation
+ */
+ totalBytes?: number
 }
 ```
 
@@ -141,36 +141,36 @@ Every handler follows these 5 steps:
 
 ```typescript
 async process(data: Buffer | string, options: FormatHandlerOptions): Promise<ProcessedData> {
-  const progressHooks = options.progressHooks  // Step 1: Get hooks
+ const progressHooks = options.progressHooks // Step 1: Get hooks
 
-  // Step 2: Report initial progress
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem('Starting import...')
-  }
+ // Step 2: Report initial progress
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem('Starting import...')
+ }
 
-  // Step 3: Report bytes as you process
-  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(0)  // Start
-  }
+ // Step 3: Report bytes as you process
+ const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(0) // Start
+ }
 
-  // ... do parsing ...
+ // ... do parsing ...
 
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(buffer.length)  // Complete
-  }
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(buffer.length) // Complete
+ }
 
-  // Step 4: Report data extraction
-  if (progressHooks?.onDataExtracted) {
-    progressHooks.onDataExtracted(data.length, data.length)
-  }
+ // Step 4: Report data extraction
+ if (progressHooks?.onDataExtracted) {
+ progressHooks.onDataExtracted(data.length, data.length)
+ }
 
-  // Step 5: Report completion
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`Complete: ${data.length} items processed`)
-  }
+ // Step 5: Report completion
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Complete: ${data.length} items processed`)
+ }
 
-  return { format, data, metadata }
+ return { format, data, metadata }
 }
 ```
 
@@ -182,76 +182,76 @@ Here's the **ACTUAL implementation** from CSV handler showing all the key progre
 
 ```typescript
 async process(data: Buffer | string, options: FormatHandlerOptions): Promise<ProcessedData> {
-  const startTime = Date.now()
-  const progressHooks = options.progressHooks  // ✅ Step 1
+ const startTime = Date.now()
+ const progressHooks = options.progressHooks // ✅ Step 1
 
-  // Convert to buffer if string
-  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf-8')
-  const totalBytes = buffer.length
+ // Convert to buffer if string
+ const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf-8')
+ const totalBytes = buffer.length
 
-  // ✅ Step 2: Report start
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(0)
-  }
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem('Detecting CSV encoding and delimiter...')
-  }
+ // ✅ Step 2: Report start
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(0)
+ }
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem('Detecting CSV encoding and delimiter...')
+ }
 
-  // Detect encoding
-  const detectedEncoding = options.encoding || this.detectEncodingSafe(buffer)
-  const text = buffer.toString(detectedEncoding as BufferEncoding)
+ // Detect encoding
+ const detectedEncoding = options.encoding || this.detectEncodingSafe(buffer)
+ const text = buffer.toString(detectedEncoding as BufferEncoding)
 
-  // Detect delimiter
-  const delimiter = options.csvDelimiter || this.detectDelimiter(text)
+ // Detect delimiter
+ const delimiter = options.csvDelimiter || this.detectDelimiter(text)
 
-  // ✅ Progress update: Parsing phase
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`Parsing CSV rows (delimiter: "${delimiter}")...`)
-  }
+ // ✅ Progress update: Parsing phase
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Parsing CSV rows (delimiter: "${delimiter}")...`)
+ }
 
-  // Parse CSV
-  const records = parse(text, { /* options */ })
+ // Parse CSV
+ const records = parse(text, { /* options */ })
 
-  // ✅ Step 3: Report bytes processed (entire file parsed)
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(totalBytes)
-  }
+ // ✅ Step 3: Report bytes processed (entire file parsed)
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(totalBytes)
+ }
 
-  const data = Array.isArray(records) ? records : [records]
+ const data = Array.isArray(records) ? records : [records]
 
-  // ✅ Step 4: Report data extraction
-  if (progressHooks?.onDataExtracted) {
-    progressHooks.onDataExtracted(data.length, data.length)
-  }
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`Extracted ${data.length} rows, inferring types...`)
-  }
+ // ✅ Step 4: Report data extraction
+ if (progressHooks?.onDataExtracted) {
+ progressHooks.onDataExtracted(data.length, data.length)
+ }
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Extracted ${data.length} rows, inferring types...`)
+ }
 
-  // Type inference and conversion
-  const fields = data.length > 0 ? Object.keys(data[0]) : []
-  const types = this.inferFieldTypes(data)
+ // Type inference and conversion
+ const fields = data.length > 0 ? Object.keys(data[0]) : []
+ const types = this.inferFieldTypes(data)
 
-  const convertedData = data.map((row, index) => {
-    const converted = this.convertRow(row, types)
+ const convertedData = data.map((row, index) => {
+ const converted = this.convertRow(row, types)
 
-    // ✅ Progress update every 1000 rows (avoid spam)
-    if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
-      progressHooks.onCurrentItem(`Converting types: ${index}/${data.length} rows...`)
-    }
+ // ✅ Progress update every 1000 rows (avoid spam)
+ if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
+ progressHooks.onCurrentItem(`Converting types: ${index}/${data.length} rows...`)
+ }
 
-    return converted
-  })
+ return converted
+ })
 
-  // ✅ Step 5: Report completion
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`CSV processing complete: ${convertedData.length} rows`)
-  }
+ // ✅ Step 5: Report completion
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`CSV processing complete: ${convertedData.length} rows`)
+ }
 
-  return {
-    format: this.format,
-    data: convertedData,
-    metadata: { /* ... */ }
-  }
+ return {
+ format: this.format,
+ data: convertedData,
+ metadata: { /* ... */ }
+ }
 }
 ```
 
@@ -292,51 +292,51 @@ Brainy supports **7 file formats** with full progress tracking:
 
 ```typescript
 async process(data: Buffer, options: FormatHandlerOptions): Promise<ProcessedData> {
-  const progressHooks = options.progressHooks
-  const totalBytes = data.length
+ const progressHooks = options.progressHooks
+ const totalBytes = data.length
 
-  // Report start
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem('Loading PDF document...')
-  }
+ // Report start
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem('Loading PDF document...')
+ }
 
-  const pdfDoc = await loadPDF(data)
-  const totalPages = pdfDoc.numPages
+ const pdfDoc = await loadPDF(data)
+ const totalPages = pdfDoc.numPages
 
-  const extractedData: any[] = []
-  let bytesProcessed = 0
+ const extractedData: any[] = []
+ let bytesProcessed = 0
 
-  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-    // ✅ Report current page
-    if (progressHooks?.onCurrentItem) {
-      progressHooks.onCurrentItem(`Processing page ${pageNum} of ${totalPages}`)
-    }
+ for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+ // ✅ Report current page
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Processing page ${pageNum} of ${totalPages}`)
+ }
 
-    const page = await pdfDoc.getPage(pageNum)
-    const text = await page.getTextContent()
-    extractedData.push(this.processPageText(text))
+ const page = await pdfDoc.getPage(pageNum)
+ const text = await page.getTextContent()
+ extractedData.push(this.processPageText(text))
 
-    // ✅ Estimate bytes processed (pages are sequential)
-    bytesProcessed = Math.floor((pageNum / totalPages) * totalBytes)
-    if (progressHooks?.onBytesProcessed) {
-      progressHooks.onBytesProcessed(bytesProcessed)
-    }
+ // ✅ Estimate bytes processed (pages are sequential)
+ bytesProcessed = Math.floor((pageNum / totalPages) * totalBytes)
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(bytesProcessed)
+ }
 
-    // ✅ Report extraction progress
-    if (progressHooks?.onDataExtracted) {
-      progressHooks.onDataExtracted(pageNum, totalPages)
-    }
-  }
+ // ✅ Report extraction progress
+ if (progressHooks?.onDataExtracted) {
+ progressHooks.onDataExtracted(pageNum, totalPages)
+ }
+ }
 
-  // Final progress
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(totalBytes)
-  }
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`PDF complete: ${totalPages} pages processed`)
-  }
+ // Final progress
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(totalBytes)
+ }
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`PDF complete: ${totalPages} pages processed`)
+ }
 
-  return { format: 'pdf', data: extractedData, metadata: { /* ... */ } }
+ return { format: 'pdf', data: extractedData, metadata: { /* ... */ } }
 }
 ```
 
@@ -344,55 +344,55 @@ async process(data: Buffer, options: FormatHandlerOptions): Promise<ProcessedDat
 
 ```typescript
 async process(data: Buffer, options: FormatHandlerOptions): Promise<ProcessedData> {
-  const progressHooks = options.progressHooks
-  const totalBytes = data.length
+ const progressHooks = options.progressHooks
+ const totalBytes = data.length
 
-  // Load workbook
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem('Loading Excel workbook...')
-  }
+ // Load workbook
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem('Loading Excel workbook...')
+ }
 
-  const workbook = XLSX.read(data)
-  const sheetNames = options.excelSheets === 'all'
-    ? workbook.SheetNames
-    : (options.excelSheets || [workbook.SheetNames[0]])
+ const workbook = XLSX.read(data)
+ const sheetNames = options.excelSheets === 'all'
+ ? workbook.SheetNames
+ : (options.excelSheets || [workbook.SheetNames[0]])
 
-  const allData: any[] = []
-  let bytesProcessed = 0
+ const allData: any[] = []
+ let bytesProcessed = 0
 
-  for (let i = 0; i < sheetNames.length; i++) {
-    const sheetName = sheetNames[i]
+ for (let i = 0; i < sheetNames.length; i++) {
+ const sheetName = sheetNames[i]
 
-    // ✅ Report current sheet
-    if (progressHooks?.onCurrentItem) {
-      progressHooks.onCurrentItem(`Reading sheet: ${sheetName} (${i + 1}/${sheetNames.length})`)
-    }
+ // ✅ Report current sheet
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Reading sheet: ${sheetName} (${i + 1}/${sheetNames.length})`)
+ }
 
-    const sheet = workbook.Sheets[sheetName]
-    const sheetData = XLSX.utils.sheet_to_json(sheet)
-    allData.push(...sheetData)
+ const sheet = workbook.Sheets[sheetName]
+ const sheetData = XLSX.utils.sheet_to_json(sheet)
+ allData.push(...sheetData)
 
-    // ✅ Estimate bytes processed (sheets processed sequentially)
-    bytesProcessed = Math.floor(((i + 1) / sheetNames.length) * totalBytes)
-    if (progressHooks?.onBytesProcessed) {
-      progressHooks.onBytesProcessed(bytesProcessed)
-    }
+ // ✅ Estimate bytes processed (sheets processed sequentially)
+ bytesProcessed = Math.floor(((i + 1) / sheetNames.length) * totalBytes)
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(bytesProcessed)
+ }
 
-    // ✅ Report data extraction
-    if (progressHooks?.onDataExtracted) {
-      progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until done
-    }
-  }
+ // ✅ Report data extraction
+ if (progressHooks?.onDataExtracted) {
+ progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until done
+ }
+ }
 
-  // Final progress
-  if (progressHooks?.onBytesProcessed) {
-    progressHooks.onBytesProcessed(totalBytes)
-  }
-  if (progressHooks?.onCurrentItem) {
-    progressHooks.onCurrentItem(`Excel complete: ${sheetNames.length} sheets, ${allData.length} rows`)
-  }
+ // Final progress
+ if (progressHooks?.onBytesProcessed) {
+ progressHooks.onBytesProcessed(totalBytes)
+ }
+ if (progressHooks?.onCurrentItem) {
+ progressHooks.onCurrentItem(`Excel complete: ${sheetNames.length} sheets, ${allData.length} rows`)
+ }
 
-  return { format: 'xlsx', data: allData, metadata: { /* ... */ } }
+ return { format: 'xlsx', data: allData, metadata: { /* ... */ } }
 }
 ```
 
@@ -400,44 +400,44 @@ async process(data: Buffer, options: FormatHandlerOptions): Promise<ProcessedDat
 
 ```typescript
 async extract(data: any, options: SmartJSONOptions = {}): Promise<SmartJSONResult> {
-  // ✅ Report parsing start
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing start
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Parse JSON if string
-  let jsonData = typeof data === 'string' ? JSON.parse(data) : data
+ // Parse JSON if string
+ let jsonData = typeof data === 'string' ? JSON.parse(data) : data
 
-  // ✅ Report parsing complete
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing complete
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Traverse and extract (reports progress every 10 nodes)
-  const entities: ExtractedJSONEntity[] = []
-  const relationships: ExtractedJSONRelationship[] = []
-  let nodesProcessed = 0
+ // Traverse and extract (reports progress every 10 nodes)
+ const entities: ExtractedJSONEntity[] = []
+ const relationships: ExtractedJSONRelationship[] = []
+ let nodesProcessed = 0
 
-  await this.traverseJSON(
-    jsonData,
-    entities,
-    relationships,
-    () => {
-      nodesProcessed++
-      if (nodesProcessed % 10 === 0) {
-        options.onProgress?.({
-          processed: nodesProcessed,
-          entities: entities.length,
-          relationships: relationships.length
-        })
-      }
-    }
-  )
+ await this.traverseJSON(
+ jsonData,
+ entities,
+ relationships,
+ () => {
+ nodesProcessed++
+ if (nodesProcessed % 10 === 0) {
+ options.onProgress?.({
+ processed: nodesProcessed,
+ entities: entities.length,
+ relationships: relationships.length
+ })
+ }
+ }
+ )
 
-  // ✅ Report completion
-  options.onProgress?.({
-    processed: nodesProcessed,
-    entities: entities.length,
-    relationships: relationships.length
-  })
+ // ✅ Report completion
+ options.onProgress?.({
+ processed: nodesProcessed,
+ entities: entities.length,
+ relationships: relationships.length
+ })
 
-  return { nodesProcessed, entitiesExtracted: entities.length, ... }
+ return { nodesProcessed, entitiesExtracted: entities.length, ... }
 }
 ```
 
@@ -445,38 +445,38 @@ async extract(data: any, options: SmartJSONOptions = {}): Promise<SmartJSONResul
 
 ```typescript
 async extract(markdown: string, options: SmartMarkdownOptions = {}): Promise<SmartMarkdownResult> {
-  // ✅ Report parsing start
-  options.onProgress?.({ processed: 0, total: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing start
+ options.onProgress?.({ processed: 0, total: 0, entities: 0, relationships: 0 })
 
-  // Parse markdown into sections
-  const parsedSections = this.parseMarkdown(markdown, options)
+ // Parse markdown into sections
+ const parsedSections = this.parseMarkdown(markdown, options)
 
-  // ✅ Report parsing complete
-  options.onProgress?.({ processed: 0, total: parsedSections.length, entities: 0, relationships: 0 })
+ // ✅ Report parsing complete
+ options.onProgress?.({ processed: 0, total: parsedSections.length, entities: 0, relationships: 0 })
 
-  // Process each section (reports progress after each section)
-  const sections: MarkdownSection[] = []
-  for (let i = 0; i < parsedSections.length; i++) {
-    const section = await this.processSection(parsedSections[i], options)
-    sections.push(section)
+ // Process each section (reports progress after each section)
+ const sections: MarkdownSection[] = []
+ for (let i = 0; i < parsedSections.length; i++) {
+ const section = await this.processSection(parsedSections[i], options)
+ sections.push(section)
 
-    options.onProgress?.({
-      processed: i + 1,
-      total: parsedSections.length,
-      entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
-      relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0)
-    })
-  }
+ options.onProgress?.({
+ processed: i + 1,
+ total: parsedSections.length,
+ entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
+ relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0)
+ })
+ }
 
-  // ✅ Report completion
-  options.onProgress?.({
-    processed: sections.length,
-    total: sections.length,
-    entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
-    relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0)
-  })
+ // ✅ Report completion
+ options.onProgress?.({
+ processed: sections.length,
+ total: sections.length,
+ entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
+ relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0)
+ })
 
-  return { sectionsProcessed: sections.length, ... }
+ return { sectionsProcessed: sections.length, ... }
 }
 ```
 
@@ -484,27 +484,27 @@ async extract(markdown: string, options: SmartMarkdownOptions = {}): Promise<Sma
 
 ```typescript
 async extract(yamlContent: string | Buffer, options: SmartYAMLOptions = {}): Promise<SmartYAMLResult> {
-  // ✅ Report parsing start
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing start
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Parse YAML
-  const yamlString = typeof yamlContent === 'string' ? yamlContent : yamlContent.toString('utf-8')
-  const data = yaml.load(yamlString)
+ // Parse YAML
+ const yamlString = typeof yamlContent === 'string' ? yamlContent : yamlContent.toString('utf-8')
+ const data = yaml.load(yamlString)
 
-  // ✅ Report parsing complete
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing complete
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Traverse YAML structure (reports progress every 10 nodes)
-  // ... similar to JSON traversal ...
+ // Traverse YAML structure (reports progress every 10 nodes)
+ // ... similar to JSON traversal ...
 
-  // ✅ Report completion (already implemented)
-  options.onProgress?.({
-    processed: nodesProcessed,
-    entities: entities.length,
-    relationships: relationships.length
-  })
+ // ✅ Report completion (already implemented)
+ options.onProgress?.({
+ processed: nodesProcessed,
+ entities: entities.length,
+ relationships: relationships.length
+ })
 
-  return { nodesProcessed, entitiesExtracted: entities.length, ... }
+ return { nodesProcessed, entitiesExtracted: entities.length, ... }
 }
 ```
 
@@ -512,39 +512,39 @@ async extract(yamlContent: string | Buffer, options: SmartYAMLOptions = {}): Pro
 
 ```typescript
 async extract(buffer: Buffer, options: SmartDOCXOptions = {}): Promise<SmartDOCXResult> {
-  // ✅ Report parsing start
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing start
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Extract text and HTML using Mammoth
-  const textResult = await mammoth.extractRawText({ buffer })
-  const htmlResult = await mammoth.convertToHtml({ buffer })
+ // Extract text and HTML using Mammoth
+ const textResult = await mammoth.extractRawText({ buffer })
+ const htmlResult = await mammoth.convertToHtml({ buffer })
 
-  // ✅ Report parsing complete
-  options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
+ // ✅ Report parsing complete
+ options.onProgress?.({ processed: 0, entities: 0, relationships: 0 })
 
-  // Process paragraphs (reports progress every 10 paragraphs)
-  const paragraphs = textResult.value.split(/\n\n+/).filter(p => p.trim().length >= minLength)
+ // Process paragraphs (reports progress every 10 paragraphs)
+ const paragraphs = textResult.value.split(/\n\n+/).filter(p => p.trim().length >= minLength)
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    await this.processParagraph(paragraphs[i])
+ for (let i = 0; i < paragraphs.length; i++) {
+ await this.processParagraph(paragraphs[i])
 
-    if (i % 10 === 0) {
-      options.onProgress?.({
-        processed: i + 1,
-        entities: entities.length,
-        relationships: relationships.length
-      })
-    }
-  }
+ if (i % 10 === 0) {
+ options.onProgress?.({
+ processed: i + 1,
+ entities: entities.length,
+ relationships: relationships.length
+ })
+ }
+ }
 
-  // ✅ Report completion (already implemented)
-  options.onProgress?.({
-    processed: paragraphs.length,
-    entities: entities.length,
-    relationships: relationships.length
-  })
+ // ✅ Report completion (already implemented)
+ options.onProgress?.({
+ processed: paragraphs.length,
+ entities: entities.length,
+ relationships: relationships.length
+ })
 
-  return { paragraphsProcessed: paragraphs.length, ... }
+ return { paragraphsProcessed: paragraphs.length, ... }
 }
 ```
 
@@ -559,20 +559,20 @@ Progress hooks are **optional**. Always check before calling:
 ```typescript
 // ✅ Good - safe
 if (progressHooks?.onBytesProcessed) {
-  progressHooks.onBytesProcessed(bytes)
+ progressHooks.onBytesProcessed(bytes)
 }
 
 // ❌ Bad - will crash if hooks undefined
-progressHooks.onBytesProcessed(bytes)  // TypeError!
+progressHooks.onBytesProcessed(bytes) // TypeError!
 ```
 
 ### 2. Report Bytes at Start and End
 
 ```typescript
 // ✅ Good - clear start and end
-progressHooks?.onBytesProcessed(0)              // Start
+progressHooks?.onBytesProcessed(0) // Start
 // ... processing ...
-progressHooks?.onBytesProcessed(totalBytes)     // End
+progressHooks?.onBytesProcessed(totalBytes) // End
 
 // ❌ Bad - no clear boundaries
 // ... just start processing without reporting start
@@ -583,17 +583,17 @@ progressHooks?.onBytesProcessed(totalBytes)     // End
 ```typescript
 // ✅ Good - report every 1000 items
 for (let i = 0; i < items.length; i++) {
-  processItem(items[i])
+ processItem(items[i])
 
-  if (i > 0 && i % 1000 === 0) {
-    progressHooks?.onCurrentItem(`Processing: ${i}/${items.length}`)
-  }
+ if (i > 0 && i % 1000 === 0) {
+ progressHooks?.onCurrentItem(`Processing: ${i}/${items.length}`)
+ }
 }
 
 // ❌ Bad - report EVERY item (spam!)
 for (let i = 0; i < items.length; i++) {
-  processItem(items[i])
-  progressHooks?.onCurrentItem(`Processing: ${i}/${items.length}`)  // 1M callbacks!
+ processItem(items[i])
+ progressHooks?.onCurrentItem(`Processing: ${i}/${items.length}`) // 1M callbacks!
 }
 ```
 
@@ -614,13 +614,13 @@ progressHooks?.onCurrentItem('Working...')
 
 ```typescript
 // ✅ Good - total known
-progressHooks?.onDataExtracted(100, 1000)  // 100 of 1000 rows
+progressHooks?.onDataExtracted(100, 1000) // 100 of 1000 rows
 
 // ✅ Also good - total unknown (streaming)
-progressHooks?.onDataExtracted(100, undefined)  // 100 rows so far
+progressHooks?.onDataExtracted(100, undefined) // 100 rows so far
 
 // ✅ Also good - complete
-progressHooks?.onDataExtracted(1000, 1000)  // All 1000 rows
+progressHooks?.onDataExtracted(1000, 1000) // All 1000 rows
 ```
 
 ---
@@ -637,18 +637,18 @@ const handler = new CSVHandler()
 const data = fs.readFileSync('./test.csv')
 
 const result = await handler.process(data, {
-  filename: 'test.csv',
-  progressHooks: {
-    onBytesProcessed: (bytes) => {
-      console.log(`Bytes: ${bytes}`)
-    },
-    onCurrentItem: (item) => {
-      console.log(`Status: ${item}`)
-    },
-    onDataExtracted: (count, total) => {
-      console.log(`Extracted: ${count}${total ? `/${total}` : ''}`)
-    }
-  }
+ filename: 'test.csv',
+ progressHooks: {
+ onBytesProcessed: (bytes) => {
+ console.log(`Bytes: ${bytes}`)
+ },
+ onCurrentItem: (item) => {
+ console.log(`Status: ${item}`)
+ },
+ onDataExtracted: (count, total) => {
+ console.log(`Extracted: ${count}${total ? `/${total}` : ''}`)
+ }
+ }
 })
 
 console.log(`Complete: ${result.data.length} rows`)
@@ -673,24 +673,24 @@ Complete: 1000 rows
 
 ```
 User Imports File
-       ↓
+ ↓
 ImportManager
-       ↓
+ ↓
 Creates ProgressTracker
-       ↓
+ ↓
 Calls Handler.process() with progressHooks
-       ↓
+ ↓
 Handler Reports Progress:
-  ├─ onBytesProcessed(0)          → ProgressTracker → overall_progress calculated
-  ├─ onCurrentItem("Parsing...")  → ProgressTracker → stage_message updated
-  ├─ onBytesProcessed(bytes)      → ProgressTracker → bytes_per_second calculated
-  ├─ onDataExtracted(count)       → ProgressTracker → entities_extracted updated
-  └─ onCurrentItem("Complete")    → ProgressTracker → final progress
-       ↓
+ ├─ onBytesProcessed(0) → ProgressTracker → overall_progress calculated
+ ├─ onCurrentItem("Parsing...") → ProgressTracker → stage_message updated
+ ├─ onBytesProcessed(bytes) → ProgressTracker → bytes_per_second calculated
+ ├─ onDataExtracted(count) → ProgressTracker → entities_extracted updated
+ └─ onCurrentItem("Complete") → ProgressTracker → final progress
+ ↓
 ProgressTracker emits to callback (throttled 100ms)
-       ↓
+ ↓
 User sees:
-  "Overall: 45% | PARSING | 12.5 MB/s | Parsing CSV rows..."
+ "Overall: 45% | PARSING | 12.5 MB/s | Parsing CSV rows..."
 ```
 
 ---

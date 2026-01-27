@@ -592,7 +592,7 @@ export class ChunkManager {
       const data = await this.storage.getMetadata(chunkPath)
 
       if (data) {
-        // v4.0.0: Cast NounMetadata to chunk data structure
+        // Cast NounMetadata to chunk data structure
         const chunkData = data as unknown as any
 
         // Deserialize: convert serialized roaring bitmaps back to RoaringBitmap32 objects
@@ -633,7 +633,7 @@ export class ChunkManager {
     this.chunkCache.set(cacheKey, chunk)
 
     // Serialize: convert RoaringBitmap32 to portable format (Buffer)
-    // v4.0.0: Add required 'noun' property for NounMetadata
+    // Add required 'noun' property for NounMetadata
     const serializable = {
       noun: 'IndexChunk', // Required by NounMetadata interface
       chunkId: chunk.chunkId,
@@ -825,7 +825,7 @@ export class ChunkManager {
     this.chunkCache.delete(cacheKey)
 
     const chunkPath = this.getChunkPath(field, chunkId)
-    // v4.0.0: null signals deletion to storage adapter
+    // null signals deletion to storage adapter
     await this.storage.saveMetadata(chunkPath, null as any)
   }
 

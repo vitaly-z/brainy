@@ -27,7 +27,7 @@ export interface ImportOptions {
   showProgress?: boolean    // Log progress (default: false)
   filter?: (path: string) => boolean // Custom filter function
 
-  // v4.10.0: Import tracking
+  // Import tracking
   importId?: string          // Unique import identifier (auto-generated if not provided)
   projectId?: string         // Project identifier grouping related imports
   customMetadata?: Record<string, any> // Custom metadata to attach
@@ -66,7 +66,7 @@ export class DirectoryImporter {
   async import(sourcePath: string, options: ImportOptions = {}): Promise<ImportResult> {
     const startTime = Date.now()
 
-    // v4.10.0: Generate tracking metadata
+    // Generate tracking metadata
     const importId = options.importId || uuidv4()
     const projectId = options.projectId || this.deriveProjectId(options.targetPath || '/')
     const trackingMetadata = {
@@ -225,7 +225,7 @@ export class DirectoryImporter {
       try {
         await this.vfs.mkdir(dirPath, {
           recursive: true,
-          metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+          metadata: trackingMetadata  // Add tracking metadata
         })
         result.directoriesCreated++
       } catch (error: any) {
@@ -332,7 +332,7 @@ export class DirectoryImporter {
         originalPath: filePath,
         originalSize: stats.size,
         originalModified: stats.mtime.getTime(),
-        ...trackingMetadata  // v4.10.0: Add tracking metadata
+        ...trackingMetadata  // Add tracking metadata
       }
     })
 
@@ -382,6 +382,6 @@ export class DirectoryImporter {
     return false
   }
 
-  // v5.2.0: MIME detection moved to MimeTypeDetector service
+  // MIME detection moved to MimeTypeDetector service
   // Removed detectMimeType() - now using mimeDetector singleton
 }

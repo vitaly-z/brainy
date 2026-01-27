@@ -58,7 +58,7 @@ const MAX_R2_PAGE_SIZE = 1000
  * Dedicated Cloudflare R2 storage adapter
  * Optimized for R2's unique characteristics and global edge network
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed getNounsWithPagination override
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -112,7 +112,7 @@ export class R2Storage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
 
-  // v6.2.7: Write buffering always enabled for consistent performance
+  // Write buffering always enabled for consistent performance
   // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Multi-level cache manager for efficient data access
@@ -122,7 +122,7 @@ export class R2Storage extends BaseStorage {
   // Module logger
   private logger = createModuleLogger('R2Storage')
 
-  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  // HNSW mutex locks to prevent read-modify-write races
   private hnswLocks = new Map<string, Promise<void>>()
 
   /**
@@ -168,7 +168,7 @@ export class R2Storage extends BaseStorage {
     })
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
-    // v6.2.7: Write buffering always enabled - no env var check needed
+    // Write buffering always enabled - no env var check needed
   }
 
   /**
@@ -183,7 +183,7 @@ export class R2Storage extends BaseStorage {
    * Zero egress fees enable aggressive caching and parallel downloads
    *
    * @returns R2-optimized batch configuration
-   * @since v5.12.0 - Updated for native batch API
+   * Updated for native batch API
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -208,7 +208,6 @@ export class R2Storage extends BaseStorage {
    *
    * @param paths - Array of R2 object keys to read
    * @returns Map of path -> parsed JSON data (only successful reads)
-   * @since v5.12.0
    */
   public async readBatch(paths: string[]): Promise<Map<string, any>> {
     await this.ensureInitialized()
@@ -336,7 +335,7 @@ export class R2Storage extends BaseStorage {
       this.nounCacheManager.clear()
       this.verbCacheManager.clear()
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      // Initialize GraphAdjacencyIndex and type statistics
       await super.init()
     } catch (error) {
       this.logger.error('Failed to initialize R2 storage:', error)
@@ -409,7 +408,7 @@ export class R2Storage extends BaseStorage {
     }
   }
 
-  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
+  // Removed checkVolumeMode() - write buffering always enabled for cloud storage
 
   /**
    * Flush noun buffer to R2
@@ -444,16 +443,16 @@ export class R2Storage extends BaseStorage {
 
   /**
    * Save a node to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
@@ -728,14 +727,14 @@ export class R2Storage extends BaseStorage {
 
   /**
    * Save an edge to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.verbWriteBuffer) {
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       this.verbCacheManager.set(edge.id, edge)
 
       await this.verbWriteBuffer.add(edge.id, edge)
@@ -750,7 +749,7 @@ export class R2Storage extends BaseStorage {
     const requestId = await this.applyBackpressure()
 
     try {
-      // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
+      // ARCHITECTURAL FIX: Include core relational fields in verb vector file
       // These fields are essential for 90% of operations - no metadata lookup needed
       const serializableEdge = {
         id: edge.id,
@@ -762,7 +761,7 @@ export class R2Storage extends BaseStorage {
           ])
         ),
 
-        // CORE RELATIONAL DATA (v3.50.1+)
+        // CORE RELATIONAL DATA
         verb: edge.verb,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
@@ -785,7 +784,7 @@ export class R2Storage extends BaseStorage {
 
       this.verbCacheManager.set(edge.id, edge)
 
-      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal
       // This fixes the race condition where metadata didn't exist yet
 
       this.releaseBackpressure(true, requestId)
@@ -831,7 +830,7 @@ export class R2Storage extends BaseStorage {
         connections.set(Number(level), new Set(verbIds as string[]))
       }
 
-      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
+      // Return HNSWVerb with core relational fields (NO metadata field)
       const edge: Edge = {
         id: data.id,
         vector: data.vector,
@@ -842,7 +841,7 @@ export class R2Storage extends BaseStorage {
         sourceId: data.sourceId,
         targetId: data.targetId
 
-        // ✅ NO metadata field in v4.0.0
+        // ✅ NO metadata field
         // User metadata retrieved separately via getVerbMetadata()
       }
 
@@ -1081,7 +1080,7 @@ export class R2Storage extends BaseStorage {
 
     prodLog.info('🧹 R2: Clearing all data from bucket...')
 
-    // v5.11.0: Clear ALL data using correct paths
+    // Clear ALL data using correct paths
     // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
     const branchObjects = await this.listObjectsUnderPath('branches/')
     for (const key of branchObjects) {
@@ -1100,7 +1099,7 @@ export class R2Storage extends BaseStorage {
       await this.deleteObjectFromPath(key)
     }
 
-    // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+    // Reset COW managers (but don't disable COW - it's always enabled)
     // COW will re-initialize automatically on next use
     this.refManager = undefined
     this.blobStorage = undefined
@@ -1143,17 +1142,17 @@ export class R2Storage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker object exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
-  // v5.4.0: Removed getNounsWithPagination override - use BaseStorage's type-first implementation
+  // Removed getNounsWithPagination override - use BaseStorage's type-first implementation
 
 
-  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
+  // Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
 }

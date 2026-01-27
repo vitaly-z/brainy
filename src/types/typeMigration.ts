@@ -1,5 +1,5 @@
 /**
- * Type Migration Utilities for Stage 3 Taxonomy (v6.0.0)
+ * Type Migration Utilities for Stage 3 Taxonomy
  *
  * Provides migration helpers for code using removed types from v5.x
  *
@@ -52,7 +52,7 @@ export function isRemovedVerbType(type: string): type is keyof typeof REMOVED_VE
 }
 
 /**
- * Migrate a noun type from v5.x to v6.0 Stage 3
+ * Migrate a noun type (Stage 3)
  * Returns the migrated type or the original if no migration needed
  */
 export function migrateNounType(type: string): NounType {
@@ -64,7 +64,7 @@ export function migrateNounType(type: string): NounType {
 }
 
 /**
- * Migrate a verb type from v5.x to v6.0 Stage 3
+ * Migrate a verb type (Stage 3)
  * Returns the migrated type or the original if no migration needed
  *
  * WARNING: Some verbs require inverting source/target relationships!
@@ -138,7 +138,7 @@ export function migrateRelationship(params: {
 
 /**
  * Stage 3 Type Compatibility Check
- * Helps developers identify code that needs updating for v6.0
+ * Helps developers identify code that needs updating
  */
 export function checkTypeCompatibility(nounTypes: string[], verbTypes: string[]): {
   valid: boolean

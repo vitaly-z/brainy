@@ -133,7 +133,7 @@ export const utilityCommands = {
       // removeOrphans and rebuildIndex would require new Brainy APIs
       if (options.removeOrphans || options.rebuildIndex) {
         spinner.warn('Advanced cleanup options not yet implemented')
-        console.log(chalk.yellow('\n⚠️  Advanced cleanup features coming in v3.21.0:'))
+        console.log(chalk.yellow('\n⚠️  Advanced cleanup features coming soon:'))
         console.log(chalk.dim('  • --remove-orphans: Remove disconnected items'))
         console.log(chalk.dim('  • --rebuild-index: Rebuild vector index'))
         console.log(chalk.dim('\nUse "brainy clean" without options to clear the database'))

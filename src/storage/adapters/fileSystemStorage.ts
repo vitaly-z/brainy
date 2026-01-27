@@ -59,7 +59,7 @@ try {
  * File system storage adapter for Node.js environments
  * Uses the file system to store data in the specified directory structure
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -91,12 +91,12 @@ export class FileSystemStorage extends BaseStorage {
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
 
-  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // CRITICAL FIX: Mutex locks for HNSW concurrency control
   // Prevents read-modify-write races during concurrent neighbor updates at scale (1000+ ops)
   // Matches MemoryStorage and OPFSStorage behavior (tested in production)
   private hnswLocks = new Map<string, Promise<void>>()
 
-  // Compression configuration (v4.0.0)
+  // Compression configuration
   private compressionEnabled: boolean = true  // Enable gzip compression by default for 60-80% disk savings
   private compressionLevel: number = 6  // zlib compression level (1-9, default: 6 = balanced)
 
@@ -136,7 +136,6 @@ export class FileSystemStorage extends BaseStorage {
    * - Parallel processing supported
    *
    * @returns FileSystem-optimized batch configuration
-   * @since v4.11.0
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -179,7 +178,7 @@ export class FileSystemStorage extends BaseStorage {
 
     try {
       // Initialize directory paths now that path module is loaded
-      // Clean directory structure (v4.7.2+)
+      // Clean directory structure
       this.nounsDir = path.join(this.rootDir, 'entities/nouns/hnsw')
       this.verbsDir = path.join(this.rootDir, 'entities/verbs/hnsw')
       this.metadataDir = path.join(this.rootDir, 'entities/nouns/metadata')  // Legacy reference
@@ -245,7 +244,7 @@ export class FileSystemStorage extends BaseStorage {
       // Always use fixed depth after migration/detection
       this.cachedShardingDepth = this.SHARDING_DEPTH
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      // Initialize GraphAdjacencyIndex and type statistics
       await super.init()
     } catch (error) {
       console.error('Error initializing FileSystemStorage:', error)
@@ -281,7 +280,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Save a node to storage
-   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
+   * CRITICAL FIX: Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
@@ -303,7 +302,7 @@ export class FileSystemStorage extends BaseStorage {
     const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
     try {
-      // ATOMIC WRITE SEQUENCE (v4.10.3):
+      // ATOMIC WRITE SEQUENCE:
       // 1. Write to temp file
       await this.ensureDirectoryExists(path.dirname(tempPath))
       await fs.promises.writeFile(tempPath, JSON.stringify(serializableNode, null, 2))
@@ -320,7 +319,7 @@ export class FileSystemStorage extends BaseStorage {
       throw error
     }
 
-    // Count tracking happens in baseStorage.saveNounMetadata_internal (v4.1.2)
+    // Count tracking happens in baseStorage.saveNounMetadata_internal
     // This fixes the race condition where metadata didn't exist yet
   }
 
@@ -361,7 +360,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get all nodes from storage
-   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
+   * CRITICAL FIX: Now scans sharded subdirectories (depth=1)
    * Previously only scanned flat directory, causing rebuild to find 0 entities
    */
   protected async getAllNodes(): Promise<HNSWNode[]> {
@@ -406,7 +405,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get nodes by noun type
-   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
+   * CRITICAL FIX: Now scans sharded subdirectories (depth=1)
    * @param nounType The noun type to filter by
    * @returns Promise that resolves to an array of nodes of the specified noun type
    */
@@ -462,7 +461,7 @@ export class FileSystemStorage extends BaseStorage {
 
     const filePath = this.getNodePath(id)
 
-    // Load metadata to get type for count update (v4.0.0: separate storage)
+    // Load metadata to get type for count update (separate storage)
     try {
       const metadata = await this.getNounMetadata(id)
       if (metadata) {
@@ -490,13 +489,13 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Save an edge to storage
-   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
+   * CRITICAL FIX: Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
     // Convert connections Map to a serializable format
-    // ARCHITECTURAL FIX (v3.50.1): Include core relational fields in verb vector file
+    // ARCHITECTURAL FIX: Include core relational fields in verb vector file
     // These fields are essential for 90% of operations - no metadata lookup needed
     const serializableEdge = {
       id: edge.id,
@@ -505,7 +504,7 @@ export class FileSystemStorage extends BaseStorage {
         Array.from(set as Set<string>)
       ),
 
-      // CORE RELATIONAL DATA (v3.50.1+)
+      // CORE RELATIONAL DATA
       verb: edge.verb,
       sourceId: edge.sourceId,
       targetId: edge.targetId,
@@ -518,7 +517,7 @@ export class FileSystemStorage extends BaseStorage {
     const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
     try {
-      // ATOMIC WRITE SEQUENCE (v4.10.3):
+      // ATOMIC WRITE SEQUENCE:
       // 1. Write to temp file
       await this.ensureDirectoryExists(path.dirname(tempPath))
       await fs.promises.writeFile(tempPath, JSON.stringify(serializableEdge, null, 2))
@@ -535,7 +534,7 @@ export class FileSystemStorage extends BaseStorage {
       throw error
     }
 
-    // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+    // Count tracking happens in baseStorage.saveVerbMetadata_internal
     // This fixes the race condition where metadata didn't exist yet
   }
 
@@ -556,7 +555,7 @@ export class FileSystemStorage extends BaseStorage {
         connections.set(Number(level), new Set(nodeIds as string[]))
       }
 
-      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
+      // Return HNSWVerb with core relational fields (NO metadata field)
       return {
         id: parsedEdge.id,
         vector: parsedEdge.vector,
@@ -567,7 +566,7 @@ export class FileSystemStorage extends BaseStorage {
         sourceId: parsedEdge.sourceId,
         targetId: parsedEdge.targetId
 
-        // ✅ NO metadata field in v4.0.0
+        // ✅ NO metadata field
         // User metadata retrieved separately via getVerbMetadata()
       }
     } catch (error: any) {
@@ -580,7 +579,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get all edges from storage
-   * CRITICAL FIX (v3.43.2): Now scans sharded subdirectories (depth=1)
+   * CRITICAL FIX: Now scans sharded subdirectories (depth=1)
    * Previously only scanned flat directory, causing rebuild to find 0 relationships
    */
   protected async getAllEdges(): Promise<Edge[]> {
@@ -608,7 +607,7 @@ export class FileSystemStorage extends BaseStorage {
           connections.set(Number(level), new Set(nodeIds as string[]))
         }
 
-        // v4.0.0: Include core relational fields (NO metadata field)
+        // Include core relational fields (NO metadata field)
         allEdges.push({
           id: parsedEdge.id,
           vector: parsedEdge.vector,
@@ -619,7 +618,7 @@ export class FileSystemStorage extends BaseStorage {
           sourceId: parsedEdge.sourceId,
           targetId: parsedEdge.targetId
 
-          // ✅ NO metadata field in v4.0.0
+          // ✅ NO metadata field
           // User metadata retrieved separately via getVerbMetadata()
         })
       }
@@ -696,8 +695,8 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: Write object to path
    * All metadata operations use this internally via base class routing
-   * v4.0.0: Supports gzip compression for 60-80% disk savings
-   * CRITICAL FIX (v4.10.3): Added atomic write pattern to prevent file corruption during concurrent imports
+   * Supports gzip compression for 60-80% disk savings
+   * CRITICAL FIX: Added atomic write pattern to prevent file corruption during concurrent imports
    */
   protected async writeObjectToPath(pathStr: string, data: any): Promise<void> {
     await this.ensureInitialized()
@@ -711,7 +710,7 @@ export class FileSystemStorage extends BaseStorage {
       const tempPath = `${compressedPath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
       try {
-        // ATOMIC WRITE SEQUENCE (v4.10.3):
+        // ATOMIC WRITE SEQUENCE:
         // 1. Compress and write to temp file
         const jsonString = JSON.stringify(data, null, 2)
         const compressed = await new Promise<Buffer>((resolve, reject) => {
@@ -748,7 +747,7 @@ export class FileSystemStorage extends BaseStorage {
       const tempPath = `${fullPath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2)}`
 
       try {
-        // ATOMIC WRITE SEQUENCE (v4.10.3):
+        // ATOMIC WRITE SEQUENCE:
         // 1. Write to temp file
         await fs.promises.writeFile(tempPath, JSON.stringify(data, null, 2))
 
@@ -770,7 +769,7 @@ export class FileSystemStorage extends BaseStorage {
    * Primitive operation: Read object from path
    * All metadata operations use this internally via base class routing
    * Enhanced error handling for corrupted metadata files (Bug #3 mitigation)
-   * v4.0.0: Supports reading both compressed (.gz) and uncompressed files for backward compatibility
+   * Supports reading both compressed (.gz) and uncompressed files for backward compatibility
    */
   protected async readObjectFromPath(pathStr: string): Promise<any | null> {
     await this.ensureInitialized()
@@ -822,7 +821,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: Delete object from path
    * All metadata operations use this internally via base class routing
-   * v4.0.0: Deletes both compressed and uncompressed versions (for cleanup)
+   * Deletes both compressed and uncompressed versions (for cleanup)
    */
   protected async deleteObjectFromPath(pathStr: string): Promise<void> {
     await this.ensureInitialized()
@@ -863,7 +862,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Primitive operation: List objects under path prefix
    * All metadata operations use this internally via base class routing
-   * v4.0.0: Handles both .json and .json.gz files, normalizes paths
+   * Handles both .json and .json.gz files, normalizes paths
    */
   protected async listObjectsUnderPath(prefix: string): Promise<string[]> {
     await this.ensureInitialized()
@@ -877,7 +876,7 @@ export class FileSystemStorage extends BaseStorage {
 
       for (const entry of entries) {
         if (entry.isFile()) {
-          // v5.3.5: Handle multiple compression formats for broad compatibility
+          // Handle multiple compression formats for broad compatibility
           // - .json.gz: Standard entity/metadata files (JSON compressed)
           // - .gz: COW files (refs, blobs, commits - raw compressed)
           // - .json: Uncompressed JSON files
@@ -890,7 +889,7 @@ export class FileSystemStorage extends BaseStorage {
               seen.add(normalizedPath)
             }
           } else if (entry.name.endsWith('.gz')) {
-            // v5.3.5 fix: COW files stored as .gz (not .json.gz)
+            // COW files stored as .gz (not .json.gz)
             // Strip .gz extension and return path
             const normalizedName = entry.name.slice(0, -3) // Remove .gz
             const normalizedPath = path.join(prefix, normalizedName)
@@ -966,7 +965,7 @@ export class FileSystemStorage extends BaseStorage {
    * Get nouns with pagination support
    * @param options Pagination options
    */
-  // v5.4.0: Removed getNounsWithPagination override - now uses BaseStorage's type-first implementation
+  // Removed getNounsWithPagination override - now uses BaseStorage's type-first implementation
 
   /**
    * Clear all data from storage
@@ -1002,7 +1001,7 @@ export class FileSystemStorage extends BaseStorage {
       }
     }
 
-    // v5.10.4: Clear the entire branches/ directory (branch-based storage)
+    // Clear the entire branches/ directory (branch-based storage)
     // Bug fix: Data is stored in branches/main/entities/, not just entities/
     // The branch-based structure was introduced for COW support
     const branchesDir = path.join(this.rootDir, 'branches')
@@ -1016,7 +1015,7 @@ export class FileSystemStorage extends BaseStorage {
       await removeDirectoryContents(this.indexDir)
     }
 
-    // v5.6.1: Remove COW (copy-on-write) version control data
+    // Remove COW (copy-on-write) version control data
     // This directory stores all git-like versioning data (commits, trees, blobs, refs)
     // Must be deleted to fully clear all data including version history
     const cowDir = path.join(this.rootDir, '_cow')
@@ -1024,7 +1023,7 @@ export class FileSystemStorage extends BaseStorage {
       // Delete the entire _cow/ directory (not just contents)
       await fs.promises.rm(cowDir, { recursive: true, force: true })
 
-      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // Reset COW managers (but don't disable COW - it's always enabled)
       // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
@@ -1035,12 +1034,12 @@ export class FileSystemStorage extends BaseStorage {
     this.statisticsCache = null
     this.statisticsModified = false
 
-    // v5.6.1: Reset entity counters (inherited from BaseStorageAdapter)
+    // Reset entity counters (inherited from BaseStorageAdapter)
     // These in-memory counters must be reset to 0 after clearing all data
     ;(this as any).totalNounCount = 0
     ;(this as any).totalVerbCount = 0
 
-    // v7.3.1: Clear write-through cache (inherited from BaseStorage)
+    // Clear write-through cache (inherited from BaseStorage)
     // Without this, readWithInheritance() would return stale cached data
     // after clear(), causing "ghost" entities to appear
     this.clearWriteCache()
@@ -1074,12 +1073,12 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker file exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -1152,7 +1151,7 @@ export class FileSystemStorage extends BaseStorage {
 
       totalSize = nounsDirSize + verbsDirSize + metadataDirSize + indexDirSize
 
-      // CRITICAL FIX (v3.43.2): Use persisted counts instead of directory reads
+      // CRITICAL FIX: Use persisted counts instead of directory reads
       // This is O(1) instead of O(n), and handles sharded structure correctly
       const nounsCount = this.totalNounCount
       const verbsCount = this.totalVerbCount
@@ -1210,8 +1209,8 @@ export class FileSystemStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
-  // v5.4.0: Removed 2 pagination methods (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's implementation
+  // Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
+  // Removed 2 pagination methods (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's implementation
 
   /**
    * Acquire a file-based lock for coordinating operations across multiple processes
@@ -1503,14 +1502,14 @@ export class FileSystemStorage extends BaseStorage {
       this.totalVerbCount = validVerbFiles.length
 
       // Sample some files to get type distribution (don't read all)
-      // v4.0.0: Load metadata separately for type information
+      // Load metadata separately for type information
       const sampleSize = Math.min(100, validNounFiles.length)
       for (let i = 0; i < sampleSize; i++) {
         try {
           const file = validNounFiles[i]
           const id = file.replace('.json', '')
 
-          // v4.0.0: Load metadata from separate storage for type info
+          // Load metadata from separate storage for type info
           const metadata = await this.getNounMetadata(id)
           if (metadata) {
             const type = metadata.noun || 'default'
@@ -2148,7 +2147,7 @@ export class FileSystemStorage extends BaseStorage {
             const edge = JSON.parse(data)
             const metadata = await this.getVerbMetadata(id)
 
-            // v4.8.1: Don't skip verbs without metadata - metadata is optional
+            // Don't skip verbs without metadata - metadata is optional
             // FIX: This was the root cause of the VFS bug (11 versions)
             // Verbs can exist without metadata files (e.g., from imports/migrations)
 
@@ -2162,7 +2161,7 @@ export class FileSystemStorage extends BaseStorage {
               connections = connectionsMap
             }
 
-            // v4.8.0: Extract standard fields from metadata to top-level
+            // Extract standard fields from metadata to top-level
             const metadataObj = (metadata || {}) as VerbMetadata
             const { createdAt, updatedAt, confidence, weight, service, data: dataField, createdBy, ...customMetadata } = metadataObj
 
@@ -2309,12 +2308,12 @@ export class FileSystemStorage extends BaseStorage {
   }
 
   // =============================================
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
   // =============================================
 
   /**
    * Get vector for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
@@ -2324,7 +2323,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Save HNSW graph data for a noun
    *
-   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * Uses BaseStorage's getNoun/saveNoun (type-first paths)
    * CRITICAL: Preserves mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
@@ -2333,7 +2332,7 @@ export class FileSystemStorage extends BaseStorage {
   }): Promise<void> {
     const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // CRITICAL FIX: Mutex lock to prevent read-modify-write races
     // Problem: Without mutex, concurrent operations can:
     //   1. Thread A reads noun (connections: [1,2,3])
     //   2. Thread B reads noun (connections: [1,2,3])
@@ -2353,7 +2352,7 @@ export class FileSystemStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Use BaseStorage's getNoun (type-first paths)
       // Read existing noun data (if exists)
       const existingNoun = await this.getNoun(nounId)
 
@@ -2375,7 +2374,7 @@ export class FileSystemStorage extends BaseStorage {
         connections: connectionsMap
       }
 
-      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write)
+      // Use BaseStorage's saveNoun (type-first paths, atomic write)
       await this.saveNoun(updatedNoun)
     } finally {
       // Release lock (ALWAYS runs, even if error thrown)
@@ -2386,7 +2385,7 @@ export class FileSystemStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -2415,7 +2414,7 @@ export class FileSystemStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    *
-   * CRITICAL FIX (v4.10.1): Mutex lock + atomic write to prevent race conditions
+   * CRITICAL FIX: Mutex lock + atomic write to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -2425,7 +2424,7 @@ export class FileSystemStorage extends BaseStorage {
 
     const lockKey = 'hnsw/system'
 
-    // CRITICAL FIX (v4.10.1): Mutex lock to serialize system updates
+    // CRITICAL FIX: Mutex lock to serialize system updates
     // System data (entry point, max level) updated frequently during HNSW construction
     // Without mutex, concurrent updates can lose data (same as entity-level problem)
 

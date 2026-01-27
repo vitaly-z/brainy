@@ -1,5 +1,5 @@
 /**
- * Unified Index Interface (v3.35.0+)
+ * Unified Index Interface
  *
  * Standardizes index lifecycle across all index types in Brainy.
  * All indexes (HNSW Vector, Graph Adjacency, Metadata Field) implement this interface
@@ -57,7 +57,7 @@ export interface RebuildOptions {
    * - On-demand: Large datasets loaded adaptively via UnifiedCache
    *
    * This option is kept for backwards compatibility but is ignored.
-   * The system always uses adaptive caching (v3.36.0+).
+   * The system always uses adaptive caching.
    */
   lazy?: boolean
 
@@ -104,7 +104,7 @@ export interface IIndex {
    * - Provide progress reporting for large datasets
    * - Recover gracefully from partial failures
    *
-   * Adaptive Caching (v3.36.0+):
+   * Adaptive Caching:
    * System automatically chooses optimal strategy:
    * - Small datasets: Preload all data at init for zero-latency access
    * - Large datasets: Load on-demand via UnifiedCache for memory efficiency

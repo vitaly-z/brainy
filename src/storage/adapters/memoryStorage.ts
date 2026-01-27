@@ -24,7 +24,7 @@ import { PaginatedResult } from '../../types/paginationTypes.js'
  * Uses Maps to store data in memory
  */
 export class MemoryStorage extends BaseStorage {
-  // v5.4.0: Removed redundant Maps (nouns, verbs) - objectStore handles all storage via type-first paths
+  // Removed redundant Maps (nouns, verbs) - objectStore handles all storage via type-first paths
   private statistics: StatisticsData | null = null
 
   // Unified object store for primitive operations (replaces metadata, nounMetadata, verbMetadata)
@@ -55,7 +55,6 @@ export class MemoryStorage extends BaseStorage {
    * - Parallel processing maximizes throughput
    *
    * @returns Memory-optimized batch configuration
-   * @since v4.11.0
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -72,27 +71,27 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Initialize the storage adapter
-   * v6.0.0: Calls super.init() to initialize GraphAdjacencyIndex and type statistics
+   * Calls super.init() to initialize GraphAdjacencyIndex and type statistics
    */
   public async init(): Promise<void> {
     await super.init()
   }
 
-  // v5.4.0: Removed saveNoun_internal and getNoun_internal - using BaseStorage's type-first implementation
+  // Removed saveNoun_internal and getNoun_internal - using BaseStorage's type-first implementation
 
   /**
    * Get nouns with pagination and filtering
-   * v4.0.0: Returns HNSWNounWithMetadata[] (includes metadata field)
+   * Returns HNSWNounWithMetadata[] (includes metadata field)
    * @param options Pagination and filtering options
    * @returns Promise that resolves to a paginated result of nouns with metadata
    */
-  // v5.4.0: Removed public method overrides (getNouns, getNounsWithPagination, getVerbs) - using BaseStorage's type-first implementation
+  // Removed public method overrides (getNouns, getNounsWithPagination, getVerbs) - using BaseStorage's type-first implementation
 
-  // v5.4.0: Removed getNounsByNounType_internal and deleteNoun_internal - using BaseStorage's type-first implementation
+  // Removed getNounsByNounType_internal and deleteNoun_internal - using BaseStorage's type-first implementation
 
-  // v5.4.0: Removed saveVerb_internal and getVerb_internal - using BaseStorage's type-first implementation
+  // Removed saveVerb_internal and getVerb_internal - using BaseStorage's type-first implementation
 
-  // v5.4.0: Removed verb *_internal method overrides - using BaseStorage's type-first implementation
+  // Removed verb *_internal method overrides - using BaseStorage's type-first implementation
 
   /**
    * Primitive operation: Write object to path
@@ -159,8 +158,8 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Clear all data from storage
-   * v5.4.0: Clears objectStore (type-first paths)
-   * v7.3.1: Also clears writeCache to prevent stale data after clear
+   * Clears objectStore (type-first paths)
+   * Also clears writeCache to prevent stale data after clear
    */
   public async clear(): Promise<void> {
     this.objectStore.clear()
@@ -174,7 +173,7 @@ export class MemoryStorage extends BaseStorage {
     this.statisticsCache = null
     this.statisticsModified = false
 
-    // v7.3.1: Clear write-through cache (inherited from BaseStorage)
+    // Clear write-through cache (inherited from BaseStorage)
     // Without this, readWithInheritance() would return stale cached data
     // after clear(), causing "ghost" entities to appear
     this.clearWriteCache()
@@ -182,7 +181,7 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Get information about storage usage and capacity
-   * v5.4.0: Uses BaseStorage counts
+   * Uses BaseStorage counts
    */
   public async getStorageStatus(): Promise<{
     type: string
@@ -204,12 +203,12 @@ export class MemoryStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: No-op for MemoryStorage (doesn't persist)
+   * No-op for MemoryStorage (doesn't persist)
    * @returns Always false (marker doesn't persist in memory)
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -252,7 +251,7 @@ export class MemoryStorage extends BaseStorage {
    */
   protected async getStatisticsData(): Promise<StatisticsData | null> {
     if (!this.statistics) {
-      // CRITICAL FIX (v3.37.4): Statistics don't exist yet (first init)
+      // CRITICAL FIX: Statistics don't exist yet (first init)
       // Return minimal stats with counts instead of null
       // This prevents HNSW from seeing entityCount=0 during index rebuild
       return {
@@ -299,10 +298,10 @@ export class MemoryStorage extends BaseStorage {
   }
 
   /**
-   * Initialize counts from in-memory storage - O(1) operation (v4.0.0)
+   * Initialize counts from in-memory storage - O(1) operation
    */
   protected async initializeCounts(): Promise<void> {
-    // v6.0.0: Scan objectStore paths (ID-first structure) to count entities
+    // Scan objectStore paths (ID-first structure) to count entities
     this.entityCounts.clear()
     this.verbCounts.clear()
 
@@ -314,14 +313,14 @@ export class MemoryStorage extends BaseStorage {
       // Count nouns (entities/nouns/{shard}/{id}/vectors.json)
       const nounMatch = path.match(/^entities\/nouns\/[0-9a-f]{2}\/[^/]+\/vectors\.json$/)
       if (nounMatch) {
-        // v6.0.0: Type is in metadata, not path - just count total
+        // Type is in metadata, not path - just count total
         totalNouns++
       }
 
       // Count verbs (entities/verbs/{shard}/{id}/vectors.json)
       const verbMatch = path.match(/^entities\/verbs\/[0-9a-f]{2}\/[^/]+\/vectors\.json$/)
       if (verbMatch) {
-        // v6.0.0: Type is in metadata, not path - just count total
+        // Type is in metadata, not path - just count total
         totalVerbs++
       }
     }
@@ -339,26 +338,26 @@ export class MemoryStorage extends BaseStorage {
   }
 
   // =============================================
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
   // =============================================
 
   /**
    * Get vector for a noun
-   * v5.4.0: Uses BaseStorage's type-first implementation
+   * Uses BaseStorage's type-first implementation
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
     return noun ? [...noun.vector] : null
   }
 
-  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // CRITICAL FIX: Mutex locks for HNSW concurrency control
   // Even in-memory operations need serialization to prevent async race conditions
   private hnswLocks = new Map<string, Promise<void>>()
 
   /**
    * Save HNSW graph data for a noun
    *
-   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions during concurrent HNSW updates
+   * CRITICAL FIX: Mutex locking to prevent race conditions during concurrent HNSW updates
    * Even in-memory operations can race due to async/await interleaving
    * Prevents data corruption when multiple entities connect to same neighbor simultaneously
    */
@@ -417,7 +416,7 @@ export class MemoryStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    *
-   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions
+   * CRITICAL FIX: Mutex locking to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null

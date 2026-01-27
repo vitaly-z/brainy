@@ -36,17 +36,17 @@ export interface SmartExcelOptions extends FormatHandlerOptions {
   typeColumn?: string      // e.g., "Type", "Category"
   relatedColumn?: string   // e.g., "Related Terms", "See Also"
 
-  /** Progress callback (v3.38.0: Enhanced with performance metrics) */
+  /** Progress callback (Enhanced with performance metrics) */
   onProgress?: (stats: {
     processed: number
     total: number
     entities: number
     relationships: number
-    /** Rows per second (v3.38.0) */
+    /** Rows per second */
     throughput?: number
-    /** Estimated time remaining in ms (v3.38.0) */
+    /** Estimated time remaining in ms */
     eta?: number
-    /** Current phase (v3.38.0) */
+    /** Current phase */
     phase?: string
   }) => void
 }
@@ -111,7 +111,7 @@ export interface SmartExcelResult {
     }
   }
 
-  /** Sheet-specific data for VFS extraction (v4.2.0) */
+  /** Sheet-specific data for VFS extraction */
   sheets?: Array<{
     name: string
     rows: ExtractedRow[]
@@ -161,7 +161,7 @@ export class SmartExcelImporter {
     const opts = {
       enableNeuralExtraction: true,
       enableRelationshipInference: true,
-      // CONCEPT EXTRACTION PRODUCTION-READY (v3.33.0+):
+      // CONCEPT EXTRACTION PRODUCTION-READY:
       // Type embeddings are now pre-computed at build time - zero runtime cost!
       // All 42 noun types + 127 verb types instantly available
       //
@@ -184,7 +184,7 @@ export class SmartExcelImporter {
     }
 
     // Parse Excel using existing handler
-    // v4.5.0: Pass progress hooks to handler for file parsing progress
+    // Pass progress hooks to handler for file parsing progress
     const processedData = await this.excelHandler.process(buffer, {
       ...options,
       totalBytes: buffer.length,
@@ -227,7 +227,7 @@ export class SmartExcelImporter {
       return this.emptyResult(startTime)
     }
 
-    // CRITICAL FIX (v4.8.6): Detect columns per-sheet, not globally
+    // CRITICAL FIX: Detect columns per-sheet, not globally
     // Different sheets may have different column structures (Term vs Name, etc.)
     // Group rows by sheet and detect columns for each sheet separately
     const rowsBySheet = new Map<string, typeof rows>()
@@ -247,7 +247,7 @@ export class SmartExcelImporter {
       }
     }
 
-    // Process each row with BATCHED PARALLEL PROCESSING (v3.38.0)
+    // Process each row with BATCHED PARALLEL PROCESSING
     const extractedRows: ExtractedRow[] = []
     const entityMap = new Map<string, string>()
     const stats = {
@@ -269,7 +269,7 @@ export class SmartExcelImporter {
         chunk.map(async (row, chunkIndex) => {
           const i = chunkStart + chunkIndex
 
-          // CRITICAL FIX (v4.8.6): Use sheet-specific column mapping
+          // CRITICAL FIX: Use sheet-specific column mapping
           const sheet = row._sheet || 'default'
           const columns = columnsBySheet.get(sheet) || this.detectColumns(row, opts)
 
@@ -353,7 +353,7 @@ export class SmartExcelImporter {
             }
 
             // ============================================
-            // v4.9.0: Enhanced column-based relationship detection
+            // Enhanced column-based relationship detection
             // ============================================
             // Parse explicit "Related Terms" column
             if (relatedTerms) {
@@ -379,7 +379,7 @@ export class SmartExcelImporter {
               }
             }
 
-            // v4.9.0: Check for additional relationship-indicating columns
+            // Check for additional relationship-indicating columns
             // Expanded patterns for various relationship types
             const relationshipColumnPatterns = [
               { pattern: /^(location|home|lives in|resides|dwelling|place)$/i, defaultType: VerbType.LocatedAt },
@@ -485,14 +485,14 @@ export class SmartExcelImporter {
         total: rows.length,
         entities: extractedRows.reduce((sum, row) => sum + 1 + row.relatedEntities.length, 0),
         relationships: extractedRows.reduce((sum, row) => sum + row.relationships.length, 0),
-        // Additional performance metrics (v3.38.0)
+        // Additional performance metrics
         throughput: Math.round(rowsPerSecond * 10) / 10,
         eta: Math.round(estimatedTimeRemaining),
         phase: 'extracting'
       } as any)
     }
 
-    // Group rows by sheet for VFS extraction (v4.2.0)
+    // Group rows by sheet for VFS extraction
     const sheetGroups = new Map<string, ExtractedRow[]>()
     extractedRows.forEach((extractedRow, index) => {
       const originalRow = rows[index]

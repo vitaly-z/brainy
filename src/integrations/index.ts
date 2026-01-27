@@ -7,7 +7,7 @@
  * - Real-time dashboards (SSE streaming)
  * - External webhooks (push notifications)
  *
- * @example Enable integrations (v7.4.0 - recommended)
+ * @example Enable integrations (recommended)
  * ```typescript
  * import { Brainy } from '@soulcraft/brainy'
  *

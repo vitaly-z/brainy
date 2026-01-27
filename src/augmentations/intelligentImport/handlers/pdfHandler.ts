@@ -52,7 +52,7 @@ export class PDFHandler extends BaseFormatHandler {
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary')
     const totalBytes = buffer.length
 
-    // v4.5.0: Report start
+    // Report start
     if (progressHooks?.onBytesProcessed) {
       progressHooks.onBytesProcessed(0)
     }
@@ -74,7 +74,7 @@ export class PDFHandler extends BaseFormatHandler {
       const metadata = await pdfDoc.getMetadata()
       const numPages = pdfDoc.numPages
 
-      // v4.5.0: Report document loaded
+      // Report document loaded
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(`Processing ${numPages} pages...`)
       }
@@ -85,7 +85,7 @@ export class PDFHandler extends BaseFormatHandler {
       let detectedTables = 0
 
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        // v4.5.0: Report current page
+        // Report current page
         if (progressHooks?.onCurrentItem) {
           progressHooks.onCurrentItem(`Processing page ${pageNum} of ${numPages}`)
         }
@@ -131,19 +131,19 @@ export class PDFHandler extends BaseFormatHandler {
           }
         }
 
-        // v4.5.0: Estimate bytes processed (pages are sequential)
+        // Estimate bytes processed (pages are sequential)
         const bytesProcessed = Math.floor((pageNum / numPages) * totalBytes)
         if (progressHooks?.onBytesProcessed) {
           progressHooks.onBytesProcessed(bytesProcessed)
         }
 
-        // v4.5.0: Report extraction progress
+        // Report extraction progress
         if (progressHooks?.onDataExtracted) {
           progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until complete
         }
       }
 
-      // v4.5.0: Final progress - all bytes processed
+      // Final progress - all bytes processed
       if (progressHooks?.onBytesProcessed) {
         progressHooks.onBytesProcessed(totalBytes)
       }
@@ -153,7 +153,7 @@ export class PDFHandler extends BaseFormatHandler {
 
       const processingTime = Date.now() - startTime
 
-      // v4.5.0: Report completion
+      // Report completion
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(
           `PDF complete: ${numPages} pages, ${allData.length} items extracted`

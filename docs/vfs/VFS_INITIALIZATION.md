@@ -1,4 +1,4 @@
-# VFS Initialization Guide (v5.1.0+)
+# VFS Initialization Guide
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ await vfs.init()             // ❌ Separate initialization
 await vfs.writeFile(...)
 ```
 
-### After (v5.1.0+):
+### After:
 ```javascript
 const brain = new Brainy(...)
 await brain.init()           // VFS auto-initialized!
@@ -53,7 +53,7 @@ await vfs.init()
 await vfs.writeFile('/test.txt', 'data')
 ```
 
-### New Pattern (v5.1.0+):
+### New Pattern:
 ```javascript
 // Just remove the () and init() call
 await brain.vfs.writeFile('/test.txt', 'data')
@@ -142,7 +142,7 @@ await brain.init()  // Required!
 await brain.vfs.writeFile(...)  // Now this works
 ```
 
-## Fork Support (v5.0.0+)
+## Fork Support
 
 VFS works seamlessly with Brainy's Copy-on-Write (COW) fork feature:
 

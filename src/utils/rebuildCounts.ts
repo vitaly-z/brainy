@@ -2,7 +2,7 @@
  * Rebuild Counts Utility
  *
  * Scans storage and rebuilds counts.json from actual data
- * Use this to fix databases affected by the v4.1.1 count synchronization bug
+ * Use this to fix databases affected by the count synchronization bug
  *
  * NO MOCKS - Production-ready implementation
  */
@@ -64,12 +64,12 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
   }
 
   let hasMore = true
-  let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
+  let offset = 0  // Use offset-based pagination instead of cursor (bug fix for infinite loop)
 
   while (hasMore) {
     const result: any = await storageWithPagination.getNounsWithPagination({
       limit: 100,
-      offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+      offset  // Pass offset for proper pagination (previously passed cursor which was ignored)
     })
 
     for (const noun of result.items) {
@@ -82,7 +82,7 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
     }
 
     hasMore = result.hasMore
-    offset += 100  // v5.7.11: Increment offset for next page
+    offset += 100  // Increment offset for next page
   }
 
   console.log(`   Found ${totalNouns} entities across ${entityCounts.size} types`)
@@ -95,12 +95,12 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
   }
 
   hasMore = true
-  offset = 0  // v5.7.11: Reset offset for verbs pagination
+  offset = 0  // Reset offset for verbs pagination
 
   while (hasMore) {
     const result: any = await storageWithPagination.getVerbsWithPagination({
       limit: 100,
-      offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+      offset  // Pass offset for proper pagination (previously passed cursor which was ignored)
     })
 
     for (const verb of result.items) {
@@ -112,7 +112,7 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
     }
 
     hasMore = result.hasMore
-    offset += 100  // v5.7.11: Increment offset for next page
+    offset += 100  // Increment offset for next page
   }
 
   console.log(`   Found ${totalVerbs} relationships across ${verbCounts.size} types`)

@@ -18,24 +18,24 @@ const { Brainy } = require('@soulcraft/brainy')
 let brain
 
 exports.handler = async (event) => {
-  // Brainy auto-detects Lambda environment and configures accordingly
-  if (!brain) {
-    brain = new Brainy() // Zero config - auto-adapts to Lambda
-    await brain.init()
-  }
-  
-  const { method, ...params } = JSON.parse(event.body)
-  
-  switch(method) {
-    case 'add':
-      const id = await brain.add(params)
-      return { statusCode: 200, body: JSON.stringify({ id }) }
-    case 'find':
-      const results = await brain.find(params)
-      return { statusCode: 200, body: JSON.stringify({ results }) }
-    default:
-      return { statusCode: 400, body: 'Unknown method' }
-  }
+ // Brainy auto-detects Lambda environment and configures accordingly
+ if (!brain) {
+ brain = new Brainy() // Zero config - auto-adapts to Lambda
+ await brain.init()
+ }
+
+ const { method, ...params } = JSON.parse(event.body)
+
+ switch(method) {
+ case 'add':
+ const id = await brain.add(params)
+ return { statusCode: 200, body: JSON.stringify({ id }) }
+ case 'find':
+ const results = await brain.find(params)
+ return { statusCode: 200, body: JSON.stringify({ results }) }
+ default:
+ return { statusCode: 400, body: 'Unknown method' }
+ }
 }
 EOF
 
@@ -56,26 +56,26 @@ docker push $ECR_URI/brainy:latest
 # Deploy with minimal ECS task definition
 cat > task-definition.json << 'EOF'
 {
-  "family": "brainy",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
-  "containerDefinitions": [{
-    "name": "brainy",
-    "image": "$ECR_URI/brainy:latest",
-    "environment": [
-      {"name": "NODE_ENV", "value": "production"}
-    ],
-    "logConfiguration": {
-      "logDriver": "awslogs",
-      "options": {
-        "awslogs-group": "/ecs/brainy",
-        "awslogs-region": "us-east-1",
-        "awslogs-stream-prefix": "ecs"
-      }
-    }
-  }]
+ "family": "brainy",
+ "networkMode": "awsvpc",
+ "requiresCompatibilities": ["FARGATE"],
+ "cpu": "256",
+ "memory": "512",
+ "containerDefinitions": [{
+ "name": "brainy",
+ "image": "$ECR_URI/brainy:latest",
+ "environment": [
+ {"name": "NODE_ENV", "value": "production"}
+ ],
+ "logConfiguration": {
+ "logDriver": "awslogs",
+ "options": {
+ "awslogs-group": "/ecs/brainy",
+ "awslogs-region": "us-east-1",
+ "awslogs-stream-prefix": "ecs"
+ }
+ }
+ }]
 }
 EOF
 
@@ -138,14 +138,14 @@ const brain = new Brainy()
 
 ```javascript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    options: {
-      bucket: process.env.S3_BUCKET || 'auto', // 'auto' creates bucket
-      region: process.env.AWS_REGION || 'auto', // 'auto' detects region
-      // IAM role provides credentials automatically
-    }
-  }
+ storage: {
+ type: 's3',
+ options: {
+ bucket: process.env.S3_BUCKET || 'auto', // 'auto' creates bucket
+ region: process.env.AWS_REGION || 'auto', // 'auto' detects region
+ // IAM role provides credentials automatically
+ }
+ }
 })
 ```
 
@@ -156,23 +156,23 @@ const brain = new Brainy({
 ```yaml
 # Auto-scaling policy
 Resources:
-  AutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      ServiceNamespace: ecs
-      ResourceId: service/default/brainy
-      ScalableDimension: ecs:service:DesiredCount
-      MinCapacity: 2
-      MaxCapacity: 100
-      
-  AutoScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyType: TargetTrackingScaling
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 70.0
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
+ AutoScalingTarget:
+ Type: AWS::ApplicationAutoScaling::ScalableTarget
+ Properties:
+ ServiceNamespace: ecs
+ ResourceId: service/default/brainy
+ ScalableDimension: ecs:service:DesiredCount
+ MinCapacity: 2
+ MaxCapacity: 100
+
+ AutoScalingPolicy:
+ Type: AWS::ApplicationAutoScaling::ScalingPolicy
+ Properties:
+ PolicyType: TargetTrackingScaling
+ TargetTrackingScalingPolicyConfiguration:
+ TargetValue: 70.0
+ PredefinedMetricSpecification:
+ PredefinedMetricType: ECSServiceAverageCPUUtilization
 ```
 
 ### 2. Vertical Scaling
@@ -189,10 +189,10 @@ Brainy automatically adapts to available memory:
 ```javascript
 // Brainy automatically handles multi-AZ with S3
 const brain = new Brainy({
-  distributed: {
-    enabled: true,  // Auto-enables with S3 storage
-    coordinationMethod: 'auto' // Uses S3 for coordination
-  }
+ distributed: {
+ enabled: true, // Auto-enables with S3 storage
+ coordinationMethod: 'auto' // Uses S3 for coordination
+ }
 })
 ```
 
@@ -201,17 +201,17 @@ const brain = new Brainy({
 ```bash
 # Application Load Balancer with health checks
 aws elbv2 create-load-balancer \
-  --name brainy-alb \
-  --subnets subnet-xxx subnet-yyy \
-  --security-groups sg-xxx
+ --name brainy-alb \
+ --subnets subnet-xxx subnet-yyy \
+ --security-groups sg-xxx
 
 aws elbv2 create-target-group \
-  --name brainy-targets \
-  --protocol HTTP \
-  --port 3000 \
-  --vpc-id vpc-xxx \
-  --health-check-path /health \
-  --health-check-interval-seconds 30
+ --name brainy-targets \
+ --protocol HTTP \
+ --port 3000 \
+ --vpc-id vpc-xxx \
+ --health-check-path /health \
+ --health-check-interval-seconds 30
 ```
 
 ## Monitoring & Observability
@@ -233,16 +233,16 @@ Brainy automatically sends metrics when running on AWS:
 
 ```javascript
 const brain = new Brainy({
-  monitoring: {
-    enabled: true,
-    customMetrics: {
-      namespace: 'Brainy/Production',
-      dimensions: [
-        { Name: 'Environment', Value: 'production' },
-        { Name: 'Service', Value: 'api' }
-      ]
-    }
-  }
+ monitoring: {
+ enabled: true,
+ customMetrics: {
+ namespace: 'Brainy/Production',
+ dimensions: [
+ { Name: 'Environment', Value: 'production' },
+ { Name: 'Service', Value: 'api' }
+ ]
+ }
+ }
 })
 ```
 
@@ -252,22 +252,22 @@ const brain = new Brainy({
 
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::brainy-*/*",
-        "arn:aws:s3:::brainy-*"
-      ]
-    }
-  ]
+ "Version": "2012-10-17",
+ "Statement": [
+ {
+ "Effect": "Allow",
+ "Action": [
+ "s3:GetObject",
+ "s3:PutObject",
+ "s3:DeleteObject",
+ "s3:ListBucket"
+ ],
+ "Resource": [
+ "arn:aws:s3:::brainy-*/*",
+ "arn:aws:s3:::brainy-*"
+ ]
+ }
+ ]
 }
 ```
 
@@ -285,12 +285,12 @@ aws ec2 create-subnet --vpc-id vpc-xxx --cidr-block 10.0.2.0/24 --availability-z
 ```javascript
 // Automatic encryption with S3
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    options: {
-      encryption: 'auto' // Uses S3 SSE-S3 by default
-    }
-  }
+ storage: {
+ type: 's3',
+ options: {
+ encryption: 'auto' // Uses S3 SSE-S3 by default
+ }
+ }
 })
 ```
 
@@ -300,14 +300,14 @@ const brain = new Brainy({
 
 ```bash
 aws ec2 request-spot-fleet --spot-fleet-request-config '{
-  "IamFleetRole": "arn:aws:iam::xxx:role/fleet-role",
-  "TargetCapacity": 2,
-  "SpotPrice": "0.05",
-  "LaunchSpecifications": [{
-    "ImageId": "ami-xxx",
-    "InstanceType": "t3.medium",
-    "UserData": "BASE64_ENCODED_STARTUP_SCRIPT"
-  }]
+ "IamFleetRole": "arn:aws:iam::xxx:role/fleet-role",
+ "TargetCapacity": 2,
+ "SpotPrice": "0.05",
+ "LaunchSpecifications": [{
+ "ImageId": "ami-xxx",
+ "InstanceType": "t3.medium",
+ "UserData": "BASE64_ENCODED_STARTUP_SCRIPT"
+ }]
 }'
 ```
 
@@ -316,12 +316,12 @@ aws ec2 request-spot-fleet --spot-fleet-request-config '{
 ```javascript
 // Brainy automatically uses S3 Intelligent-Tiering
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    options: {
-      storageClass: 'INTELLIGENT_TIERING' // Automatic cost optimization
-    }
-  }
+ storage: {
+ type: 's3',
+ options: {
+ storageClass: 'INTELLIGENT_TIERING' // Automatic cost optimization
+ }
+ }
 })
 ```
 
@@ -329,8 +329,8 @@ const brain = new Brainy({
 
 ```bash
 aws lambda put-function-concurrency \
-  --function-name brainy-handler \
-  --reserved-concurrent-executions 10
+ --function-name brainy-handler \
+ --reserved-concurrent-executions 10
 ```
 
 ## Deployment Automation
@@ -340,28 +340,28 @@ aws lambda put-function-concurrency \
 ```yaml
 name: Deploy to AWS
 on:
-  push:
-    branches: [main]
+ push:
+ branches: [main]
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      - name: Deploy to ECS
-        run: |
-          docker build -t brainy .
-          docker tag brainy:latest $ECR_URI/brainy:latest
-          docker push $ECR_URI/brainy:latest
-          aws ecs update-service --cluster default --service brainy --force-new-deployment
+ deploy:
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v2
+
+ - name: Configure AWS credentials
+ uses: aws-actions/configure-aws-credentials@v1
+ with:
+ aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+ aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+ aws-region: us-east-1
+
+ - name: Deploy to ECS
+ run: |
+ docker build -t brainy .
+ docker tag brainy:latest $ECR_URI/brainy:latest
+ docker push $ECR_URI/brainy:latest
+ aws ecs update-service --cluster default --service brainy --force-new-deployment
 ```
 
 ## Troubleshooting
@@ -369,121 +369,121 @@ jobs:
 ### Common Issues
 
 1. **Storage Auto-Detection Fails**
-   ```javascript
-   // Explicitly specify storage
-   const brain = new Brainy({
-     storage: { type: 's3', options: { bucket: 'my-bucket' } }
-   })
-   ```
+ ```javascript
+ // Explicitly specify storage
+ const brain = new Brainy({
+ storage: { type: 's3', options: { bucket: 'my-bucket' } }
+ })
+ ```
 
 2. **Memory Issues**
-   ```javascript
-   // Optimize for low memory
-   const brain = new Brainy({
-     cache: { maxSize: 100 }, // Reduce cache size
-     index: { M: 8 }          // Reduce HNSW connections
-   })
-   ```
+ ```javascript
+ // Optimize for low memory
+ const brain = new Brainy({
+ cache: { maxSize: 100 }, // Reduce cache size
+ index: { M: 8 } // Reduce HNSW connections
+ })
+ ```
 
 3. **Cold Starts (Lambda)**
 
-   **v7.3.0+ Progressive Initialization (Zero-Config)**
+ **Progressive Initialization (Zero-Config)**
 
-   Brainy automatically detects Lambda environments (AWS_LAMBDA_FUNCTION_NAME)
-   and uses progressive initialization for <200ms cold starts:
+ Brainy automatically detects Lambda environments (AWS_LAMBDA_FUNCTION_NAME)
+ and uses progressive initialization for <200ms cold starts:
 
-   ```javascript
-   // Zero-config - Brainy auto-detects Lambda
-   const brain = new Brainy({
-     storage: {
-       type: 's3',
-       s3Storage: {
-         bucketName: 'my-bucket',
-         region: 'us-east-1',
-         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-       }
-     }
-   })
-   await brain.init() // Returns in <200ms
+ ```javascript
+ // Zero-config - Brainy auto-detects Lambda
+ const brain = new Brainy({
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'my-bucket',
+ region: 'us-east-1',
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ }
+ }
+ })
+ await brain.init() // Returns in <200ms
 
-   // First write validates bucket (lazy validation)
-   await brain.add('noun', { name: 'test' }) // Validates here
-   ```
+ // First write validates bucket (lazy validation)
+ await brain.add('noun', { name: 'test' }) // Validates here
+ ```
 
-   **Manual Override (if needed)**
-   ```javascript
-   const brain = new Brainy({
-     storage: {
-       type: 's3',
-       s3Storage: {
-         bucketName: 'my-bucket',
-         // Force specific mode
-         initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
-       }
-     }
-   })
-   ```
+ **Manual Override (if needed)**
+ ```javascript
+ const brain = new Brainy({
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'my-bucket',
+ // Force specific mode
+ initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
+ }
+ }
+ })
+ ```
 
-   | Mode | Cold Start | Best For |
-   |------|------------|----------|
-   | `auto` (default) | <200ms in Lambda | Zero-config, auto-detects |
-   | `progressive` | <200ms always | Force fast init everywhere |
-   | `strict` | 100-500ms+ | Local dev, tests, debugging |
+ | Mode | Cold Start | Best For |
+ |------|------------|----------|
+ | `auto` (default) | <200ms in Lambda | Zero-config, auto-detects |
+ | `progressive` | <200ms always | Force fast init everywhere |
+ | `strict` | 100-500ms+ | Local dev, tests, debugging |
 
-   **Warm-up (Alternative)**
-   ```javascript
-   exports.warmup = async () => {
-     if (!brain) {
-       brain = new Brainy({ warmup: true })
-       await brain.init()
-     }
-   }
-   ```
+ **Warm-up (Alternative)**
+ ```javascript
+ exports.warmup = async () => {
+ if (!brain) {
+ brain = new Brainy({ warmup: true })
+ await brain.init()
+ }
+ }
+ ```
 
-   **Readiness Detection (v7.3.0+)**
+ **Readiness Detection**
 
-   Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
+ Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
 
-   ```javascript
-   let brain
+ ```javascript
+ let brain
 
-   exports.handler = async (event) => {
-     if (!brain) {
-       brain = new Brainy({ storage: { type: 's3', ... } })
-       brain.init()  // Fire and forget
-     }
+ exports.handler = async (event) => {
+ if (!brain) {
+ brain = new Brainy({ storage: { type: 's3', ... } })
+ brain.init() // Fire and forget
+ }
 
-     // Wait for initialization to complete
-     await brain.ready
+ // Wait for initialization to complete
+ await brain.ready
 
-     // Now safe to use brain methods
-     const results = await brain.find({ query: event.queryStringParameters.q })
-     return { statusCode: 200, body: JSON.stringify(results) }
-   }
-   ```
+ // Now safe to use brain methods
+ const results = await brain.find({ query: event.queryStringParameters.q })
+ return { statusCode: 200, body: JSON.stringify(results) }
+ }
+ ```
 
-   For health checks, use `isFullyInitialized()` to verify all background tasks are complete:
+ For health checks, use `isFullyInitialized()` to verify all background tasks are complete:
 
-   ```javascript
-   exports.healthCheck = async () => {
-     try {
-       await brain.ready
-       return {
-         statusCode: 200,
-         body: JSON.stringify({
-           status: 'ready',
-           fullyInitialized: brain.isFullyInitialized()
-         })
-       }
-     } catch (error) {
-       return {
-         statusCode: 503,
-         body: JSON.stringify({ status: 'initializing' })
-       }
-     }
-   }
-   ```
+ ```javascript
+ exports.healthCheck = async () => {
+ try {
+ await brain.ready
+ return {
+ statusCode: 200,
+ body: JSON.stringify({
+ status: 'ready',
+ fullyInitialized: brain.isFullyInitialized()
+ })
+ }
+ } catch (error) {
+ return {
+ statusCode: 503,
+ body: JSON.stringify({ status: 'initializing' })
+ }
+ }
+ }
+ ```
 
 ## Production Checklist
 

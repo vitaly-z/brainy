@@ -49,7 +49,7 @@ export interface CacheAllocationStrategy {
   /** Environment type detected */
   environment: 'production' | 'development' | 'container' | 'unknown'
 
-  /** Model memory reserved (bytes) - v3.36.0+ */
+  /** Model memory reserved (bytes) */
   modelMemory: number
 
   /** Model precision (q8 or fp32) */
@@ -195,7 +195,7 @@ function detectCgroupV1Memory(): number | null {
  * Calculate optimal cache size based on available memory
  * Scales intelligently from 2GB to 128GB+
  *
- * v3.36.0+: Accounts for embedding model memory (150MB Q8, 250MB FP32)
+ * Accounts for embedding model memory (150MB Q8, 250MB FP32)
  */
 export function calculateOptimalCacheSize(
   memoryInfo: MemoryInfo,
@@ -219,7 +219,7 @@ export function calculateOptimalCacheSize(
   const minSize = options.minSize || 256 * 1024 * 1024  // 256MB minimum
   const maxSize = options.maxSize || null
 
-  // Detect model memory usage (v3.36.0+)
+  // Detect model memory usage
   const modelInfo = detectModelMemory({ precision: options.modelPrecision || 'q8' })
   const modelMemory = modelInfo.bytes
 

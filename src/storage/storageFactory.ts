@@ -10,7 +10,7 @@ import { S3CompatibleStorage } from './adapters/s3CompatibleStorage.js'
 import { R2Storage } from './adapters/r2Storage.js'
 import { GcsStorage } from './adapters/gcsStorage.js'
 import { AzureBlobStorage } from './adapters/azureBlobStorage.js'
-// TypeAwareStorageAdapter removed in v5.4.0 - type-aware now built into BaseStorage
+// TypeAwareStorageAdapter removed - type-aware now built into BaseStorage
 // FileSystemStorage is dynamically imported to avoid issues in browser environments
 import { isBrowser } from '../utils/environment.js'
 import { OperationConfig } from '../utils/operationUtils.js'
@@ -94,7 +94,7 @@ export interface StorageOptions {
     sessionToken?: string
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Lambda),
      *   strict locally. Zero-config optimization.
@@ -103,7 +103,6 @@ export interface StorageOptions {
      * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: 'progressive' | 'strict' | 'auto'
   }
@@ -215,7 +214,7 @@ export interface StorageOptions {
     skipCountsFile?: boolean
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Cloud Run),
      *   strict locally. Zero-config optimization.
@@ -224,7 +223,6 @@ export interface StorageOptions {
      * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: 'progressive' | 'strict' | 'auto'
   }
@@ -259,7 +257,7 @@ export interface StorageOptions {
     sasToken?: string
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Azure Functions),
      *   strict locally. Zero-config optimization.
@@ -268,7 +266,6 @@ export interface StorageOptions {
      * - `'strict'`: Traditional blocking init. Validates container and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: 'progressive' | 'strict' | 'auto'
   }
@@ -388,7 +385,7 @@ export interface StorageOptions {
 
   /**
    * COW (Copy-on-Write) configuration for instant fork() capability
-   * v5.0.1: COW is now always enabled (automatic, zero-config)
+   * COW is now always enabled (automatic, zero-config)
    */
   branch?: string              // Current branch name (default: 'main')
   enableCompression?: boolean // Enable zstd compression for COW blobs (default: true)
@@ -410,14 +407,14 @@ function getFileSystemPath(options: StorageOptions): string {
 }
 
 /**
- * Configure COW (Copy-on-Write) options on a storage adapter (v5.4.0)
+ * Configure COW (Copy-on-Write) options on a storage adapter
  * TypeAware is now built-in to all adapters, no wrapper needed!
  *
  * @param storage - The storage adapter
  * @param options - Storage options (for COW configuration)
  */
 function configureCOW(storage: any, options?: StorageOptions): void {
-  // v5.0.1: COW will be initialized AFTER storage.init() in Brainy
+  // COW will be initialized AFTER storage.init() in Brainy
   // Store COW options for later initialization
   if (typeof storage.initializeCOW === 'function') {
     storage._cowOptions = {
@@ -672,10 +669,10 @@ export async function createStorage(
         }
 
       case 'type-aware':
-        // v5.0.0: TypeAware is now the default for ALL adapters
+        // TypeAware is now the default for ALL adapters
         // Redirect to the underlying type instead
         console.warn(
-          '⚠️  type-aware is deprecated in v5.0.0 - TypeAware is now always enabled.'
+          '⚠️  type-aware is deprecated - TypeAware is now always enabled.'
         )
         console.warn(
           '   Just use the underlying storage type (e.g., "filesystem", "s3", etc.)'
@@ -866,7 +863,7 @@ export async function createStorage(
 }
 
 /**
- * Export storage adapters (v5.4.0: TypeAware is now built-in, no separate export)
+ * Export storage adapters (TypeAware is now built-in, no separate export)
  */
 export {
   MemoryStorage,

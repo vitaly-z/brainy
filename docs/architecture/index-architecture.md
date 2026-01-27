@@ -25,7 +25,7 @@ Brainy has **3 main indexes** at the top level, each with multiple sub-indexes m
 - **FieldTypeInference** - DuckDB-inspired value-based field type detection
 - **Field Sparse Indexes** - Per-field sparse indexes with roaring bitmaps (dynamic count)
 - **Sorted Indexes** - Support orderBy queries (automatically maintained)
-- **Word Index (`__words__`)** - Text search via FNV-1a word hashes (v7.7.0)
+- **Word Index (`__words__`)** - Text search via FNV-1a word hashes
 
 **GraphAdjacencyIndex contains:**
 - **lsmTreeSource** - Source → Targets (outgoing edges)
@@ -39,7 +39,7 @@ All indexes share a **UnifiedCache** for coordinated memory management, ensuring
 
 **Purpose**: Enable O(1) field-value lookups and O(log n) range queries on metadata fields using adaptive chunked sparse indexing.
 
-### Internal Architecture (v3.42.0)
+### Internal Architecture
 
 ```typescript
 class MetadataIndexManager {
@@ -64,7 +64,7 @@ class MetadataIndexManager {
 
 ### Key Data Structures
 
-#### Chunked Sparse Index (NEW in v3.42.0)
+#### Chunked Sparse Index
 ```typescript
 // SparseIndex: Directory of chunks for a field
 // Example: field="status"
@@ -87,7 +87,7 @@ interface ChunkDescriptor {
 class ChunkData {
   chunkId: number
   field: string
-  entries: Map<value, RoaringBitmap32>  // ~50 values per chunk (v3.43.0: roaring bitmaps!)
+  entries: Map<value, RoaringBitmap32>  // ~50 values per chunk (roaring bitmaps!)
 }
 ```
 
@@ -96,7 +96,7 @@ class ChunkData {
 - O(log n) range queries with zone maps
 - 630x file reduction (560k flat files → 89 chunk files)
 
-#### Roaring Bitmap Optimization (NEW in v3.43.0)
+#### Roaring Bitmap Optimization
 
 **Problem Solved**: JavaScript `Set<string>` for storing entity IDs was inefficient:
 - Memory overhead: ~40 bytes per UUID string (36 chars + overhead)
@@ -150,7 +150,7 @@ class ChunkData {
 
 **Multi-Field Intersection (THE BIG WIN!)**:
 ```typescript
-// Before (v3.42.0): JavaScript array filtering
+// Before: JavaScript array filtering
 async getIdsForFilter(filter: {status: 'active', role: 'admin'}): Promise<string[]> {
   // 1. Fetch UUID arrays for each field
   const statusIds = await this.getIds('status', 'active')  // ["uuid1", "uuid2", ...]
@@ -160,7 +160,7 @@ async getIdsForFilter(filter: {status: 'active', role: 'admin'}): Promise<string
   return statusIds.filter(id => roleIds.includes(id))      // O(n*m) array filtering
 }
 
-// After (v3.43.0): Roaring bitmap intersection
+// After: Roaring bitmap intersection
 async getIdsForMultipleFields(pairs: [{field, value}, ...]): Promise<string[]> {
   // 1. Fetch roaring bitmaps (integers, not UUIDs)
   const bitmaps: RoaringBitmap32[] = []
@@ -229,7 +229,7 @@ interface ZoneMap {
 
 **Use case**: Enables NLP to understand "find characters named John" → knows 'name' is a character field
 
-#### Word Index (`__words__`) - v7.7.0
+#### Word Index (`__words__`) -
 ```typescript
 // Special field for text/keyword search
 // Entity text content is tokenized and indexed as word hashes
@@ -253,14 +253,14 @@ interface ZoneMap {
 - **Lowercase normalization**: Case-insensitive matching
 - **Automatic integration**: Words extracted via `extractIndexableFields()`
 
-**Hybrid Search** (v7.7.0): Text results combined with vector results using Reciprocal Rank Fusion (RRF):
+**Hybrid Search**: Text results combined with vector results using Reciprocal Rank Fusion (RRF):
 ```typescript
 // RRF formula: score(d) = sum(1 / (k + rank(d)))
 // where k = 60 (standard constant)
 // alpha = weight for semantic (0 = text only, 1 = semantic only)
 ```
 
-### Query Algorithm (v3.42.0)
+### Query Algorithm
 
 **Exact Match Query**:
 ```typescript
@@ -317,7 +317,7 @@ async getIdsForRange(field: string, min: any, max: any): Promise<string[]> {
 - Adaptive chunking: ~50 values per chunk optimizes I/O
 - Immediate flushing: No need for dirty tracking or batch writes
 
-### Temporal Bucketing (v3.41.0)
+### Temporal Bucketing
 
 **Problem Solved**: High-cardinality timestamp fields created massive file pollution.
 - Example: 575 entities with unique timestamps → 358,407 index files (98.7% pollution!)
@@ -396,7 +396,7 @@ const DEFAULT_EXCLUDE_FIELDS = [
 ]
 ```
 
-**Note**: Timestamp fields like `modified`, `accessed`, `created` are NO LONGER excluded as of v3.41.0 - they are indexed with automatic bucketing.
+**Note**: Timestamp fields like `modified`, `accessed`, `created` are NO LONGER excluded as of they are indexed with automatic bucketing.
 
 ## 2. HNSWIndex - Vector Similarity Search
 
@@ -735,7 +735,7 @@ async stats(): Promise<Statistics> {
 }
 ```
 
-### 5. Index Rebuilding (v5.7.7: Lazy Loading Support)
+### 5. Index Rebuilding (Lazy Loading Support)
 
 **Two modes of index loading:**
 
@@ -762,7 +762,7 @@ async init(): Promise<void> {
 }
 ```
 
-#### Mode 2: Lazy Loading on First Query (v5.7.7+)
+#### Mode 2: Lazy Loading on First Query
 
 ```typescript
 // When disableAutoRebuild: true
@@ -918,7 +918,7 @@ All indexes scale gracefully:
 - [Performance Guide](../PERFORMANCE.md) - Performance tuning
 - [Overview](./overview.md) - High-level architecture
 
-## Summary: Index Hierarchy (v5.7.7)
+## Summary: Index Hierarchy
 
 ### Level 1: Main Indexes (3)
 All have rebuild() methods and are covered by lazy loading:
@@ -933,7 +933,7 @@ Automatically managed by parent rebuild():
 - **4 LSM-trees** (lsmTreeSource, lsmTreeTarget, lsmTreeVerbsBySource, lsmTreeVerbsByTarget)
 - **In-memory graph structures** (sourceIndex, targetIndex, verbIndex)
 
-### Lazy Loading (v5.7.7)
+### Lazy Loading
 - **Mode 1**: Auto-rebuild on init() (default)
 - **Mode 2**: Lazy rebuild on first query (when `disableAutoRebuild: true`)
 - **Concurrency-safe**: Mutex prevents duplicate rebuilds

@@ -24,8 +24,8 @@ await brain.import(anything)
 ```javascript
 // Array of objects? No problem.
 const people = [
-  { name: 'Alice', role: 'Engineer', company: 'TechCorp' },
-  { name: 'Bob', role: 'Designer', company: 'TechCorp' }
+ { name: 'Alice', role: 'Engineer', company: 'TechCorp' },
+ { name: 'Bob', role: 'Designer', company: 'TechCorp' }
 ]
 
 await brain.import(people)
@@ -55,7 +55,7 @@ await brain.import('sales-report.xlsx')
 
 // Or specific sheets only
 await brain.import('data.xlsx', {
-  excelSheets: ['Customers', 'Orders']
+ excelSheets: ['Customers', 'Orders']
 })
 // ✨ Multi-sheet data becomes interconnected entities!
 ```
@@ -68,7 +68,7 @@ await brain.import('research-paper.pdf')
 
 // With table extraction
 await brain.import('report.pdf', {
-  pdfExtractTables: true
+ pdfExtractTables: true
 })
 // ✨ Converts PDF tables to structured data automatically!
 ```
@@ -83,16 +83,16 @@ await brain.import('config.yaml')
 const yaml = `
 project: AI Assistant
 team:
-  - name: Alice
-    role: Lead
-  - name: Bob
-    role: Dev
+ - name: Alice
+ role: Lead
+ - name: Bob
+ role: Dev
 `
 await brain.import(yaml, { format: 'yaml' })
 // ✨ Hierarchical data becomes a connected graph!
 ```
 
-### 📄 Import Word Documents (DOCX) - v4.2.0
+### 📄 Import Word Documents (DOCX) -
 ```javascript
 // From file path
 await brain.import('research-paper.docx')
@@ -105,8 +105,8 @@ await brain.import(buffer, { format: 'docx' })
 
 // With neural extraction
 await brain.import('report.docx', {
-  enableNeuralExtraction: true,
-  enableHierarchicalRelationships: true
+ enableNeuralExtraction: true,
+ enableHierarchicalRelationships: true
 })
 // ✨ Extracts entities from paragraphs and creates relationships within sections!
 ```
@@ -121,25 +121,25 @@ await brain.import('https://api.example.com/data.json')
 await brain.import('https://data.gov/census.csv')
 // ✨ Fetches CSV from web, parses, imports!
 
-// With authentication (v4.2.0)
+// With authentication
 await brain.import({
-  type: 'url',
-  data: 'https://api.example.com/private/data.xlsx',
-  auth: {
-    username: 'user',
-    password: 'pass'
-  }
+ type: 'url',
+ data: 'https://api.example.com/private/data.xlsx',
+ auth: {
+ username: 'user',
+ password: 'pass'
+ }
 })
 // ✨ Supports basic authentication for protected resources!
 
-// With custom headers (v4.2.0)
+// With custom headers
 await brain.import({
-  type: 'url',
-  data: 'https://api.example.com/data.json',
-  headers: {
-    'Authorization': 'Bearer TOKEN',
-    'X-API-Key': 'your-key'
-  }
+ type: 'url',
+ data: 'https://api.example.com/data.json',
+ headers: {
+ 'Authorization': 'Bearer TOKEN',
+ 'X-API-Key': 'your-key'
+ }
 })
 // ✨ Full HTTP header customization support!
 ```
@@ -163,9 +163,9 @@ When you import data, Brainy:
 2. **Intelligent parsing** - CSV (encoding/delimiter), Excel (multi-sheet), PDF (text/tables), DOCX (headings/paragraphs)
 3. **Identifies entity types** - Uses AI to classify as Person, Document, Product, etc. (31 types!)
 4. **Finds relationships** - Detects connections like "belongsTo", "createdBy", "references" (40 types!)
-5. **Scores confidence & weight** - Every entity and relationship gets quality metrics (v4.2.0)
+5. **Scores confidence & weight** - Every entity and relationship gets quality metrics
 6. **Creates embeddings** - Makes everything semantically searchable
-7. **Indexes metadata** - Enables lightning-fast filtering with range queries (v4.2.0)
+7. **Indexes metadata** - Enables lightning-fast filtering with range queries
 
 ## Intelligent Type Detection
 
@@ -176,7 +176,7 @@ Brainy automatically detects what TYPE of data you're importing:
 { name: 'John', email: 'john@example.com' }
 
 // This becomes an Organization
-{ companyName: 'Acme', employees: 500 }  
+{ companyName: 'Acme', employees: 500 }
 
 // This becomes a Document
 { title: 'Report', content: '...', author: 'Jane' }
@@ -193,9 +193,9 @@ Brainy finds connections in your data:
 
 ```javascript
 const data = [
-  { id: 'u1', name: 'Alice', managerId: 'u2' },
-  { id: 'u2', name: 'Bob', departmentId: 'd1' },
-  { id: 'd1', name: 'Engineering' }
+ { id: 'u1', name: 'Alice', managerId: 'u2' },
+ { id: 'u2', name: 'Bob', departmentId: 'd1' },
+ { id: 'd1', name: 'Engineering' }
 ]
 
 await brain.import(data)
@@ -204,28 +204,27 @@ await brain.import(data)
 // - Bob "memberOf" Engineering
 ```
 
-## Confidence & Weight Scoring - v4.2.0
-
+## Confidence & Weight Scoring -
 Every entity and relationship gets confidence and weight scores:
 
 ```javascript
 // Import with confidence threshold
 await brain.import(data, {
-  confidenceThreshold: 0.8  // Only extract entities with >80% confidence
+ confidenceThreshold: 0.8 // Only extract entities with >80% confidence
 })
 
 // Query high-confidence entities using range queries
 const highConfidence = await brain.find({
-  where: {
-    confidence: { gte: 0.8 }  // Get entities with confidence >= 0.8
-  }
+ where: {
+ confidence: { gte: 0.8 } // Get entities with confidence >= 0.8
+ }
 })
 
 // Range query operators: gt, gte, lt, lte, between
 const mediumConfidence = await brain.find({
-  where: {
-    confidence: { between: [0.6, 0.8] }
-  }
+ where: {
+ confidence: { between: [0.6, 0.8] }
+ }
 })
 ```
 
@@ -236,24 +235,23 @@ const mediumConfidence = await brain.find({
 
 **Weights** indicate importance/relevance within the document context.
 
-## Per-Sheet Excel Extraction - v4.2.0
-
+## Per-Sheet Excel Extraction -
 Excel files with multiple sheets can be organized by sheet:
 
 ```javascript
 // Group entities by sheet in VFS
 await brain.import('multi-sheet-data.xlsx', {
-  groupBy: 'sheet'  // Creates separate directories for each sheet
+ groupBy: 'sheet' // Creates separate directories for each sheet
 })
 
 // Result VFS structure:
 // /imports/data/
-//   ├── Sheet1/
-//   │   ├── entity1.json
-//   │   └── entity2.json
-//   └── Sheet2/
-//       ├── entity3.json
-//       └── entity4.json
+// ├── Sheet1/
+// │ ├── entity1.json
+// │ └── entity2.json
+// └── Sheet2/
+// ├── entity3.json
+// └── entity4.json
 
 // Other groupBy options:
 // - 'type': Group by entity type (Person, Place, etc.)
@@ -274,9 +272,9 @@ const results = await brain.find('people in engineering who joined this year')
 
 // Graph traversal + filters
 const connected = await brain.find({
-  like: 'Alice',
-  connected: { depth: 2 },
-  where: { department: 'Engineering' }
+ like: 'Alice',
+ connected: { depth: 2 },
+ where: { department: 'Engineering' }
 })
 ```
 
@@ -286,37 +284,37 @@ Everything works with zero config, but you can customize:
 
 ```javascript
 await brain.import(data, {
-  // Format detection
-  format: 'excel',                     // Force specific format (auto-detected if not specified)
+ // Format detection
+ format: 'excel', // Force specific format (auto-detected if not specified)
 
-  // VFS & Organization
-  vfsPath: '/imports/my-data',         // Where to store in VFS (auto-generated if not specified)
-  groupBy: 'type',                     // Group entities by: 'type' | 'sheet' | 'flat' | 'custom'
-  preserveSource: true,                // Keep original source file in VFS (default: true)
+ // VFS & Organization
+ vfsPath: '/imports/my-data', // Where to store in VFS (auto-generated if not specified)
+ groupBy: 'type', // Group entities by: 'type' | 'sheet' | 'flat' | 'custom'
+ preserveSource: true, // Keep original source file in VFS (default: true)
 
-  // Entity & Relationship Creation
-  createEntities: true,                // Create entities in knowledge graph (default: true)
-  createRelationships: true,           // Create relationships in knowledge graph (default: true)
+ // Entity & Relationship Creation
+ createEntities: true, // Create entities in knowledge graph (default: true)
+ createRelationships: true, // Create relationships in knowledge graph (default: true)
 
-  // Neural Intelligence
-  enableNeuralExtraction: true,        // Use AI to extract entities (default: true)
-  enableRelationshipInference: true,   // Use AI to infer relationships (default: true)
-  enableConceptExtraction: true,       // Extract concepts from text (default: true)
-  confidenceThreshold: 0.6,            // Minimum confidence for entities (0-1, default: 0.6)
+ // Neural Intelligence
+ enableNeuralExtraction: true, // Use AI to extract entities (default: true)
+ enableRelationshipInference: true, // Use AI to infer relationships (default: true)
+ enableConceptExtraction: true, // Extract concepts from text (default: true)
+ confidenceThreshold: 0.6, // Minimum confidence for entities (0-1, default: 0.6)
 
-  // Deduplication
-  enableDeduplication: true,           // Check for duplicate entities (default: true)
-  deduplicationThreshold: 0.85,        // Similarity threshold for duplicates (0-1, default: 0.85)
-                                       // Note: Auto-disabled for imports >100 entities
+ // Deduplication
+ enableDeduplication: true, // Check for duplicate entities (default: true)
+ deduplicationThreshold: 0.85, // Similarity threshold for duplicates (0-1, default: 0.85)
+ // Note: Auto-disabled for imports >100 entities
 
-  // Performance
-  chunkSize: 100,                      // Batch size for processing (default: varies by operation)
+ // Performance
+ chunkSize: 100, // Batch size for processing (default: varies by operation)
 
-  // History & Progress
-  enableHistory: true,                 // Track import history (default: true)
-  onProgress: (progress) => {          // Progress callback
-    console.log(progress.stage, progress.message)
-  }
+ // History & Progress
+ enableHistory: true, // Track import history (default: true)
+ onProgress: (progress) => { // Progress callback
+ console.log(progress.stage, progress.message)
+ }
 })
 ```
 
@@ -343,9 +341,9 @@ const results = await brain.import(problematicData)
 ### 🏢 Business Data
 ```javascript
 // Import ANY source - ONE method!
-await brain.import('customers.csv')           // File
-await brain.import('https://api.co/orders')   // URL
-await brain.import(productsArray)             // Data
+await brain.import('customers.csv') // File
+await brain.import('https://api.co/orders') // URL
+await brain.import(productsArray) // Data
 
 // Now query across all of it!
 await brain.find('customers who bought products in Q4')
@@ -389,8 +387,8 @@ await brain.find('posts by users following Alice with >10 comments')
 
 ```javascript
 // ONE method that understands EVERYTHING:
-await brain.import(data)        // Objects, arrays, strings
-await brain.import('file.csv')  // Files (auto-detected)
+await brain.import(data) // Objects, arrays, strings
+await brain.import('file.csv') // Files (auto-detected)
 await brain.import('http://..') // URLs (auto-fetched)
 
 // It ALWAYS knows what to do! ✨

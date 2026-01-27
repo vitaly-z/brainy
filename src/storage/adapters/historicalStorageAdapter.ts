@@ -25,7 +25,7 @@
  * - Lazy loading: only loads entities when accessed
  * - No eager-loading of entire commit state
  *
- * v5.4.0: Production-ready, billion-scale historical queries
+ * Production-ready, billion-scale historical queries
  */
 
 import { BaseStorage } from '../baseStorage.js'
@@ -144,7 +144,7 @@ export class HistoricalStorageAdapter extends BaseStorage {
    */
   public async init(): Promise<void> {
     // Get COW components from underlying storage
-    // v6.2.4: Fixed property names - use public properties without underscore prefix
+    // Fixed property names - use public properties without underscore prefix
     this.commitLog = this.underlyingStorage.commitLog
     this.blobStorage = this.underlyingStorage.blobStorage
 
@@ -161,7 +161,7 @@ export class HistoricalStorageAdapter extends BaseStorage {
       throw new Error(`Commit not found: ${this.commitId}`)
     }
 
-    // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+    // Initialize GraphAdjacencyIndex and type statistics
     await super.init()
   }
 
@@ -310,12 +310,12 @@ export class HistoricalStorageAdapter extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: No-op for HistoricalStorageAdapter (read-only, doesn't manage COW)
+   * No-op for HistoricalStorageAdapter (read-only, doesn't manage COW)
    * @returns Always false (read-only adapter doesn't manage COW state)
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 

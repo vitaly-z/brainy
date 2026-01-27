@@ -625,7 +625,7 @@ export async function promptCommand(): Promise<string> {
  */
 export async function startInteractiveMode() {
   console.log(chalk.cyan('\n🧠 Brainy Interactive Mode\n'))
-  console.log(chalk.yellow('Interactive REPL mode coming in v3.20.0\n'))
+  console.log(chalk.yellow('Interactive REPL mode coming soon\n'))
   console.log(chalk.dim('Use specific commands for now: brainy add, brainy search, etc.'))
   process.exit(0)
 }

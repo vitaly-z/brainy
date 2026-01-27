@@ -117,7 +117,7 @@ export const neuralCommand = {
           await handleNeighborsCommand(neural, argv)
           break
         case 'path':
-          console.log(chalk.yellow('\n⚠️  Semantic path finding coming in v3.21.0'))
+          console.log(chalk.yellow('\n⚠️  Semantic path finding coming soon'))
           console.log(chalk.dim('This feature requires implementing graph traversal algorithms'))
           console.log(chalk.dim('Use "neighbors" and "hierarchy" commands to explore connections'))
           break
@@ -148,7 +148,7 @@ async function promptForAction(): Promise<string> {
       { name: '🎯 Find semantic clusters', value: 'clusters' },
       { name: '🌳 Show item hierarchy', value: 'hierarchy' },
       { name: '🕸️  Find semantic neighbors', value: 'neighbors' },
-      { name: '🛣️  Find semantic path between items (v3.21.0)', value: 'path', disabled: true },
+      { name: '🛣️  Find semantic path between items (coming soon)', value: 'path', disabled: true },
       { name: '🚨 Detect outliers', value: 'outliers' },
       { name: '📊 Generate visualization data', value: 'visualize' }
     ]

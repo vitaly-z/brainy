@@ -76,7 +76,7 @@ interface FieldStats {
   rangeQueryCount: number
   exactQueryCount: number
   avgQueryTime: number
-  indexType: 'hash' // v3.42.0: Only 'hash' since all fields use chunked sparse indices with zone maps
+  indexType: 'hash' // Only 'hash' since all fields use chunked sparse indices with zone maps
   normalizationStrategy?: 'none' | 'precision' | 'bucket'
 }
 
@@ -121,19 +121,19 @@ export class MetadataIndexManager {
   private lockPromises = new Map<string, Promise<boolean>>()
   private lockTimers = new Map<string, NodeJS.Timeout>() // Track timers for cleanup
 
-  // Adaptive Chunked Sparse Indexing (v3.42.0 → v3.44.1)
+  // Adaptive Chunked Sparse Indexing
   // Reduces file count from 560k → 89 files (630x reduction)
   // ALL fields now use chunking - no more flat files
-  // v3.44.1: Removed sparseIndices Map - now lazy-loaded via UnifiedCache only
+  // Removed sparseIndices Map - now lazy-loaded via UnifiedCache only
   // PROJECTED: Reduces metadata memory from 35GB → 5GB @ 1B scale (86% reduction from chunking strategy, not yet benchmarked)
   private chunkManager: ChunkManager
   private chunkingStrategy: AdaptiveChunkingStrategy
 
-  // Roaring Bitmap Support (v3.43.0)
+  // Roaring Bitmap Support
   // EntityIdMapper for UUID ↔ integer conversion
   private idMapper: EntityIdMapper
 
-  // Field Type Inference (v3.48.0 - Production-ready value-based type detection)
+  // Field Type Inference (Production-ready value-based type detection)
   // Replaces unreliable pattern matching with DuckDB-inspired value analysis
   private fieldTypeInference: FieldTypeInference
 
@@ -179,20 +179,20 @@ export class MetadataIndexManager {
     // Get global unified cache for coordinated memory management
     this.unifiedCache = getGlobalCache()
 
-    // Initialize EntityIdMapper for roaring bitmap UUID ↔ integer mapping (v3.43.0)
+    // Initialize EntityIdMapper for roaring bitmap UUID ↔ integer mapping
     this.idMapper = new EntityIdMapper({
       storage,
       storageKey: 'brainy:entityIdMapper'
     })
 
-    // Initialize chunking system (v3.42.0) with roaring bitmap support
+    // Initialize chunking system with roaring bitmap support
     this.chunkManager = new ChunkManager(storage, this.idMapper)
     this.chunkingStrategy = new AdaptiveChunkingStrategy()
 
-    // Initialize Field Type Inference (v3.48.0)
+    // Initialize Field Type Inference
     this.fieldTypeInference = new FieldTypeInference(storage)
 
-    // v6.2.2: Removed lazyLoadCounts() call from constructor
+    // Removed lazyLoadCounts() call from constructor
     // It was a race condition (not awaited) and read from wrong source.
     // Now properly called in init() after warmCache() loads the sparse index.
   }
@@ -205,18 +205,18 @@ export class MetadataIndexManager {
     // Initialize roaring-wasm library (browser bundle requires async init)
     await roaringLibraryInitialize()
 
-    // Load field registry to discover persisted indices (v4.2.1)
+    // Load field registry to discover persisted indices
     // Must run first to populate fieldIndexes directory before warming cache
     await this.loadFieldRegistry()
 
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
 
-    // Warm the cache with common fields (v3.44.1 - lazy loading optimization)
+    // Warm the cache with common fields (lazy loading optimization)
     // This loads the 'noun' sparse index which is needed for type counts
     await this.warmCache()
 
-    // v6.2.2: Load type counts AFTER warmCache (sparse index is now cached)
+    // Load type counts AFTER warmCache (sparse index is now cached)
     // Previously called in constructor without await and read from wrong source
     await this.lazyLoadCounts()
 
@@ -224,16 +224,16 @@ export class MetadataIndexManager {
     // Now correctly happens AFTER lazyLoadCounts() finishes
     this.syncTypeCountsToFixed()
 
-    // v7.5.0: Detect index corruption and auto-rebuild if necessary
+    // Detect index corruption and auto-rebuild if necessary
     // The update() field asymmetry bug caused indexes to accumulate stale entries
     // This check runs on startup to detect and repair corrupted indexes automatically
     await this.detectAndRepairCorruption()
   }
 
   /**
-   * v7.5.0: Detect index corruption and automatically repair via rebuild
+   * Detect index corruption and automatically repair via rebuild
    * This catches the update() field asymmetry bug that causes 7 fields to accumulate per update
-   * Corruption threshold: 100 avg entries/entity (expected ~30)
+   * Corruption threshold: 100 avg metadata entries/entity, excluding __words__ (expected ~30)
    */
   private async detectAndRepairCorruption(): Promise<void> {
     const validation = await this.validateConsistency()
@@ -260,7 +260,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Warm the cache by preloading common field sparse indices (v3.44.1)
+   * Warm the cache by preloading common field sparse indices
    * This improves cache hit rates by loading frequently-accessed fields at startup
    * Target: >80% cache hit rate for typical workloads
    */
@@ -413,18 +413,18 @@ export class MetadataIndexManager {
 
   /**
    * Lazy load entity counts from the 'noun' field sparse index (O(n) where n = number of types)
-   * v6.2.2 FIX: Previously read from stats.nounCount which was SERVICE-keyed, not TYPE-keyed
+   * FIX: Previously read from stats.nounCount which was SERVICE-keyed, not TYPE-keyed
    * Now computes counts from the sparse index which has the correct type information
    */
   private async lazyLoadCounts(): Promise<void> {
     try {
-      // v6.2.4: CRITICAL FIX - Clear counts before loading to prevent accumulation
+      // CRITICAL FIX - Clear counts before loading to prevent accumulation
       // Previously, counts accumulated across restarts causing 100x inflation
       this.totalEntitiesByType.clear()
       this.entityCountsByTypeFixed.fill(0)
       this.verbCountsByTypeFixed.fill(0)
 
-      // v6.2.2: Load counts from sparse index (correct source)
+      // Load counts from sparse index (correct source)
       const nounSparseIndex = await this.loadSparseIndex('noun')
       if (!nounSparseIndex) {
         // No sparse index yet - counts will be populated as entities are added
@@ -522,7 +522,7 @@ export class MetadataIndexManager {
     const stats = this.fieldStats.get(field)!
     const cardinality = stats.cardinality
 
-    // Track unique values by checking fieldIndex counts (v3.42.0 - removed indexCache)
+    // Track unique values by checking fieldIndex counts
     const fieldIndex = this.fieldIndexes.get(field)
     const normalizedValue = this.normalizeValue(value, field)
     const currentCount = fieldIndex?.values[normalizedValue] || 0
@@ -581,7 +581,7 @@ export class MetadataIndexManager {
   private updateIndexStrategy(field: string, stats: FieldStats): void {
     const hasHighCardinality = stats.cardinality.uniqueValues > this.HIGH_CARDINALITY_THRESHOLD
 
-    // All fields use chunked sparse indexing with zone maps (v3.42.0)
+    // All fields use chunked sparse indexing with zone maps
     stats.indexType = 'hash'
 
     // Determine normalization strategy for high cardinality NON-temporal fields
@@ -603,7 +603,7 @@ export class MetadataIndexManager {
   }
 
   // ============================================================================
-  // Adaptive Chunked Sparse Indexing (v3.42.0)
+  // Adaptive Chunked Sparse Indexing
   // All fields use chunking - simplified implementation
   // ============================================================================
 
@@ -652,8 +652,8 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get IDs for a value using chunked sparse index with roaring bitmaps (v3.43.0)
-   * v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Get IDs for a value using chunked sparse index with roaring bitmaps
+   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
    */
   private async getIdsFromChunks(field: string, value: any): Promise<string[]> {
     // Load sparse index via UnifiedCache (lazy loading)
@@ -690,9 +690,9 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get IDs for a range using chunked sparse index with zone maps and roaring bitmaps (v3.43.0)
-   * v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
-   * v4.5.4: Normalize min/max for timestamp bucketing before comparison
+   * Get IDs for a range using chunked sparse index with zone maps and roaring bitmaps
+   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Normalize min/max for timestamp bucketing before comparison
    */
   private async getIdsFromChunksForRange(
     field: string,
@@ -707,7 +707,7 @@ export class MetadataIndexManager {
       return [] // No chunked index exists yet
     }
 
-    // v4.5.4: Normalize min/max for consistent comparison with indexed values
+    // Normalize min/max for consistent comparison with indexed values
     // (indexed values are bucketed for timestamps, so we must bucket the query bounds too)
     const normalizedMin = min !== undefined ? this.normalizeValue(min, field) : undefined
     const normalizedMax = max !== undefined ? this.normalizeValue(max, field) : undefined
@@ -751,9 +751,9 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get roaring bitmap for a field-value pair without converting to UUIDs (v3.43.0)
+   * Get roaring bitmap for a field-value pair without converting to UUIDs
    * This is used for fast multi-field intersection queries using hardware-accelerated bitmap AND
-   * v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
    * @returns RoaringBitmap32 containing integer IDs, or null if no matches
    */
   private async getBitmapFromChunks(field: string, value: any): Promise<RoaringBitmap32 | null> {
@@ -806,7 +806,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get IDs for multiple field-value pairs using fast roaring bitmap intersection (v3.43.0)
+   * Get IDs for multiple field-value pairs using fast roaring bitmap intersection
    *
    * This method provides 500-900x faster multi-field queries by:
    * - Using hardware-accelerated bitmap AND operations (SIMD: AVX2/SSE4.2)
@@ -862,7 +862,7 @@ export class MetadataIndexManager {
 
   /**
    * Add value-ID mapping to chunked index
-   * v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
    */
   private async addToChunkedIndex(field: string, value: any, id: string): Promise<void> {
     // Load or create sparse index via UnifiedCache (lazy loading)
@@ -964,7 +964,7 @@ export class MetadataIndexManager {
 
   /**
    * Remove ID from chunked index
-   * v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
    */
   private async removeFromChunkedIndex(field: string, value: any, id: string): Promise<void> {
     // Load sparse index via UnifiedCache (lazy loading)
@@ -1013,7 +1013,7 @@ export class MetadataIndexManager {
       stats.rangeQueryCount++
     }
 
-    // All fields use chunked sparse index with zone map optimization (v3.42.0)
+    // All fields use chunked sparse index with zone map optimization
     return await this.getIdsFromChunksForRange(field, min, max, includeMin, includeMax)
   }
 
@@ -1047,7 +1047,7 @@ export class MetadataIndexManager {
   /**
    * Normalize value for consistent indexing with VALUE-BASED temporal detection
    *
-   * v3.48.0: Replaced unreliable field name pattern matching with production-ready
+   * Replaced unreliable field name pattern matching with production-ready
    * value-based detection (DuckDB-inspired). Analyzes actual data values, not names.
    *
    * NO FALLBACKS - Pure value-based detection only.
@@ -1153,14 +1153,14 @@ export class MetadataIndexManager {
   /**
    * Extract indexable field-value pairs from entity or metadata
    *
-   * v4.8.0: Now handles BOTH entity structure (with top-level fields) AND plain metadata
+   * Now handles BOTH entity structure (with top-level fields) AND plain metadata
    * - Extracts from top-level fields (confidence, weight, timestamps, type, service, etc.)
    * - Also extracts from nested metadata field (custom user fields)
    * - Skips HNSW-specific fields (vector, connections, level, id)
    * - Maps 'type' → 'noun' for backward compatibility with existing indexes
    *
-   * BUG FIX (v3.50.1): Exclude vector embeddings and large arrays from indexing
-   * BUG FIX (v3.50.2): Also exclude purely numeric field names (array indices)
+   * BUG FIX: Exclude vector embeddings and large arrays from indexing
+   * BUG FIX: Also exclude purely numeric field names (array indices)
    * - Vector fields (384+ dimensions) were creating 825K chunk files for 1,144 entities
    * - Arrays converted to objects with numeric keys were still being indexed
    */
@@ -1186,7 +1186,7 @@ export class MetadataIndexManager {
         if (!this.shouldIndexField(fullKey)) continue
 
         // Special handling for metadata field at top level
-        // v4.8.0: Flatten metadata fields to top-level (no prefix) for cleaner queries
+        // Flatten metadata fields to top-level (no prefix) for cleaner queries
         // Standard fields are already at top-level, custom fields go in metadata
         // By flattening here, queries can use { category: 'B' } instead of { 'metadata.category': 'B' }
         if (key === 'metadata' && !prefix && typeof value === 'object' && !Array.isArray(value)) {
@@ -1211,7 +1211,7 @@ export class MetadataIndexManager {
           }
         } else {
           // Primitive value: index it
-          // v4.8.0: Map 'type' → 'noun' for backward compatibility
+          // Map 'type' → 'noun' for backward compatibility
           const indexField = (!prefix && key === 'type') ? 'noun' : fullKey
           fields.push({ field: indexField, value })
         }
@@ -1222,8 +1222,8 @@ export class MetadataIndexManager {
       extract(data)
     }
 
-    // v7.7.0: Extract words for hybrid text search
-    // v7.8.0: Production-scale word limit (5000 words)
+    // Extract words for hybrid text search
+    // Production-scale word limit (5000 words)
     // - Handles articles, chapters, and large documents
     // - Roaring Bitmaps + Chunked Sparse Index + LRU caching
     // - Int32 hashes store words as 4-byte values, not strings
@@ -1258,7 +1258,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Extract text content from entity data for word indexing (v7.7.0)
+   * Extract text content from entity data for word indexing
    *
    * Recursively extracts string values from data, excluding:
    * - vector, embedding, connections, level, id (internal fields)
@@ -1292,7 +1292,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Tokenize text into words for indexing (v7.7.0)
+   * Tokenize text into words for indexing
    *
    * - Converts to lowercase
    * - Removes punctuation
@@ -1314,7 +1314,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Hash word to int32 using FNV-1a (v7.7.0)
+   * Hash word to int32 using FNV-1a
    *
    * FNV-1a is fast with low collision rate, suitable for word hashing.
    * Saves ~10GB at billion scale by avoiding string storage.
@@ -1332,7 +1332,7 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get entity IDs matching a text query (v7.7.0)
+   * Get entity IDs matching a text query
    *
    * Performs word-based text search using the __words__ index.
    * Returns IDs ranked by match count (entities with more matching words first).
@@ -1375,19 +1375,19 @@ export class MetadataIndexManager {
   /**
    * Add item to metadata indexes
    *
-   * v4.8.0: Now accepts either entity structure or plain metadata
+   * Now accepts either entity structure or plain metadata
    * - Entity structure: { id, type, confidence, weight, createdAt, metadata: {...} }
    * - Plain metadata: { noun, confidence, weight, createdAt, ... }
    *
    * @param id - Entity ID
-   * @param entityOrMetadata - Either full entity structure (v4.8.0+) or plain metadata (backward compat)
+   * @param entityOrMetadata - Either full entity structure or plain metadata (backward compat)
    * @param skipFlush - Skip automatic flush (used during batch operations)
    */
   async addToIndex(id: string, entityOrMetadata: any, skipFlush: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(entityOrMetadata)
 
-    // v6.7.0: Sanity check for excessive indexed fields (indicates possible data issue)
-    // v7.8.0: Separate threshold for metadata fields vs word fields
+    // Sanity check for excessive indexed fields (indicates possible data issue)
+    // Separate threshold for metadata fields vs word fields
     // - Metadata fields: warn if > 100 (indicates deeply nested metadata)
     // - Word fields: expected to be many for large documents, warn only for extreme cases
     const metadataFields = fields.filter(f => f.field !== '__words__')
@@ -1418,7 +1418,7 @@ export class MetadataIndexManager {
     for (let i = 0; i < fields.length; i++) {
       const { field, value } = fields[i]
 
-      // All fields use chunked sparse indexing (v3.42.0)
+      // All fields use chunked sparse indexing
       await this.addToChunkedIndex(field, value, id)
 
       // Update statistics and tracking
@@ -1432,7 +1432,7 @@ export class MetadataIndexManager {
       }
     }
     
-    // Adaptive auto-flush based on usage patterns (v3.42.0 - flush field indexes only)
+    // Adaptive auto-flush based on usage patterns
     if (!skipFlush) {
       const timeSinceLastFlush = Date.now() - this.lastFlushTime
       const shouldAutoFlush =
@@ -1494,7 +1494,7 @@ export class MetadataIndexManager {
   /**
    * Remove item from metadata indexes
    *
-   * v4.8.0: Now accepts either entity structure or plain metadata (same as addToIndex)
+   * Now accepts either entity structure or plain metadata (same as addToIndex)
    * - Entity structure: { id, type, confidence, weight, createdAt, metadata: {...} }
    * - Plain metadata: { noun, confidence, weight, createdAt, ... }
    *
@@ -1507,7 +1507,7 @@ export class MetadataIndexManager {
       const fields = this.extractIndexableFields(metadata)
 
       for (const { field, value } of fields) {
-        // All fields use chunked sparse indexing (v3.42.0)
+        // All fields use chunked sparse indexing
         await this.removeFromChunkedIndex(field, value, id)
 
         // Update statistics and tracking
@@ -1521,7 +1521,7 @@ export class MetadataIndexManager {
     } else {
       // Remove from all indexes (slower, requires scanning all field indexes)
       // This should be rare - prefer providing metadata when removing
-      // v3.44.1: Scan via fieldIndexes, load sparse indices on-demand
+      // Scan via fieldIndexes, load sparse indices on-demand
       prodLog.warn(`Removing ID ${id} without metadata requires scanning all fields (slow)`)
 
       // Scan all fields via fieldIndexes
@@ -1552,7 +1552,7 @@ export class MetadataIndexManager {
    * Get all IDs in the index
    */
   async getAllIds(): Promise<string[]> {
-    // Use storage as the source of truth (v3.42.0 - removed redundant indexCache scan)
+    // Use storage as the source of truth
     const allIds = new Set<string>()
 
     // Storage.getNouns() is the definitive source of all entity IDs
@@ -1586,7 +1586,7 @@ export class MetadataIndexManager {
       stats.exactQueryCount++
     }
 
-    // All fields use chunked sparse indexing (v3.42.0)
+    // All fields use chunked sparse indexing
     return await this.getIdsFromChunks(field, value)
   }
 
@@ -1739,7 +1739,7 @@ export class MetadataIndexManager {
         subIds.forEach(id => unionIds.add(id))
       }
 
-      // v6.2.1: Fix - Check for outer-level field conditions that need AND application
+      // Fix - Check for outer-level field conditions that need AND application
       // This handles cases like { anyOf: [...], vfsType: { exists: false } }
       // where the anyOf results must be intersected with other field conditions
       const outerFields = Object.keys(filter).filter(
@@ -1770,21 +1770,21 @@ export class MetadataIndexManager {
       let fieldResults: string[] = []
       
       if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-        // Handle Brainy Field Operators (v4.5.4: canonical operators defined)
+        // Handle Brainy Field Operators (canonical operators defined)
         // See docs/api/README.md for complete operator reference
         for (const [op, operand] of Object.entries(condition)) {
           switch (op) {
             // ===== EQUALITY OPERATORS =====
-            // Canonical: 'eq' | Alias: 'equals' | Deprecated: 'is' (remove in v5.0.0)
-            case 'is':  // DEPRECATED (v4.5.4): Use 'eq' instead
+            // Canonical: 'eq' | Alias: 'equals' | Deprecated: 'is'
+            case 'is':  // DEPRECATED: Use 'eq' instead
             case 'equals':  // Alias for 'eq'
             case 'eq':
               fieldResults = await this.getIds(field, operand)
               break
 
             // ===== NEGATION OPERATORS =====
-            // Canonical: 'ne' | Alias: 'notEquals' | Deprecated: 'isNot' (remove in v5.0.0)
-            case 'isNot':  // DEPRECATED (v4.5.4): Use 'ne' instead
+            // Canonical: 'ne' | Alias: 'notEquals' | Deprecated: 'isNot'
+            case 'isNot':  // DEPRECATED: Use 'ne' instead
             case 'notEquals':  // Alias for 'ne'
             case 'ne':
               // For notEquals, we need all IDs EXCEPT those matching the value
@@ -1824,8 +1824,8 @@ export class MetadataIndexManager {
               break
 
             // ===== GREATER THAN OR EQUAL OPERATORS =====
-            // Canonical: 'gte' | Alias: 'greaterThanOrEqual' | Deprecated: 'greaterEqual' (remove in v5.0.0)
-            case 'greaterEqual':  // DEPRECATED (v4.5.4): Use 'gte' instead
+            // Canonical: 'gte' | Alias: 'greaterThanOrEqual' | Deprecated: 'greaterEqual'
+            case 'greaterEqual':  // DEPRECATED: Use 'gte' instead
             case 'greaterThanOrEqual':  // Alias for 'gte'
             case 'gte':
               fieldResults = await this.getIdsForRange(field, operand, undefined, true, true)
@@ -1839,8 +1839,8 @@ export class MetadataIndexManager {
               break
 
             // ===== LESS THAN OR EQUAL OPERATORS =====
-            // Canonical: 'lte' | Alias: 'lessThanOrEqual' | Deprecated: 'lessEqual' (remove in v5.0.0)
-            case 'lessEqual':  // DEPRECATED (v4.5.4): Use 'lte' instead
+            // Canonical: 'lte' | Alias: 'lessThanOrEqual' | Deprecated: 'lessEqual'
+            case 'lessEqual':  // DEPRECATED: Use 'lte' instead
             case 'lessThanOrEqual':  // Alias for 'lte'
             case 'lte':
               fieldResults = await this.getIdsForRange(field, undefined, operand, true, true)
@@ -1865,8 +1865,8 @@ export class MetadataIndexManager {
             case 'exists':
               if (operand) {
                 // exists: true - Get all IDs that have this field (any value)
-                // v3.43.0: From chunked sparse index with roaring bitmaps
-                // v3.44.1: Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+                // From chunked sparse index with roaring bitmaps
+                // Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
                 const allIntIds = new Set<number>()
 
                 // Load sparse index via UnifiedCache (lazy loading)
@@ -1890,7 +1890,7 @@ export class MetadataIndexManager {
                 fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
               } else {
                 // exists: false - Get all IDs that DON'T have this field
-                // v5.7.9: Fixed excludeVFS bug (was returning empty array)
+                // Fixed excludeVFS bug (was returning empty array)
                 const allItemIds = await this.getAllIds()
                 const existsIntIds = new Set<number>()
 
@@ -1921,7 +1921,7 @@ export class MetadataIndexManager {
             case 'missing':
               // missing: true is equivalent to exists: false
               // missing: false is equivalent to exists: true
-              // v5.7.9: Added for API consistency with in-memory metadataFilter
+              // Added for API consistency with in-memory metadataFilter
               if (operand) {
                 // missing: true - field does NOT exist (same as exists: false)
                 const allItemIds = await this.getAllIds()
@@ -2021,7 +2021,6 @@ export class MetadataIndexManager {
    * @param order - Sort direction: 'asc' (default) or 'desc'
    * @returns Promise<string[]> - Entity IDs sorted by specified field
    *
-   * @since v4.5.4
    */
   async getSortedIdsForFilter(
     filter: any,
@@ -2084,7 +2083,6 @@ export class MetadataIndexManager {
    * @returns Promise<any> - Field value or undefined if not found
    *
    * @public (called from brainy.ts for sorted queries)
-   * @since v4.5.4
    */
   async getFieldValueForEntity(entityId: string, field: string): Promise<any> {
     // For timestamp fields, load ACTUAL value from entity metadata
@@ -2152,7 +2150,6 @@ export class MetadataIndexManager {
    * @returns Denormalized value in original type
    *
    * @private
-   * @since v4.5.4
    */
   private denormalizeValue(normalized: string, field: string): any {
     // Try parsing as number (timestamps, integers, floats)
@@ -2233,7 +2230,7 @@ export class MetadataIndexManager {
 
   /**
    * Flush dirty entries to storage (non-blocking version)
-   * NOTE (v3.42.0): Sparse indices are flushed immediately in add/remove operations
+   * NOTE: Sparse indices are flushed immediately in add/remove operations
    */
   async flush(): Promise<void> {
     // Check if we have anything to flush
@@ -2245,7 +2242,7 @@ export class MetadataIndexManager {
     const BATCH_SIZE = 20
     const allPromises: Promise<void>[] = []
 
-    // Flush field indexes in batches (v3.42.0 - removed flat file flushing)
+    // Flush field indexes in batches
     const dirtyFieldsArray = Array.from(this.dirtyFields)
     for (let i = 0; i < dirtyFieldsArray.length; i += BATCH_SIZE) {
       const batch = dirtyFieldsArray.slice(i, i + BATCH_SIZE)
@@ -2264,10 +2261,10 @@ export class MetadataIndexManager {
     // Wait for all operations to complete
     await Promise.all(allPromises)
 
-    // Flush EntityIdMapper (UUID ↔ integer mappings) (v3.43.0)
+    // Flush EntityIdMapper (UUID ↔ integer mappings)
     await this.idMapper.flush()
 
-    // Save field registry for fast cold-start discovery (v4.2.1)
+    // Save field registry for fast cold-start discovery
     await this.saveFieldRegistry()
 
     this.dirtyFields.clear()
@@ -2347,7 +2344,7 @@ export class MetadataIndexManager {
       const indexId = `__metadata_field_index__${filename}`
       const unifiedKey = `metadata:field:${filename}`
 
-      // v4.0.0: Add required 'noun' property for NounMetadata
+      // Add required 'noun' property for NounMetadata
       await this.storage.saveMetadata(indexId, {
         noun: 'MetadataFieldIndex',
         values: fieldIndex.values,
@@ -2369,7 +2366,7 @@ export class MetadataIndexManager {
 
   /**
    * Save field registry to storage for fast cold-start discovery
-   * v4.2.1: Solves 100x performance regression by persisting field directory
+   * Solves 100x performance regression by persisting field directory
    *
    * This enables instant cold starts by discovering which fields have persisted indices
    * without needing to rebuild from scratch. Similar to how HNSW persists system metadata.
@@ -2404,7 +2401,7 @@ export class MetadataIndexManager {
 
   /**
    * Load field registry from storage to populate fieldIndexes directory
-   * v4.2.1: Enables O(1) discovery of persisted sparse indices
+   * Enables O(1) discovery of persisted sparse indices
    *
    * Called during init() to discover which fields have persisted indices.
    * Populates fieldIndexes Map with skeleton entries - actual sparse indices
@@ -2449,7 +2446,7 @@ export class MetadataIndexManager {
 
   /**
    * Get list of persisted fields from storage (not in-memory)
-   * v6.7.0: Used during rebuild to discover which chunk files need deletion
+   * Used during rebuild to discover which chunk files need deletion
    *
    * @returns Array of field names that have persisted sparse indices
    */
@@ -2470,7 +2467,7 @@ export class MetadataIndexManager {
 
   /**
    * Delete all chunk files for a specific field
-   * v6.7.0: Used during rebuild to ensure clean slate
+   * Used during rebuild to ensure clean slate
    *
    * @param field Field name whose chunks should be deleted
    */
@@ -2500,7 +2497,7 @@ export class MetadataIndexManager {
 
   /**
    * Clear ALL metadata index data from storage (for recovery)
-   * v6.7.0: Nuclear option for recovering from corrupted index state
+   * Nuclear option for recovering from corrupted index state
    *
    * WARNING: This deletes all indexed data - requires full rebuild after!
    * Use when index is corrupted beyond normal rebuild repair.
@@ -2565,7 +2562,7 @@ export class MetadataIndexManager {
 
   /**
    * Get all entity types and their counts - O(1) operation
-   * v6.2.2: Fixed - totalEntitiesByType is correctly populated by updateTypeFieldAffinity
+   * Fixed - totalEntitiesByType is correctly populated by updateTypeFieldAffinity
    * during add operations. lazyLoadCounts was reading wrong data but that doesn't
    * affect freshly-added entities within the same session.
    */
@@ -2574,7 +2571,7 @@ export class MetadataIndexManager {
   }
 
   // ============================================================================
-  // v6.2.1: VFS Statistics Methods (uses existing Roaring bitmap infrastructure)
+  // VFS Statistics Methods (uses existing Roaring bitmap infrastructure)
   // ============================================================================
 
   /**
@@ -2744,14 +2741,14 @@ export class MetadataIndexManager {
    * Get count of entities matching field-value criteria - queries chunked sparse index
    */
   async getCountForCriteria(field: string, value: any): Promise<number> {
-    // Use chunked sparse indexing (v3.42.0 - removed indexCache)
+    // Use chunked sparse indexing
     const ids = await this.getIds(field, value)
     return ids.length
   }
 
   /**
    * Get index statistics with enhanced counting information
-   * v3.44.1: Sparse indices now lazy-loaded via UnifiedCache
+   * Sparse indices now lazy-loaded via UnifiedCache
    * Note: This method may load sparse indices to calculate stats
    */
   async getStats(): Promise<MetadataIndexStats> {
@@ -2759,8 +2756,9 @@ export class MetadataIndexManager {
     let totalEntries = 0
     let totalIds = 0
 
-    // Collect stats from field indexes (lightweight - always in memory)
+    // Collect stats from metadata field indexes only (excludes __words__ keyword index)
     for (const field of this.fieldIndexes.keys()) {
+      if (field === '__words__') continue // Keyword index not included in metadata stats
       fields.add(field)
 
       // Load sparse index to count entries (may trigger lazy load)
@@ -2779,7 +2777,7 @@ export class MetadataIndexManager {
       }
     }
 
-    // v6.7.0: Sanity check for index corruption (77x overcounting bug detection)
+    // Sanity check for index corruption (only metadata fields, not __words__ keyword index)
     const entityCount = this.idMapper.size
     if (entityCount > 0) {
       const avgIdsPerEntity = totalIds / entityCount
@@ -2801,11 +2799,12 @@ export class MetadataIndexManager {
   }
 
   /**
-   * v7.5.0: Validate index consistency and detect corruption
+   * Validate index consistency and detect corruption
    * Returns health status and recommendations for repair
    *
+   * Counts metadata field entries only (excludes __words__ keyword index).
    * Corruption typically manifests as high avg entries/entity (expected ~30, corrupted can be 100+)
-   * caused by the update() field asymmetry bug (fixed in v7.5.0)
+   * caused by the update() field asymmetry bug
    */
   async validateConsistency(): Promise<{
     healthy: boolean
@@ -2827,9 +2826,10 @@ export class MetadataIndexManager {
       }
     }
 
-    // Count total index entries across all fields
+    // Count total index entries across all fields (excluding keyword index)
     let indexEntryCount = 0
     for (const field of this.fieldIndexes.keys()) {
+      if (field === '__words__') continue  // Keyword entries are expected to be high-volume
       const sparseIndex = await this.loadSparseIndex(field)
       if (sparseIndex) {
         for (const chunkId of sparseIndex.getAllChunkIds()) {
@@ -2845,7 +2845,8 @@ export class MetadataIndexManager {
 
     const avgEntriesPerEntity = indexEntryCount / entityCount
 
-    // Threshold: 100 entries/entity is clearly corrupted (expected ~30)
+    // Threshold: 100 metadata entries/entity is clearly corrupted (expected ~30)
+    // __words__ keyword entries are excluded from this count since they can be 50-5000 per entity
     // This catches the update() asymmetry bug which causes 7 fields to accumulate per update
     const CORRUPTION_THRESHOLD = 100
     const healthy = avgEntriesPerEntity <= CORRUPTION_THRESHOLD
@@ -2868,7 +2869,7 @@ export class MetadataIndexManager {
   /**
    * Rebuild entire index from scratch using pagination
    * Non-blocking version that yields control back to event loop
-   * v3.44.1: Sparse indices now lazy-loaded via UnifiedCache (no need to clear Map)
+   * Sparse indices now lazy-loaded via UnifiedCache (no need to clear Map)
    */
   async rebuild(): Promise<void> {
     if (this.isRebuilding) return
@@ -2879,12 +2880,12 @@ export class MetadataIndexManager {
     prodLog.info(`📊 Storage adapter: ${this.storage.constructor.name}`)
     prodLog.info(`🔧 Batch processing available: ${!!this.storage.getMetadataBatch}`)
 
-      // Clear existing indexes (v3.42.0 - use sparse indices instead of flat files)
-      // v3.44.1: No sparseIndices Map to clear - UnifiedCache handles eviction
+      // Clear existing indexes
+      // No sparseIndices Map to clear - UnifiedCache handles eviction
       this.fieldIndexes.clear()
       this.dirtyFields.clear()
 
-      // v6.2.4: CRITICAL FIX - Clear type counts to prevent accumulation
+      // CRITICAL FIX - Clear type counts to prevent accumulation
       // Previously, counts accumulated across rebuilds causing incorrect values
       this.totalEntitiesByType.clear()
       this.entityCountsByTypeFixed.fill(0)
@@ -2892,12 +2893,12 @@ export class MetadataIndexManager {
       this.typeFieldAffinity.clear()
 
       // Clear all cached sparse indices in UnifiedCache
-      // This ensures rebuild starts fresh (v3.44.1)
+      // This ensures rebuild starts fresh
       this.unifiedCache.clear('metadata')
 
-      // v6.7.0: CRITICAL FIX - Delete existing chunk files from storage
+      // CRITICAL FIX - Delete existing chunk files from storage
       // Without this, old chunk data accumulates with each rebuild causing 77x overcounting!
-      // Previous fix (v6.2.4) cleared type counts but missed chunk file accumulation.
+      // Previous fix cleared type counts but missed chunk file accumulation.
       prodLog.info('🗑️ Clearing existing metadata index chunks from storage...')
       const existingFields = await this.getPersistedFieldList()
 
@@ -2916,13 +2917,13 @@ export class MetadataIndexManager {
         prodLog.info(`✅ Cleared ${existingFields.length} field indexes from storage`)
       }
 
-      // Clear EntityIdMapper to start fresh (v6.7.0)
+      // Clear EntityIdMapper to start fresh
       await this.idMapper.clear()
 
       // Clear chunk manager cache
       this.chunkManager.clearCache()
 
-      // Adaptive rebuild strategy based on storage adapter (v4.2.3)
+      // Adaptive rebuild strategy based on storage adapter
       // FileSystem/Memory/OPFS: Load all at once (avoids getAllShardedFiles() overhead on every batch)
       // Cloud (GCS/S3/R2): Use pagination with small batches (prevent socket exhaustion)
       const storageType = this.storage.constructor.name
@@ -3394,7 +3395,7 @@ export class MetadataIndexManager {
       // This is the type definition itself
       entityType = this.normalizeValue(value, field)  // Pass field for bucketing!
     } else if (metadata && metadata.noun) {
-      // Extract entity type from metadata (v3.42.0 - removed indexCache scan)
+      // Extract entity type from metadata
       entityType = this.normalizeValue(metadata.noun, 'noun')
     } else {
       // No type information available, skip affinity tracking

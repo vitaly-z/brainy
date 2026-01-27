@@ -21,7 +21,7 @@ let brainyInstance: Brainy | null = null
 const getBrainy = async (): Promise<Brainy> => {
   if (!brainyInstance) {
     brainyInstance = new Brainy()
-    await brainyInstance.init()  // v5.0.1: Initialize brain (VFS auto-initialized here!)
+    await brainyInstance.init()  // Initialize brain (VFS auto-initialized here!)
   }
   return brainyInstance
 }
@@ -52,8 +52,8 @@ export const vfsCommands = {
     const spinner = ora('Reading file...').start()
 
     try {
-      const brain = await getBrainy()  // v5.0.1: Await async getBrainy
-      // v5.0.1: VFS auto-initialized, no need for vfs.init()
+      const brain = await getBrainy()  // Await async getBrainy
+      // VFS auto-initialized, no need for vfs.init()
       const buffer = await brain.vfs.readFile(path, {
         encoding: options.encoding as any
       })

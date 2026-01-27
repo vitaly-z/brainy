@@ -312,7 +312,7 @@ ${chalk.cyan('Fork Statistics:')}
   },
 
   /**
-   * Migrate from v4.x to v5.0.0 (one-time)
+   * Migrate storage format (one-time)
    */
   async migrate(options: MigrateOptions) {
     let spinner: any = null
@@ -388,7 +388,7 @@ ${chalk.cyan('Fork Statistics:')}
 
       await oldBrain.init()
 
-      // Create new brain (v5.0.0)
+      // Create new brain
       const newBrain = new Brainy({
         storage: {
           type: 'filesystem',

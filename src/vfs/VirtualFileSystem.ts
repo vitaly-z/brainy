@@ -81,10 +81,10 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   // Mutex for preventing race conditions in directory creation
   private mkdirLocks: Map<string, Promise<void>> = new Map()
 
-  // v5.8.0: Singleton promise for root initialization (prevents duplicate roots)
+  // Singleton promise for root initialization (prevents duplicate roots)
   private rootInitPromise: Promise<string> | null = null
 
-  // v5.10.0: Fixed VFS root ID (prevents duplicates across instances)
+  // Fixed VFS root ID (prevents duplicates across instances)
   // Uses deterministic UUID format for storage compatibility
   private static readonly VFS_ROOT_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -99,7 +99,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v5.2.0: Access to BlobStorage for unified file storage
+   * Access to BlobStorage for unified file storage
    */
   private get blobStorage() {
     // TypeScript doesn't know about blobStorage on storage, use type assertion
@@ -119,14 +119,14 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     // Merge config with defaults
     this.config = { ...this.getDefaultConfig(), ...config }
 
-    // v5.0.1: VFS is now auto-initialized during brain.init()
+    // VFS is now auto-initialized during brain.init()
     // Brain is guaranteed to be initialized when this is called
     // Removed brain.init() check to prevent infinite recursion
 
     // Create or find root entity
     this.rootEntityId = await this.initializeRoot()
 
-    // v5.10.0: Clean up old UUID-based roots from v5.9.0 (one-time migration)
+    // Clean up old UUID-based roots (one-time migration)
     await this.cleanupOldRoots()
 
     // Initialize projection registry with auto-discovery of built-in projections
@@ -180,7 +180,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v5.8.0: CRITICAL FIX - Prevent duplicate root creation
+   * CRITICAL FIX - Prevent duplicate root creation
    * Uses singleton promise pattern to ensure only ONE root initialization
    * happens even with concurrent init() calls
    */
@@ -206,7 +206,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v5.10.0: Atomic root initialization with fixed ID
+   * Atomic root initialization with fixed ID
    * Uses deterministic ID to prevent duplicates across all VFS instances
    *
    * ARCHITECTURAL FIX: Instead of query-then-create (race condition),
@@ -266,7 +266,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v5.10.0: Get standard root metadata
+   * Get standard root metadata
    * Centralized to ensure consistency
    */
   private getRootMetadata(): VFSMetadata {
@@ -286,7 +286,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v5.10.0: Cleanup old UUID-based VFS roots (migration from v5.9.0)
+   * Cleanup old UUID-based VFS roots
    * Called during init to remove duplicate roots created before fixed-ID fix
    *
    * This is a one-time migration helper that can be removed in future versions.
@@ -308,7 +308,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       const duplicates = oldRoots.filter(r => r.id !== VirtualFileSystem.VFS_ROOT_ID)
 
       if (duplicates.length > 0) {
-        console.log(`VFS: Found ${duplicates.length} old UUID-based root(s) from v5.9.0, cleaning up...`)
+        console.log(`VFS: Found ${duplicates.length} old UUID-based root(s), cleaning up...`)
 
         for (const duplicate of duplicates) {
           try {
@@ -352,23 +352,23 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       throw new VFSError(VFSErrorCode.EISDIR, `Is a directory: ${path}`, path, 'readFile')
     }
 
-    // v5.2.0: Unified blob storage - ONE path only
+    // Unified blob storage - ONE path only
     if (!entity.metadata.storage?.type || entity.metadata.storage.type !== 'blob') {
       throw new VFSError(
         VFSErrorCode.EIO,
-        `File has no blob storage: ${path}. Requires v5.2.0+ storage format.`,
+        `File has no blob storage: ${path}. Requires blob storage format.`,
         path,
         'readFile'
       )
     }
 
-    // v5.8.0: CRITICAL FIX - Isolate blob errors from VFS tree corruption
+    // CRITICAL FIX - Isolate blob errors from VFS tree corruption
     // Blob read errors MUST NOT cascade to VFS tree structure
     try {
       // Read from BlobStorage (handles decompression automatically)
       const content = await this.blobStorage.read(entity.metadata.storage.hash)
 
-      // v6.2.0: REMOVED updateAccessTime() for performance
+      // REMOVED updateAccessTime() for performance
       // Access time updates caused 50-100ms GCS write on EVERY file read
       // Modern file systems use 'noatime' for same reason (performance)
       // Field 'accessed' still exists in metadata for backward compat but won't update
@@ -436,7 +436,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       existingId = null
     }
 
-    // v5.2.0: Unified blob storage for ALL files (no size-based branching)
+    // Unified blob storage for ALL files (no size-based branching)
     // Store in BlobStorage (content-addressable, auto-deduplication, streaming)
     const blobHash = await this.blobStorage.write(buffer)
 
@@ -450,7 +450,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       compressed: blobMetadata?.compressed
     }
 
-    // Detect MIME type (v5.2.0: using comprehensive MimeTypeDetector)
+    // Detect MIME type (using comprehensive MimeTypeDetector)
     const mimeType = mimeDetector.detectMimeType(name, buffer)
 
     // Create metadata
@@ -459,8 +459,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       name,
       parent: parentId,
       vfsType: 'file',
-      isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
-      isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
+      isVFS: true,  // Mark as VFS entity (internal)
+      isVFSEntity: true,  // Explicit flag for developer filtering
       size: buffer.length,
       mimeType,
       extension: this.getExtension(name),
@@ -470,7 +470,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       accessed: Date.now(),
       modified: Date.now(),
       storage: storageStrategy
-      // v5.2.0: No rawData - content is in BlobStorage
+      // No rawData - content is in BlobStorage
       // Backward compatibility: readFile() checks for rawData for legacy files
     }
 
@@ -481,7 +481,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     if (existingId) {
       // Update existing file
-      // v5.2.0: No entity.data - content is in BlobStorage
+      // No entity.data - content is in BlobStorage
       await this.brain.update({
         id: existingId,
         metadata
@@ -500,7 +500,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: parentId,
           to: existingId,
           type: VerbType.Contains,
-          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+          metadata: { isVFS: true }  // Mark as VFS relationship
         })
       }
     } else {
@@ -519,7 +519,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         from: parentId,
         to: entity,
         type: VerbType.Contains,
-        metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+        metadata: { isVFS: true }  // Mark as VFS relationship
       })
 
       // Update path resolver cache
@@ -574,7 +574,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       throw new VFSError(VFSErrorCode.EISDIR, `Is a directory: ${path}`, path, 'unlink')
     }
 
-    // v5.2.0: Delete blob from BlobStorage (decrements ref count)
+    // Delete blob from BlobStorage (decrements ref count)
     if (entity.metadata.storage?.type === 'blob') {
       await this.blobStorage.delete(entity.metadata.storage.hash)
     }
@@ -617,7 +617,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   /**
-   * v6.2.0: Gather descendants using graph traversal + bulk fetch
+   * Gather descendants using graph traversal + bulk fetch
    *
    * ARCHITECTURE:
    * 1. Traverse graph to collect entity IDs (in-memory, fast)
@@ -694,7 +694,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Get a properly structured tree for the given path
    *
-   * v6.2.0: Graph traversal + ONE batch fetch (55x faster on cloud storage)
+   * Graph traversal + ONE batch fetch (55x faster on cloud storage)
    *
    * Architecture:
    * 1. Resolve path to entity ID
@@ -733,7 +733,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Get all descendants of a directory (flat list)
    *
-   * v6.2.0: Same optimization as getTreeStructure
+   * Same optimization as getTreeStructure
    */
   async getDescendants(path: string, options?: {
     includeAncestor?: boolean
@@ -876,8 +876,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         name,
         parent: parentId,
         vfsType: 'directory',
-        isVFS: true,  // v4.3.3: Mark as VFS entity (internal)
-        isVFSEntity: true,  // v5.3.0: Explicit flag for developer filtering
+        isVFS: true,  // Mark as VFS entity (internal)
+        isVFSEntity: true,  // Explicit flag for developer filtering
         size: 0,
         permissions: options?.mode || this.config.permissions?.defaultDirectory || 0o755,
         owner: 'user',
@@ -900,8 +900,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           to: entity,
           type: VerbType.Contains,
           metadata: {
-            isVFS: true,  // v4.5.1: Mark as VFS relationship
-            relationshipType: 'vfs'  // v4.9.0: Standardized relationship type metadata
+            isVFS: true,  // Mark as VFS relationship
+            relationshipType: 'vfs'  // Standardized relationship type metadata
           }
         })
       }
@@ -921,7 +921,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Remove a directory
    *
-   * v6.4.0: Optimized for cloud storage using batch operations
+   * Optimized for cloud storage using batch operations
    * - Uses gatherDescendants() for efficient graph traversal + batch fetch
    * - Uses deleteMany() for chunked transactional deletion
    * - Parallel blob cleanup with chunking
@@ -950,7 +950,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       throw new VFSError(VFSErrorCode.ENOTEMPTY, `Directory not empty: ${path}`, path, 'rmdir')
     }
 
-    // v6.4.0: OPTIMIZED batch deletion for recursive case
+    // OPTIMIZED batch deletion for recursive case
     if (options?.recursive && children.length > 0) {
       // Phase 1: Gather all descendants in ONE batch fetch
       const descendants = await this.gatherDescendants(entityId, Infinity)
@@ -1020,7 +1020,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       children = children.slice(0, options.limit)
     }
 
-    // v6.2.0: REMOVED updateAccessTime() for performance
+    // REMOVED updateAccessTime() for performance
     // Directory access time updates caused 50-100ms GCS write on EVERY readdir
     // await this.updateAccessTime(entityId)  // ← REMOVED
 
@@ -1117,7 +1117,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       offset: options?.offset,
       explain: options?.explain,
       where: {
-        vfsType: 'file'  // v4.7.0: Search VFS files
+        vfsType: 'file'  // Search VFS files
       }
     }
 
@@ -1167,7 +1167,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       threshold: options?.threshold || 0.7,
       type: [NounType.File, NounType.Document, NounType.Media],
       where: {
-        vfsType: 'file'  // v4.7.0: Find similar VFS files
+        vfsType: 'file'  // Find similar VFS files
       }
     })
 
@@ -1294,7 +1294,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return filename.substring(lastDot + 1).toLowerCase()
   }
 
-  // v5.2.0: MIME detection moved to MimeTypeDetector service
+  // MIME detection moved to MimeTypeDetector service
   // Removed detectMimeType() and isTextFile() - now using mimeDetector singleton
 
   private getFileNounType(mimeType: string): NounType {
@@ -1307,7 +1307,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return NounType.File
   }
 
-  // v5.2.0: Removed compression methods (shouldCompress, compress, decompress)
+  // Removed compression methods (shouldCompress, compress, decompress)
   // BlobStorage handles all compression automatically with zstd
 
   private async generateEmbedding(buffer: Buffer, mimeType: string): Promise<number[] | undefined> {
@@ -1371,7 +1371,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return metadata
   }
 
-  // v6.2.0: REMOVED updateAccessTime() method entirely
+  // REMOVED updateAccessTime() method entirely
   // Access time updates caused 50-100ms GCS write on EVERY file/dir read
   // Modern file systems use 'noatime' for same reason
   // Field 'accessed' still exists in metadata for backward compat but won't update
@@ -1674,7 +1674,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: newParentId,
           to: entityId,
           type: VerbType.Contains,
-          metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+          metadata: { isVFS: true }  // Mark as VFS relationship
         })
       }
     }
@@ -1752,7 +1752,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         from: parentId,
         to: newEntity,
         type: VerbType.Contains,
-        metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+        metadata: { isVFS: true }  // Mark as VFS relationship
       })
     }
 
@@ -1774,7 +1774,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Copy a directory recursively
    *
-   * v6.4.0: Optimized for cloud storage using batch operations
+   * Optimized for cloud storage using batch operations
    * - Uses gatherDescendants() for efficient graph traversal + batch fetch
    * - Uses addMany() for batch entity creation
    * - Uses relateMany() for batch relationship creation
@@ -1941,7 +1941,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       from: parentId,
       to: entity,
       type: VerbType.Contains,
-      metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+      metadata: { isVFS: true }  // Mark as VFS relationship
     })
 
     // Update path resolver cache
@@ -2151,7 +2151,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       from: fromEntityId,
       to: toEntityId,
       type: type as any,  // Convert string to VerbType
-      metadata: { isVFS: true }  // v4.5.1: Mark as VFS relationship
+      metadata: { isVFS: true }  // Mark as VFS relationship
     })
 
     // Invalidate caches for both paths
@@ -2378,7 +2378,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   /**
    * Bulk write operations for performance
    *
-   * v6.5.0: Prevents race condition by processing mkdir operations
+   * Prevents race condition by processing mkdir operations
    * sequentially before parallel batch processing of other operations.
    */
   async bulkWrite(operations: Array<{

@@ -54,7 +54,7 @@ export class EntityIdMapper {
   async init(): Promise<void> {
     try {
       const metadata = await this.storage.getMetadata(this.storageKey)
-      // v4.8.0: metadata IS the data (no nested 'data' property)
+      // metadata IS the data (no nested 'data' property)
       if (metadata && (metadata as any).nextId !== undefined) {
         const data = metadata as any as EntityIdMapperData
         this.nextId = data.nextId
@@ -87,7 +87,7 @@ export class EntityIdMapper {
   }
 
   /**
-   * v7.5.0: Get integer ID for UUID with immediate persistence guarantee
+   * Get integer ID for UUID with immediate persistence guarantee
    * Unlike getOrAssign(), this method flushes to storage immediately after assigning
    * a new ID. This prevents UUID→int mapping divergence if the process crashes
    * before a normal flush() occurs.
@@ -194,7 +194,7 @@ export class EntityIdMapper {
     }
 
     // Convert maps to plain objects for serialization
-    // v4.0.0: Add required 'noun' property for NounMetadata
+    // Add required 'noun' property for NounMetadata
     const data = {
       noun: 'EntityIdMapper',
       nextId: this.nextId,

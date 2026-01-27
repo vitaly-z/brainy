@@ -118,7 +118,7 @@ export class TypeAwareHNSWIndex {
   }
 
   /**
-   * v6.2.8: Flush dirty HNSW data to storage for all type-specific indexes
+   * Flush dirty HNSW data to storage for all type-specific indexes
    *
    * In deferred persistence mode, HNSW connections are tracked as dirty but not
    * immediately persisted. Call flush() to persist all pending changes across
@@ -502,7 +502,7 @@ export class TypeAwareHNSWIndex {
 
     // Load ALL nouns ONCE and route to correct type indexes
     // This is O(N) instead of O(42*N) from the previous parallel approach
-    let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
+    let offset = 0  // Use offset-based pagination instead of cursor (bug fix for infinite loop)
     let hasMore = true
     let totalLoaded = 0
     const loadedByType = new Map<NounType, number>()
@@ -515,13 +515,13 @@ export class TypeAwareHNSWIndex {
         totalCount?: number
       } = await (this.storage as any).getNounsWithPagination({
         limit: batchSize,
-        offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+        offset  // Pass offset for proper pagination (previously passed cursor which was ignored)
       })
 
       // Route each noun to its type index
       for (const nounData of result.items) {
         try {
-          // v7.3.0: Use 'type' property from HNSWNounWithMetadata (not 'nounType')
+          // Use 'type' property from HNSWNounWithMetadata (not 'nounType')
           // Previously accessed wrong property, causing N+1 metadata fetches
           // getNounsWithPagination already includes type in response
           const nounType = nounData.type
@@ -578,7 +578,7 @@ export class TypeAwareHNSWIndex {
       }
 
       hasMore = result.hasMore
-      offset += batchSize  // v5.7.11: Increment offset for next page
+      offset += batchSize  // Increment offset for next page
 
       // Progress logging
       if (totalLoaded % 1000 === 0) {
@@ -593,10 +593,24 @@ export class TypeAwareHNSWIndex {
       let entryPointId: string | null = null
 
       for (const [id, noun] of (index as any).nouns.entries()) {
-        if (noun.level > maxLevel) {
+        if (entryPointId === null || noun.level > maxLevel) {
           maxLevel = noun.level
           entryPointId = id
         }
+      }
+
+      // Recovery: if still null after loop but nouns exist
+      if ((index as any).nouns.size > 0 && !entryPointId) {
+        const { id: recoveredId, level: recoveredLevel } = (index as any).recoverEntryPointO1()
+        entryPointId = recoveredId
+        maxLevel = recoveredLevel
+      }
+
+      // Validation: if entry point doesn't exist in loaded nouns
+      if (entryPointId && !(index as any).nouns.has(entryPointId)) {
+        const { id: recoveredId, level: recoveredLevel } = (index as any).recoverEntryPointO1()
+        entryPointId = recoveredId
+        maxLevel = recoveredLevel
       }
 
       ;(index as any).entryPointId = entryPointId

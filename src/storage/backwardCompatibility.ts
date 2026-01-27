@@ -1,6 +1,6 @@
 /**
- * DEPRECATED (v4.7.2): Backward compatibility stubs
- * TODO: Remove in v4.7.3 after migrating s3CompatibleStorage
+ * DEPRECATED: Backward compatibility stubs
+ * TODO: Remove after migrating s3CompatibleStorage
  */
 
 export class StorageCompatibilityLayer {

@@ -40,10 +40,10 @@ export interface VFSStructureOptions {
   /** Create metadata file */
   createMetadataFile?: boolean
 
-  /** Import tracking context (v4.10.0) */
+  /** Import tracking context */
   trackingContext?: TrackingContext
 
-  /** Progress callback (v4.11.1) - Reports VFS creation progress */
+  /** Progress callback - Reports VFS creation progress */
   onProgress?: (progress: {
     stage: 'directories' | 'entities' | 'metadata'
     message: string
@@ -98,7 +98,7 @@ export class VFSStructureGenerator {
     // Get brain's cached VFS instance (creates if doesn't exist)
     this.vfs = this.brain.vfs
 
-    // CRITICAL FIX (v4.10.2): Always call vfs.init() explicitly
+    // CRITICAL FIX: Always call vfs.init() explicitly
     // The previous code tried to check if initialized via stat('/') but this was unreliable
     // vfs.init() is idempotent, so calling it multiple times is safe
     await this.vfs.init()
@@ -123,7 +123,7 @@ export class VFSStructureGenerator {
     // Ensure VFS is initialized
     await this.init()
 
-    // v4.11.1: Calculate total operations for progress tracking
+    // Calculate total operations for progress tracking
     const groups = this.groupEntities(importResult, options)
     const totalEntities = Array.from(groups.values()).reduce((sum, entities) => sum + entities.length, 0)
     const totalOperations =
@@ -161,7 +161,7 @@ export class VFSStructureGenerator {
     try {
       await this.vfs.mkdir(options.rootPath, {
         recursive: true,
-        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        metadata: trackingMetadata  // Add tracking metadata
       })
       result.directories.push(options.rootPath)
       result.operations++
@@ -179,7 +179,7 @@ export class VFSStructureGenerator {
     if (options.preserveSource && options.sourceBuffer && options.sourceFilename) {
       const sourcePath = `${options.rootPath}/_source${this.getExtension(options.sourceFilename)}`
       await this.vfs.writeFile(sourcePath, options.sourceBuffer, {
-        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        metadata: trackingMetadata  // Add tracking metadata
       })
       result.files.push({
         path: sourcePath,
@@ -200,7 +200,7 @@ export class VFSStructureGenerator {
       try {
         await this.vfs.mkdir(groupPath, {
           recursive: true,
-          metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+          metadata: trackingMetadata  // Add tracking metadata
         })
         result.directories.push(groupPath)
         result.operations++
@@ -242,7 +242,7 @@ export class VFSStructureGenerator {
 
         await this.vfs.writeFile(entityPath, JSON.stringify(entityJson, null, 2), {
           metadata: {
-            ...trackingMetadata,  // v4.10.0: Add tracking metadata
+            ...trackingMetadata,  // Add tracking metadata
             entityId: extracted.entity.id
           }
         })
@@ -253,7 +253,7 @@ export class VFSStructureGenerator {
         })
         result.operations++
 
-        // v4.11.1: Report progress every 10 entities (or on last entity)
+        // Report progress every 10 entities (or on last entity)
         if (entityCount % 10 === 0 || entityCount === entities.length) {
           reportProgress('entities', `Created ${entityCount}/${entities.length} ${groupName} files`)
         }
@@ -280,7 +280,7 @@ export class VFSStructureGenerator {
       }
 
       await this.vfs.writeFile(relationshipsPath, JSON.stringify(relationshipsJson, null, 2), {
-        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        metadata: trackingMetadata  // Add tracking metadata
       })
       result.files.push({
         path: relationshipsPath,
@@ -322,7 +322,7 @@ export class VFSStructureGenerator {
       }
 
       await this.vfs.writeFile(metadataPath, JSON.stringify(metadataJson, null, 2), {
-        metadata: trackingMetadata  // v4.10.0: Add tracking metadata
+        metadata: trackingMetadata  // Add tracking metadata
       })
       result.files.push({
         path: metadataPath,
@@ -332,7 +332,7 @@ export class VFSStructureGenerator {
       reportProgress('metadata', 'Created metadata file')
     }
 
-    // v4.11.1: Final progress update
+    // Final progress update
     if (options.onProgress) {
       options.onProgress({
         stage: 'metadata',
@@ -355,7 +355,7 @@ export class VFSStructureGenerator {
   ): Map<string, typeof importResult.rows> {
     const groups = new Map<string, typeof importResult.rows>()
 
-    // Handle sheet-based grouping (v4.2.0)
+    // Handle sheet-based grouping
     if (options.groupBy === 'sheet' && importResult.sheets && importResult.sheets.length > 0) {
       for (const sheet of importResult.sheets) {
         groups.set(sheet.name, sheet.rows)

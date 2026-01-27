@@ -43,7 +43,7 @@ export interface CommitLogStats {
 /**
  * CommitLog: Efficient commit history traversal and querying
  *
- * Pure v5.0.0 implementation - modern, clean, fast
+ * Pure implementation - modern, clean, fast
  */
 export class CommitLog {
   private blobStorage: BlobStorage

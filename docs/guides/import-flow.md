@@ -39,7 +39,7 @@ Each phase adds intelligence and structure to your raw data, transforming it int
 
 ---
 
-## 🌊 Always-On Streaming Architecture (v4.2.0+)
+## 🌊 Always-On Streaming Architecture
 
 All imports use streaming with **progressive flush intervals**:
 
@@ -1062,7 +1062,7 @@ if (!fromEntity || !toEntity) {
 }
 ```
 
-#### 5.3b: Check for Duplicates (v3.43.2 Critical Fix)
+#### 5.3b: Check for Duplicates (Critical Fix)
 
 **The Bug**: Without duplicate checking, re-importing would create:
 ```

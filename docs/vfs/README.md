@@ -28,15 +28,15 @@ import { VirtualFileSystem } from '@soulcraft/brainy/vfs'
 
 // Initialize the VFS
 const vfs = new VirtualFileSystem({
-  root: '/my-brain',
-  intelligent: true  // Enable AI features
+ root: '/my-brain',
+ intelligent: true // Enable AI features
 })
 
 await vfs.init()
 
 // Write a file - it automatically becomes intelligent
 await vfs.writeFile('/projects/my-app/index.js',
-  'console.log("Hello, World!")')
+ 'console.log("Hello, World!")')
 
 // Find similar files using semantic search
 const similar = await vfs.findSimilar('/projects/my-app/index.js')
@@ -48,11 +48,11 @@ const results = await vfs.search('files about authentication')
 await vfs.addRelationship('/docs/spec.md', '/projects/my-app/', 'implements')
 ```
 
-## ⚡ Performance (v5.11.1)
+## ⚡ Performance
 
 **75% Faster File Operations!** VFS now automatically benefits from brain.get() metadata-only optimization:
 
-| Operation | Before (v5.11.0) | After (v5.11.1) | Speedup |
+| Operation | Before | After | Speedup |
 |-----------|------------------|-----------------|---------|
 | `readFile()` | 53ms | **~13ms** | **75%** |
 | `stat()` | 53ms | **~13ms** | **75%** |
@@ -60,7 +60,7 @@ await vfs.addRelationship('/docs/spec.md', '/projects/my-app/', 'implements')
 
 **Zero configuration** - automatic optimization for all VFS operations!
 
-VFS operations only need metadata (path, size, timestamps), not 384-dimensional vector embeddings. The v5.11.1 optimization automatically uses metadata-only reads, saving 95% bandwidth and 76-81% time.
+VFS operations only need metadata (path, size, timestamps), not 384-dimensional vector embeddings. The optimization automatically uses metadata-only reads, saving 95% bandwidth and 76-81% time.
 
 ## Core Features
 
@@ -110,20 +110,20 @@ const docs = await vfs.search('technical documentation for API endpoints')
 
 // Find similar files
 const similar = await vfs.findSimilar('/code/auth.js', {
-  limit: 5,
-  threshold: 0.8  // 80% similarity
+ limit: 5,
+ threshold: 0.8 // 80% similarity
 })
 
 // Get related files through the knowledge graph
 const related = await vfs.getRelated('/proposal.pdf', {
-  depth: 2  // Include relationships of relationships
+ depth: 2 // Include relationships of relationships
 })
 
 // Auto-organization suggestions
 const suggestions = await vfs.suggestOrganization([
-  '/downloads/doc1.pdf',
-  '/downloads/image.jpg',
-  '/downloads/code.py'
+ '/downloads/doc1.pdf',
+ '/downloads/image.jpg',
+ '/downloads/code.py'
 ])
 // Returns: suggested folders and categorization
 ```
@@ -144,10 +144,10 @@ const connections = await vfs.getConnections('/code/impl.js')
 
 // Traverse the graph
 const implementations = await vfs.search('', {
-  connected: {
-    to: '/spec.md',
-    via: 'implements'
-  }
+ connected: {
+ to: '/spec.md',
+ via: 'implements'
+ }
 })
 ```
 
@@ -158,8 +158,8 @@ Store anything alongside your files:
 ```javascript
 // Add todos to files
 await vfs.setTodos('/projects/app/index.js', [
-  { task: 'Add error handling', priority: 'high', due: '2024-01-20' },
-  { task: 'Optimize performance', priority: 'medium' }
+ { task: 'Add error handling', priority: 'high', due: '2024-01-20' },
+ { task: 'Optimize performance', priority: 'medium' }
 ])
 
 // Set custom attributes
@@ -169,11 +169,11 @@ await vfs.setxattr('/video.mp4', 'tags', ['tutorial', 'react', 'hooks'])
 
 // Query by metadata
 const urgent = await vfs.search('', {
-  where: { 'todos.priority': 'high' }
+ where: { 'todos.priority': 'high' }
 })
 
 const parisPhotos = await vfs.search('', {
-  where: { location: 'Paris, France' }
+ where: { location: 'Paris, France' }
 })
 ```
 
@@ -184,20 +184,20 @@ Access files through semantic dimensions (see [Semantic VFS](./SEMANTIC_VFS.md))
 ```javascript
 // Query-based path access (current functionality)
 const authFiles = await vfs.search('', {
-  where: { concepts: { contains: 'authentication' }}
+ where: { concepts: { contains: 'authentication' }}
 })
 
 // Find files by custom metadata
 const recent = await vfs.search('', {
-  where: {
-    type: 'document',
-    modified: { greaterThan: Date.now() - 7*24*60*60*1000 }
-  }
+ where: {
+ type: 'document',
+ modified: { greaterThan: Date.now() - 7*24*60*60*1000 }
+ }
 })
 
 // Find similar files
 const similar = await vfs.findSimilar('/examples/good-code.js', {
-  threshold: 0.7
+ threshold: 0.7
 })
 ```
 
@@ -210,24 +210,24 @@ const similar = await vfs.findSimilar('/examples/good-code.js', {
 ```javascript
 // Store a research paper with automatic analysis
 await vfs.writeFile('/research/quantum-computing.pdf', pdfBuffer, {
-  metadata: {
-    authors: ['Dr. Alice Smith', 'Dr. Bob Jones'],
-    year: 2024,
-    topics: ['quantum', 'computing', 'algorithms'],
-    citations: 42
-  }
+ metadata: {
+ authors: ['Dr. Alice Smith', 'Dr. Bob Jones'],
+ year: 2024,
+ topics: ['quantum', 'computing', 'algorithms'],
+ citations: 42
+ }
 })
 
 // Find all papers on similar topics
 const related = await vfs.search('quantum algorithms', {
-  type: 'document',
-  where: { year: { $gte: 2020 } }
+ type: 'document',
+ where: { year: { $gte: 2020 } }
 })
 
 // Find papers that cite this one
 const citations = await vfs.getConnections('/research/quantum-computing.pdf', {
-  type: 'cites',
-  direction: 'incoming'
+ type: 'cites',
+ direction: 'incoming'
 })
 ```
 
@@ -245,12 +245,12 @@ await vfs.writeFile('/src/utils/auth.js', authCode)
 
 // Find all files that import this module
 const importers = await vfs.search('', {
-  where: { dependencies: 'utils/auth.js' }
+ where: { dependencies: 'utils/auth.js' }
 })
 
 // Find test files for this code
 const tests = await vfs.getRelated('/src/utils/auth.js', {
-  type: 'tests'
+ type: 'tests'
 })
 
 // Find similar implementations
@@ -262,12 +262,12 @@ const similar = await vfs.findSimilar('/src/utils/auth.js')
 ```javascript
 // Store media with rich metadata
 await vfs.writeFile('/photos/sunset.jpg', imageBuffer, {
-  metadata: {
-    camera: 'Canon R5',
-    location: { lat: 37.7749, lng: -122.4194 },
-    tags: ['sunset', 'golden-gate', 'landscape'],
-    album: 'San Francisco 2024'
-  }
+ metadata: {
+ camera: 'Canon R5',
+ location: { lat: 37.7749, lng: -122.4194 },
+ tags: ['sunset', 'golden-gate', 'landscape'],
+ album: 'San Francisco 2024'
+ }
 })
 
 // Find similar images
@@ -275,18 +275,18 @@ const similar = await vfs.findSimilar('/photos/sunset.jpg')
 
 // Find photos by location
 const nearby = await vfs.search('', {
-  type: 'image',
-  where: {
-    'location.lat': { $between: [37.7, 37.8] },
-    'location.lng': { $between: [-122.5, -122.3] }
-  }
+ type: 'image',
+ where: {
+ 'location.lat': { $between: [37.7, 37.8] },
+ 'location.lng': { $between: [-122.5, -122.3] }
+ }
 })
 
 // Smart albums
 await vfs.createVirtualDirectory('/albums/best-sunsets', {
-  query: 'sunset',
-  type: 'image',
-  where: { rating: { $gte: 4 } }
+ query: 'sunset',
+ type: 'image',
+ where: { rating: { $gte: 4 } }
 })
 ```
 
@@ -308,25 +308,25 @@ await vfs.setxattr(projectPath, 'status', 'in-progress')
 
 // Add todos to specific files
 await vfs.setTodos(`${projectPath}/src/index.js`, [
-  { task: 'Implement user authentication', assignee: 'Alice' },
-  { task: 'Add error handling', assignee: 'Bob' }
+ { task: 'Implement user authentication', assignee: 'Alice' },
+ { task: 'Add error handling', assignee: 'Bob' }
 ])
 
 // Find all files with pending todos
 const pending = await vfs.search('', {
-  where: {
-    path: { $startsWith: projectPath },
-    'todos.status': 'pending'
-  }
+ where: {
+ path: { $startsWith: projectPath },
+ 'todos.status': 'pending'
+ }
 })
 
 // Find projects nearing deadline
 const urgent = await vfs.search('', {
-  where: {
-    type: 'directory',
-    'deadline': { $lte: '2024-02-01' },
-    'status': 'in-progress'
-  }
+ where: {
+ type: 'directory',
+ 'deadline': { $lte: '2024-02-01' },
+ 'status': 'in-progress'
+ }
 })
 ```
 
@@ -417,9 +417,9 @@ The VFS is built with production scalability in mind:
 #### **Storage Strategy**
 ```typescript
 // Adaptive storage based on file size
-< 100KB:  Inline storage (entity.data)
-< 10MB:   External reference (S3/R2 key)
-> 10MB:   Chunked storage (parallel chunks)
+< 100KB: Inline storage (entity.data)
+< 10MB: External reference (S3/R2 key)
+> 10MB: Chunked storage (parallel chunks)
 ```
 
 #### **Performance Metrics**
@@ -434,24 +434,24 @@ The VFS is built with production scalability in mind:
 #### **How It Handles Scale**
 
 1. **Hierarchical Caching**
-   - 100K+ path cache entries
-   - Parent-child relationship caching
-   - Hot path detection and optimization
+ - 100K+ path cache entries
+ - Parent-child relationship caching
+ - Hot path detection and optimization
 
 2. **Distributed Architecture**
-   - Sharding by path prefix
-   - Read replicas for hot directories
-   - CDN integration for static files
+ - Sharding by path prefix
+ - Read replicas for hot directories
+ - CDN integration for static files
 
 3. **Intelligent Indexing**
-   - Compound indexes on (parent, name)
-   - Vector indexes for semantic search
-   - Graph indexes for relationships
+ - Compound indexes on (parent, name)
+ - Vector indexes for semantic search
+ - Graph indexes for relationships
 
 4. **Streaming Everything**
-   - Large files never fully in memory
-   - Progressive loading
-   - Chunked transfers
+ - Large files never fully in memory
+ - Progressive loading
+ - Chunked transfers
 
 ### Real Production Scenarios
 
@@ -462,29 +462,29 @@ Store build artifacts with automatic relationships:
 ```javascript
 // Store build output with metadata
 await vfs.writeFile('/builds/v1.2.3/app.js', buildOutput, {
-  metadata: {
-    commit: 'abc123',
-    branch: 'main',
-    timestamp: Date.now(),
-    tests: 'passing',
-    coverage: 0.92
-  }
+ metadata: {
+ commit: 'abc123',
+ branch: 'main',
+ timestamp: Date.now(),
+ tests: 'passing',
+ coverage: 0.92
+ }
 })
 
 // Find all builds for a commit
 const builds = await vfs.search('', {
-  where: { commit: 'abc123' }
+ where: { commit: 'abc123' }
 })
 
 // Get latest passing build
 const latest = await vfs.search('', {
-  where: {
-    branch: 'main',
-    tests: 'passing'
-  },
-  sort: 'modified',
-  order: 'desc',
-  limit: 1
+ where: {
+ branch: 'main',
+ tests: 'passing'
+ },
+ sort: 'modified',
+ order: 'desc',
+ limit: 1
 })
 ```
 
@@ -495,8 +495,8 @@ Isolate customer data with semantic understanding:
 ```javascript
 // Each tenant gets their own root
 const tenantVfs = new VirtualFileSystem({
-  root: `/tenants/${tenantId}`,
-  service: tenantId  // Isolate at Brainy level too
+ root: `/tenants/${tenantId}`,
+ service: tenantId // Isolate at Brainy level too
 })
 
 // Tenant uploads document
@@ -505,11 +505,11 @@ await tenantVfs.writeFile('/documents/contract.pdf', pdfBuffer)
 // Cross-tenant analytics (admin only)
 const adminVfs = new VirtualFileSystem({ root: '/tenants' })
 const stats = await adminVfs.search('contract', {
-  recursive: true,
-  aggregations: {
-    byTenant: { field: 'service' },
-    byType: { field: 'mimeType' }
-  }
+ recursive: true,
+ aggregations: {
+ byTenant: { field: 'service' },
+ byType: { field: 'mimeType' }
+ }
 })
 ```
 
@@ -520,38 +520,38 @@ Connect datasets, models, and results:
 ```javascript
 // Store training data
 await vfs.writeFile('/datasets/train.csv', csvData, {
-  metadata: {
-    samples: 100000,
-    features: 50,
-    labels: 10
-  }
+ metadata: {
+ samples: 100000,
+ features: 50,
+ labels: 10
+ }
 })
 
 // Store trained model
 await vfs.writeFile('/models/v1/model.pkl', modelBuffer, {
-  metadata: {
-    algorithm: 'random-forest',
-    accuracy: 0.95,
-    trainedOn: '/datasets/train.csv',
-    hyperparameters: { trees: 100, depth: 10 }
-  }
+ metadata: {
+ algorithm: 'random-forest',
+ accuracy: 0.95,
+ trainedOn: '/datasets/train.csv',
+ hyperparameters: { trees: 100, depth: 10 }
+ }
 })
 
 // Connect model to its training data
 await vfs.addRelationship(
-  '/models/v1/model.pkl',
-  '/datasets/train.csv',
-  'trained-on'
+ '/models/v1/model.pkl',
+ '/datasets/train.csv',
+ 'trained-on'
 )
 
 // Find best model for a dataset
 const models = await vfs.search('', {
-  connected: {
-    to: '/datasets/train.csv',
-    via: 'trained-on'
-  },
-  sort: 'accuracy',
-  order: 'desc'
+ connected: {
+ to: '/datasets/train.csv',
+ via: 'trained-on'
+ },
+ sort: 'accuracy',
+ order: 'desc'
 })
 ```
 
@@ -562,30 +562,30 @@ Intelligent content organization:
 ```javascript
 // Auto-organize uploads
 vfs.on('file:added', async (path) => {
-  if (path.startsWith('/uploads/')) {
-    const file = await vfs.getEntity(path)
+ if (path.startsWith('/uploads/')) {
+ const file = await vfs.getEntity(path)
 
-    // Auto-categorize by AI
-    const category = await detectCategory(file)
-    const newPath = `/content/${category}/${file.metadata.name}`
+ // Auto-categorize by AI
+ const category = await detectCategory(file)
+ const newPath = `/content/${category}/${file.metadata.name}`
 
-    await vfs.move(path, newPath)
+ await vfs.move(path, newPath)
 
-    // Auto-tag
-    const tags = await extractTags(file)
-    await vfs.setxattr(newPath, 'tags', tags)
+ // Auto-tag
+ const tags = await extractTags(file)
+ await vfs.setxattr(newPath, 'tags', tags)
 
-    // Find related content
-    const related = await vfs.findSimilar(newPath, {
-      limit: 5,
-      threshold: 0.8
-    })
+ // Find related content
+ const related = await vfs.findSimilar(newPath, {
+ limit: 5,
+ threshold: 0.8
+ })
 
-    // Create relationships
-    for (const rel of related) {
-      await vfs.addRelationship(newPath, rel.path, 'related-to')
-    }
-  }
+ // Create relationships
+ for (const rel of related) {
+ await vfs.addRelationship(newPath, rel.path, 'related-to')
+ }
+ }
 })
 ```
 
@@ -596,39 +596,39 @@ Collaborative file management:
 ```javascript
 // Track file ownership and access
 await vfs.writeFile('/projects/alpha/spec.md', content, {
-  metadata: {
-    owner: userId,
-    team: 'engineering',
-    permissions: {
-      [userId]: 'rw',
-      'team:engineering': 'r',
-      'others': '-'
-    }
-  }
+ metadata: {
+ owner: userId,
+ team: 'engineering',
+ permissions: {
+ [userId]: 'rw',
+ 'team:engineering': 'r',
+ 'others': '-'
+ }
+ }
 })
 
 // Add collaborative features
 await vfs.addTodo('/projects/alpha/spec.md', {
-  task: 'Review security section',
-  assignee: 'alice@company.com',
-  due: '2024-02-01',
-  priority: 'high'
+ task: 'Review security section',
+ assignee: 'alice@company.com',
+ due: '2024-02-01',
+ priority: 'high'
 })
 
 // Track who's working on what
 await vfs.setxattr('/projects/alpha/spec.md', 'locks', {
-  section3: {
-    user: 'bob@company.com',
-    since: Date.now()
-  }
+ section3: {
+ user: 'bob@company.com',
+ since: Date.now()
+ }
 })
 
 // Find all files assigned to a user
 const assigned = await vfs.search('', {
-  where: {
-    'todos.assignee': 'alice@company.com',
-    'todos.status': 'pending'
-  }
+ where: {
+ 'todos.assignee': 'alice@company.com',
+ 'todos.status': 'pending'
+ }
 })
 ```
 
@@ -643,15 +643,15 @@ const assigned = await vfs.search('', {
 #### **Standalone Mode**
 ```javascript
 const vfs = new VirtualFileSystem()
-await vfs.init()  // Uses in-memory storage
+await vfs.init() // Uses in-memory storage
 ```
 
 #### **Local Persistence**
 ```javascript
 const vfs = new VirtualFileSystem()
 await vfs.init({
-  storage: 'filesystem',
-  dataDir: '/var/lib/brainy-vfs'
+ storage: 'filesystem',
+ dataDir: '/var/lib/brainy-vfs'
 })
 ```
 
@@ -659,9 +659,9 @@ await vfs.init({
 ```javascript
 const vfs = new VirtualFileSystem()
 await vfs.init({
-  storage: 's3',
-  bucket: 'my-vfs-data',
-  region: 'us-west-2'
+ storage: 's3',
+ bucket: 'my-vfs-data',
+ region: 'us-west-2'
 })
 ```
 
@@ -669,14 +669,14 @@ await vfs.init({
 ```javascript
 const vfs = new VirtualFileSystem()
 await vfs.init({
-  distributed: true,
-  nodes: [
-    'vfs1.internal:8080',
-    'vfs2.internal:8080',
-    'vfs3.internal:8080'
-  ],
-  replication: 3,
-  consistency: 'eventual'
+ distributed: true,
+ nodes: [
+ 'vfs1.internal:8080',
+ 'vfs2.internal:8080',
+ 'vfs3.internal:8080'
+ ],
+ replication: 3,
+ consistency: 'eventual'
 })
 ```
 

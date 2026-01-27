@@ -88,13 +88,13 @@ export interface FormatHandlerOptions {
   streaming?: boolean
 
   /**
-   * Progress hooks (v4.5.0)
+   * Progress hooks
    * Handlers call these to report progress during processing
    */
   progressHooks?: FormatHandlerProgressHooks
 
   /**
-   * Total file size in bytes (v4.5.0)
+   * Total file size in bytes
    * Used for progress percentage calculation
    */
   totalBytes?: number
@@ -168,7 +168,7 @@ export interface IntelligentImportConfig {
   /** Enable PDF handler */
   enablePDF: boolean
 
-  /** Enable Image handler (v5.2.0) */
+  /** Enable Image handler */
   enableImage: boolean
 
   /** Default options for CSV */
@@ -180,7 +180,7 @@ export interface IntelligentImportConfig {
   /** Default options for PDF */
   pdfDefaults?: Partial<FormatHandlerOptions>
 
-  /** Default options for Image (v5.2.0) */
+  /** Default options for Image */
   imageDefaults?: Partial<FormatHandlerOptions>
 
   /** Maximum file size to process (bytes) */

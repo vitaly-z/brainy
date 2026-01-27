@@ -27,7 +27,7 @@ export class ExcelHandler extends BaseFormatHandler {
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary')
     const totalBytes = buffer.length
 
-    // v4.5.0: Report start
+    // Report start
     if (progressHooks?.onBytesProcessed) {
       progressHooks.onBytesProcessed(0)
     }
@@ -47,7 +47,7 @@ export class ExcelHandler extends BaseFormatHandler {
       // Determine which sheets to process
       const sheetsToProcess = this.getSheetsToProcess(workbook, options)
 
-      // v4.5.0: Report workbook loaded
+      // Report workbook loaded
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(`Processing ${sheetsToProcess.length} sheets...`)
       }
@@ -59,7 +59,7 @@ export class ExcelHandler extends BaseFormatHandler {
       for (let sheetIndex = 0; sheetIndex < sheetsToProcess.length; sheetIndex++) {
         const sheetName = sheetsToProcess[sheetIndex]
 
-        // v4.5.0: Report current sheet
+        // Report current sheet
         if (progressHooks?.onCurrentItem) {
           progressHooks.onCurrentItem(
             `Reading sheet: ${sheetName} (${sheetIndex + 1}/${sheetsToProcess.length})`
@@ -117,19 +117,19 @@ export class ExcelHandler extends BaseFormatHandler {
           headers
         }
 
-        // v4.5.0: Estimate bytes processed (sheets are sequential)
+        // Estimate bytes processed (sheets are sequential)
         const bytesProcessed = Math.floor(((sheetIndex + 1) / sheetsToProcess.length) * totalBytes)
         if (progressHooks?.onBytesProcessed) {
           progressHooks.onBytesProcessed(bytesProcessed)
         }
 
-        // v4.5.0: Report extraction progress
+        // Report extraction progress
         if (progressHooks?.onDataExtracted) {
           progressHooks.onDataExtracted(allData.length, undefined) // Total unknown until complete
         }
       }
 
-      // v4.5.0: Report data extraction complete
+      // Report data extraction complete
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(`Extracted ${allData.length} rows, inferring types...`)
       }
@@ -152,7 +152,7 @@ export class ExcelHandler extends BaseFormatHandler {
           }
         }
 
-        // v4.5.0: Report progress every 1000 rows (avoid spam)
+        // Report progress every 1000 rows (avoid spam)
         if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
           progressHooks.onCurrentItem(`Converting types: ${index}/${allData.length} rows...`)
         }
@@ -160,14 +160,14 @@ export class ExcelHandler extends BaseFormatHandler {
         return converted
       })
 
-      // v4.5.0: Final progress - all bytes processed
+      // Final progress - all bytes processed
       if (progressHooks?.onBytesProcessed) {
         progressHooks.onBytesProcessed(totalBytes)
       }
 
       const processingTime = Date.now() - startTime
 
-      // v4.5.0: Report completion
+      // Report completion
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(
           `Excel complete: ${sheetsToProcess.length} sheets, ${convertedData.length} rows`

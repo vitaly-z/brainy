@@ -1,14 +1,14 @@
 /**
- * VersionManager - Entity-Level Versioning Engine (v5.3.0, v6.3.0 fix)
+ * VersionManager - Entity-Level Versioning Engine
  *
  * Provides entity-level version control with:
  * - save() - Create entity version
- * - restore() - Restore entity to specific version (v6.3.0: now updates all indexes)
+ * - restore() - Restore entity to specific version (now updates all indexes)
  * - list() - List all versions of an entity
  * - compare() - Deep diff between versions
  * - prune() - Remove old versions (retention policies)
  *
- * Architecture (v6.3.0 - Clean Key-Value Storage):
+ * Architecture:
  * - Versions stored as key-value pairs, NOT as entities (no index pollution)
  * - Content-addressable: SHA-256 hashing for deduplication
  * - Space-efficient: Only stores unique content
@@ -206,7 +206,7 @@ export class VersionManager {
       throw new Error(`Entity ${entityId} not found`)
     }
 
-    // v6.3.2 FIX: For VFS file entities, fetch current content from blob storage
+    // FIX: For VFS file entities, fetch current content from blob storage
     // The entity.data field contains stale embedding text, not actual file content
     // VFS files store their real content in BlobStorage (content-addressable)
     if (this.isVFSFile(entity)) {
@@ -416,7 +416,7 @@ export class VersionManager {
       )
     }
 
-    // v6.3.2 FIX: For VFS file entities, write content back to blob storage
+    // FIX: For VFS file entities, write content back to blob storage
     // The versioned data contains the actual file content (not stale embedding text)
     // Using vfs.writeFile() ensures proper blob creation and metadata update
     if (this.isVFSFile(versionedEntity)) {

@@ -1,5 +1,5 @@
 /**
- * VersioningAPI - Public API for Entity Versioning (v5.3.0)
+ * VersioningAPI - Public API for Entity Versioning
  *
  * User-friendly wrapper around VersionManager with:
  * - Clean, simple API

@@ -86,7 +86,7 @@ export function unwrapBinaryData(data: any): Buffer {
 /**
  * Wrap binary data for JSON storage
  *
- * ⚠️ WARNING: DO NOT USE THIS ON WRITE PATH! (v6.2.0)
+ * ⚠️ WARNING: DO NOT USE THIS ON WRITE PATH!
  * ⚠️ Use key-based dispatch in baseStorage.ts COW adapter instead.
  * ⚠️ This function exists for legacy/compatibility only.
  *
@@ -94,7 +94,7 @@ export function unwrapBinaryData(data: any): Buffer {
  * This is FRAGILE because compressed binary can accidentally parse as valid JSON,
  * causing blob integrity failures.
  *
- * v6.2.0 SOLUTION: baseStorage.ts COW adapter now uses key naming convention:
+ * SOLUTION: baseStorage.ts COW adapter now uses key naming convention:
  * - Keys with '-meta:' or 'ref:' prefix → Always JSON
  * - Keys with 'blob:', 'commit:', 'tree:' prefix → Always binary
  * No guessing needed!

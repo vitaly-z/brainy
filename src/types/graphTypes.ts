@@ -303,7 +303,7 @@
  * }
  * ```
  *
- * ## Stage 3 Changes from v5.4.0
+ * ## Stage 3 Changes
  *
  * ### Nouns Added (+11)
  * agent, quality, timeInterval, function, proposition, socialGroup, institution,
@@ -323,7 +323,7 @@
  * createdBy (use inverse of creates), supervises (use inverse of reportsTo)
  *
  * **Net Change**: +9 nouns (31 → 40), +48 verbs (40 → 88) = +57 types total
- * **Coverage**: 60% (v5.4.0) → 95% (Stage 3)
+ * **Coverage**: 60% → 95% (Stage 3)
  */
 
 // Common metadata types

@@ -71,7 +71,7 @@ export class PathResolver {
 
   /**
    * Resolve a path to an entity ID
-   * v6.1.0: Uses 3-tier caching + MetadataIndexManager for optimal performance
+   * Uses 3-tier caching + MetadataIndexManager for optimal performance
    * Works for ALL storage adapters (FileSystem, GCS, S3, Azure, R2, OPFS)
    */
   async resolve(path: string, options?: {
@@ -255,14 +255,14 @@ export class PathResolver {
       // Still need to verify it exists
     }
 
-    // v4.7.0: Use proper graph traversal to find children
+    // Use proper graph traversal to find children
     // VFS relationships are now part of the knowledge graph
     const relations = await this.brain.getRelations({
       from: parentId,
       type: VerbType.Contains
     })
 
-    // v6.0.2: PERFORMANCE FIX - Batch fetch all children (eliminates N+1 pattern)
+    // PERFORMANCE FIX - Batch fetch all children (eliminates N+1 pattern)
     // Before: N sequential get() calls (10 children = 10 × 300ms = 3000ms on GCS)
     // After: 1 batch call (10 children = 1 × 300ms = 300ms on GCS)
     // 10x improvement for cloud storage (GCS, S3, Azure)
@@ -292,7 +292,7 @@ export class PathResolver {
    * Uses proper graph relationships to traverse the tree
    */
   async getChildren(dirId: string): Promise<VFSEntity[]> {
-    // v4.7.0: Use O(1) graph relationships (VFS creates these in mkdir/writeFile)
+    // Use O(1) graph relationships (VFS creates these in mkdir/writeFile)
     // VFS relationships are now part of the knowledge graph (no special filtering needed)
     const relations = await this.brain.getRelations({
       from: dirId,
@@ -302,12 +302,12 @@ export class PathResolver {
     const validChildren: VFSEntity[] = []
     const childNames = new Set<string>()
 
-    // v5.12.0: Batch fetch all child entities (eliminates N+1 query pattern)
+    // Batch fetch all child entities (eliminates N+1 query pattern)
     // This is WIRED UP AND USED - no longer a stub!
     const childIds = relations.map(r => r.to)
     const childrenMap = await this.brain.batchGet(childIds)
 
-    // v7.4.1: Deduplicate by entity ID to handle duplicate relationship records
+    // Deduplicate by entity ID to handle duplicate relationship records
     // This can occur when multiple Brainy instances create relationships concurrently
     // for the same storage path (each instance has its own in-memory GraphAdjacencyIndex).
     // The Set lookup is O(1), adding negligible overhead.
@@ -356,7 +356,7 @@ export class PathResolver {
   }
 
   /**
-   * Invalidate ALL caches (v6.3.0)
+   * Invalidate ALL caches
    * Call this when switching branches (checkout), clearing data (clear), or forking
    * This ensures no stale data from previous branch/state remains in cache
    */
@@ -381,13 +381,13 @@ export class PathResolver {
 
   /**
    * Invalidate cache entries for a path and its children
-   * v6.2.9 FIX: Also invalidates UnifiedCache to prevent stale entity IDs
+   * FIX: Also invalidates UnifiedCache to prevent stale entity IDs
    * This fixes the "Source entity not found" bug after delete+recreate operations
    */
   invalidatePath(path: string, recursive = false): void {
     const normalizedPath = this.normalizePath(path)
 
-    // v6.2.9 FIX: Clear parent cache BEFORE deleting from pathCache
+    // FIX: Clear parent cache BEFORE deleting from pathCache
     // (we need the entityId from the cache entry)
     const cached = this.pathCache.get(normalizedPath)
     if (cached) {
@@ -398,7 +398,7 @@ export class PathResolver {
     this.pathCache.delete(normalizedPath)
     this.hotPaths.delete(normalizedPath)
 
-    // v6.2.9 CRITICAL FIX: Also invalidate UnifiedCache (global LRU cache)
+    // CRITICAL FIX: Also invalidate UnifiedCache (global LRU cache)
     // This was missing before, causing stale entity IDs to be returned after delete
     const cacheKey = `vfs:path:${normalizedPath}`
     getGlobalCache().delete(cacheKey)
@@ -411,12 +411,12 @@ export class PathResolver {
         if (cachedPath.startsWith(prefix)) {
           this.pathCache.delete(cachedPath)
           this.hotPaths.delete(cachedPath)
-          // v6.2.9: Also clear parent cache for this entry
+          // Also clear parent cache for this entry
           this.parentCache.delete(entry.entityId)
         }
       }
 
-      // v6.2.9 CRITICAL FIX: Also invalidate UnifiedCache entries with this prefix
+      // CRITICAL FIX: Also invalidate UnifiedCache entries with this prefix
       const globalCachePrefix = `vfs:path:${prefix}`
       getGlobalCache().deleteByPrefix(globalCachePrefix)
     }
@@ -561,7 +561,7 @@ export class PathResolver {
 
   /**
    * Get cache statistics
-   * v6.1.0: Added MetadataIndexManager metrics
+   * Added MetadataIndexManager metrics
    */
   getStats(): {
     cacheSize: number

@@ -1,5 +1,5 @@
 /**
- * VersionDiff - Deep Object Comparison for Entity Versions (v5.3.0)
+ * VersionDiff - Deep Object Comparison for Entity Versions
  *
  * Provides deep diff between entity versions:
  * - Field-level change detection

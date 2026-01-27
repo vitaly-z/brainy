@@ -2,7 +2,7 @@
  * Neural Entity Extractor using Brainy's NounTypes
  * Uses embeddings and similarity matching for accurate type detection
  *
- * v4.2.0: Now powered by SmartExtractor for ultra-neural classification
+ * Now powered by SmartExtractor for ultra-neural classification
  * PRODUCTION-READY with caching support
  */
 
@@ -24,7 +24,7 @@ export interface ExtractedEntity {
   type: NounType
   position: { start: number; end: number }
   confidence: number
-  weight?: number // v4.2.0: Entity importance/salience
+  weight?: number // Entity importance/salience
   vector?: Vector
   metadata?: any
 }
@@ -39,7 +39,7 @@ export class NeuralEntityExtractor {
   // Entity extraction cache
   private cache: EntityExtractionCache
 
-  // Runtime embedding cache for performance (v3.38.0)
+  // Runtime embedding cache for performance
   // Caches candidate embeddings during an extraction session to avoid redundant model calls
   private embeddingCache: Map<string, Vector> = new Map()
   private embeddingCacheStats = {
@@ -48,7 +48,7 @@ export class NeuralEntityExtractor {
     size: 0
   }
 
-  // v4.2.0: SmartExtractor for ultra-neural classification
+  // SmartExtractor for ultra-neural classification
   private smartExtractor: SmartExtractor
 
   constructor(brain: Brainy | Brainy<any>, cacheOptions?: EntityCacheOptions) {
@@ -63,7 +63,7 @@ export class NeuralEntityExtractor {
   
   /**
    * Initialize type embeddings for neural matching
-   * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed embeddings from build time
+   * PRODUCTION OPTIMIZATION: Uses pre-computed embeddings from build time
    * Zero runtime cost - embeddings are loaded instantly from embedded data
    */
   private async initializeTypeEmbeddings(requestedTypes?: NounType[]): Promise<void> {
@@ -109,7 +109,7 @@ export class NeuralEntityExtractor {
       }
     }
   ): Promise<ExtractedEntity[]> {
-    // PRODUCTION OPTIMIZATION (v3.33.0): Load pre-computed type embeddings
+    // PRODUCTION OPTIMIZATION: Load pre-computed type embeddings
     // Zero runtime cost - embeddings were computed at build time
     await this.initializeTypeEmbeddings(options?.types)
 
@@ -138,7 +138,7 @@ export class NeuralEntityExtractor {
     // Step 1: Extract potential entities using patterns
     const candidates = await this.extractCandidates(text)
     
-    // Step 2: Classify each candidate using SmartExtractor (v4.2.0)
+    // Step 2: Classify each candidate using SmartExtractor
     for (const candidate of candidates) {
       // Use SmartExtractor for unified neural + rule-based classification
       const classification = await this.smartExtractor.extract(candidate.text, {
@@ -357,7 +357,7 @@ export class NeuralEntityExtractor {
   }
   
   /**
-   * Get embedding for text with caching (v3.38.0)
+   * Get embedding for text with caching
    *
    * PERFORMANCE OPTIMIZATION: Caches embeddings during extraction session
    * to avoid redundant model calls for repeated text (common in large imports)
@@ -509,7 +509,7 @@ export class NeuralEntityExtractor {
   }
 
   /**
-   * Clear embedding cache (v3.38.0)
+   * Clear embedding cache
    *
    * Clears the runtime embedding cache. Useful for:
    * - Freeing memory after large imports
@@ -525,7 +525,7 @@ export class NeuralEntityExtractor {
   }
 
   /**
-   * Get embedding cache statistics (v3.38.0)
+   * Get embedding cache statistics
    *
    * Returns performance metrics for the embedding cache:
    * - hits: Number of cache hits (avoided model calls)

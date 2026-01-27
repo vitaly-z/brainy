@@ -1,10 +1,9 @@
-# Google Cloud Storage Cost Optimization Guide for Brainy v4.0.0
-
+# Google Cloud Storage Cost Optimization Guide for Brainy
 > **Cost Impact**: Reduce storage costs from $138k/year to $8.3k/year at 500TB scale (**94% savings**)
 
 ## Overview
 
-Brainy v4.0.0 provides enterprise-grade cost optimization features for Google Cloud Storage, including lifecycle policies and Autoclass for automatic tier management.
+Brainy provides enterprise-grade cost optimization features for Google Cloud Storage, including lifecycle policies and Autoclass for automatic tier management.
 
 ## Cost Breakdown (Before Optimization)
 
@@ -35,8 +34,8 @@ import { GcsStorage } from '@soulcraft/brainy/storage'
 
 // Initialize Brainy with GCS storage
 const storage = new GcsStorage({
-  bucketName: 'my-brainy-data',
-  keyFilename: './service-account.json'  // Or use ADC
+ bucketName: 'my-brainy-data',
+ keyFilename: './service-account.json' // Or use ADC
 })
 
 const brain = new Brainy({ storage })
@@ -44,16 +43,16 @@ await brain.init()
 
 // Set lifecycle policy for automatic archival
 await storage.setLifecyclePolicy({
-  rules: [{
-    condition: { age: 30 },
-    action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
-  }, {
-    condition: { age: 90 },
-    action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
-  }, {
-    condition: { age: 365 },
-    action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
-  }]
+ rules: [{
+ condition: { age: 30 },
+ action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
+ }, {
+ condition: { age: 90 },
+ action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
+ }, {
+ condition: { age: 365 },
+ action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
+ }]
 })
 
 // Verify lifecycle policy
@@ -70,10 +69,10 @@ console.log('Lifecycle policy active:', policy.rules.length, 'rules')
 - 10% of data 365+ days old (Archive)
 
 ```
-Standard (200TB):     200TB × $0.020/GB × 12 = $48,000/year
-Nearline (150TB):     150TB × $0.010/GB × 12 = $18,000/year
-Coldline (100TB):     100TB × $0.004/GB × 12 = $4,800/year
-Archive (50TB):       50TB × $0.0012/GB × 12 = $720/year
+Standard (200TB): 200TB × $0.020/GB × 12 = $48,000/year
+Nearline (150TB): 150TB × $0.010/GB × 12 = $18,000/year
+Coldline (100TB): 100TB × $0.004/GB × 12 = $4,800/year
+Archive (50TB): 50TB × $0.0012/GB × 12 = $720/year
 
 Total Storage Cost: $71,520/year
 Total with Operations: ~$76,500/year
@@ -89,7 +88,7 @@ Savings: $66,500/year (46%)
 ```typescript
 // Enable Autoclass for automatic tier management
 await storage.enableAutoclass({
-  terminalStorageClass: 'ARCHIVE'  // Optional: Set lowest tier
+ terminalStorageClass: 'ARCHIVE' // Optional: Set lowest tier
 })
 
 // Benefits:
@@ -116,10 +115,10 @@ await storage.enableAutoclass({
 - 40% Archive (cold data)
 
 ```
-Standard (50TB):      50TB × $0.020/GB × 12 = $12,000/year
-Nearline (75TB):      75TB × $0.010/GB × 12 = $9,000/year
-Coldline (175TB):     175TB × $0.004/GB × 12 = $8,400/year
-Archive (200TB):      200TB × $0.0012/GB × 12 = $2,880/year
+Standard (50TB): 50TB × $0.020/GB × 12 = $12,000/year
+Nearline (75TB): 75TB × $0.010/GB × 12 = $9,000/year
+Coldline (175TB): 175TB × $0.004/GB × 12 = $8,400/year
+Archive (200TB): 200TB × $0.0012/GB × 12 = $2,880/year
 
 Total Storage Cost: $32,280/year
 Total with Operations: ~$37,000/year
@@ -133,24 +132,24 @@ Savings vs Standard: $106,000/year (74%)
 ```typescript
 // Enable Autoclass for vectors (frequently searched)
 await storage.enableAutoclass({
-  terminalStorageClass: 'COLDLINE'  // Don't archive vectors deeply
+ terminalStorageClass: 'COLDLINE' // Don't archive vectors deeply
 })
 
 // Set lifecycle policy for metadata (less frequently accessed)
 await storage.setLifecyclePolicy({
-  rules: [{
-    condition: { age: 30, matchesPrefix: ['entities/nouns/metadata/'] },
-    action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
-  }, {
-    condition: { age: 60, matchesPrefix: ['entities/nouns/metadata/'] },
-    action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
-  }, {
-    condition: { age: 180, matchesPrefix: ['entities/nouns/metadata/'] },
-    action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
-  }, {
-    condition: { age: 730, matchesPrefix: ['_system/'] },
-    action: { type: 'Delete' }  // Delete old system files after 2 years
-  }]
+ rules: [{
+ condition: { age: 30, matchesPrefix: ['entities/nouns/metadata/'] },
+ action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
+ }, {
+ condition: { age: 60, matchesPrefix: ['entities/nouns/metadata/'] },
+ action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
+ }, {
+ condition: { age: 180, matchesPrefix: ['entities/nouns/metadata/'] },
+ action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
+ }, {
+ condition: { age: 730, matchesPrefix: ['_system/'] },
+ action: { type: 'Delete' } // Delete old system files after 2 years
+ }]
 })
 ```
 
@@ -158,18 +157,18 @@ await storage.setLifecyclePolicy({
 
 **Vectors (300TB with Autoclass):**
 ```
-Standard (30TB):      30TB × $0.020/GB × 12 = $7,200/year
-Nearline (45TB):      45TB × $0.010/GB × 12 = $5,400/year
-Coldline (225TB):     225TB × $0.004/GB × 12 = $10,800/year
+Standard (30TB): 30TB × $0.020/GB × 12 = $7,200/year
+Nearline (45TB): 45TB × $0.010/GB × 12 = $5,400/year
+Coldline (225TB): 225TB × $0.004/GB × 12 = $10,800/year
 Subtotal: $23,400/year
 ```
 
 **Metadata (200TB with Lifecycle Policy):**
 ```
-Standard (30TB):      30TB × $0.020/GB × 12 = $7,200/year
-Nearline (40TB):      40TB × $0.010/GB × 12 = $4,800/year
-Coldline (80TB):      80TB × $0.004/GB × 12 = $3,840/year
-Archive (50TB):       50TB × $0.0012/GB × 12 = $720/year
+Standard (30TB): 30TB × $0.020/GB × 12 = $7,200/year
+Nearline (40TB): 40TB × $0.010/GB × 12 = $4,800/year
+Coldline (80TB): 80TB × $0.004/GB × 12 = $3,840/year
+Archive (50TB): 50TB × $0.0012/GB × 12 = $720/year
 Subtotal: $16,560/year
 ```
 
@@ -182,16 +181,16 @@ Subtotal: $16,560/year
 
 ```typescript
 await storage.setLifecyclePolicy({
-  rules: [{
-    condition: { age: 14 },
-    action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
-  }, {
-    condition: { age: 30 },
-    action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
-  }, {
-    condition: { age: 90 },
-    action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
-  }]
+ rules: [{
+ condition: { age: 14 },
+ action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
+ }, {
+ condition: { age: 30 },
+ action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
+ }, {
+ condition: { age: 90 },
+ action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
+ }]
 })
 
 // Note: Archive class has 365-day minimum storage duration
@@ -202,10 +201,10 @@ await storage.setLifecyclePolicy({
 
 **After 1 year:**
 ```
-Standard (25TB):      25TB × $0.020/GB × 12 = $6,000/year
-Nearline (50TB):      50TB × $0.010/GB × 12 = $6,000/year
-Coldline (75TB):      75TB × $0.004/GB × 12 = $3,600/year
-Archive (350TB):      350TB × $0.0012/GB × 12 = $5,040/year
+Standard (25TB): 25TB × $0.020/GB × 12 = $6,000/year
+Nearline (50TB): 50TB × $0.010/GB × 12 = $6,000/year
+Coldline (75TB): 75TB × $0.004/GB × 12 = $3,600/year
+Archive (350TB): 350TB × $0.0012/GB × 12 = $5,040/year
 
 Total Storage Cost: $20,640/year
 Total with Operations: ~$25,500/year
@@ -241,15 +240,15 @@ Warning: High retrieval costs if archived data is accessed frequently
 ### Efficient Cleanup
 
 ```typescript
-// v4.0.0: Batch delete (100 objects per request for GCS)
+// Batch delete (100 objects per request for GCS)
 const idsToDelete = [/* array of entity IDs */]
 
 const paths = idsToDelete.flatMap(id => {
-  const shard = id.substring(0, 2)
-  return [
-    `entities/nouns/vectors/${shard}/${id}.json`,
-    `entities/nouns/metadata/${shard}/${id}.json`
-  ]
+ const shard = id.substring(0, 2)
+ return [
+ `entities/nouns/vectors/${shard}/${id}.json`,
+ `entities/nouns/metadata/${shard}/${id}.json`
+ ]
 })
 
 // Batch delete
@@ -271,9 +270,9 @@ console.log('Terminal class:', status.terminalStorageClass)
 
 // Example output:
 // {
-//   enabled: true,
-//   terminalStorageClass: 'ARCHIVE',
-//   toggleTime: '2025-01-15T10:30:00Z'
+// enabled: true,
+// terminalStorageClass: 'ARCHIVE',
+// toggleTime: '2025-01-15T10:30:00Z'
 // }
 ```
 
@@ -336,7 +335,7 @@ Monthly cost trend: Decreasing 8-12% per month as data ages into cheaper classes
 // Check Autoclass status
 const status = await storage.getAutoclassStatus()
 if (!status.enabled) {
-  await storage.enableAutoclass({ terminalStorageClass: 'ARCHIVE' })
+ await storage.enableAutoclass({ terminalStorageClass: 'ARCHIVE' })
 }
 
 // Autoclass requires 24-48 hours for initial transitions
@@ -365,8 +364,8 @@ if (!status.enabled) {
 ```typescript
 // Use ADC instead of service account key file
 const storage = new GcsStorage({
-  bucketName: 'my-brainy-data'
-  // No keyFilename needed - uses ADC automatically
+ bucketName: 'my-brainy-data'
+ // No keyFilename needed - uses ADC automatically
 })
 
 // ADC authentication order:
@@ -417,6 +416,5 @@ export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
 
 ---
 
-**Version**: v4.0.0
 **Last Updated**: 2025-10-17
 **Cloud Provider**: Google Cloud Storage

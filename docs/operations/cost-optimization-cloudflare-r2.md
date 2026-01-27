@@ -1,10 +1,9 @@
-# Cloudflare R2 Cost Optimization Guide for Brainy v4.0.0
-
+# Cloudflare R2 Cost Optimization Guide for Brainy
 > **Cost Impact**: $0 egress fees + 96% storage savings = Lowest cloud storage costs
 
 ## Overview
 
-Cloudflare R2 is an S3-compatible object storage with **zero egress fees**, making it ideal for high-traffic applications. Brainy v4.0.0 fully supports R2 with lifecycle policies and batch operations.
+Cloudflare R2 is an S3-compatible object storage with **zero egress fees**, making it ideal for high-traffic applications. Brainy fully supports R2 with lifecycle policies and batch operations.
 
 ## Cost Breakdown
 
@@ -49,7 +48,7 @@ Savings vs AWS: $156,000/year (62%)
 - Cloudflare plans to add infrequent access tiers
 
 **When lifecycle features arrive:**
-- Brainy v4.0.0 is already prepared with `setLifecyclePolicy()` support
+- Brainy is already prepared with `setLifecyclePolicy()` support
 - Will work seamlessly once Cloudflare enables lifecycle management
 
 ## Strategy 1: Use R2 Standard (Current Best Practice)
@@ -62,11 +61,11 @@ import { S3CompatibleStorage } from '@soulcraft/brainy/storage'
 
 // R2 uses S3-compatible API
 const storage = new S3CompatibleStorage({
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  bucket: 'my-brainy-data',
-  region: 'auto',  // R2 uses 'auto' region
-  accessKeyId: process.env.R2_ACCESS_KEY_ID,
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+ endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+ bucket: 'my-brainy-data',
+ region: 'auto', // R2 uses 'auto' region
+ accessKeyId: process.env.R2_ACCESS_KEY_ID,
+ secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
 })
 
 const brain = new Brainy({ storage })
@@ -96,23 +95,23 @@ Total: $90,081/year
 ```typescript
 // Cloudflare Worker (runs at edge)
 export default {
-  async fetch(request, env) {
-    // Initialize Brainy with R2
-    const storage = new S3CompatibleStorage({
-      endpoint: env.R2_ENDPOINT,
-      bucket: env.R2_BUCKET,
-      accessKeyId: env.R2_ACCESS_KEY,
-      secretAccessKey: env.R2_SECRET_KEY,
-      region: 'auto'
-    })
+ async fetch(request, env) {
+ // Initialize Brainy with R2
+ const storage = new S3CompatibleStorage({
+ endpoint: env.R2_ENDPOINT,
+ bucket: env.R2_BUCKET,
+ accessKeyId: env.R2_ACCESS_KEY,
+ secretAccessKey: env.R2_SECRET_KEY,
+ region: 'auto'
+ })
 
-    const brain = new Brainy({ storage })
-    await brain.init()
+ const brain = new Brainy({ storage })
+ await brain.init()
 
-    // Process at edge (no origin server needed)
-    const results = await brain.search(request.query)
-    return new Response(JSON.stringify(results))
-  }
+ // Process at edge (no origin server needed)
+ const results = await brain.search(request.query)
+ return new Response(JSON.stringify(results))
+ }
 }
 ```
 
@@ -121,18 +120,18 @@ export default {
 ```
 R2 Storage (500TB): $90,000/year
 Workers (10M requests/day):
-  - First 100k requests/day: FREE
-  - Additional 350M requests/month: $1,750/year
-  - CPU time (50ms avg): $5,000/year
+ - First 100k requests/day: FREE
+ - Additional 350M requests/month: $1,750/year
+ - CPU time (50ms avg): $5,000/year
 
 Total: $96,750/year
 
 vs Traditional Setup (AWS S3 + EC2 + CloudFront):
-  - S3: $138,000/year
-  - EC2 (t3.xlarge × 4): $24,000/year
-  - CloudFront egress: $50,000/year
-  - Load balancer: $3,000/year
-  Total: $215,000/year
+ - S3: $138,000/year
+ - EC2 (t3.xlarge × 4): $24,000/year
+ - CloudFront egress: $50,000/year
+ - Load balancer: $3,000/year
+ Total: $215,000/year
 
 Savings: $118,250/year (55%)
 ```
@@ -144,20 +143,20 @@ Savings: $118,250/year (55%)
 ```typescript
 // Use R2 for frequently accessed data (zero egress)
 const hotStorage = new S3CompatibleStorage({
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  bucket: 'brainy-hot',
-  region: 'auto',
-  accessKeyId: process.env.R2_ACCESS_KEY_ID,
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+ endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+ bucket: 'brainy-hot',
+ region: 'auto',
+ accessKeyId: process.env.R2_ACCESS_KEY_ID,
+ secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
 })
 
 // Use AWS S3 with Intelligent-Tiering for cold data
 const coldStorage = new S3CompatibleStorage({
-  endpoint: 's3.amazonaws.com',
-  bucket: 'brainy-archive',
-  region: 'us-east-1',
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ endpoint: 's3.amazonaws.com',
+ bucket: 'brainy-archive',
+ region: 'us-east-1',
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
 })
 
 // Initialize separate Brainy instances or implement tiering logic
@@ -167,17 +166,17 @@ const coldStorage = new S3CompatibleStorage({
 
 ```
 R2 Hot Data (300TB):
-  Storage: 300TB × $0.015/GB × 12 = $54,000/year
-  Egress: $0
+ Storage: 300TB × $0.015/GB × 12 = $54,000/year
+ Egress: $0
 
 S3 Cold Data (200TB with lifecycle → Deep Archive):
-  Storage: 200TB × $0.00099/GB × 12 = $2,376/year
-  Ops: $1,000/year
+ Storage: 200TB × $0.00099/GB × 12 = $2,376/year
+ Ops: $1,000/year
 
 Total: $57,376/year
 
 vs All AWS S3:
-  - S3 storage + egress: $251,000/year
+ - S3 storage + egress: $251,000/year
 
 Savings: $193,624/year (77%)
 ```
@@ -187,15 +186,15 @@ Savings: $193,624/year (77%)
 ### Efficient Bulk Deletions
 
 ```typescript
-// v4.0.0: R2 supports S3 batch delete API
+// R2 supports S3 batch delete API
 const idsToDelete = [/* array of entity IDs */]
 
 const paths = idsToDelete.flatMap(id => {
-  const shard = id.substring(0, 2)
-  return [
-    `entities/nouns/vectors/${shard}/${id}.json`,
-    `entities/nouns/metadata/${shard}/${id}.json`
-  ]
+ const shard = id.substring(0, 2)
+ return [
+ `entities/nouns/vectors/${shard}/${id}.json`,
+ `entities/nouns/metadata/${shard}/${id}.json`
+ ]
 })
 
 // Batch delete (1000 objects per request)
@@ -231,10 +230,10 @@ https://storage.yourdomain.com/entities/nouns/vectors/...
 ```typescript
 // Worker triggered on R2 object upload
 export default {
-  async fetch(request, env) {
-    // Process new objects automatically
-    // E.g., index new entities, generate thumbnails, etc.
-  }
+ async fetch(request, env) {
+ // Process new objects automatically
+ // E.g., index new entities, generate thumbnails, etc.
+ }
 }
 
 // Cost: Only pay for Worker execution (no polling needed)
@@ -244,7 +243,7 @@ export default {
 
 ```typescript
 // Generate presigned URL for direct browser uploads
-const url = await storage.getPresignedUrl('upload-path', 3600)  // 1 hour expiry
+const url = await storage.getPresignedUrl('upload-path', 3600) // 1 hour expiry
 
 // Client uploads directly to R2 (no server bandwidth used)
 ```
@@ -255,7 +254,7 @@ const url = await storage.getPresignedUrl('upload-path', 3600)  // 1 hour expiry
 
 ```typescript
 const status = await storage.getStorageStatus()
-console.log('Storage type:', status.type)  // 's3-compatible'
+console.log('Storage type:', status.type) // 's3-compatible'
 console.log('Bucket:', status.details.bucket)
 console.log('Endpoint:', status.details.endpoint)
 ```
@@ -318,20 +317,20 @@ Egress: Unlimited (always free)
 
 ```bash
 # Install rclone
-brew install rclone  # or apt-get install rclone
+brew install rclone # or apt-get install rclone
 
 # Configure S3 source
 rclone config create s3-source s3 \
-  access_key_id=$AWS_ACCESS_KEY \
-  secret_access_key=$AWS_SECRET_KEY \
-  region=us-east-1
+ access_key_id=$AWS_ACCESS_KEY \
+ secret_access_key=$AWS_SECRET_KEY \
+ region=us-east-1
 
 # Configure R2 destination
 rclone config create r2-dest s3 \
-  access_key_id=$R2_ACCESS_KEY \
-  secret_access_key=$R2_SECRET_KEY \
-  endpoint=https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com \
-  region=auto
+ access_key_id=$R2_ACCESS_KEY \
+ secret_access_key=$R2_SECRET_KEY \
+ endpoint=https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com \
+ region=auto
 
 # Copy data
 rclone copy s3-source:my-bucket r2-dest:my-bucket --progress
@@ -361,17 +360,17 @@ ROI: 3.4 months
 ### Prepared for Future Features
 
 ```typescript
-// Brainy v4.0.0 is ready for R2 lifecycle features
+// Brainy is ready for R2 lifecycle features
 await storage.setLifecyclePolicy({
-  rules: [{
-    id: 'archive-old-data',
-    prefix: 'entities/',
-    status: 'Enabled',
-    transitions: [
-      { days: 30, storageClass: 'INFREQUENT_ACCESS' },  // When available
-      { days: 90, storageClass: 'ARCHIVE' }
-    ]
-  }]
+ rules: [{
+ id: 'archive-old-data',
+ prefix: 'entities/',
+ status: 'Enabled',
+ transitions: [
+ { days: 30, storageClass: 'INFREQUENT_ACCESS' }, // When available
+ { days: 90, storageClass: 'ARCHIVE' }
+ ]
+ }]
 })
 
 // Expected cost impact (when lifecycle is available):
@@ -388,11 +387,11 @@ await storage.setLifecyclePolicy({
 ```typescript
 // Ensure correct endpoint format
 const storage = new S3CompatibleStorage({
-  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-  // NOT: `https://r2.cloudflarestorage.com/${accountId}`
+ endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+ // NOT: `https://r2.cloudflarestorage.com/${accountId}`
 
-  region: 'auto',  // R2 requires 'auto'
-  forcePathStyle: false  // R2 uses virtual-hosted-style
+ region: 'auto', // R2 requires 'auto'
+ forcePathStyle: false // R2 uses virtual-hosted-style
 })
 ```
 
@@ -446,7 +445,6 @@ const storage = new S3CompatibleStorage({
 
 ---
 
-**Version**: v4.0.0
 **Last Updated**: 2025-10-17
 **Cloud Provider**: Cloudflare R2
 **Key Advantage**: **$0 egress fees forever**

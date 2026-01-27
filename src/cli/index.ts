@@ -68,7 +68,7 @@ ${chalk.cyan('Examples:')}
   $ brainy vfs search "React components"
   $ brainy vfs similar /code/Button.tsx
 
-  ${chalk.dim('# Storage management (v4.0.0)')}
+  ${chalk.dim('# Storage management')}
   $ brainy storage status --quota
   $ brainy storage lifecycle set ${chalk.dim('# Interactive mode')}
   $ brainy storage cost-estimate
@@ -217,11 +217,11 @@ program
 
 program
   .command('path <from> <to>')
-  .description('Find semantic path between items (v3.21.0)')
+  .description('Find semantic path between items')
   .option('--steps', 'Show step-by-step path')
   .option('--max-hops <number>', 'Maximum path length', '5')
   .action(() => {
-    console.log(chalk.yellow('\n⚠️  Semantic path finding coming in v3.21.0'))
+    console.log(chalk.yellow('\n⚠️  Semantic path finding coming soon'))
     console.log(chalk.dim('This feature requires implementing graph traversal algorithms'))
     console.log(chalk.dim('Use "brainy neighbors" and "brainy hierarchy" to explore connections'))
   })
@@ -446,7 +446,7 @@ program
     vfsCommands.tree(path, options)
   })
 
-// ===== Storage Management Commands (v4.0.0) =====
+// ===== Storage Management Commands =====
 
 program
   .command('storage')
@@ -610,7 +610,7 @@ program
   .option('--iterations <n>', 'Number of iterations', '100')
   .action(utilityCommands.benchmark)
 
-// ===== COW Commands (v5.0.0) - Instant Fork & Branching =====
+// ===== COW Commands - Instant Fork & Branching =====
 
 program
   .command('fork [name]')

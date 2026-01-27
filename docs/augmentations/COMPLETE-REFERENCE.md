@@ -1,8 +1,8 @@
-# 🔌 Brainy v4.0.0 Augmentations Complete Reference
+# 🔌 Brainy Augmentations Complete Reference
 
 > **All augmentations that power Brainy's extensibility - with locations, usage, and examples**
 >
-> **⚠️ v4.0.0 Update**: Updated for metadata structure changes and billion-scale optimizations
+> **⚠️ Update**: Updated for metadata structure changes and billion-scale optimizations
 
 ## Quick Start
 
@@ -10,37 +10,37 @@
 import { Brainy } from '@soulcraft/brainy'
 
 const brain = new Brainy({
-  // Augmentations auto-configure based on environment
-  storage: 'auto',     // Storage augmentation
-  cache: true,         // Cache augmentation
-  index: true          // Index augmentation
+ // Augmentations auto-configure based on environment
+ storage: 'auto', // Storage augmentation
+ cache: true, // Cache augmentation
+ index: true // Index augmentation
 })
 
-await brain.init()  // Augmentations initialize automatically
+await brain.init() // Augmentations initialize automatically
 ```
 
-## v4.0.0 Augmentation Architecture
+## Augmentation Architecture
 
 ### Key Improvements for Billion-Scale Performance
 
 1. **Metadata/Vector Separation**: Augmentations now work with separated metadata and vectors
-   - Metadata stored separately from vector data
-   - 99.2% memory reduction for type tracking
-   - Two-file storage pattern for optimal I/O
+ - Metadata stored separately from vector data
+ - 99.2% memory reduction for type tracking
+ - Two-file storage pattern for optimal I/O
 
 2. **Type System Enforcement**: All metadata requires type fields
-   - `NounMetadata` requires `noun: NounType`
-   - `VerbMetadata` requires `verb: VerbType`
-   - Type inference system available as public API
+ - `NounMetadata` requires `noun: NounType`
+ - `VerbMetadata` requires `verb: VerbType`
+ - Type inference system available as public API
 
 3. **Storage Adapter Pattern**: Internal vs public method distinction
-   - `_methods`: Return pure structures (HNSWNoun, HNSWVerb)
-   - Public methods: Return WithMetadata types
-   - MetadataEnforcer Proxy ensures proper access
+ - `_methods`: Return pure structures (HNSWNoun, HNSWVerb)
+ - Public methods: Return WithMetadata types
+ - MetadataEnforcer Proxy ensures proper access
 
 ### What This Means for Augmentation Users
 
-**✅ If you use built-in augmentations**: No changes needed! They're all updated for v4.0.0.
+**✅ If you use built-in augmentations**: No changes needed! They're all updated.
 
 **⚠️ If you created custom storage augmentations**: Update your storage adapter to:
 - Wrap metadata with required `noun`/`verb` fields
@@ -69,81 +69,81 @@ Augmentations are modular extensions that add functionality to Brainy without cl
 ## Storage Augmentations (8 total)
 
 ### MemoryStorageAugmentation
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Auto-enabled**: When `storage: 'memory'` or in test environments  
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Auto-enabled**: When `storage: 'memory'` or in test environments
 **Purpose**: In-memory storage for testing and temporary data
 ```typescript
 const brain = new Brainy({ storage: 'memory' })
 ```
 
-### FileSystemStorageAugmentation  
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Auto-enabled**: When `storage: 'filesystem'` or Node.js detected  
+### FileSystemStorageAugmentation
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Auto-enabled**: When `storage: 'filesystem'` or Node.js detected
 **Purpose**: Persistent file-based storage for Node.js applications
 ```typescript
-const brain = new Brainy({ 
-  storage: { type: 'filesystem', path: './data' }
+const brain = new Brainy({
+ storage: { type: 'filesystem', path: './data' }
 })
 ```
 
 ### OPFSStorageAugmentation
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Auto-enabled**: When `storage: 'opfs'` or browser with OPFS support  
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Auto-enabled**: When `storage: 'opfs'` or browser with OPFS support
 **Purpose**: Browser-based persistent storage using Origin Private File System
 ```typescript
 const brain = new Brainy({ storage: 'opfs' })
 ```
 
 ### S3StorageAugmentation
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Manual**: Requires AWS credentials  
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Manual**: Requires AWS credentials
 **Purpose**: AWS S3-compatible cloud storage
 ```typescript
-const brain = new Brainy({ 
-  storage: {
-    type: 's3',
-    bucket: 'my-bucket',
-    region: 'us-east-1',
-    credentials: { accessKeyId, secretAccessKey }
-  }
+const brain = new Brainy({
+ storage: {
+ type: 's3',
+ bucket: 'my-bucket',
+ region: 'us-east-1',
+ credentials: { accessKeyId, secretAccessKey }
+ }
 })
 ```
 
 ### R2StorageAugmentation
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Manual**: Requires Cloudflare credentials  
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Manual**: Requires Cloudflare credentials
 **Purpose**: Cloudflare R2 storage (S3-compatible)
 ```typescript
-const brain = new Brainy({ 
-  storage: {
-    type: 'r2',
-    accountId: 'xxx',
-    bucket: 'my-bucket',
-    credentials: { accessKeyId, secretAccessKey }
-  }
+const brain = new Brainy({
+ storage: {
+ type: 'r2',
+ accountId: 'xxx',
+ bucket: 'my-bucket',
+ credentials: { accessKeyId, secretAccessKey }
+ }
 })
 ```
 
 ### GCSStorageAugmentation
-**Location**: `src/augmentations/storageAugmentations.ts`  
-**Manual**: Requires Google Cloud credentials  
+**Location**: `src/augmentations/storageAugmentations.ts`
+**Manual**: Requires Google Cloud credentials
 **Purpose**: Google Cloud Storage
 ```typescript
-const brain = new Brainy({ 
-  storage: {
-    type: 'gcs',
-    bucket: 'my-bucket',
-    projectId: 'my-project'
-  }
+const brain = new Brainy({
+ storage: {
+ type: 'gcs',
+ bucket: 'my-bucket',
+ projectId: 'my-project'
+ }
 })
 ```
 
 ### StorageAugmentation (base)
-**Location**: `src/augmentations/storageAugmentation.ts`  
+**Location**: `src/augmentations/storageAugmentation.ts`
 **Purpose**: Base class for custom storage implementations
 
 ### DynamicStorageAugmentation
-**Location**: `src/augmentations/storageAugmentation.ts`  
+**Location**: `src/augmentations/storageAugmentation.ts`
 **Purpose**: Runtime storage adapter switching
 
 ---
@@ -151,17 +151,17 @@ const brain = new Brainy({
 ## Performance Augmentations (7 total)
 
 ### CacheAugmentation
-**Location**: `src/augmentations/cacheAugmentation.ts`  
-**Auto-enabled**: When `cache: true` (default)  
+**Location**: `src/augmentations/cacheAugmentation.ts`
+**Auto-enabled**: When `cache: true` (default)
 **Purpose**: LRU cache for search results and frequent queries
 ```typescript
-brain.clearCache()           // Exposed via API
-brain.getCacheStats()        // Cache hit/miss statistics
+brain.clearCache() // Exposed via API
+brain.getCacheStats() // Cache hit/miss statistics
 ```
 
 ### IndexAugmentation
-**Location**: `src/augmentations/indexAugmentation.ts`  
-**Auto-enabled**: When `index: true` (default)  
+**Location**: `src/augmentations/indexAugmentation.ts`
+**Auto-enabled**: When `index: true` (default)
 **Purpose**: Metadata indexing for O(1) field lookups
 ```typescript
 brain.rebuildMetadataIndex() // Exposed via API
@@ -170,41 +170,41 @@ brain.find({ where: { category: 'tech' } })
 ```
 
 ### MetricsAugmentation
-**Location**: `src/augmentations/metricsAugmentation.ts`  
-**Auto-enabled**: Always active  
+**Location**: `src/augmentations/metricsAugmentation.ts`
+**Auto-enabled**: Always active
 **Purpose**: Performance metrics and statistics collection
 ```typescript
-brain.getStats()        // Comprehensive metrics
+brain.getStats() // Comprehensive metrics
 ```
 
 ### MonitoringAugmentation
-**Location**: `src/augmentations/monitoringAugmentation.ts`  
-**Manual**: Register for detailed monitoring  
+**Location**: `src/augmentations/monitoringAugmentation.ts`
+**Manual**: Register for detailed monitoring
 **Purpose**: Real-time performance monitoring and alerts
 
 ### BatchProcessingAugmentation
-**Location**: `src/augmentations/batchProcessingAugmentation.ts`  
-**Auto-enabled**: For batch operations  
+**Location**: `src/augmentations/batchProcessingAugmentation.ts`
+**Auto-enabled**: For batch operations
 **Purpose**: Optimizes bulk add/update/delete operations
 ```typescript
-brain.addNouns([...])        // Automatically batched
+brain.addNouns([...]) // Automatically batched
 ```
 
 ### RequestDeduplicatorAugmentation
-**Location**: `src/augmentations/requestDeduplicatorAugmentation.ts`  
-**Auto-enabled**: Always active  
+**Location**: `src/augmentations/requestDeduplicatorAugmentation.ts`
+**Auto-enabled**: Always active
 **Purpose**: Prevents duplicate concurrent operations
 
 ### ConnectionPoolAugmentation
-**Location**: `src/augmentations/connectionPoolAugmentation.ts`  
-**Auto-enabled**: For network storage  
+**Location**: `src/augmentations/connectionPoolAugmentation.ts`
+**Auto-enabled**: For network storage
 **Purpose**: Connection pooling for cloud storage adapters
 
 ---
 
 ## Data Integrity Augmentations (3 total)
 
-**Auto-enabled**: When `wal: true`  
+**Auto-enabled**: When `wal: true`
 **Purpose**: Write-ahead logging for crash recovery
 ```typescript
 const brain = new Brainy({ wal: true })
@@ -212,8 +212,8 @@ const brain = new Brainy({ wal: true })
 ```
 
 ### EntityRegistryAugmentation
-**Location**: `src/augmentations/entityRegistryAugmentation.ts`  
-**Auto-enabled**: For streaming operations  
+**Location**: `src/augmentations/entityRegistryAugmentation.ts`
+**Auto-enabled**: For streaming operations
 **Purpose**: High-speed deduplication for real-time data
 ```typescript
 // Prevents duplicate entities in streaming scenarios
@@ -221,8 +221,8 @@ brain.add(data) // Automatically deduplicated
 ```
 
 ### AutoRegisterEntitiesAugmentation
-**Location**: `src/augmentations/entityRegistryAugmentation.ts`  
-**Manual**: For automatic entity discovery  
+**Location**: `src/augmentations/entityRegistryAugmentation.ts`
+**Manual**: For automatic entity discovery
 **Purpose**: Auto-discovers and registers entities from data
 
 ---
@@ -230,20 +230,20 @@ brain.add(data) // Automatically deduplicated
 ## Intelligence Augmentations (2 total)
 
 ### NeuralImportAugmentation
-**Location**: `src/augmentations/neuralImport.ts`  
-**Manual**: Via `brain.neuralImport()`  
+**Location**: `src/augmentations/neuralImport.ts`
+**Manual**: Via `brain.neuralImport()`
 **Purpose**: AI-powered smart data import
 ```typescript
 const result = await brain.neuralImport(data, {
-  confidenceThreshold: 0.7,
-  autoApply: true
+ confidenceThreshold: 0.7,
+ autoApply: true
 })
 // Automatically detects entities and relationships
 ```
 
 ### IntelligentVerbScoringAugmentation
-**Location**: `src/augmentations/intelligentVerbScoringAugmentation.ts`  
-**Auto-enabled**: When verbs are used  
+**Location**: `src/augmentations/intelligentVerbScoringAugmentation.ts`
+**Auto-enabled**: When verbs are used
 **Purpose**: ML-based relationship strength scoring
 ```typescript
 brain.verbScoring.train(feedback)
@@ -255,8 +255,8 @@ brain.verbScoring.getScore(verbId)
 ## Communication Augmentations (4 total)
 
 ### APIServerAugmentation
-**Location**: `src/augmentations/apiServerAugmentation.ts`  
-**Manual**: For server deployments  
+**Location**: `src/augmentations/apiServerAugmentation.ts`
+**Manual**: For server deployments
 **Purpose**: REST/WebSocket/MCP API server
 ```typescript
 const augmentation = new APIServerAugmentation()
@@ -265,8 +265,8 @@ await brain.registerAugmentation(augmentation)
 ```
 
 ### WebSocketConduitAugmentation
-**Location**: `src/augmentations/conduitAugmentations.ts`  
-**Manual**: For Brainy-to-Brainy sync  
+**Location**: `src/augmentations/conduitAugmentations.ts`
+**Manual**: For Brainy-to-Brainy sync
 **Purpose**: Real-time sync between Brainy instances
 ```typescript
 const conduit = new WebSocketConduitAugmentation()
@@ -274,13 +274,13 @@ await conduit.establishConnection('ws://other-brain')
 ```
 
 ### ServerSearchConduitAugmentation
-**Location**: `src/augmentations/serverSearchAugmentations.ts`  
-**Manual**: For client-server search  
+**Location**: `src/augmentations/serverSearchAugmentations.ts`
+**Manual**: For client-server search
 **Purpose**: Search remote Brainy instance, cache locally
 
 ### ServerSearchActivationAugmentation
-**Location**: `src/augmentations/serverSearchAugmentations.ts`  
-**Manual**: Works with ServerSearchConduit  
+**Location**: `src/augmentations/serverSearchAugmentations.ts`
+**Manual**: Works with ServerSearchConduit
 **Purpose**: Triggers and manages server search operations
 
 ---
@@ -288,18 +288,18 @@ await conduit.establishConnection('ws://other-brain')
 ## External Integration (2 total)
 
 ### SynapseAugmentation (base)
-**Location**: `src/augmentations/synapseAugmentation.ts`  
+**Location**: `src/augmentations/synapseAugmentation.ts`
 **Purpose**: Base class for external platform integrations
 ```typescript
 // Example: NotionSynapse, SlackSynapse, etc.
 class NotionSynapse extends SynapseAugmentation {
-  async fetchData() { /* Notion API calls */ }
-  async pushData() { /* Sync to Notion */ }
+ async fetchData() { /* Notion API calls */ }
+ async pushData() { /* Sync to Notion */ }
 }
 ```
 
 ### ExampleFileSystemSynapse
-**Location**: `src/augmentations/synapseAugmentation.ts`  
+**Location**: `src/augmentations/synapseAugmentation.ts`
 **Purpose**: Example implementation for file system sync
 
 ---
@@ -309,11 +309,11 @@ class NotionSynapse extends SynapseAugmentation {
 ### Auto-Configuration
 ```typescript
 const brain = new Brainy({
-  // These auto-register augmentations:
-  storage: 'auto',        // Storage augmentation
-  cache: true,           // Cache augmentation  
-  index: true,           // Index augmentation
-  metrics: true         // Metrics augmentation
+ // These auto-register augmentations:
+ storage: 'auto', // Storage augmentation
+ cache: true, // Cache augmentation
+ index: true, // Index augmentation
+ metrics: true // Metrics augmentation
 })
 ```
 
@@ -333,29 +333,29 @@ await brain.init()
 import { BaseAugmentation } from '@soulcraft/brainy'
 
 class MyAugmentation extends BaseAugmentation {
-  readonly name = 'my-augmentation'
-  readonly timing = 'after'  // before | after | both
-  readonly operations = ['addNoun', 'search']  // Which ops to hook
-  readonly priority = 10      // Execution order (lower = earlier)
-  
-  protected async onInit(): Promise<void> {
-    // Initialize your augmentation
-  }
-  
-  async execute<T>(
-    operation: string,
-    params: any,
-    context?: AugmentationContext
-  ): Promise<T | void> {
-    // Your augmentation logic
-    if (operation === 'addNoun') {
-      console.log('Noun added:', params)
-    }
-  }
-  
-  protected async onShutdown(): Promise<void> {
-    // Cleanup
-  }
+ readonly name = 'my-augmentation'
+ readonly timing = 'after' // before | after | both
+ readonly operations = ['addNoun', 'search'] // Which ops to hook
+ readonly priority = 10 // Execution order (lower = earlier)
+
+ protected async onInit(): Promise<void> {
+ // Initialize your augmentation
+ }
+
+ async execute<T>(
+ operation: string,
+ params: any,
+ context?: AugmentationContext
+ ): Promise<T | void> {
+ // Your augmentation logic
+ if (operation === 'addNoun') {
+ console.log('Noun added:', params)
+ }
+ }
+
+ protected async onShutdown(): Promise<void> {
+ // Cleanup
+ }
 }
 ```
 

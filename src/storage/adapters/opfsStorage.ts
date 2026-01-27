@@ -57,7 +57,7 @@ const ROOT_DIR = 'opfs-vector-db'
  * OPFS storage adapter for browser environments
  * Uses the Origin Private File System API to store data persistently
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -97,7 +97,6 @@ export class OPFSStorage extends BaseStorage {
    * - Sequential processing preferred for stability
    *
    * @returns OPFS-optimized batch configuration
-   * @since v4.11.0
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -172,7 +171,7 @@ export class OPFSStorage extends BaseStorage {
       // Initialize counts from storage
       await this.initializeCounts()
 
-      // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+      // Initialize GraphAdjacencyIndex and type statistics
       await super.init()
     } catch (error) {
       console.error('Failed to initialize OPFS storage:', error)
@@ -232,7 +231,7 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
+  // Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
 
   /**
    * Delete an edge from storage
@@ -482,14 +481,14 @@ export class OPFSStorage extends BaseStorage {
       // Remove all files in the index directory
       await removeDirectoryContents(this.indexDir!)
 
-      // v5.6.1: Remove COW (copy-on-write) version control data
+      // Remove COW (copy-on-write) version control data
       // This directory stores all git-like versioning data (commits, trees, blobs, refs)
       // Must be deleted to fully clear all data including version history
       try {
         // Delete the entire _cow/ directory (not just contents)
         await this.rootDir!.removeEntry('_cow', { recursive: true })
 
-        // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+        // Reset COW managers (but don't disable COW - it's always enabled)
         // COW will re-initialize automatically on next use
         this.refManager = undefined
         this.blobStorage = undefined
@@ -505,7 +504,7 @@ export class OPFSStorage extends BaseStorage {
       this.statisticsCache = null
       this.statisticsModified = false
 
-      // v5.6.1: Reset entity counters (inherited from BaseStorageAdapter)
+      // Reset entity counters (inherited from BaseStorageAdapter)
       // These in-memory counters must be reset to 0 after clearing all data
       ;(this as any).totalNounCount = 0
       ;(this as any).totalVerbCount = 0
@@ -517,16 +516,16 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker file exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
-  // Quota monitoring configuration (v4.0.0)
+  // Quota monitoring configuration
   private quotaWarningThreshold = 0.8  // Warn at 80% usage
   private quotaCriticalThreshold = 0.95  // Critical at 95% usage
   private lastQuotaCheck: number = 0
@@ -675,7 +674,7 @@ export class OPFSStorage extends BaseStorage {
   }
 
   /**
-   * Get detailed quota status with warnings (v4.0.0)
+   * Get detailed quota status with warnings
    * Monitors storage usage and warns when approaching quota limits
    *
    * @returns Promise that resolves to quota status with warning levels
@@ -769,7 +768,7 @@ export class OPFSStorage extends BaseStorage {
   }
 
   /**
-   * Monitor quota during operations (v4.0.0)
+   * Monitor quota during operations
    * Automatically checks quota at regular intervals and warns if approaching limits
    * Call this before write operations to ensure quota is available
    *
@@ -1185,7 +1184,7 @@ export class OPFSStorage extends BaseStorage {
               }
             }
           } catch (error) {
-            // CRITICAL FIX (v3.37.4): No statistics files exist (first init)
+            // CRITICAL FIX: No statistics files exist (first init)
             // Return minimal stats with counts instead of null
             // This prevents HNSW from seeing entityCount=0 during index rebuild
             return {
@@ -1228,7 +1227,7 @@ export class OPFSStorage extends BaseStorage {
    * @param options Pagination and filter options
    * @returns Promise that resolves to a paginated result of nouns
    */
-  // v5.4.0: Removed pagination overrides (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's type-first implementation
+  // Removed pagination overrides (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's type-first implementation
 
   /**
    * Initialize counts from OPFS storage
@@ -1313,28 +1312,28 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
 
   /**
    * Get a noun's vector for HNSW rebuild
    */
   /**
    * Get vector for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
     return noun ? noun.vector : null
   }
 
-  // CRITICAL FIX (v4.10.1): Mutex locks for HNSW concurrency control
+  // CRITICAL FIX: Mutex locks for HNSW concurrency control
   // Browser environments are single-threaded but async operations can still interleave
   private hnswLocks = new Map<string, Promise<void>>()
 
   /**
    * Save HNSW graph data for a noun
    *
-   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * Uses BaseStorage's getNoun/saveNoun (type-first paths)
    * CRITICAL: Preserves mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
@@ -1354,7 +1353,7 @@ export class OPFSStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Use BaseStorage's getNoun (type-first paths)
       const existingNoun = await this.getNoun(nounId)
 
       if (!existingNoun) {
@@ -1374,7 +1373,7 @@ export class OPFSStorage extends BaseStorage {
         connections: connectionsMap
       }
 
-      // v5.4.0: Use BaseStorage's saveNoun (type-first paths)
+      // Use BaseStorage's saveNoun (type-first paths)
       await this.saveNoun(updatedNoun)
     } finally {
       // Release lock
@@ -1385,7 +1384,7 @@ export class OPFSStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -1415,7 +1414,7 @@ export class OPFSStorage extends BaseStorage {
    * Save HNSW system data (entry point, max level)
    * Storage path: index/hnsw-system.json
    *
-   * CRITICAL FIX (v4.10.1): Mutex locking to prevent race conditions
+   * CRITICAL FIX: Mutex locking to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null

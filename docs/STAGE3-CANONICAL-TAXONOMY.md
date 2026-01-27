@@ -1,4 +1,4 @@
-# Brainy Stage 3: Canonical Taxonomy (v6.0.0)
+# Brainy Stage 3: Canonical Taxonomy
 
 **Status:** FINAL - This is the definitive, timeless taxonomy
 **Total Types:** 169 (42 nouns + 127 verbs)

@@ -1,40 +1,40 @@
-# Storage Architecture (v4.0.0)
+# Storage Architecture
 
-> **Updated for v4.0.0**: Metadata/vector separation, UUID-based sharding, lifecycle management
+> **Updated**: Metadata/vector separation, UUID-based sharding, lifecycle management
 
 ## Storage Structure
 
-### v4.0.0 Architecture: Metadata/Vector Separation
+### Architecture: Metadata/Vector Separation
 
-In v4.0.0, entities and relationships are split into **2 separate files** for optimal performance at billion-entity scale:
+entities and relationships are split into **2 separate files** for optimal performance at billion-entity scale:
 
 ```
 brainy-data/
-├── _system/                                    # System metadata (not sharded)
-│   ├── statistics.json                        # Performance metrics
-│   ├── __metadata_field_index__*.json        # Field indexes
-│   └── __metadata_sorted_index__*.json       # Sorted indexes
+├── _system/ # System metadata (not sharded)
+│ ├── statistics.json # Performance metrics
+│ ├── __metadata_field_index__*.json # Field indexes
+│ └── __metadata_sorted_index__*.json # Sorted indexes
 │
 ├── entities/
-│   ├── nouns/
-│   │   ├── vectors/                          # HNSW graph data (sharded by UUID)
-│   │   │   ├── 00/                          # Shard 00 (first 2 hex digits)
-│   │   │   │   ├── 00123456-....json       # Vector + HNSW connections
-│   │   │   │   └── 00abcdef-....json
-│   │   │   ├── 01/ ... ff/                  # 256 shards total
-│   │   │
-│   │   └── metadata/                         # Business data (sharded by UUID)
-│   │       ├── 00/
-│   │       │   ├── 00123456-....json       # Entity metadata only
-│   │       │   └── 00abcdef-....json
-│   │       ├── 01/ ... ff/
-│   │
-│   └── verbs/
-│       ├── vectors/                          # Relationship vectors (sharded)
-│       │   ├── 00/ ... ff/
-│       │
-│       └── metadata/                         # Relationship data (sharded)
-│           ├── 00/ ... ff/
+│ ├── nouns/
+│ │ ├── vectors/ # HNSW graph data (sharded by UUID)
+│ │ │ ├── 00/ # Shard 00 (first 2 hex digits)
+│ │ │ │ ├── 00123456-....json # Vector + HNSW connections
+│ │ │ │ └── 00abcdef-....json
+│ │ │ ├── 01/ ... ff/ # 256 shards total
+│ │ │
+│ │ └── metadata/ # Business data (sharded by UUID)
+│ │ ├── 00/
+│ │ │ ├── 00123456-....json # Entity metadata only
+│ │ │ └── 00abcdef-....json
+│ │ ├── 01/ ... ff/
+│ │
+│ └── verbs/
+│ ├── vectors/ # Relationship vectors (sharded)
+│ │ ├── 00/ ... ff/
+│ │
+│ └── metadata/ # Relationship data (sharded)
+│ ├── 00/ ... ff/
 ```
 
 ### Why Split Metadata and Vectors?
@@ -50,9 +50,9 @@ brainy-data/
 **How it works:**
 ```typescript
 const uuid = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-const shard = uuid.substring(0, 2)  // "3f"
+const shard = uuid.substring(0, 2) // "3f"
 
-// Vector path:   entities/nouns/vectors/3f/3fa85f64-....json
+// Vector path: entities/nouns/vectors/3f/3fa85f64-....json
 // Metadata path: entities/nouns/metadata/3f/3fa85f64-....json
 ```
 
@@ -64,103 +64,103 @@ const shard = uuid.substring(0, 2)  // "3f"
 
 ## Storage Adapters
 
-Brainy provides multiple storage adapters with identical APIs and v4.0.0 production features:
+Brainy provides multiple storage adapters with identical APIs and production features:
 
 ### FileSystem Storage (Node.js)
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    path: './data',
-    compression: true  // v4.0.0: Gzip compression (60-80% space savings)
-  }
+ storage: {
+ type: 'filesystem',
+ path: './data',
+ compression: true // Gzip compression (60-80% space savings)
+ }
 })
 ```
 - **Use case**: Server applications, CLI tools
 - **Performance**: Direct file I/O with optional compression
 - **Persistence**: Permanent on disk
-- **v4.0.0 Features**:
-  - **Gzip Compression**: 60-80% storage savings with minimal CPU overhead
-  - **Batch Delete**: Efficient bulk deletion with retries
-  - **UUID Sharding**: Automatic 256-shard distribution
+- **Features**:
+ - **Gzip Compression**: 60-80% storage savings with minimal CPU overhead
+ - **Batch Delete**: Efficient bulk deletion with retries
+ - **UUID Sharding**: Automatic 256-shard distribution
 
 ### S3 Compatible Storage (AWS, MinIO, R2)
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    bucket: 'my-brainy-data',
-    region: 'us-east-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 's3',
+ bucket: 'my-brainy-data',
+ region: 'us-east-1',
+ credentials: {
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ }
+ }
 })
 ```
 - **Use case**: Distributed applications, cloud deployments
 - **Performance**: Network dependent, with intelligent caching
 - **Persistence**: Cloud storage durability (99.999999999%)
-- **v4.0.0 Features**:
-  - **Lifecycle Policies**: Automatic tier transitions (Standard → IA → Glacier → Deep Archive)
-  - **Intelligent-Tiering**: Automatic optimization based on access patterns (up to 95% savings)
-  - **Batch Delete**: Efficient bulk deletion (1000 objects per request)
-  - **Cost Impact**: $138k/year → $5.9k/year at 500TB (96% savings!)
+- **Features**:
+ - **Lifecycle Policies**: Automatic tier transitions (Standard → IA → Glacier → Deep Archive)
+ - **Intelligent-Tiering**: Automatic optimization based on access patterns (up to 95% savings)
+ - **Batch Delete**: Efficient bulk deletion (1000 objects per request)
+ - **Cost Impact**: $138k/year → $5.9k/year at 500TB (96% savings!)
 
 ### Google Cloud Storage (GCS)
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs',
-    bucketName: 'my-brainy-data',
-    keyFilename: './service-account.json'  // Or use ADC
-  }
+ storage: {
+ type: 'gcs',
+ bucketName: 'my-brainy-data',
+ keyFilename: './service-account.json' // Or use ADC
+ }
 })
 ```
 - **Use case**: Google Cloud deployments
 - **Performance**: Global CDN with edge caching
 - **Persistence**: 99.999999999% durability
-- **v4.0.0 Features**:
-  - **Lifecycle Policies**: Automatic tier transitions (Standard → Nearline → Coldline → Archive)
-  - **Autoclass**: Intelligent automatic tier optimization
-  - **Batch Delete**: Efficient bulk operations
-  - **Cost Impact**: $138k/year → $8.3k/year at 500TB (94% savings!)
+- **Features**:
+ - **Lifecycle Policies**: Automatic tier transitions (Standard → Nearline → Coldline → Archive)
+ - **Autoclass**: Intelligent automatic tier optimization
+ - **Batch Delete**: Efficient bulk operations
+ - **Cost Impact**: $138k/year → $8.3k/year at 500TB (94% savings!)
 
 ### Azure Blob Storage
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'azure',
-    connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
-    containerName: 'brainy-data'
-  }
+ storage: {
+ type: 'azure',
+ connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
+ containerName: 'brainy-data'
+ }
 })
 ```
 - **Use case**: Azure cloud deployments
 - **Performance**: Global replication with CDN
 - **Persistence**: LRS, ZRS, GRS, RA-GRS options
-- **v4.0.0 Features**:
-  - **Blob Tier Management**: Hot/Cool/Archive tiers (99% cost savings)
-  - **Lifecycle Policies**: Automatic tier transitions and deletions
-  - **Batch Delete**: BlobBatchClient for efficient bulk operations
-  - **Batch Tier Changes**: Move thousands of blobs efficiently
-  - **Archive Rehydration**: Smart rehydration with priority options
+- **Features**:
+ - **Blob Tier Management**: Hot/Cool/Archive tiers (99% cost savings)
+ - **Lifecycle Policies**: Automatic tier transitions and deletions
+ - **Batch Delete**: BlobBatchClient for efficient bulk operations
+ - **Batch Tier Changes**: Move thousands of blobs efficiently
+ - **Archive Rehydration**: Smart rehydration with priority options
 
 ### Origin Private File System (Browser)
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'opfs'
-  }
+ storage: {
+ type: 'opfs'
+ }
 })
 ```
 - **Use case**: Browser applications, PWAs
 - **Performance**: Near-native file system speed
 - **Persistence**: Permanent in browser (with quota limits)
-- **v4.0.0 Features**:
-  - **Quota Monitoring**: Real-time quota tracking and warnings
-  - **Batch Delete**: Efficient bulk deletion
-  - **Storage Status**: Detailed usage/available reporting
+- **Features**:
+ - **Quota Monitoring**: Real-time quota tracking and warnings
+ - **Batch Delete**: Efficient bulk deletion
+ - **Storage Status**: Detailed usage/available reporting
 
 ## Metadata Indexing System
 
@@ -170,12 +170,12 @@ Tracks all unique values for each field:
 ```json
 // __metadata_field_index__field_category.json
 {
-  "values": {
-    "technology": 45,
-    "science": 32,
-    "business": 28
-  },
-  "lastUpdated": 1699564234567
+ "values": {
+ "technology": 45,
+ "science": 32,
+ "business": 28
+ },
+ "lastUpdated": 1699564234567
 }
 ```
 
@@ -185,11 +185,11 @@ Maps field+value combinations to entity IDs:
 ```json
 // __metadata_index__category_technology_chunk0.json
 {
-  "field": "category",
-  "value": "technology",
-  "ids": ["uuid1", "uuid2", "uuid3", ...],
-  "chunk": 0,
-  "total": 45
+ "field": "category",
+ "value": "technology",
+ "ids": ["uuid1", "uuid2", "uuid3", ...],
+ "chunk": 0,
+ "total": 45
 }
 ```
 
@@ -207,14 +207,14 @@ High-performance deduplication system for streaming data:
 ```json
 // __entity_registry__.json
 {
-  "mappings": {
-    "did:plc:alice123": "550e8400-e29b-41d4-a716-446655440000",
-    "handle:alice.bsky.social": "550e8400-e29b-41d4-a716-446655440000"
-  },
-  "stats": {
-    "totalMappings": 10000,
-    "lastSync": 1699564234567
-  }
+ "mappings": {
+ "did:plc:alice123": "550e8400-e29b-41d4-a716-446655440000",
+ "handle:alice.bsky.social": "550e8400-e29b-41d4-a716-446655440000"
+ },
+ "stats": {
+ "totalMappings": 10000,
+ "lastSync": 1699564234567
+ }
 }
 ```
 
@@ -229,14 +229,14 @@ Ensures durability and enables recovery:
 
 ```json
 {
-  "timestamp": 1699564234567,
-  "operation": "add",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "content": "...",
-    "metadata": {}
-  },
-  "checksum": "sha256:..."
+ "timestamp": 1699564234567,
+ "operation": "add",
+ "data": {
+ "id": "550e8400-e29b-41d4-a716-446655440000",
+ "content": "...",
+ "metadata": {}
+ },
+ "checksum": "sha256:..."
 }
 ```
 
@@ -244,7 +244,7 @@ Ensures durability and enables recovery:
 2. Replay operations from last checkpoint
 3. Verify checksums for integrity
 
-## Storage Optimization (v4.0.0)
+## Storage Optimization
 
 ### 1. Lifecycle Policies (Cloud Storage)
 
@@ -253,48 +253,48 @@ Ensures durability and enables recovery:
 ```typescript
 // S3: Set lifecycle policy for automatic archival
 await storage.setLifecyclePolicy({
-  rules: [{
-    id: 'archive-old-data',
-    prefix: 'entities/',
-    status: 'Enabled',
-    transitions: [
-      { days: 30, storageClass: 'STANDARD_IA' },      // Move to IA after 30 days
-      { days: 90, storageClass: 'GLACIER' },          // Archive after 90 days
-      { days: 365, storageClass: 'DEEP_ARCHIVE' }     // Deep archive after 1 year
-    ]
-  }]
+ rules: [{
+ id: 'archive-old-data',
+ prefix: 'entities/',
+ status: 'Enabled',
+ transitions: [
+ { days: 30, storageClass: 'STANDARD_IA' }, // Move to IA after 30 days
+ { days: 90, storageClass: 'GLACIER' }, // Archive after 90 days
+ { days: 365, storageClass: 'DEEP_ARCHIVE' } // Deep archive after 1 year
+ ]
+ }]
 })
 
 // GCS: Set lifecycle policy
 await storage.setLifecyclePolicy({
-  rules: [{
-    condition: { age: 30 },
-    action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
-  }, {
-    condition: { age: 90 },
-    action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
-  }, {
-    condition: { age: 365 },
-    action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
-  }]
+ rules: [{
+ condition: { age: 30 },
+ action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }
+ }, {
+ condition: { age: 90 },
+ action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }
+ }, {
+ condition: { age: 365 },
+ action: { type: 'SetStorageClass', storageClass: 'ARCHIVE' }
+ }]
 })
 
 // Azure: Set lifecycle policy
 await storage.setLifecyclePolicy({
-  rules: [{
-    name: 'archiveOldData',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: { blobTypes: ['blockBlob'] },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 30 },
-          tierToArchive: { daysAfterModificationGreaterThan: 90 }
-        }
-      }
-    }
-  }]
+ rules: [{
+ name: 'archiveOldData',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: { blobTypes: ['blockBlob'] },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 30 },
+ tierToArchive: { daysAfterModificationGreaterThan: 90 }
+ }
+ }
+ }
+ }]
 })
 ```
 
@@ -327,7 +327,7 @@ await storage.enableIntelligentTiering('entities/', 'auto-optimize')
 ```typescript
 // Enable GCS Autoclass
 await storage.enableAutoclass({
-  terminalStorageClass: 'ARCHIVE'  // Optional: Set lowest tier
+ terminalStorageClass: 'ARCHIVE' // Optional: Set lowest tier
 })
 
 // Benefits:
@@ -342,11 +342,11 @@ await storage.enableAutoclass({
 ```typescript
 // Enable gzip compression for local storage
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    path: './data',
-    compression: true  // 60-80% space savings
-  }
+ storage: {
+ type: 'filesystem',
+ path: './data',
+ compression: true // 60-80% space savings
+ }
 })
 
 // Performance impact:
@@ -359,11 +359,11 @@ const brain = new Brainy({
 ### 5. Batch Operations
 
 ```typescript
-// v4.0.0: Efficient batch delete
+// Efficient batch delete
 await storage.batchDelete([
-  'entities/nouns/vectors/00/00123456-....json',
-  'entities/nouns/metadata/00/00123456-....json',
-  // ... up to 1000 objects
+ 'entities/nouns/vectors/00/00123456-....json',
+ 'entities/nouns/metadata/00/00123456-....json',
+ // ... up to 1000 objects
 ])
 
 // Benefits:
@@ -375,9 +375,9 @@ await storage.batchDelete([
 
 // Batch writes for performance
 await brain.addBatch([
-  { content: "item1", metadata: {} },
-  { content: "item2", metadata: {} },
-  { content: "item3", metadata: {} }
+ { content: "item1", metadata: {} },
+ { content: "item2", metadata: {} },
+ { content: "item3", metadata: {} }
 ])
 // Single transaction, optimized I/O
 ```
@@ -390,14 +390,14 @@ const status = await storage.getStorageStatus()
 
 console.log(status)
 // {
-//   type: 'opfs',
-//   available: true,
-//   details: {
-//     usage: 45829120,      // 43.7 MB used
-//     quota: 536870912,     // 512 MB available
-//     usagePercent: 8.5,
-//     quotaExceeded: false
-//   }
+// type: 'opfs',
+// available: true,
+// details: {
+// usage: 45829120, // 43.7 MB used
+// quota: 536870912, // 512 MB available
+// usagePercent: 8.5,
+// quotaExceeded: false
+// }
 // }
 
 // Proactive quota management:
@@ -410,14 +410,14 @@ console.log(status)
 
 ```typescript
 // Change blob tier for cost optimization
-await storage.changeBlobTier(blobPath, 'Cool')  // Hot → Cool (50% savings)
-await storage.changeBlobTier(blobPath, 'Archive')  // Cool → Archive (99% savings)
+await storage.changeBlobTier(blobPath, 'Cool') // Hot → Cool (50% savings)
+await storage.changeBlobTier(blobPath, 'Archive') // Cool → Archive (99% savings)
 
 // Batch tier changes (efficient)
 await storage.batchChangeTier([blob1, blob2, blob3], 'Cool')
 
 // Rehydrate from Archive when needed
-await storage.rehydrateBlob(blobPath, 'Standard')  // Standard or High priority
+await storage.rehydrateBlob(blobPath, 'Standard') // Standard or High priority
 ```
 
 ### 8. Caching Strategy
@@ -425,15 +425,15 @@ await storage.rehydrateBlob(blobPath, 'Standard')  // Standard or High priority
 ```typescript
 // Configure caching per storage type
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    cache: {
-      enabled: true,
-      maxSize: 1000,      // Maximum cached items
-      ttl: 300000,        // 5 minutes
-      strategy: 'lru'     // Least recently used
-    }
-  }
+ storage: {
+ type: 'filesystem',
+ cache: {
+ enabled: true,
+ maxSize: 1000, // Maximum cached items
+ ttl: 300000, // 5 minutes
+ strategy: 'lru' // Least recently used
+ }
+ }
 })
 ```
 
@@ -443,8 +443,8 @@ const brain = new Brainy({
 ```typescript
 // Automatic locking for write operations
 await brain.storage.withLock('resource-id', async () => {
-  // Exclusive access to resource
-  await brain.storage.saveNoun(id, data)
+ // Exclusive access to resource
+ await brain.storage.saveNoun(id, data)
 })
 ```
 
@@ -459,9 +459,9 @@ await brain.storage.withLock('resource-id', async () => {
 ```typescript
 // Export entire database
 const backup = await brain.export({
-  format: 'json',
-  includeVectors: true,
-  includeIndexes: false
+ format: 'json',
+ includeVectors: true,
+ includeIndexes: false
 })
 ```
 
@@ -469,8 +469,8 @@ const backup = await brain.export({
 ```typescript
 // Import from backup
 await brain.import(backup, {
-  mode: 'merge',  // or 'replace'
-  validateSchema: true
+ mode: 'merge', // or 'replace'
+ validateSchema: true
 })
 ```
 
@@ -514,15 +514,15 @@ await newBrain.import(data)
 const stats = await brain.storage.getStatistics()
 console.log(stats)
 // {
-//   totalSize: 1048576,
-//   entityCount: 1000,
-//   indexSize: 204800,
-//   walSize: 10240,
-//   cacheHitRate: 0.85
+// totalSize: 1048576,
+// entityCount: 1000,
+// indexSize: 204800,
+// walSize: 10240,
+// cacheHitRate: 0.85
 // }
 ```
 
-## Best Practices (v4.0.0)
+## Best Practices
 
 ### Choose the Right Adapter
 1. **Development**: FileSystem with compression (local persistence, small storage footprint)
@@ -537,7 +537,7 @@ console.log(stats)
 4. **Archival**: Cloud storage with lifecycle policies (96% cost savings!)
 5. **Large-scale**: Metadata/vector separation + UUID sharding + lifecycle policies
 
-### v4.0.0 Cost Optimization
+### Cost Optimization
 1. **Enable lifecycle policies** for cloud storage (automated cost reduction)
 2. **Use Intelligent-Tiering (S3)** or Autoclass (GCS) for automatic optimization
 3. **Enable compression** for FileSystem storage (60-80% space savings)
@@ -547,7 +547,7 @@ console.log(stats)
 
 **Example Cost Savings (500TB dataset):**
 - Without lifecycle policies: **$138,000/year**
-- With v4.0.0 lifecycle policies: **$5,940/year**
+- With lifecycle policies: **$5,940/year**
 - **Savings: $132,060/year (96%)**
 
 ### Monitor and Maintain

@@ -48,7 +48,6 @@ interface StorageKeyInfo {
  * Each storage adapter declares its optimal batch behavior for rate limiting
  * and performance optimization
  *
- * @since v4.11.0
  */
 export interface StorageBatchConfig {
   /** Maximum items per batch */
@@ -73,15 +72,15 @@ export interface StorageBatchConfig {
   }
 }
 
-// Clean directory structure (v4.7.2+)
+// Clean directory structure
 // All storage adapters use this consistent structure
 export const NOUNS_METADATA_DIR = 'entities/nouns/metadata'
 export const VERBS_METADATA_DIR = 'entities/verbs/metadata'
 export const SYSTEM_DIR = '_system'
 export const STATISTICS_KEY = 'statistics'
 
-// DEPRECATED (v4.7.2): Temporary stubs for adapters not yet migrated
-// TODO: Remove in v4.7.3 after migrating remaining adapters
+// DEPRECATED: Temporary stubs for adapters not yet migrated
+// TODO: Remove after migrating remaining adapters
 export const NOUNS_DIR = 'entities/nouns/hnsw'
 export const VERBS_DIR = 'entities/verbs/hnsw'
 export const METADATA_DIR = 'entities/nouns/metadata'
@@ -97,12 +96,12 @@ export function getDirectoryPath(entityType: 'noun' | 'verb', dataType: 'vector'
 }
 
 /**
- * Type-first path generators (v5.4.0)
+ * Type-first path generators
  * Built-in type-aware organization for all storage adapters
  */
 
 /**
- * Get ID-first path for noun vectors (v6.0.0)
+ * Get ID-first path for noun vectors
  * No type parameter needed - direct O(1) lookup by ID
  */
 function getNounVectorPath(id: string): string {
@@ -111,7 +110,7 @@ function getNounVectorPath(id: string): string {
 }
 
 /**
- * Get ID-first path for noun metadata (v6.0.0)
+ * Get ID-first path for noun metadata
  * No type parameter needed - direct O(1) lookup by ID
  */
 function getNounMetadataPath(id: string): string {
@@ -120,7 +119,7 @@ function getNounMetadataPath(id: string): string {
 }
 
 /**
- * Get ID-first path for verb vectors (v6.0.0)
+ * Get ID-first path for verb vectors
  * No type parameter needed - direct O(1) lookup by ID
  */
 function getVerbVectorPath(id: string): string {
@@ -129,7 +128,7 @@ function getVerbVectorPath(id: string): string {
 }
 
 /**
- * Get ID-first path for verb metadata (v6.0.0)
+ * Get ID-first path for verb metadata
  * No type parameter needed - direct O(1) lookup by ID
  */
 function getVerbMetadataPath(id: string): string {
@@ -147,8 +146,8 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected graphIndexPromise?: Promise<GraphAdjacencyIndex>
   protected readOnly = false
 
-  // v5.7.2: Write-through cache for read-after-write consistency
-  // v5.7.3: Extended lifetime - persists until explicit flush() call
+  // Write-through cache for read-after-write consistency
+  // Extended lifetime - persists until explicit flush() call
   // Guarantees that immediately after writeObjectToBranch(), readWithInheritance() returns the data
   // Cache key: resolved branchPath (includes branch scope for COW isolation)
   // Cache lifetime: write start → flush() call (provides safety net for batch operations)
@@ -156,7 +155,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   private writeCache = new Map<string, any>()
 
   /**
-   * v7.3.1: Clear the write-through cache
+   * Clear the write-through cache
    * MUST be called by all storage adapter clear() implementations to ensure
    * read-after-write consistency cache doesn't return stale data after clear.
    * @protected - Available to subclasses for clear() implementation
@@ -165,24 +164,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     this.writeCache.clear()
   }
 
-  // COW (Copy-on-Write) support - v5.0.0
+  // COW (Copy-on-Write) support
   public refManager?: RefManager
   public blobStorage?: BlobStorage
   public commitLog?: CommitLog
   public currentBranch: string = 'main'
-  // v5.11.0: Removed cowEnabled flag - COW is ALWAYS enabled (mandatory, cannot be disabled)
+  // Removed cowEnabled flag - COW is ALWAYS enabled (mandatory, cannot be disabled)
 
-  // Type-first indexing support (v5.4.0)
+  // Type-first indexing support
   // Built into all storage adapters for billion-scale efficiency
   protected nounCountsByType = new Uint32Array(NOUN_TYPE_COUNT) // 168 bytes (Stage 3: 42 types)
   protected verbCountsByType = new Uint32Array(VERB_TYPE_COUNT) // 508 bytes (Stage 3: 127 types)
   // Total: 676 bytes (99.2% reduction vs Map-based tracking)
 
-  // v6.0.0: Type caches REMOVED - ID-first paths eliminate need for type lookups!
+  // Type caches REMOVED - ID-first paths eliminate need for type lookups!
   // With ID-first architecture, we construct paths directly from IDs: {SHARD}/{ID}/metadata.json
   // Type is just a field in the metadata, indexed by MetadataIndexManager for queries
 
-  // v5.5.0: Track if type counts have been rebuilt (prevent repeated rebuilds)
+  // Track if type counts have been rebuilt (prevent repeated rebuilds)
   private typeCountsRebuilt = false
 
   /**
@@ -193,7 +192,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @private
    */
   private analyzeKey(id: string, context: 'noun-metadata' | 'verb-metadata' | 'system'): StorageKeyInfo {
-    // v4.8.0: Guard against undefined/null IDs
+    // Guard against undefined/null IDs
     if (!id || typeof id !== 'string') {
       throw new Error(`Invalid storage key: ${id} (must be a non-empty string)`)
     }
@@ -263,13 +262,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Initialize the storage adapter (v5.4.0)
+   * Initialize the storage adapter
    * Loads type statistics for built-in type-aware indexing
    *
    * IMPORTANT: If your adapter overrides init(), call await super.init() first!
    */
   public async init(): Promise<void> {
-    // v6.0.1: CRITICAL FIX - Set flag FIRST to prevent infinite recursion
+    // CRITICAL FIX - Set flag FIRST to prevent infinite recursion
     // If any code path during initialization calls ensureInitialized(), it would
     // trigger init() again. Setting the flag immediately breaks the recursion cycle.
     this.isInitialized = true
@@ -278,7 +277,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Load type statistics from storage (if they exist)
       await this.loadTypeStatistics()
 
-      // v6.3.0: GraphAdjacencyIndex is now SINGLETON via getGraphIndex()
+      // GraphAdjacencyIndex is now SINGLETON via getGraphIndex()
       // - Removed direct creation here to fix dual-ownership bug
       // - GraphAdjacencyIndex will be created lazily on first getGraphIndex() call
       // - This ensures there's only ONE instance per storage adapter
@@ -292,7 +291,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Rebuild GraphAdjacencyIndex from existing verbs (v6.0.0)
+   * Rebuild GraphAdjacencyIndex from existing verbs
    * Call this manually if you have existing verb data that needs to be indexed
    * @public
    */
@@ -304,7 +303,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Invalidate GraphAdjacencyIndex (v6.3.0)
+   * Invalidate GraphAdjacencyIndex
    * Call this when switching branches or clearing data to force re-creation
    * The next getGraphIndex() call will create a fresh instance and rebuild
    * @public
@@ -336,7 +335,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * RefManager/BlobStorage/CommitLog are lazy-initialized on first fork()
    * @param branch - Branch name to use (default: 'main')
    *
-   * v5.11.0: COW is always enabled - this method now just sets the branch name (idempotent)
+   * COW is always enabled - this method now just sets the branch name (idempotent)
    */
   public enableCOWLightweight(branch: string = 'main'): void {
     this.currentBranch = branch
@@ -347,7 +346,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Initialize COW (Copy-on-Write) support
    * Creates RefManager and BlobStorage for instant fork() capability
    *
-   * v5.0.1: Now called automatically by storageFactory (zero-config)
+   * Now called automatically by storageFactory (zero-config)
    *
    * @param options - COW initialization options
    * @param options.branch - Initial branch name (default: 'main')
@@ -358,7 +357,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     branch?: string
     enableCompression?: boolean
   }): Promise<void> {
-    // v5.11.0: COW is ALWAYS enabled - idempotent initialization only
+    // COW is ALWAYS enabled - idempotent initialization only
     // Removed marker file check (cowEnabled flag removed, COW is mandatory)
 
     // Check if RefManager already initialized (idempotent)
@@ -380,7 +379,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           if (data === null) {
             return undefined
           }
-          // v5.7.5/v5.10.1: Use shared binaryDataCodec utility (single source of truth)
+          // Use shared binaryDataCodec utility (single source of truth)
           // Unwraps binary data stored as {_binary: true, data: "base64..."}
           // Fixes "Blob integrity check failed" - hash must be calculated on original content
           return unwrapBinaryData(data)
@@ -390,7 +389,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       },
 
       put: async (key: string, data: Buffer): Promise<void> => {
-        // v6.2.0 PERMANENT FIX: Use key naming convention (explicit type contract)
+        // PERMANENT FIX: Use key naming convention (explicit type contract)
         // NO GUESSING - key format explicitly declares data type:
         //
         // JSON keys (metadata and refs):
@@ -423,7 +422,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       list: async (prefix: string): Promise<string[]> => {
         try {
-          // v5.3.5 fix: Handle file prefixes, not just directory paths
+          // Handle file prefixes, not just directory paths
           // Refs are stored as files like: _cow/ref:refs/heads/main
           // So list('ref:') should find all files starting with '_cow/ref:'
 
@@ -459,7 +458,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const mainRef = await this.refManager.getRef('main')
     if (!mainRef) {
       // Create initial commit with empty tree
-      // v5.3.4: Use NULL_HASH constant instead of hardcoded string
+      // Use NULL_HASH constant instead of hardcoded string
       const { NULL_HASH } = await import('./cow/constants.js')
       const emptyTreeHash = NULL_HASH
 
@@ -498,7 +497,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    // v5.11.0: COW is always enabled - no flag to set
+    // COW is always enabled - no flag to set
   }
 
   /**
@@ -506,7 +505,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @protected - Available to subclasses for COW implementation
    */
   protected resolveBranchPath(basePath: string, branch?: string): string {
-    // CRITICAL FIX (v5.3.6): COW metadata (_cow/*) must NEVER be branch-scoped
+    // CRITICAL FIX: COW metadata (_cow/*) must NEVER be branch-scoped
     // Refs, commits, and blobs are global metadata with their own internal branching.
     // Branch-scoping COW paths causes fork() to write refs to wrong locations,
     // leading to "Branch does not exist" errors on checkout (see Workshop bug report).
@@ -514,7 +513,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return basePath  // COW metadata is global across all branches
     }
 
-    // v5.11.0: COW is always enabled - always use branch-scoped paths
+    // COW is always enabled - always use branch-scoped paths
     const targetBranch = branch || this.currentBranch || 'main'
 
     // Branch-scoped path: branches/<branch>/<basePath>
@@ -528,15 +527,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async writeObjectToBranch(path: string, data: any, branch?: string): Promise<void> {
     const branchPath = this.resolveBranchPath(path, branch)
 
-    // v5.7.2: Add to write cache BEFORE async write (guarantees read-after-write consistency)
-    // v5.7.3: Cache persists until flush() is called (extended lifetime for batch operations)
+    // Add to write cache BEFORE async write (guarantees read-after-write consistency)
+    // Cache persists until flush() is called (extended lifetime for batch operations)
     // This ensures readWithInheritance() returns data immediately, fixing "Source entity not found" bug
     this.writeCache.set(branchPath, data)
 
     // Write to storage (async)
     await this.writeObjectToPath(branchPath, data)
 
-    // v5.7.3: Cache is NOT cleared here anymore - persists until flush()
+    // Cache is NOT cleared here anymore - persists until flush()
     // This provides a safety net for immediate queries after batch writes
   }
 
@@ -545,13 +544,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Tries current branch first, then walks commit history
    * @protected - Available to subclasses for COW implementation
    *
-   * v5.11.0: COW is always enabled - always use branch-scoped paths with inheritance
+   * COW is always enabled - always use branch-scoped paths with inheritance
    */
   protected async readWithInheritance(path: string, branch?: string): Promise<any | null> {
     const targetBranch = branch || this.currentBranch || 'main'
     const branchPath = this.resolveBranchPath(path, targetBranch)
 
-    // v5.7.2: Check write cache FIRST (synchronous, instant)
+    // Check write cache FIRST (synchronous, instant)
     // This guarantees read-after-write consistency within the same process
     // Fixes bug: brain.add() → brain.relate() → "Source entity not found"
     const cachedData = this.writeCache.get(branchPath)
@@ -608,7 +607,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async deleteObjectFromBranch(path: string, branch?: string): Promise<void> {
     const branchPath = this.resolveBranchPath(path, branch)
 
-    // v5.7.2: Remove from write cache immediately (before async delete)
+    // Remove from write cache immediately (before async delete)
     // Ensures subsequent reads don't return stale cached data
     this.writeCache.delete(branchPath)
 
@@ -631,13 +630,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * List objects with inheritance (v5.0.1)
+   * List objects with inheritance
    * Lists objects from current branch AND main branch, returns unique paths
    * This enables fork to see parent's data in pagination operations
    *
    * Simplified approach: All branches inherit from main
    *
-   * v5.11.0: COW is always enabled - always use inheritance
+   * COW is always enabled - always use inheritance
    */
   protected async listObjectsWithInheritance(prefix: string, branch?: string): Promise<string[]> {
     const targetBranch = branch || this.currentBranch || 'main'
@@ -657,7 +656,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save a noun to storage (v4.0.0: vector only, metadata saved separately)
+   * Save a noun to storage (vector only, metadata saved separately)
    * @param noun Pure HNSW vector data (no metadata)
    */
   public async saveNoun(noun: HNSWNoun): Promise<void> {
@@ -669,7 +668,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get a noun from storage (v4.0.0: returns combined HNSWNounWithMetadata)
+   * Get a noun from storage (returns combined HNSWNounWithMetadata)
    * @param id Entity ID
    * @returns Combined vector + metadata or null
    */
@@ -685,11 +684,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Load metadata
     const metadata = await this.getNounMetadata(id)
     if (!metadata) {
-      prodLog.warn(`[Storage] Noun ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      prodLog.warn(`[Storage] Noun ${id} has vector but no metadata - this should not happen`)
       return null
     }
 
-    // Combine into HNSWNounWithMetadata - v4.8.0: Extract standard fields to top-level
+    // Combine into HNSWNounWithMetadata - Extract standard fields to top-level
     const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
     return {
@@ -697,7 +696,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       vector: vector.vector,
       connections: vector.connections,
       level: vector.level,
-      // v4.8.0: Standard fields at top-level
+      // Standard fields at top-level
       type: (noun as NounType) || NounType.Thing,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
@@ -722,7 +721,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Internal method returns HNSWNoun[], need to combine with metadata
     const nouns = await this.getNounsByNounType_internal(nounType)
 
-    // Combine each noun with its metadata - v4.8.0: Extract standard fields to top-level
+    // Combine each noun with its metadata - Extract standard fields to top-level
     const nounsWithMetadata: HNSWNounWithMetadata[] = []
     for (const noun of nouns) {
       const metadata = await this.getNounMetadata(noun.id)
@@ -731,7 +730,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
         nounsWithMetadata.push({
           ...noun,
-          // v4.8.0: Standard fields at top-level
+          // Standard fields at top-level
           type: (nounType as NounType) || NounType.Thing,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
@@ -768,7 +767,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save a verb to storage (v4.0.0: verb only, metadata saved separately)
+   * Save a verb to storage (verb only, metadata saved separately)
    *
    * @param verb Pure HNSW verb with core relational fields (verb, sourceId, targetId)
    */
@@ -784,7 +783,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get a verb from storage (v4.0.0: returns combined HNSWVerbWithMetadata)
+   * Get a verb from storage (returns combined HNSWVerbWithMetadata)
    * @param id Entity ID
    * @returns Combined verb + metadata or null
    */
@@ -800,11 +799,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Load metadata
     const metadata = await this.getVerbMetadata(id)
     if (!metadata) {
-      prodLog.warn(`[Storage] Verb ${id} has vector but no metadata - this should not happen in v4.0.0`)
+      prodLog.warn(`[Storage] Verb ${id} has vector but no metadata - this should not happen`)
       return null
     }
 
-    // Combine into HNSWVerbWithMetadata - v4.8.0: Extract standard fields to top-level
+    // Combine into HNSWVerbWithMetadata - Extract standard fields to top-level
     const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
     return {
@@ -814,7 +813,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       verb: verb.verb,
       sourceId: verb.sourceId,
       targetId: verb.targetId,
-      // v4.8.0: Standard fields at top-level
+      // Standard fields at top-level
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
       confidence: confidence as number | undefined,
@@ -828,7 +827,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Batch get multiple verbs (v6.2.0 - N+1 fix)
+   * Batch get multiple verbs
    *
    * **Performance**: Eliminates N+1 pattern for verb loading
    * - Current: N × getVerb() = N × 50ms on GCS = 250ms for 5 verbs
@@ -842,7 +841,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @param ids Array of verb IDs to fetch
    * @returns Map of id → HNSWVerbWithMetadata (only successful reads included)
    *
-   * @since v6.2.0
    */
   public async getVerbsBatch(ids: string[]): Promise<Map<string, HNSWVerbWithMetadata>> {
     await this.ensureInitialized()
@@ -850,7 +848,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const results = new Map<string, HNSWVerbWithMetadata>()
     if (ids.length === 0) return results
 
-    // v6.2.0: Batch-fetch vectors and metadata in parallel
+    // Batch-fetch vectors and metadata in parallel
     // Build paths for vectors
     const vectorPaths: Array<{ path: string; id: string }> = ids.map(id => ({
       path: getVerbVectorPath(id),
@@ -879,7 +877,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // Deserialize verb
         const verb = this.deserializeVerb(vectorData)
 
-        // Extract standard fields to top-level (v4.8.0 pattern)
+        // Extract standard fields to top-level
         const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
 
         results.set(id, {
@@ -889,7 +887,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           verb: verb.verb,
           sourceId: verb.sourceId,
           targetId: verb.targetId,
-          // v4.8.0: Standard fields at top-level
+          // Standard fields at top-level
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -982,7 +980,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       pagination: { limit: Number.MAX_SAFE_INTEGER }
     })
 
-    // v4.0.0: Convert HNSWVerbWithMetadata to HNSWVerb (strip metadata)
+    // Convert HNSWVerbWithMetadata to HNSWVerb (strip metadata)
     const hnswVerbs: HNSWVerb[] = result.items.map(verbWithMetadata => ({
       id: verbWithMetadata.id,
       vector: verbWithMetadata.vector,
@@ -1193,7 +1191,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get nouns with pagination (v5.4.0: Type-first implementation)
+   * Get nouns with pagination (Type-first implementation)
    *
    * CRITICAL: This method is required for brain.find() to work!
    * Iterates through noun types with billion-scale optimizations.
@@ -1201,7 +1199,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * ARCHITECTURE: Reads storage directly (not indexes) to avoid circular dependencies.
    * Storage → Indexes (one direction only). GraphAdjacencyIndex built FROM storage.
    *
-   * OPTIMIZATIONS (v5.5.0):
+   * OPTIMIZATIONS:
    * - Skip empty types using nounCountsByType[] tracking (O(1) check)
    * - Early termination when offset + limit entities collected
    * - Memory efficient: Never loads full dataset
@@ -1209,7 +1207,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getNounsWithPagination(options: {
     limit: number
     offset: number
-    cursor?: string  // v5.7.11: Currently ignored (offset-based pagination). Cursor support planned for v5.8.0
+    cursor?: string  // Currently ignored (offset-based pagination). Cursor support planned
     filter?: {
       nounType?: string | string[]
       service?: string | string[]
@@ -1227,7 +1225,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const collectedNouns: HNSWNounWithMetadata[] = []
     const targetCount = offset + limit
 
-    // v6.0.0: Iterate by shards (0x00-0xFF) instead of types
+    // Iterate by shards (0x00-0xFF) instead of types
     for (let shard = 0; shard < 256 && collectedNouns.length < targetCount; shard++) {
       const shardHex = shard.toString(16).padStart(2, '0')
       const shardDir = `entities/nouns/${shardHex}`
@@ -1305,7 +1303,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get verbs with pagination (v5.5.0: Type-first implementation with billion-scale optimizations)
+   * Get verbs with pagination (Type-first implementation with billion-scale optimizations)
    *
    * CRITICAL: This method is required for brain.getRelations() to work!
    * Iterates through verb types with the same optimizations as nouns.
@@ -1313,7 +1311,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * ARCHITECTURE: Reads storage directly (not indexes) to avoid circular dependencies.
    * Storage → Indexes (one direction only). GraphAdjacencyIndex built FROM storage.
    *
-   * OPTIMIZATIONS (v5.5.0):
+   * OPTIMIZATIONS:
    * - Skip empty types using verbCountsByType[] tracking (O(1) check)
    * - Early termination when offset + limit verbs collected
    * - Memory efficient: Never loads full dataset
@@ -1322,7 +1320,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getVerbsWithPagination(options: {
     limit: number
     offset: number
-    cursor?: string  // v5.7.11: Currently ignored (offset-based pagination). Cursor support planned for v5.8.0
+    cursor?: string  // Currently ignored (offset-based pagination). Cursor support planned
     filter?: {
       verbType?: string | string[]
       sourceId?: string | string[]
@@ -1353,7 +1351,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       ? new Set(Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId])
       : null
 
-    // v6.0.0: Iterate by shards (0x00-0xFF) instead of types - single pass!
+    // Iterate by shards (0x00-0xFF) instead of types - single pass!
     for (let shard = 0; shard < 256 && collectedVerbs.length < targetCount; shard++) {
       const shardHex = shard.toString(16).padStart(2, '0')
       const shardDir = `entities/verbs/${shardHex}`
@@ -1369,7 +1367,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
             const rawVerb = await this.readWithInheritance(verbPath)
             if (!rawVerb) continue
 
-            // v6.0.0: Deserialize connections Map from JSON storage format
+            // Deserialize connections Map from JSON storage format
             const verb = this.deserializeVerb(rawVerb)
 
             // Apply type filter
@@ -1414,9 +1412,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    // Apply pagination (v5.5.0: Efficient slicing after early termination)
+    // Apply pagination (Efficient slicing after early termination)
     const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
-    const hasMore = collectedVerbs.length > targetCount  // v5.7.11: Fixed >= to > (was causing infinite loop)
+    const hasMore = collectedVerbs.length > targetCount  // Fixed >= to > (was causing infinite loop)
 
     return {
       items: paginatedVerbs,
@@ -1604,7 +1602,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         }
       }
 
-      // v6.2.9: Fast path for SINGLE sourceId + verbType combo (common VFS pattern)
+      // Fast path for SINGLE sourceId + verbType combo (common VFS pattern)
       // This avoids the slow type-iteration fallback for VFS operations
       // NOTE: Only use fast path for single sourceId to avoid incomplete results
       const isSingleSourceId = options.filter.sourceId &&
@@ -1718,12 +1716,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       let totalScanned = 0
       const targetCount = offset + limit  // We need this many verbs total (including offset)
 
-      // v5.5.0 BUG FIX: Check if optimization should be used
+      // BUG FIX: Check if optimization should be used
       // Only use type-skipping optimization if counts are non-zero (reliable)
       const totalVerbCountFromArray = this.verbCountsByType.reduce((sum, c) => sum + c, 0)
       const useOptimization = totalVerbCountFromArray > 0
 
-      // v6.2.9 BUG FIX: Pre-compute requested verb types to avoid skipping them
+      // BUG FIX: Pre-compute requested verb types to avoid skipping them
       // When a specific verbType filter is provided, we MUST check that type
       // even if verbCountsByType shows 0 (counts can be stale after restart)
       const requestedVerbTypes = options?.filter?.verbType
@@ -1736,7 +1734,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       for (let i = 0; i < VERB_TYPE_COUNT && collectedVerbs.length < targetCount; i++) {
         const type = TypeUtils.getVerbFromIndex(i)
 
-        // v6.2.9 FIX: Never skip a type that's explicitly requested in the filter
+        // FIX: Never skip a type that's explicitly requested in the filter
         // This fixes VFS bug where Contains relationships were skipped after restart
         // when verbCountsByType[Contains] was 0 due to stale statistics
         const isRequestedType = requestedVerbTypesSet?.has(type) ?? false
@@ -1747,7 +1745,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           continue
         }
 
-        // v6.2.9: Log when we DON'T skip a requested type that would have been skipped
+        // Log when we DON'T skip a requested type that would have been skipped
         // This helps diagnose stale statistics issues in production
         if (useOptimization && countIsZero && isRequestedType) {
           prodLog.debug(
@@ -1812,7 +1810,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       // Apply pagination (slice for offset)
       const paginatedVerbs = collectedVerbs.slice(offset, offset + limit)
-      const hasMore = collectedVerbs.length > targetCount  // v5.7.11: Fixed >= to > (was causing infinite loop)
+      const hasMore = collectedVerbs.length > targetCount  // Fixed >= to > (was causing infinite loop)
 
       return {
         items: paginatedVerbs,
@@ -1851,7 +1849,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
   /**
    * Get graph index (lazy initialization with concurrent access protection)
-   * v5.7.1: Fixed race condition where concurrent calls could trigger multiple rebuilds
+   * Fixed race condition where concurrent calls could trigger multiple rebuilds
    */
   async getGraphIndex(): Promise<GraphAdjacencyIndex> {
     // If already initialized, return immediately
@@ -1900,7 +1898,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public abstract clear(): Promise<void>
 
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() abstract methods
+   * Removed checkClearMarker() and createClearMarker() abstract methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -1951,7 +1949,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected abstract listObjectsUnderPath(prefix: string): Promise<string[]>
 
   /**
-   * Save metadata to storage (v4.0.0: now typed)
+   * Save metadata to storage (now typed)
    * Routes to correct location (system or entity) based on key format
    */
   public async saveMetadata(id: string, metadata: NounMetadata): Promise<void> {
@@ -1961,7 +1959,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get metadata from storage (v4.0.0: now typed)
+   * Get metadata from storage (now typed)
    * Routes to correct location (system or entity) based on key format
    */
   public async getMetadata(id: string): Promise<NounMetadata | null> {
@@ -1971,7 +1969,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Save noun metadata to storage (v4.0.0: now typed)
+   * Save noun metadata to storage (now typed)
    * Routes to correct sharded location based on UUID
    */
   public async saveNounMetadata(id: string, metadata: NounMetadata): Promise<void> {
@@ -1981,10 +1979,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Internal method for saving noun metadata (v4.0.0: now typed)
+   * Internal method for saving noun metadata (now typed)
    * Uses routing logic to handle both UUIDs (sharded) and system keys (unsharded)
    *
-   * CRITICAL (v4.1.2): Count synchronization happens here
+   * CRITICAL: Count synchronization happens here
    * This ensures counts are updated AFTER metadata exists, fixing the race condition
    * where storage adapters tried to read metadata before it was saved.
    *
@@ -1993,7 +1991,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async saveNounMetadata_internal(id: string, metadata: NounMetadata): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.0.0: ID-first path - no type needed!
+    // ID-first path - no type needed!
     const path = getNounMetadataPath(id)
 
     // Determine if this is a new entity by checking if metadata already exists
@@ -2003,7 +2001,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Save the metadata (COW-aware - writes to branch-specific path)
     await this.writeObjectToBranch(path, metadata)
 
-    // CRITICAL FIX (v4.1.2): Increment count for new entities
+    // CRITICAL FIX: Increment count for new entities
     // This runs AFTER metadata is saved, guaranteeing type information is available
     // Uses synchronous increment since storage operations are already serialized
     // Fixes Bug #1: Count synchronization failure during add() and import()
@@ -2019,18 +2017,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Get noun metadata from storage (METADATA-ONLY, NO VECTORS)
    *
-   * **Performance (v6.0.0)**: Direct O(1) ID-first lookup - NO type search needed!
+   * **Performance**: Direct O(1) ID-first lookup - NO type search needed!
    * - **All lookups**: 1 read, ~500ms on cloud (consistent performance)
    * - **No cache needed**: Type is in the metadata, not the path
    * - **No type search**: ID-first paths eliminate 42-type search entirely
    *
-   * **Clean architecture (v6.0.0)**:
+   * **Clean architecture**:
    * - Path: `entities/nouns/{SHARD}/{ID}/metadata.json`
    * - Type is just a field in metadata (`noun: "document"`)
    * - MetadataIndex handles type queries (no path scanning needed)
    * - Scales to billions without any overhead
    *
-   * **Performance (v5.11.1)**: Fast path for metadata-only reads
+   * **Performance**: Fast path for metadata-only reads
    * - **Speed**: 10ms vs 43ms (76-81% faster than getNoun)
    * - **Bandwidth**: 300 bytes vs 6KB (95% less)
    * - **Memory**: 300 bytes vs 6KB (87% less)
@@ -2064,21 +2062,20 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * - No type search fallbacks
    * - Works in distributed systems without sync issues
    *
-   * @since v4.0.0
-   * @since v5.4.0 - Type-first paths (removed in v6.0.0)
-   * @since v5.11.1 - Promoted to fast path for brain.get() optimization
-   * @since v6.0.0 - CLEAN FIX: ID-first paths eliminate all type-search complexity
+   * Type-first paths (removed)
+   * Promoted to fast path for brain.get() optimization
+   * CLEAN FIX: ID-first paths eliminate all type-search complexity
    */
   public async getNounMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
 
-    // v6.0.0: Clean, simple, O(1) lookup - no type needed!
+    // Clean, simple, O(1) lookup - no type needed!
     const path = getNounMetadataPath(id)
     return this.readWithInheritance(path)
   }
 
   /**
-   * Batch fetch noun metadata from storage (v5.12.0 - Cloud Storage Optimization)
+   * Batch fetch noun metadata from storage
    *
    * **Performance**: Reduces N sequential calls → 1-2 batch calls
    * - Local storage: N × 10ms → 1 × 10ms parallel (N× faster)
@@ -2107,7 +2104,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * }
    * ```
    *
-   * @since v5.12.0
    */
   public async getNounMetadataBatch(ids: string[]): Promise<Map<string, NounMetadata>> {
     await this.ensureInitialized()
@@ -2115,7 +2111,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const results = new Map<string, NounMetadata>()
     if (ids.length === 0) return results
 
-    // v6.0.0: ID-first paths - no type grouping or search needed!
+    // ID-first paths - no type grouping or search needed!
     // Build direct paths for all IDs
     const pathsToFetch: Array<{ path: string; id: string }> = ids.map(id => ({
       path: getNounMetadataPath(id),
@@ -2137,7 +2133,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Batch get multiple nouns with vectors (v6.2.0 - N+1 fix)
+   * Batch get multiple nouns with vectors
    *
    * **Performance**: Eliminates N+1 pattern for vector loading
    * - Current: N × getNoun() = N × 50ms on GCS = 500ms for 10 entities
@@ -2151,7 +2147,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @param ids Array of entity IDs to fetch (with vectors)
    * @returns Map of id → HNSWNounWithMetadata (only successful reads included)
    *
-   * @since v6.2.0
    */
   public async getNounBatch(ids: string[]): Promise<Map<string, HNSWNounWithMetadata>> {
     await this.ensureInitialized()
@@ -2159,7 +2154,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const results = new Map<string, HNSWNounWithMetadata>()
     if (ids.length === 0) return results
 
-    // v6.2.0: Batch-fetch vectors and metadata in parallel
+    // Batch-fetch vectors and metadata in parallel
     // Build paths for vectors
     const vectorPaths: Array<{ path: string; id: string }> = ids.map(id => ({
       path: getNounVectorPath(id),
@@ -2188,7 +2183,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // Deserialize noun
         const noun = this.deserializeNoun(vectorData)
 
-        // Extract standard fields to top-level (v4.8.0 pattern)
+        // Extract standard fields to top-level
         const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
 
         results.set(id, {
@@ -2196,7 +2191,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           vector: noun.vector,
           connections: noun.connections,
           level: noun.level,
-          // v4.8.0: Standard fields at top-level
+          // Standard fields at top-level
           type: (nounType as NounType) || NounType.Thing,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
@@ -2215,7 +2210,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Batch read multiple storage paths with COW inheritance support (v5.12.0)
+   * Batch read multiple storage paths with COW inheritance support
    *
    * Core batching primitive that all batch operations build upon.
    * Handles write cache, branch inheritance, and adapter-specific batching.
@@ -2230,7 +2225,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @returns Map of path → data (only successful reads included)
    *
    * @protected - Available to subclasses and batch operations
-   * @since v5.12.0
    */
   protected async readBatchWithInheritance(
     paths: string[],
@@ -2289,7 +2283,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Step 4: Handle COW inheritance for missing items (if not on main branch)
     if (targetBranch !== 'main' && missingPaths.length > 0) {
       // For now, fall back to individual inheritance lookups
-      // TODO v5.13.0: Optimize inheritance with batch commit walks
+      // TODO: Optimize inheritance with batch commit walks
       for (const originalPath of missingPaths) {
         try {
           const data = await this.readWithInheritance(originalPath, targetBranch)
@@ -2306,7 +2300,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Adapter-level batch read with automatic batching strategy (v5.12.0)
+   * Adapter-level batch read with automatic batching strategy
    *
    * Uses adapter's native batch API when available:
    * - GCS: batch API (100 ops)
@@ -2320,7 +2314,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * @returns Map of path → data
    *
    * @private
-   * @since v5.12.0
    */
   private async readBatchFromAdapter(paths: string[]): Promise<Map<string, any>> {
     if (paths.length === 0) return new Map()
@@ -2366,13 +2359,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get batch configuration for this storage adapter (v5.12.0)
+   * Get batch configuration for this storage adapter
    *
    * Override in subclasses to provide adapter-specific batch limits.
    * Defaults to conservative limits for safety.
    *
    * @public - Inherited from BaseStorageAdapter
-   * @since v5.12.0
    */
   public getBatchConfig(): StorageBatchConfig {
     // Conservative defaults - adapters should override with their actual limits
@@ -2389,18 +2381,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Delete noun metadata from storage (v6.0.0: ID-first, O(1) delete)
+   * Delete noun metadata from storage (ID-first, O(1) delete)
    */
   public async deleteNounMetadata(id: string): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.0.0: Direct O(1) delete with ID-first path
+    // Direct O(1) delete with ID-first path
     const path = getNounMetadataPath(id)
     await this.deleteObjectFromBranch(path)
   }
 
   /**
-   * Save verb metadata to storage (v4.0.0: now typed)
+   * Save verb metadata to storage (now typed)
    * Routes to correct sharded location based on UUID
    */
   public async saveVerbMetadata(id: string, metadata: VerbMetadata): Promise<void> {
@@ -2409,10 +2401,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Internal method for saving verb metadata (v4.0.0: now typed)
-   * v5.4.0: Uses ID-first paths (must match getVerbMetadata)
+   * Internal method for saving verb metadata (now typed)
+   * Uses ID-first paths (must match getVerbMetadata)
    *
-   * CRITICAL (v4.1.2): Count synchronization happens here
+   * CRITICAL: Count synchronization happens here
    * This ensures verb counts are updated AFTER metadata exists, fixing the race condition
    * where storage adapters tried to read metadata before it was saved.
    *
@@ -2423,7 +2415,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected async saveVerbMetadata_internal(id: string, metadata: VerbMetadata): Promise<void> {
     await this.ensureInitialized()
 
-    // v5.4.0: Extract verb type from metadata for ID-first path
+    // Extract verb type from metadata for ID-first path
     const verbType = (metadata as any).verb as VerbType | undefined
 
     if (!verbType) {
@@ -2433,7 +2425,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       return
     }
 
-    // v5.4.0: Use ID-first path
+    // Use ID-first path
     const path = getVerbMetadataPath(id)
 
     // Determine if this is a new verb by checking if metadata already exists
@@ -2443,9 +2435,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Save the metadata (COW-aware - writes to branch-specific path)
     await this.writeObjectToBranch(path, metadata)
 
-    // v5.4.0: Cache verb type for faster lookups
+    // Cache verb type for faster lookups
 
-    // CRITICAL FIX (v4.1.2): Increment verb count for new relationships
+    // CRITICAL FIX: Increment verb count for new relationships
     // This runs AFTER metadata is saved
     // Uses synchronous increment since storage operations are already serialized
     // Fixes Bug #2: Count synchronization failure during relate() and import()
@@ -2459,13 +2451,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get verb metadata from storage (v4.0.0: now typed)
-   * v5.4.0: Uses ID-first paths (must match saveVerbMetadata_internal)
+   * Get verb metadata from storage (now typed)
+   * Uses ID-first paths (must match saveVerbMetadata_internal)
    */
   public async getVerbMetadata(id: string): Promise<VerbMetadata | null> {
     await this.ensureInitialized()
 
-    // v6.0.0: Direct O(1) lookup with ID-first paths - no type search needed!
+    // Direct O(1) lookup with ID-first paths - no type search needed!
     const path = getVerbMetadataPath(id)
 
     try {
@@ -2478,18 +2470,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Delete verb metadata from storage (v6.0.0: ID-first, O(1) delete)
+   * Delete verb metadata from storage (ID-first, O(1) delete)
    */
   public async deleteVerbMetadata(id: string): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.0.0: Direct O(1) delete with ID-first path
+    // Direct O(1) delete with ID-first path
     const path = getVerbMetadataPath(id)
     await this.deleteObjectFromBranch(path)
   }
 
   // ============================================================================
-  // ID-FIRST HELPER METHODS (v6.0.0)
+  // ID-FIRST HELPER METHODS
   // Direct O(1) ID lookups - no type needed!
   // Clean, simple architecture for billion-scale performance
   // ============================================================================
@@ -2532,7 +2524,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Get noun counts by type (O(1) access to type statistics)
-   * v6.2.2: Exposed for MetadataIndexManager to use as single source of truth
+   * Exposed for MetadataIndexManager to use as single source of truth
    * @returns Uint32Array indexed by NounType enum value (42 types)
    */
   public getNounCountsByType(): Uint32Array {
@@ -2541,7 +2533,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Get verb counts by type (O(1) access to type statistics)
-   * v6.2.2: Exposed for MetadataIndexManager to use as single source of truth
+   * Exposed for MetadataIndexManager to use as single source of truth
    * @returns Uint32Array indexed by VerbType enum value (127 types)
    */
   public getVerbCountsByType(): Uint32Array {
@@ -2549,14 +2541,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Rebuild type counts from actual storage (v5.5.0)
+   * Rebuild type counts from actual storage
    * Called when statistics are missing or inconsistent
    * Ensures verbCountsByType is always accurate for reliable pagination
    */
   protected async rebuildTypeCounts(): Promise<void> {
     prodLog.info('[BaseStorage] Rebuilding type counts from storage...')
 
-    // v6.0.0: Rebuild by scanning shards (0x00-0xFF) and reading metadata
+    // Rebuild by scanning shards (0x00-0xFF) and reading metadata
     this.nounCountsByType = new Uint32Array(NOUN_TYPE_COUNT)
     this.verbCountsByType = new Uint32Array(VERB_TYPE_COUNT)
 
@@ -2625,12 +2617,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get noun type (v6.0.0: type no longer needed for paths!)
+   * Get noun type (type no longer needed for paths!)
    * With ID-first paths, this is only used for internal statistics tracking.
    * The actual type is stored in metadata and indexed by MetadataIndexManager.
    */
   protected getNounType(noun: HNSWNoun): NounType {
-    // v6.0.0: Type cache removed - default to 'thing' for statistics
+    // Type cache removed - default to 'thing' for statistics
     // The real type is in metadata, accessible via getNounMetadata(id)
     return 'thing'
   }
@@ -2640,7 +2632,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Verb type is a required field in HNSWVerb
    */
   protected getVerbType(verb: HNSWVerb | GraphVerb): VerbType {
-    // v3.50.1+: verb is a required field in HNSWVerb
+    // verb is a required field in HNSWVerb
     if ('verb' in verb && verb.verb) {
       return verb.verb as VerbType
     }
@@ -2657,7 +2649,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
 
   // ============================================================================
-  // DESERIALIZATION HELPERS (v5.7.10)
+  // DESERIALIZATION HELPERS
   // Centralized Map/Set reconstruction from JSON storage format
   // ============================================================================
 
@@ -2667,7 +2659,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Converts plain object { "0": ["id1"], "1": ["id2"] }
    * into Map<number, Set<string>>
    *
-   * v5.7.10: Central helper to fix serialization bug across all code paths
+   * Central helper to fix serialization bug across all code paths
    * Root cause: JSON.stringify(Map) = {} (empty object), must reconstruct on read
    */
   protected deserializeConnections(connections: any): Map<number, Set<string>> {
@@ -2698,7 +2690,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Deserialize HNSWNoun from JSON storage format
    *
-   * v5.7.10: Ensures connections are properly reconstructed from Map → object → Map
+   * Ensures connections are properly reconstructed from Map → object → Map
    * Fixes: "TypeError: noun.connections.entries is not a function"
    */
   protected deserializeNoun(data: any): HNSWNoun {
@@ -2711,7 +2703,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Deserialize HNSWVerb from JSON storage format
    *
-   * v5.7.10: Ensures connections are properly reconstructed from Map → object → Map
+   * Ensures connections are properly reconstructed from Map → object → Map
    * Fixes same serialization bug for verbs
    */
   protected deserializeVerb(data: any): HNSWVerb {
@@ -2723,7 +2715,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
 
   // ============================================================================
-  // ABSTRACT METHOD IMPLEMENTATIONS (v5.4.0)
+  // ABSTRACT METHOD IMPLEMENTATIONS
   // Converted from abstract to concrete - all adapters now have built-in type-aware
   // ============================================================================
 
@@ -2738,11 +2730,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const typeIndex = TypeUtils.getNounIndex(type)
     this.nounCountsByType[typeIndex]++
 
-    // COW-aware write (v5.0.1): Use COW helper for branch isolation
+    // COW-aware write: Use COW helper for branch isolation
     await this.writeObjectToBranch(path, noun)
 
     // Periodically save statistics
-    // v6.2.9: Also save on first noun of each type to ensure low-count types are tracked
+    // Also save on first noun of each type to ensure low-count types are tracked
     const shouldSave = this.nounCountsByType[typeIndex] === 1 ||  // First noun of type
                        this.nounCountsByType[typeIndex] % 100 === 0  // Every 100th
     if (shouldSave) {
@@ -2754,14 +2746,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Get a noun from storage (ID-first path)
    */
   protected async getNoun_internal(id: string): Promise<HNSWNoun | null> {
-    // v6.0.0: Direct O(1) lookup with ID-first paths - no type search needed!
+    // Direct O(1) lookup with ID-first paths - no type search needed!
     const path = getNounVectorPath(id)
 
     try {
-      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      // COW-aware read: Use COW helper for branch isolation
       const noun = await this.readWithInheritance(path)
       if (noun) {
-        // v5.7.10: Deserialize connections Map from JSON storage format
+        // Deserialize connections Map from JSON storage format
         return this.deserializeNoun(noun)
       }
     } catch (error) {
@@ -2773,12 +2765,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get nouns by noun type (v6.0.0: Shard-based iteration!)
+   * Get nouns by noun type (Shard-based iteration!)
    */
   protected async getNounsByNounType_internal(
     nounType: string
   ): Promise<HNSWNoun[]> {
-    // v6.0.0: Iterate by shards (0x00-0xFF) instead of types
+    // Iterate by shards (0x00-0xFF) instead of types
     // Type is stored in metadata.noun field, we filter as we load
     const nouns: HNSWNoun[] = []
 
@@ -2816,10 +2808,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Delete a noun from storage (v6.0.0: ID-first, O(1) delete)
+   * Delete a noun from storage (ID-first, O(1) delete)
    */
   protected async deleteNoun_internal(id: string): Promise<void> {
-    // v6.0.0: Direct O(1) delete with ID-first path
+    // Direct O(1) delete with ID-first path
     const path = getNounVectorPath(id)
     await this.deleteObjectFromBranch(path)
 
@@ -2841,10 +2833,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const typeIndex = TypeUtils.getVerbIndex(type)
     this.verbCountsByType[typeIndex]++
 
-    // COW-aware write (v5.0.1): Use COW helper for branch isolation
+    // COW-aware write: Use COW helper for branch isolation
     await this.writeObjectToBranch(path, verb)
 
-    // v6.3.0: GraphAdjacencyIndex updates are now handled EXCLUSIVELY by Brainy.relate()
+    // GraphAdjacencyIndex updates are now handled EXCLUSIVELY by Brainy.relate()
     // via AddToGraphIndexOperation in the transaction system. This provides:
     // 1. Singleton pattern - only one graphIndex instance exists (via getGraphIndex())
     // 2. Transaction rollback - if relate() fails, index update is rolled back
@@ -2852,7 +2844,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // REMOVED: Direct graphIndex.addVerb() call that caused dual-ownership bugs
 
     // Periodically save statistics
-    // v6.2.9: Also save on first verb of each type to ensure low-count types are tracked
+    // Also save on first verb of each type to ensure low-count types are tracked
     // This prevents stale statistics after restart for types with < 100 verbs (common for VFS)
     const shouldSave = this.verbCountsByType[typeIndex] === 1 ||  // First verb of type
                        this.verbCountsByType[typeIndex] % 100 === 0  // Every 100th
@@ -2865,14 +2857,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * Get a verb from storage (ID-first path)
    */
   protected async getVerb_internal(id: string): Promise<HNSWVerb | null> {
-    // v6.0.0: Direct O(1) lookup with ID-first paths - no type search needed!
+    // Direct O(1) lookup with ID-first paths - no type search needed!
     const path = getVerbVectorPath(id)
 
     try {
-      // COW-aware read (v5.0.1): Use COW helper for branch isolation
+      // COW-aware read: Use COW helper for branch isolation
       const verb = await this.readWithInheritance(path)
       if (verb) {
-        // v5.7.10: Deserialize connections Map from JSON storage format
+        // Deserialize connections Map from JSON storage format
         return this.deserializeVerb(verb)
       }
     } catch (error) {
@@ -2884,7 +2876,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get verbs by source (v6.0.0: Uses GraphAdjacencyIndex when available)
+   * Get verbs by source (Uses GraphAdjacencyIndex when available)
    * Falls back to shard iteration during initialization to avoid circular dependency
    */
   protected async getVerbsBySource_internal(
@@ -2894,13 +2886,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     prodLog.debug(`[BaseStorage] getVerbsBySource_internal: sourceId=${sourceId}, graphIndex=${!!this.graphIndex}, isInitialized=${this.graphIndex?.isInitialized}`)
 
-    // v6.0.0: Fast path - use GraphAdjacencyIndex if available (lazy-loaded)
+    // Fast path - use GraphAdjacencyIndex if available (lazy-loaded)
     if (this.graphIndex && this.graphIndex.isInitialized) {
       try {
         const verbIds = await this.graphIndex.getVerbIdsBySource(sourceId)
         prodLog.debug(`[BaseStorage] GraphAdjacencyIndex found ${verbIds.length} verb IDs for sourceId=${sourceId}`)
 
-        // v6.0.2: PERFORMANCE FIX - Batch fetch verbs + metadata (eliminates N+1 pattern)
+        // PERFORMANCE FIX - Batch fetch verbs + metadata (eliminates N+1 pattern)
         // Before: N sequential calls (10 children = 20 × 300ms = 6000ms on GCS)
         // After: 2 parallel batch calls (10 children = 2 × 300ms = 600ms on GCS)
         // 10x improvement for cloud storage (GCS, S3, Azure)
@@ -2922,7 +2914,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           const metadata = metadataMap.get(metadataPath)
 
           if (rawVerb && metadata) {
-            // v6.0.0: CRITICAL - Deserialize connections Map from JSON storage format
+            // CRITICAL - Deserialize connections Map from JSON storage format
             const verb = this.deserializeVerb(rawVerb)
 
             results.push({
@@ -2949,7 +2941,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    // v6.0.0: Fallback - iterate by shards (WITH deserialization fix!)
+    // Fallback - iterate by shards (WITH deserialization fix!)
     prodLog.debug(`[BaseStorage] Using shard iteration fallback for sourceId=${sourceId}`)
     const results: HNSWVerbWithMetadata[] = []
     let shardsScanned = 0
@@ -2972,7 +2964,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
             verbsFound++
 
-            // v6.0.0: CRITICAL - Deserialize connections Map from JSON storage format
+            // CRITICAL - Deserialize connections Map from JSON storage format
             const verb = this.deserializeVerb(rawVerb)
 
             if (verb.sourceId === sourceId) {
@@ -3009,7 +3001,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Batch get verbs by source IDs (v5.12.0 - Cloud Storage Optimization)
+   * Batch get verbs by source IDs
    *
    * **Performance**: Eliminates N+1 query pattern for relationship lookups
    * - Current: N × getVerbsBySource() = N × (list all verbs + filter)
@@ -3038,7 +3030,6 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * }
    * ```
    *
-   * @since v5.12.0
    */
   public async getVerbsBySourceBatch(
     sourceIds: string[],
@@ -3057,7 +3048,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Convert sourceIds to Set for O(1) lookup
     const sourceIdSet = new Set(sourceIds)
 
-    // v6.0.0: Iterate by shards (0x00-0xFF) instead of types
+    // Iterate by shards (0x00-0xFF) instead of types
     for (let shard = 0; shard < 256; shard++) {
       const shardHex = shard.toString(16).padStart(2, '0')
       const shardDir = `entities/verbs/${shardHex}`
@@ -3092,7 +3083,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         for (const [verbPath, rawVerbData] of verbDataMap.entries()) {
           if (!rawVerbData || !rawVerbData.sourceId) continue
 
-          // v6.0.0: Deserialize connections Map from JSON storage format
+          // Deserialize connections Map from JSON storage format
           const verbData = this.deserializeVerb(rawVerbData)
 
           // Check if this verb's source is in our requested set
@@ -3135,15 +3126,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   /**
    * Get verbs by target (COW-aware implementation)
-   * v5.7.1: Reverted to v5.6.3 implementation to fix circular dependency deadlock
-   * v5.4.0: Fixed to directly list verb files instead of directories
+   * Reverted to fix circular dependency deadlock
+   * Fixed to directly list verb files instead of directories
    */
   protected async getVerbsByTarget_internal(
     targetId: string
   ): Promise<HNSWVerbWithMetadata[]> {
     await this.ensureInitialized()
 
-    // v6.0.0: Fast path - use GraphAdjacencyIndex if available (lazy-loaded)
+    // Fast path - use GraphAdjacencyIndex if available (lazy-loaded)
     if (this.graphIndex && this.graphIndex.isInitialized) {
       try {
         const verbIds = await this.graphIndex.getVerbIdsByTarget(targetId)
@@ -3177,7 +3168,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       }
     }
 
-    // v6.0.0: Fallback - iterate by shards (WITH deserialization fix!)
+    // Fallback - iterate by shards (WITH deserialization fix!)
     const results: HNSWVerbWithMetadata[] = []
 
     for (let shard = 0; shard < 256; shard++) {
@@ -3194,7 +3185,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
             const rawVerb = await this.readWithInheritance(verbPath)
             if (!rawVerb) continue
 
-            // v6.0.0: CRITICAL - Deserialize connections Map from JSON storage format
+            // CRITICAL - Deserialize connections Map from JSON storage format
             const verb = this.deserializeVerb(rawVerb)
 
             if (verb.targetId === targetId) {
@@ -3229,10 +3220,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get verbs by type (v6.0.0: Shard iteration with type filtering)
+   * Get verbs by type (Shard iteration with type filtering)
    */
   protected async getVerbsByType_internal(verbType: string): Promise<HNSWVerbWithMetadata[]> {
-    // v6.0.0: Iterate by shards (0x00-0xFF) instead of type-first paths
+    // Iterate by shards (0x00-0xFF) instead of type-first paths
     const verbs: HNSWVerbWithMetadata[] = []
 
     for (let shard = 0; shard < 256; shard++) {
@@ -3249,23 +3240,23 @@ export abstract class BaseStorage extends BaseStorageAdapter {
             const rawVerb = await this.readWithInheritance(verbPath)
             if (!rawVerb) continue
 
-            // v5.7.10: Deserialize connections Map from JSON storage format
+            // Deserialize connections Map from JSON storage format
             const hnswVerb = this.deserializeVerb(rawVerb)
 
             // Filter by verb type
             if (hnswVerb.verb !== verbType) continue
 
-            // Load metadata separately (optional in v4.0.0!)
+            // Load metadata separately (optional)
             const metadata = await this.getVerbMetadata(hnswVerb.id)
 
-            // v4.8.0: Extract standard fields from metadata to top-level
+            // Extract standard fields from metadata to top-level
             const metadataObj = (metadata || {}) as VerbMetadata
             const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
 
             const verbWithMetadata: HNSWVerbWithMetadata = {
               id: hnswVerb.id,
               vector: [...hnswVerb.vector],
-              connections: hnswVerb.connections, // v5.7.10: Already deserialized
+              connections: hnswVerb.connections, // Already deserialized
               verb: hnswVerb.verb,
               sourceId: hnswVerb.sourceId,
               targetId: hnswVerb.targetId,
@@ -3293,10 +3284,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Delete a verb from storage (v6.0.0: ID-first, O(1) delete)
+   * Delete a verb from storage (ID-first, O(1) delete)
    */
   protected async deleteVerb_internal(id: string): Promise<void> {
-    // v6.0.0: Direct O(1) delete with ID-first path
+    // Direct O(1) delete with ID-first path
     const path = getVerbVectorPath(id)
     await this.deleteObjectFromBranch(path)
 

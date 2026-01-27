@@ -60,7 +60,7 @@ export class ConfigAPI {
     // Store in cache
     this.configCache.set(key, entry)
 
-    // v4.0.0: Persist to storage as NounMetadata
+    // Persist to storage as NounMetadata
     const configId = this.CONFIG_NOUN_PREFIX + key
     const nounMetadata = {
       noun: 'config' as any,
@@ -94,7 +94,7 @@ export class ConfigAPI {
         return defaultValue
       }
 
-      // v4.0.0: Extract ConfigEntry from NounMetadata
+      // Extract ConfigEntry from NounMetadata
       const createdAtVal = typeof metadata.createdAt === 'object' && metadata.createdAt !== null && 'seconds' in metadata.createdAt
         ? metadata.createdAt.seconds * 1000 + Math.floor((metadata.createdAt.nanoseconds || 0) / 1000000)
         : ((metadata.createdAt as unknown as number) || Date.now())
@@ -140,7 +140,7 @@ export class ConfigAPI {
     // Remove from cache
     this.configCache.delete(key)
 
-    // v4.0.0: Remove from storage
+    // Remove from storage
     const configId = this.CONFIG_NOUN_PREFIX + key
     await this.storage.deleteNounMetadata(configId)
   }
@@ -149,7 +149,7 @@ export class ConfigAPI {
    * List all configuration keys
    */
   async list(): Promise<string[]> {
-    // v4.0.0: Get all nouns and filter for config entries
+    // Get all nouns and filter for config entries
     const result = await this.storage.getNouns({ pagination: { limit: 10000 } })
 
     const configKeys: string[] = []
@@ -213,7 +213,7 @@ export class ConfigAPI {
     for (const [key, entry] of Object.entries(config)) {
       this.configCache.set(key, entry)
       const configId = this.CONFIG_NOUN_PREFIX + key
-      // v4.0.0: Convert ConfigEntry to NounMetadata
+      // Convert ConfigEntry to NounMetadata
       const nounMetadata = {
         noun: 'config' as any,
         ...entry,
@@ -240,7 +240,7 @@ export class ConfigAPI {
       return null
     }
 
-    // v4.0.0: Extract ConfigEntry from NounMetadata
+    // Extract ConfigEntry from NounMetadata
     const createdAtVal = typeof metadata.createdAt === 'object' && metadata.createdAt !== null && 'seconds' in metadata.createdAt
       ? metadata.createdAt.seconds * 1000 + Math.floor((metadata.createdAt.nanoseconds || 0) / 1000000)
       : ((metadata.createdAt as unknown as number) || Date.now())

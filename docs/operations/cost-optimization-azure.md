@@ -1,10 +1,9 @@
-# Azure Blob Storage Cost Optimization Guide for Brainy v4.0.0
-
+# Azure Blob Storage Cost Optimization Guide for Brainy
 > **Cost Impact**: Reduce storage costs from $107k/year to $5k/year at 500TB scale (**95% savings**)
 
 ## Overview
 
-Brainy v4.0.0 provides enterprise-grade cost optimization features for Azure Blob Storage, including manual tier management, lifecycle policies, and batch operations.
+Brainy provides enterprise-grade cost optimization features for Azure Blob Storage, including manual tier management, lifecycle policies, and batch operations.
 
 ## Cost Breakdown (Before Optimization)
 
@@ -41,8 +40,8 @@ import { AzureBlobStorage } from '@soulcraft/brainy/storage'
 
 // Initialize Brainy with Azure storage
 const storage = new AzureBlobStorage({
-  connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
-  containerName: 'brainy-data'
+ connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
+ containerName: 'brainy-data'
 })
 
 const brain = new Brainy({ storage })
@@ -50,19 +49,19 @@ await brain.init()
 
 // Change tier for a single blob
 await storage.changeBlobTier(
-  'entities/nouns/vectors/00/00123456-uuid.json',
-  'Cool'
+ 'entities/nouns/vectors/00/00123456-uuid.json',
+ 'Cool'
 )
 
 // Batch tier changes (efficient for thousands of blobs)
 const blobsToMove = [
-  'entities/nouns/vectors/01/...',
-  'entities/nouns/vectors/02/...',
-  // ... up to thousands of blobs
+ 'entities/nouns/vectors/01/...',
+ 'entities/nouns/vectors/02/...',
+ // ... up to thousands of blobs
 ]
 
-await storage.batchChangeTier(blobsToMove, 'Cool')  // Hot → Cool
-await storage.batchChangeTier(oldBlobs, 'Archive')  // Cool → Archive
+await storage.batchChangeTier(blobsToMove, 'Cool') // Hot → Cool
+await storage.batchChangeTier(oldBlobs, 'Archive') // Cool → Archive
 ```
 
 ### Immediate Cost Impact
@@ -90,54 +89,54 @@ Savings: $20,346/year (95% savings on moved data)
 ```typescript
 // Set lifecycle policy for automatic tier management
 await storage.setLifecyclePolicy({
-  rules: [{
-    name: 'optimizeVectors',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['entities/nouns/vectors/']
-      },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 30 },
-          tierToArchive: { daysAfterModificationGreaterThan: 90 }
-        }
-      }
-    }
-  }, {
-    name: 'optimizeMetadata',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['entities/nouns/metadata/']
-      },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 30 },
-          tierToArchive: { daysAfterModificationGreaterThan: 180 }
-        }
-      }
-    }
-  }, {
-    name: 'cleanupOldSystemFiles',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['_system/']
-      },
-      actions: {
-        baseBlob: {
-          delete: { daysAfterModificationGreaterThan: 365 }
-        }
-      }
-    }
-  }]
+ rules: [{
+ name: 'optimizeVectors',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['entities/nouns/vectors/']
+ },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 30 },
+ tierToArchive: { daysAfterModificationGreaterThan: 90 }
+ }
+ }
+ }
+ }, {
+ name: 'optimizeMetadata',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['entities/nouns/metadata/']
+ },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 30 },
+ tierToArchive: { daysAfterModificationGreaterThan: 180 }
+ }
+ }
+ }
+ }, {
+ name: 'cleanupOldSystemFiles',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['_system/']
+ },
+ actions: {
+ baseBlob: {
+ delete: { daysAfterModificationGreaterThan: 365 }
+ }
+ }
+ }
+ }]
 })
 
 // Verify lifecycle policy
@@ -153,9 +152,9 @@ console.log('Lifecycle policy active:', policy.rules.length, 'rules')
 - 30% of data in Archive tier (90+ days old)
 
 ```
-Hot (150TB):        150TB × $0.0184/GB × 12 = $32,256/year
-Cool (200TB):       200TB × $0.0115/GB × 12 = $26,880/year
-Archive (150TB):    150TB × $0.00099/GB × 12 = $1,732/year
+Hot (150TB): 150TB × $0.0184/GB × 12 = $32,256/year
+Cool (200TB): 200TB × $0.0115/GB × 12 = $26,880/year
+Archive (150TB): 150TB × $0.00099/GB × 12 = $1,732/year
 
 Total Storage Cost: $60,868/year
 Total with Operations: ~$65,500/year
@@ -170,23 +169,23 @@ Savings: $47,000/year (42%)
 
 ```typescript
 await storage.setLifecyclePolicy({
-  rules: [{
-    name: 'aggressiveArchival',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['entities/']
-      },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 14 },
-          tierToArchive: { daysAfterModificationGreaterThan: 30 }
-        }
-      }
-    }
-  }]
+ rules: [{
+ name: 'aggressiveArchival',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['entities/']
+ },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 14 },
+ tierToArchive: { daysAfterModificationGreaterThan: 30 }
+ }
+ }
+ }
+ }]
 })
 ```
 
@@ -194,9 +193,9 @@ await storage.setLifecyclePolicy({
 
 **After 6 months:**
 ```
-Hot (50TB):         50TB × $0.0184/GB × 12 = $10,752/year
-Cool (100TB):       100TB × $0.0115/GB × 12 = $13,440/year
-Archive (350TB):    350TB × $0.00099/GB × 12 = $4,039/year
+Hot (50TB): 50TB × $0.0184/GB × 12 = $10,752/year
+Cool (100TB): 100TB × $0.0115/GB × 12 = $13,440/year
+Archive (350TB): 350TB × $0.00099/GB × 12 = $4,039/year
 
 Total Storage Cost: $28,231/year
 Total with Operations: ~$33,000/year
@@ -211,41 +210,41 @@ Warning: Archive rehydration takes 1-15 hours
 
 ```typescript
 await storage.setLifecyclePolicy({
-  rules: [{
-    // Vectors: Keep in Hot/Cool for search performance
-    name: 'vectors-moderate',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['entities/nouns/vectors/', 'entities/verbs/vectors/']
-      },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 60 }
-          // Don't archive vectors - keep searchable
-        }
-      }
-    }
-  }, {
-    // Metadata: Aggressive archival
-    name: 'metadata-aggressive',
-    enabled: true,
-    type: 'Lifecycle',
-    definition: {
-      filters: {
-        blobTypes: ['blockBlob'],
-        prefixMatch: ['entities/nouns/metadata/', 'entities/verbs/metadata/']
-      },
-      actions: {
-        baseBlob: {
-          tierToCool: { daysAfterModificationGreaterThan: 30 },
-          tierToArchive: { daysAfterModificationGreaterThan: 90 }
-        }
-      }
-    }
-  }]
+ rules: [{
+ // Vectors: Keep in Hot/Cool for search performance
+ name: 'vectors-moderate',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['entities/nouns/vectors/', 'entities/verbs/vectors/']
+ },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 60 }
+ // Don't archive vectors - keep searchable
+ }
+ }
+ }
+ }, {
+ // Metadata: Aggressive archival
+ name: 'metadata-aggressive',
+ enabled: true,
+ type: 'Lifecycle',
+ definition: {
+ filters: {
+ blobTypes: ['blockBlob'],
+ prefixMatch: ['entities/nouns/metadata/', 'entities/verbs/metadata/']
+ },
+ actions: {
+ baseBlob: {
+ tierToCool: { daysAfterModificationGreaterThan: 30 },
+ tierToArchive: { daysAfterModificationGreaterThan: 90 }
+ }
+ }
+ }
+ }]
 })
 ```
 
@@ -253,16 +252,16 @@ await storage.setLifecyclePolicy({
 
 **Vectors (300TB):**
 ```
-Hot (90TB):         90TB × $0.0184/GB × 12 = $19,354/year
-Cool (210TB):       210TB × $0.0115/GB × 12 = $28,980/year
+Hot (90TB): 90TB × $0.0184/GB × 12 = $19,354/year
+Cool (210TB): 210TB × $0.0115/GB × 12 = $28,980/year
 Subtotal: $48,334/year
 ```
 
 **Metadata (200TB):**
 ```
-Hot (30TB):         30TB × $0.0184/GB × 12 = $6,451/year
-Cool (70TB):        70TB × $0.0115/GB × 12 = $9,660/year
-Archive (100TB):    100TB × $0.00099/GB × 12 = $1,158/year
+Hot (30TB): 30TB × $0.0184/GB × 12 = $6,451/year
+Cool (70TB): 70TB × $0.0115/GB × 12 = $9,660/year
+Archive (100TB): 100TB × $0.00099/GB × 12 = $1,158/year
 Subtotal: $17,269/year
 ```
 
@@ -288,8 +287,8 @@ Subtotal: $17,269/year
 ```typescript
 // Rehydrate blob from Archive to Hot (high priority)
 await storage.rehydrateBlob(
-  'entities/nouns/vectors/00/00123456-uuid.json',
-  'High'  // 'Standard' or 'High' priority
+ 'entities/nouns/vectors/00/00123456-uuid.json',
+ 'High' // 'Standard' or 'High' priority
 )
 
 // Rehydration time:
@@ -309,7 +308,7 @@ console.log('Archive status:', metadata.archiveStatus)
 const blobsToRehydrate = [/* array of blob paths */]
 
 for (const blobPath of blobsToRehydrate) {
-  await storage.rehydrateBlob(blobPath, 'High')
+ await storage.rehydrateBlob(blobPath, 'High')
 }
 
 // Wait for rehydration to complete (1-15 hours)
@@ -333,15 +332,15 @@ Examples:
 ### Efficient Bulk Deletions
 
 ```typescript
-// v4.0.0: Batch delete (256 blobs per request)
+// Batch delete (256 blobs per request)
 const idsToDelete = [/* array of entity IDs */]
 
 const paths = idsToDelete.flatMap(id => {
-  const shard = id.substring(0, 2)
-  return [
-    `entities/nouns/vectors/${shard}/${id}.json`,
-    `entities/nouns/metadata/${shard}/${id}.json`
-  ]
+ const shard = id.substring(0, 2)
+ return [
+ `entities/nouns/vectors/${shard}/${id}.json`,
+ `entities/nouns/metadata/${shard}/${id}.json`
+ ]
 })
 
 // Batch delete via BlobBatchClient
@@ -375,14 +374,14 @@ console.log('Active rules:', policy.rules)
 
 // Example output:
 // {
-//   rules: [
-//     {
-//       name: 'optimizeVectors',
-//       enabled: true,
-//       type: 'Lifecycle',
-//       definition: {...}
-//     }
-//   ]
+// rules: [
+// {
+// name: 'optimizeVectors',
+// enabled: true,
+// type: 'Lifecycle',
+// definition: {...}
+// }
+// ]
 // }
 ```
 
@@ -452,8 +451,8 @@ Monthly cost trend: Decreasing 5-8% per month as data transitions
 // Check lifecycle policy status
 const policy = await storage.getLifecyclePolicy()
 console.log('Policy rules:', policy.rules.map(r => ({
-  name: r.name,
-  enabled: r.enabled
+ name: r.name,
+ enabled: r.enabled
 })))
 
 // Azure lifecycle policies run once per day
@@ -471,9 +470,9 @@ await storage.rehydrateBlob(blobPath, 'High')
 // Wait for rehydration (check status)
 let status
 do {
-  await new Promise(resolve => setTimeout(resolve, 60000))  // Wait 1 minute
-  const metadata = await storage.getBlobMetadata(blobPath)
-  status = metadata.archiveStatus
+ await new Promise(resolve => setTimeout(resolve, 60000)) // Wait 1 minute
+ const metadata = await storage.getBlobMetadata(blobPath)
+ status = metadata.archiveStatus
 } while (status && status.includes('pending'))
 
 // Now access the blob
@@ -494,8 +493,8 @@ const data = await storage.get(blobPath)
 
 ```typescript
 const storage = new AzureBlobStorage({
-  connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
-  containerName: 'brainy-data'
+ connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
+ containerName: 'brainy-data'
 })
 ```
 
@@ -503,9 +502,9 @@ const storage = new AzureBlobStorage({
 
 ```typescript
 const storage = new AzureBlobStorage({
-  accountName: process.env.AZURE_STORAGE_ACCOUNT,
-  accountKey: process.env.AZURE_STORAGE_KEY,
-  containerName: 'brainy-data'
+ accountName: process.env.AZURE_STORAGE_ACCOUNT,
+ accountKey: process.env.AZURE_STORAGE_KEY,
+ containerName: 'brainy-data'
 })
 ```
 
@@ -513,9 +512,9 @@ const storage = new AzureBlobStorage({
 
 ```typescript
 const storage = new AzureBlobStorage({
-  sasToken: process.env.AZURE_STORAGE_SAS_TOKEN,
-  accountName: process.env.AZURE_STORAGE_ACCOUNT,
-  containerName: 'brainy-data'
+ sasToken: process.env.AZURE_STORAGE_SAS_TOKEN,
+ accountName: process.env.AZURE_STORAGE_ACCOUNT,
+ containerName: 'brainy-data'
 })
 ```
 
@@ -549,6 +548,5 @@ const storage = new AzureBlobStorage({
 
 ---
 
-**Version**: v4.0.0
 **Last Updated**: 2025-10-17
 **Cloud Provider**: Azure Blob Storage

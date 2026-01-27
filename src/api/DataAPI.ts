@@ -210,7 +210,7 @@ export class DataAPI {
               this.validateImportItem(mapped)
             }
 
-            // v4.0.0: Save entity - separate vector and metadata
+            // Save entity - separate vector and metadata
             const id = mapped.id || this.generateId()
             const noun: HNSWNoun = {
               id,

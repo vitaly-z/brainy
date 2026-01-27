@@ -48,7 +48,7 @@ git commit -m "chore: remove unused dependency"
 # DON'T use BREAKING CHANGE for internal changes
 git commit -m "feat: improve model delivery
 
-BREAKING CHANGE: removed tar-stream dependency"  # WRONG! This triggers v3.0.0
+BREAKING CHANGE: removed tar-stream dependency"  # WRONG! This triggers
 ```
 
 ## Release Workflow Checklist

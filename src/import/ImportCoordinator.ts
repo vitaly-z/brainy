@@ -37,10 +37,10 @@ export interface ImportSource {
   /** Optional filename hint */
   filename?: string
 
-  /** HTTP headers for URL imports (v4.2.0) */
+  /** HTTP headers for URL imports */
   headers?: Record<string, string>
 
-  /** Basic authentication for URL imports (v4.2.0) */
+  /** Basic authentication for URL imports */
   auth?: {
     username: string
     password: string
@@ -93,7 +93,7 @@ export interface ValidImportOptions {
   /** Create relationships in knowledge graph */
   createRelationships?: boolean
 
-  /** Create provenance relationships (document → entity) [v4.9.0] */
+  /** Create provenance relationships (document → entity) */
   createProvenanceLinks?: boolean
 
   /** Preserve source file in VFS */
@@ -144,7 +144,7 @@ export interface ValidImportOptions {
   customMetadata?: Record<string, any>
 
   /**
-   * Progress callback for tracking import progress (v4.2.0+)
+   * Progress callback for tracking import progress
    *
    * **Streaming Architecture** (always enabled):
    * - Indexes are flushed periodically during import (adaptive intervals)
@@ -227,21 +227,21 @@ export type ImportOptions = ValidImportOptions & DeprecatedImportOptions
 
 export interface ImportProgress {
   stage: 'detecting' | 'extracting' | 'storing-vfs' | 'storing-graph' | 'relationships' | 'complete'
-  /** Phase of import - extraction or relationship building (v3.49.0) */
+  /** Phase of import - extraction or relationship building */
   phase?: 'extraction' | 'relationships'
   message: string
   processed?: number
-  /** Alias for processed, used in relationship phase (v3.49.0) */
+  /** Alias for processed, used in relationship phase */
   current?: number
   total?: number
   entities?: number
   relationships?: number
-  /** Rows per second (v3.38.0) */
+  /** Rows per second */
   throughput?: number
-  /** Estimated time remaining in ms (v3.38.0) */
+  /** Estimated time remaining in ms */
   eta?: number
   /**
-   * Whether data is queryable at this point (v4.2.0+)
+   * Whether data is queryable at this point
    *
    * When true, indexes have been flushed and queries will return up-to-date results.
    * When false, data exists in storage but indexes may not be current (queries may be slower/incomplete).
@@ -357,7 +357,7 @@ export class ImportCoordinator {
 
   /**
    * Import from any source with auto-detection
-   * v4.2.0: Now supports URL imports with authentication
+   * Now supports URL imports with authentication
    */
   async import(
     source: Buffer | string | object | ImportSource,
@@ -365,10 +365,10 @@ export class ImportCoordinator {
   ): Promise<ImportResult> {
     const startTime = Date.now()
 
-    // Validate options (v4.0.0+: Reject deprecated v3.x options)
+    // Validate options (Reject deprecated options)
     this.validateOptions(options)
 
-    // Normalize source (v4.2.0: handles URL fetching)
+    // Normalize source (handles URL fetching)
     const normalizedSource = await this.normalizeSource(source, options.format)
 
     // Report detection stage
@@ -387,10 +387,10 @@ export class ImportCoordinator {
     }
 
     // Set defaults early (needed for tracking context)
-    // CRITICAL FIX (v4.3.2): Spread options FIRST, then apply defaults
+    // CRITICAL FIX: Spread options FIRST, then apply defaults
     // Previously: ...options at the end overwrote normalized defaults with undefined
     // Now: Defaults properly override undefined values
-    // v4.4.0: Enable AI features by default for smarter imports
+    // Enable AI features by default for smarter imports
     const opts = {
       ...options,  // Spread first to get all options
       vfsPath: options.vfsPath || `/imports/${Date.now()}`,
@@ -399,13 +399,13 @@ export class ImportCoordinator {
       createRelationships: options.createRelationships !== false,
       preserveSource: options.preserveSource !== false,
       enableDeduplication: options.enableDeduplication !== false,
-      enableNeuralExtraction: options.enableNeuralExtraction !== false,  // v4.4.0: Default true
-      enableRelationshipInference: options.enableRelationshipInference !== false,  // v4.4.0: Default true
+      enableNeuralExtraction: options.enableNeuralExtraction !== false,  // Default true
+      enableRelationshipInference: options.enableRelationshipInference !== false,  // Default true
       enableConceptExtraction: options.enableConceptExtraction !== false,  // Already defaults to true
       deduplicationThreshold: options.deduplicationThreshold || 0.85
     }
 
-    // Generate tracking context (v4.10.0+: Unified import/project tracking)
+    // Generate tracking context (Unified import/project tracking)
     const importId = options.importId || uuidv4()
     const projectId = options.projectId || this.deriveProjectId(opts.vfsPath)
     const trackingContext: TrackingContext = {
@@ -441,13 +441,13 @@ export class ImportCoordinator {
       groupBy: opts.groupBy,
       customGrouping: opts.customGrouping,
       preserveSource: opts.preserveSource,
-      // v5.1.2: Fix sourceBuffer for file paths - type is 'path' not 'buffer' from normalizeSource()
+      // Fix sourceBuffer for file paths - type is 'path' not 'buffer' from normalizeSource()
       sourceBuffer: Buffer.isBuffer(normalizedSource.data) ? normalizedSource.data as Buffer : undefined,
       sourceFilename: normalizedSource.filename || `import.${detection.format}`,
       createRelationshipFile: true,
       createMetadataFile: true,
-      trackingContext,  // v4.10.0: Pass tracking metadata to VFS
-      // v4.11.1: Pass progress callback for VFS creation updates
+      trackingContext,  // Pass tracking metadata to VFS
+      // Pass progress callback for VFS creation updates
       onProgress: (vfsProgress) => {
         options.onProgress?.({
           stage: 'storing-vfs',
@@ -473,7 +473,7 @@ export class ImportCoordinator {
         sourceFilename: normalizedSource.filename || `import.${detection.format}`,
         format: detection.format
       },
-      trackingContext  // v4.10.0: Pass tracking metadata to graph creation
+      trackingContext  // Pass tracking metadata to graph creation
     )
 
     // Report complete
@@ -520,7 +520,7 @@ export class ImportCoordinator {
       )
     }
 
-    // CRITICAL FIX (v3.43.2): Auto-flush all indexes before returning
+    // CRITICAL FIX: Auto-flush all indexes before returning
     // Ensures imported data survives server restarts
     // Bug #5: Import data was only in memory, lost on restart
     options.onProgress?.({
@@ -535,7 +535,7 @@ export class ImportCoordinator {
 
   /**
    * Normalize source to ImportSource
-   * v4.2.0: Now async to support URL fetching
+   * Now async to support URL fetching
    */
   private async normalizeSource(
     source: Buffer | string | object | ImportSource,
@@ -616,7 +616,7 @@ export class ImportCoordinator {
 
   /**
    * Fetch content from URL
-   * v4.2.0: Supports authentication and custom headers
+   * Supports authentication and custom headers
    */
   private async fetchUrl(source: ImportSource): Promise<ImportSource> {
     const url = typeof source.data === 'string' ? source.data : String(source.data)
@@ -722,7 +722,7 @@ export class ImportCoordinator {
     format: SupportedFormat,
     options: ImportOptions
   ): Promise<any> {
-    // v5.2.0: Check if IntelligentImportAugmentation already extracted data
+    // Check if IntelligentImportAugmentation already extracted data
     if ((options as any)._intelligentImport && (options as any)._extractedData) {
       const extractedData = (options as any)._extractedData
       // Convert extracted data to ExtractedRow format
@@ -760,7 +760,7 @@ export class ImportCoordinator {
       enableConceptExtraction: options.enableConceptExtraction !== false,
       confidenceThreshold: options.confidenceThreshold || 0.6,
       onProgress: (stats: any) => {
-        // Enhanced progress reporting (v3.38.0) with throughput and ETA
+        // Enhanced progress reporting with throughput and ETA
         const message = stats.throughput
           ? `Extracting entities from ${format} (${stats.throughput} rows/sec, ETA: ${Math.round(stats.eta / 1000)}s)...`
           : `Extracting entities from ${format}...`
@@ -825,7 +825,7 @@ export class ImportCoordinator {
         return await this.docxImporter.extract(docxBuffer, extractOptions)
 
       case 'image':
-        // v5.2.0: Images are handled by IntelligentImportAugmentation
+        // Images are handled by IntelligentImportAugmentation
         // If we reach here, augmentation didn't process it - return minimal result
         const imageName = source.filename || 'image'
         const imageId = `image-${Date.now()}`
@@ -867,7 +867,7 @@ export class ImportCoordinator {
 
   /**
    * Create entities and relationships in knowledge graph
-   * v4.9.0: Added sourceInfo parameter for document entity creation
+   * Added sourceInfo parameter for document entity creation
    */
   private async createGraphEntities(
     extractionResult: any,
@@ -877,7 +877,7 @@ export class ImportCoordinator {
       sourceFilename: string
       format: string
     },
-    trackingContext?: TrackingContext  // v4.10.0: Import/project tracking
+    trackingContext?: TrackingContext  // Import/project tracking
   ): Promise<{
     entities: Array<{ id: string; name: string; type: NounType; vfsPath?: string; metadata?: Record<string, any> }>
     relationships: Array<{ id: string; from: string; to: string; type: VerbType }>
@@ -891,7 +891,7 @@ export class ImportCoordinator {
     let mergedCount = 0
     let newCount = 0
 
-    // CRITICAL FIX (v4.3.2): Default to true when undefined
+    // CRITICAL FIX: Default to true when undefined
     // Previously: if (!options.createEntities) treated undefined as false
     // Now: Only skip when explicitly set to false
     if (options.createEntities === false) {
@@ -908,7 +908,7 @@ export class ImportCoordinator {
     // Extract rows/sections/entities from result (unified across formats)
     const rows = extractionResult.rows || extractionResult.sections || extractionResult.entities || []
 
-    // Progressive flush interval - adjusts based on current count (v4.2.0+)
+    // Progressive flush interval - adjusts based on current count
     // Starts at 100, increases to 1000 at 1K entities, then 5000 at 10K
     // This works for both known totals (files) and unknown totals (streaming APIs)
     let currentFlushInterval = 100  // Start with frequent updates for better UX
@@ -938,7 +938,7 @@ export class ImportCoordinator {
     }
 
     // ============================================
-    // v4.9.0: Create document entity for import source
+    // Create document entity for import source
     // ============================================
     let documentEntityId: string | null = null
     let provenanceCount = 0
@@ -957,7 +957,7 @@ export class ImportCoordinator {
           vfsPath: vfsResult.rootPath,
           totalRows: rows.length,
           byType: this.countByType(rows),
-          // v4.10.0: Import tracking metadata
+          // Import tracking metadata
           ...(trackingContext && {
             importIds: [trackingContext.importId],
             projectId: trackingContext.projectId,
@@ -973,7 +973,7 @@ export class ImportCoordinator {
     }
 
     // ============================================
-    // v4.11.0: Batch entity creation using addMany()
+    // Batch entity creation using addMany()
     // Replaces entity-by-entity loop for 10-100x performance improvement on cloud storage
     // ============================================
 
@@ -1038,7 +1038,7 @@ export class ImportCoordinator {
           name: entity.name,
           type: entity.type,
           vfsPath: vfsFile?.path,
-          metadata: entity.metadata  // v5.2.0: Include metadata in return (for ImageHandler, etc)
+          metadata: entity.metadata  // Include metadata in return (for ImageHandler, etc)
         })
         newCount++
       }
@@ -1090,7 +1090,7 @@ export class ImportCoordinator {
           const importSource = vfsResult.rootPath
           let entityId: string
 
-          // v5.7.0: No deduplication during import (12-24x speedup)
+          // No deduplication during import (12-24x speedup)
           // Background deduplication runs 5 minutes after import completes
           entityId = await this.brain.add({
             data: entity.description || entity.name,
@@ -1101,7 +1101,7 @@ export class ImportCoordinator {
               confidence: entity.confidence,
               vfsPath: vfsFile?.path,
               importedFrom: 'import-coordinator',
-              // v4.10.0: Import tracking metadata
+              // Import tracking metadata
               ...(trackingContext && {
                 importId: trackingContext.importId,  // Used for background dedup
                 importIds: [trackingContext.importId],
@@ -1126,11 +1126,11 @@ export class ImportCoordinator {
           name: entity.name,
           type: entity.type,
           vfsPath: vfsFile?.path,
-          metadata: entity.metadata  // v5.2.0: Include metadata in return (for ImageHandler, etc)
+          metadata: entity.metadata  // Include metadata in return (for ImageHandler, etc)
         })
 
         // ============================================
-        // v4.9.0: Create provenance relationship (document → entity)
+        // Create provenance relationship (document → entity)
         // ============================================
         if (documentEntityId && options.createProvenanceLinks !== false) {
           await this.brain.relate({
@@ -1144,7 +1144,7 @@ export class ImportCoordinator {
               rowNumber: row.rowNumber,
               extractedAt: Date.now(),
               format: sourceInfo?.format,
-              // v4.10.0: Import tracking metadata
+              // Import tracking metadata
               ...(trackingContext && {
                 importIds: [trackingContext.importId],
                 projectId: trackingContext.projectId,
@@ -1161,7 +1161,7 @@ export class ImportCoordinator {
         if (options.createRelationships && row.relationships) {
           for (const rel of row.relationships) {
             try {
-              // CRITICAL FIX (v3.43.2): Prevent infinite placeholder creation loop
+              // CRITICAL FIX: Prevent infinite placeholder creation loop
               // Find or create target entity using EXACT matching only
               let targetEntityId: string | undefined
 
@@ -1195,7 +1195,7 @@ export class ImportCoordinator {
                       name: rel.to,
                       placeholder: true,
                       inferredFrom: entity.name,
-                      // v4.10.0: Import tracking metadata
+                      // Import tracking metadata
                       ...(trackingContext && {
                         importIds: [trackingContext.importId],
                         projectId: trackingContext.projectId,
@@ -1221,11 +1221,11 @@ export class ImportCoordinator {
                 from: entityId,
                 to: targetEntityId,
                 type: rel.type,
-                confidence: rel.confidence, // v4.2.0: Top-level field
-                weight: rel.weight || 1.0,  // v4.2.0: Top-level field
+                confidence: rel.confidence, // Top-level field
+                weight: rel.weight || 1.0,  // Top-level field
                 metadata: {
                   evidence: rel.evidence,
-                  // v4.10.0: Import tracking metadata (will be merged in batch creation)
+                  // Import tracking metadata (will be merged in batch creation)
                   ...(trackingContext && {
                     importIds: [trackingContext.importId],
                     projectId: trackingContext.projectId,
@@ -1242,7 +1242,7 @@ export class ImportCoordinator {
           }
         }
 
-        // Streaming import: Progressive flush with dynamic interval adjustment (v4.2.0+)
+        // Streaming import: Progressive flush with dynamic interval adjustment
         entitiesSinceFlush++
 
         if (entitiesSinceFlush >= currentFlushInterval) {
@@ -1307,7 +1307,7 @@ export class ImportCoordinator {
     }
 
     // Batch create all relationships using brain.relateMany() for performance
-    // v4.9.0: Enhanced with type-based inference and semantic metadata
+    // Enhanced with type-based inference and semantic metadata
     if (options.createRelationships && relationships.length > 0) {
       try {
         const relationshipParams = relationships.map(rel => {
@@ -1331,7 +1331,7 @@ export class ImportCoordinator {
             type: verbType,  // Enhanced type
             metadata: {
               ...((rel as any).metadata || {}),
-              relationshipType: 'semantic',  // v4.9.0: Distinguish from VFS/provenance
+              relationshipType: 'semantic',  // Distinguish from VFS/provenance
               inferredType: verbType !== rel.type,  // Track if type was enhanced
               originalType: rel.type
             }
@@ -1369,7 +1369,7 @@ export class ImportCoordinator {
       }
     }
 
-    // v5.7.0: Schedule background deduplication (debounced 5 minutes)
+    // Schedule background deduplication (debounced 5 minutes)
     if (trackingContext && trackingContext.importId) {
       this.backgroundDedup.scheduleDedup(trackingContext.importId)
     }
@@ -1457,7 +1457,7 @@ export class ImportCoordinator {
       }
     }
 
-    // YAML: entities -> rows (v4.2.0)
+    // YAML: entities -> rows
     if (format === 'yaml') {
       const rows = result.entities.map((entity: any) => ({
         entity,
@@ -1477,7 +1477,7 @@ export class ImportCoordinator {
       }
     }
 
-    // DOCX: entities -> rows (v4.2.0)
+    // DOCX: entities -> rows
     if (format === 'docx') {
       const rows = result.entities.map((entity: any) => ({
         entity,
@@ -1502,7 +1502,7 @@ export class ImportCoordinator {
   }
 
   /**
-   * Validate options and reject deprecated v3.x options (v4.0.0+)
+   * Validate options and reject deprecated v3.x options
    * Throws clear errors with migration guidance
    */
   private validateOptions(options: any): void {
@@ -1657,7 +1657,7 @@ ${optionDetails}
   }
 
   /**
-   * Get progressive flush interval based on CURRENT entity count (v4.2.0+)
+   * Get progressive flush interval based on CURRENT entity count
    *
    * Unlike adaptive intervals (which require knowing total count upfront),
    * progressive intervals adjust dynamically as import proceeds.
@@ -1699,7 +1699,7 @@ ${optionDetails}
 
   /**
    * Infer relationship type based on entity types and context
-   * v4.9.0: Semantic relationship enhancement
+   * Semantic relationship enhancement
    *
    * @param sourceType - Type of source entity
    * @param targetType - Type of target entity
@@ -1769,7 +1769,7 @@ ${optionDetails}
 
   /**
    * Count entities by type for document metadata
-   * v4.9.0: Used for document entity statistics
+   * Used for document entity statistics
    *
    * @param rows - Extracted rows from import
    * @returns Record of entity type counts

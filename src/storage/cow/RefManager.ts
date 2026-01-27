@@ -55,7 +55,7 @@ export interface RefUpdateOptions {
 /**
  * RefManager: Manages branches, tags, and HEAD pointer
  *
- * Pure implementation for v5.0.0 - no backward compatibility
+ * Pure implementation - no backward compatibility
  */
 export class RefManager {
   private adapter: COWStorageAdapter

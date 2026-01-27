@@ -15,7 +15,7 @@ This document explains how Brainy's four indexes (MetadataIndex, HNSWIndex, Grap
 | **GraphAdjacencyIndex** | Relationships via LSM-tree SSTables | LSM-tree auto-persistence | v3.44.0 |
 | **DeletedItemsIndex** | Set of deleted IDs | `storage.saveDeletedItems()` | v3.0.0 |
 
-#### MetadataIndex Persistence Details (v4.2.1+)
+#### MetadataIndex Persistence Details
 
 The MetadataIndex now persists two components:
 
@@ -129,7 +129,7 @@ async init(): Promise<void> {
 - 100-2000ms: One-time rebuild to create indices
 - Total: ~1-3 seconds (one time only)
 
-#### Mode 2: Lazy Loading on First Query (v5.7.7+)
+#### Mode 2: Lazy Loading on First Query
 
 When `disableAutoRebuild: true`, indexes remain empty after init() and rebuild on first query:
 
@@ -350,7 +350,7 @@ public async rebuild(options?: {
 
 **Performance Impact**: 200-600x speedup (5 minutes → 500ms for 10K entities)
 
-**Correct Pattern** (v3.45.0):
+**Correct Pattern**:
 ```typescript
 // Load ALL nouns ONCE (not 31 times!)
 while (hasMore) {
@@ -392,7 +392,7 @@ while (hasMore) {
 ```typescript
 // src/utils/metadataIndex.ts (lines 202-216)
 async init(): Promise<void> {
-  // STEP 1: Load field registry to discover persisted indices (v4.2.1)
+  // STEP 1: Load field registry to discover persisted indices
   // This is THE KEY FIX - O(1) discovery of existing indices
   await this.loadFieldRegistry()
 

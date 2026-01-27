@@ -172,7 +172,7 @@ export const coreCommands = {
         metadata
       }
 
-      // v4.3.x: Add confidence and weight if provided
+      // Add confidence and weight if provided
       if (options.confidence) {
         addParams.confidence = parseFloat(options.confidence)
       }
@@ -347,7 +347,7 @@ export const coreCommands = {
         searchParams.includeRelations = true
       }
 
-      // v4.7.0: VFS is now part of the knowledge graph (included by default)
+      // VFS is now part of the knowledge graph (included by default)
       // Users can exclude VFS with --where vfsType exists:false if needed
 
       // Triple Intelligence Fusion - custom weighting

@@ -111,7 +111,7 @@ export class FormatDetector {
       return 'docx'
     }
 
-    // Images (v5.2.0: ImageHandler support)
+    // Images (ImageHandler support)
     if (mimeType.startsWith('image/')) {
       return 'image'
     }
@@ -134,7 +134,7 @@ export class FormatDetector {
       }
     }
 
-    // YAML detection (v4.2.0)
+    // YAML detection
     if (this.looksLikeYAML(trimmed)) {
       return {
         format: 'yaml',
@@ -206,7 +206,7 @@ export class FormatDetector {
       }
     }
 
-    // Image formats (v5.2.0)
+    // Image formats
     // JPEG: FF D8 FF
     if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
       return {
@@ -384,7 +384,7 @@ export class FormatDetector {
 
   /**
    * Check if content looks like YAML
-   * v4.2.0: Added YAML detection
+   * Added YAML detection
    */
   private looksLikeYAML(content: string): boolean {
     const lines = content.split('\n').filter(l => l.trim()).slice(0, 20)

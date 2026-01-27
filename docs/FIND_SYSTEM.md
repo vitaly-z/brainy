@@ -13,8 +13,7 @@ Brainy's `find()` method is the most advanced query system in any vector databas
 - **Data Structure**: Multi-layer graph with 16 connections per node
 - **Use Cases**: "Find similar documents", "Content like this"
 
-### 2. Text Intelligence (Word Index) - v7.7.0
-- **Purpose**: Keyword/exact text matching
+### 2. Text Intelligence (Word Index) - **Purpose**: Keyword/exact text matching
 - **Algorithm**: Inverted word index with FNV-1a hashing
 - **Performance**: O(log C) where C = chunks (~50 values each)
 - **Data Structure**: `__words__ → hash → Roaring Bitmap of entity IDs`
@@ -28,7 +27,7 @@ Brainy's `find()` method is the most advanced query system in any vector databas
 - **Data Structure**: `Map<field:value, Set<id>>` + sorted value arrays
 - **Use Cases**: "Documents from 2023", "Status equals active"
 
-### 4. Graph Intelligence (Adjacency Maps) 
+### 4. Graph Intelligence (Adjacency Maps)
 - **Purpose**: Relationship traversal and connection analysis
 - **Algorithm**: Pure O(1) neighbor lookups via Map operations
 - **Performance**: O(1) per hop, ~0.1ms typical
@@ -54,29 +53,29 @@ await brain.find("documents by Smith published after 2020 with high citations")
 ```typescript
 // Direct query objects with full control
 await brain.find({
-  // Vector search
-  query: "machine learning research",
-  
-  // Metadata filters  
-  where: {
-    publishDate: { greaterThan: 2020 },
-    citations: { between: [50, 1000] },
-    status: "published"
-  },
-  
-  // Type constraints
-  type: NounType.Document,
-  
-  // Graph traversal
-  connected: {
-    to: "mit-ai-lab",
-    via: VerbType.AffiliatedWith,
-    depth: 2
-  },
-  
-  // Control options
-  limit: 20,
-  explain: true  // Get scoring breakdown
+ // Vector search
+ query: "machine learning research",
+
+ // Metadata filters
+ where: {
+ publishDate: { greaterThan: 2020 },
+ citations: { between: [50, 1000] },
+ status: "published"
+ },
+
+ // Type constraints
+ type: NounType.Document,
+
+ // Graph traversal
+ connected: {
+ to: "mit-ai-lab",
+ via: VerbType.AffiliatedWith,
+ depth: 2
+ },
+
+ // Control options
+ limit: 20,
+ explain: true // Get scoring breakdown
 })
 ```
 
@@ -84,15 +83,15 @@ await brain.find({
 ```typescript
 // Find entities similar to a specific item
 await brain.find({
-  near: {
-    id: "doc-123",
-    threshold: 0.8  // Minimum similarity
-  },
-  type: NounType.Document
+ near: {
+ id: "doc-123",
+ threshold: 0.8 // Minimum similarity
+ },
+ type: NounType.Document
 })
 ```
 
-### 4. Hybrid Search (v7.7.0+)
+### 4. Hybrid Search
 ```typescript
 // Zero-config hybrid: automatically combines text + semantic search
 await brain.find({ query: "David Smith" })
@@ -113,7 +112,7 @@ await brain.find({ query: "search term", hybridAlpha: 0.3 })
 - Medium queries (3-4 words): alpha = 0.5 (balanced)
 - Long queries (5+ words): alpha = 0.7 (favor semantic matching)
 
-### 5. Match Visibility (v7.8.0)
+### 5. Match Visibility
 
 Search results include match details showing what matched:
 
@@ -121,10 +120,10 @@ Search results include match details showing what matched:
 const results = await brain.find({ query: 'david the warrior' })
 
 // Each result has:
-results[0].textMatches     // ["david", "warrior"] - exact words found
-results[0].textScore       // 0.25 - text match quality (0-1)
-results[0].semanticScore   // 0.87 - semantic similarity (0-1)
-results[0].matchSource     // 'both' | 'text' | 'semantic'
+results[0].textMatches // ["david", "warrior"] - exact words found
+results[0].textScore // 0.25 - text match quality (0-1)
+results[0].semanticScore // 0.87 - semantic similarity (0-1)
+results[0].matchSource // 'both' | 'text' | 'semantic'
 ```
 
 Use this for:
@@ -132,22 +131,22 @@ Use this for:
 - **Explaining** why a result was found (matchSource)
 - **Debugging** search behavior (separate scores)
 
-### 6. Semantic Highlighting (v7.8.0)
+### 6. Semantic Highlighting
 
 Highlight which concepts/words in text matched your query:
 
 ```typescript
 // Find semantically similar words + exact matches
 const highlights = await brain.highlight({
-  query: "david the warrior",
-  text: "David Smith is a brave fighter who battles dragons"
+ query: "david the warrior",
+ text: "David Smith is a brave fighter who battles dragons"
 })
 
 // Returns:
 // [
-//   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
-//   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
-//   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
+// { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
+// { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
+// { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
 // ]
 ```
 
@@ -162,11 +161,11 @@ const highlights = await brain.highlight({
 ```typescript
 // Highlight search results with different styles
 function highlightResult(text: string, highlights: Highlight[]) {
-  return highlights.map(h => ({
-    text: h.text,
-    position: h.position,
-    style: h.matchType === 'text' ? 'strong' : 'emphasis'  // Different UI styles
-  }))
+ return highlights.map(h => ({
+ text: h.text,
+ position: h.position,
+ style: h.matchType === 'text' ? 'strong' : 'emphasis' // Different UI styles
+ }))
 }
 ```
 
@@ -182,7 +181,7 @@ function highlightResult(text: string, highlights: Highlight[]) {
 // Memory: ~40 bytes per unique field-value combination
 ```
 
-#### Sorted Index (Range Queries) 
+#### Sorted Index (Range Queries)
 ```typescript
 // Query: {publishDate: {greaterThan: 2020}}
 // Index: sortedIndices.get("publishDate") → [[2019, Set<id>], [2020, Set<id>], [2021, Set<id>]]
@@ -208,7 +207,7 @@ function highlightResult(text: string, highlights: Highlight[]) {
 // Query: {query: "machine learning"}
 // Process:
 // 1. Embed query text → 384-dimensional vector
-// 2. Start at top layer (entry point)  
+// 2. Start at top layer (entry point)
 // 3. Greedy search for nearest neighbor at each layer
 // 4. Move down layers for progressively finer search
 // 5. Return k nearest neighbors with similarity scores
@@ -221,10 +220,10 @@ function highlightResult(text: string, highlights: Highlight[]) {
 #### O(1) Neighbor Lookups
 ```typescript
 // Query: {connected: {to: "entity-123"}}
-// Index lookup: 
-//   - Outgoing: sourceIndex.get("entity-123") → Set<neighborId>
-//   - Incoming: targetIndex.get("entity-123") → Set<neighborId>  
-//   - Both directions: union of both Sets
+// Index lookup:
+// - Outgoing: sourceIndex.get("entity-123") → Set<neighborId>
+// - Incoming: targetIndex.get("entity-123") → Set<neighborId>
+// - Both directions: union of both Sets
 // Performance: O(1) per hop, no matter the graph size
 // Memory: ~24 bytes per relationship (source + target + metadata)
 ```
@@ -234,19 +233,19 @@ function highlightResult(text: string, highlights: Highlight[]) {
 ### Phase 1: Query Parsing
 ```typescript
 if (typeof query === 'string') {
-  // Natural Language Processing
-  const nlpParams = await this.parseNaturalQuery(query)
-  
-  // Type-aware parsing:
-  // 1. Detect NounType using pre-embedded type vectors
-  // 2. Get type-specific fields from real data patterns  
-  // 3. Semantic field matching with type affinity boosting
-  // 4. Validate field-type compatibility
-  // 5. Generate optimized query plan
-  
-  params = nlpParams
+ // Natural Language Processing
+ const nlpParams = await this.parseNaturalQuery(query)
+
+ // Type-aware parsing:
+ // 1. Detect NounType using pre-embedded type vectors
+ // 2. Get type-specific fields from real data patterns
+ // 3. Semantic field matching with type affinity boosting
+ // 4. Validate field-type compatibility
+ // 5. Generate optimized query plan
+
+ params = nlpParams
 } else {
-  params = query  // Direct structured query
+ params = query // Direct structured query
 }
 ```
 
@@ -257,12 +256,12 @@ const searchPromises = []
 
 // Vector search (if query text or vector provided)
 if (params.query || params.vector) {
-  searchPromises.push(this.executeVectorSearch(params))
+ searchPromises.push(this.executeVectorSearch(params))
 }
 
-// Proximity search (if near parameter provided)  
+// Proximity search (if near parameter provided)
 if (params.near) {
-  searchPromises.push(this.executeProximitySearch(params))
+ searchPromises.push(this.executeProximitySearch(params))
 }
 
 // Wait for all searches to complete
@@ -273,41 +272,41 @@ const searchResults = await Promise.all(searchPromises)
 ```typescript
 // Apply metadata filters using optimized indices
 if (params.where || params.type || params.service) {
-  const filter = {
-    ...params.where,
-    ...(params.type && { noun: params.type }),
-    ...(params.service && { service: params.service })
-  }
-  
-  // Get optimal query plan based on field cardinalities
-  const queryPlan = await this.getOptimalQueryPlan(filter)
-  
-  // Execute filters in optimal order (low cardinality first)
-  const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
-  
-  if (results.length > 0) {
-    // Intersect with vector search results
-    results = results.filter(r => filteredIds.includes(r.id))
-  } else {
-    // Create results from metadata matches (metadata-only query)
-    results = await this.createResultsFromIds(filteredIds)
-  }
+ const filter = {
+ ...params.where,
+ ...(params.type && { noun: params.type }),
+ ...(params.service && { service: params.service })
+ }
+
+ // Get optimal query plan based on field cardinalities
+ const queryPlan = await this.getOptimalQueryPlan(filter)
+
+ // Execute filters in optimal order (low cardinality first)
+ const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+
+ if (results.length > 0) {
+ // Intersect with vector search results
+ results = results.filter(r => filteredIds.includes(r.id))
+ } else {
+ // Create results from metadata matches (metadata-only query)
+ results = await this.createResultsFromIds(filteredIds)
+ }
 }
 ```
 
-### Phase 4: Graph Traversal  
+### Phase 4: Graph Traversal
 ```typescript
 // Apply graph constraints using O(1) lookups
 if (params.connected) {
-  const connectedIds = await this.graphIndex.getConnectedIds(params.connected)
-  
-  if (results.length > 0) {
-    // Filter existing results to only connected entities
-    results = results.filter(r => connectedIds.includes(r.id))
-  } else {
-    // Create results from connected entities
-    results = await this.createResultsFromIds(connectedIds) 
-  }
+ const connectedIds = await this.graphIndex.getConnectedIds(params.connected)
+
+ if (results.length > 0) {
+ // Filter existing results to only connected entities
+ results = results.filter(r => connectedIds.includes(r.id))
+ } else {
+ // Create results from connected entities
+ results = await this.createResultsFromIds(connectedIds)
+ }
 }
 ```
 
@@ -315,12 +314,12 @@ if (params.connected) {
 ```typescript
 // Combine scores from multiple intelligence sources
 if (params.fusion && results.length > 0) {
-  results = this.applyFusionScoring(results, params.fusion)
-  
-  // Example fusion strategies:
-  // - Weighted: vectorScore × 0.6 + metadataScore × 0.2 + graphScore × 0.2  
-  // - Adaptive: adjust weights based on query characteristics
-  // - Progressive: prioritize based on result confidence
+ results = this.applyFusionScoring(results, params.fusion)
+
+ // Example fusion strategies:
+ // - Weighted: vectorScore × 0.6 + metadataScore × 0.2 + graphScore × 0.2
+ // - Adaptive: adjust weights based on query characteristics
+ // - Progressive: prioritize based on result confidence
 }
 
 // Sort by final score and apply pagination
@@ -351,7 +350,7 @@ return results.slice(offset, offset + limit)
 ### 3. Field-Type Validation
 ```typescript
 // Prevents invalid queries and suggests alternatives:
-// "people with publishDate > 2020" 
+// "people with publishDate > 2020"
 // → Warning: "Person entities rarely have publishDate field"
 // → Suggestion: "Did you mean createdAt, updatedAt, or birthDate?"
 // → Auto-correction: Use most likely alternative based on affinity data
@@ -373,7 +372,7 @@ return results.slice(offset, offset + limit)
 
 Where:
 - n = number of entities in database
-- t = number of types (169 total: 42 noun + 127 verb)  
+- t = number of types (169 total: 42 noun + 127 verb)
 - f = number of fields for detected entity type (typically 5-15)
 
 ### Scalability
@@ -401,27 +400,27 @@ Where:
 // Phase 1: NLP Parsing
 // - "papers" → NounType.Document (0.94 confidence)
 // - "Stanford researchers" → entity search + NounType.Person
-// - "recent" → publishDate: {greaterThan: 2023}  
+// - "recent" → publishDate: {greaterThan: 2023}
 // - "high citations" → citations: {greaterThan: 100}
 // - "connected to industry" → graph traversal via VerbType.AffiliatedWith
 
 // Phase 2: Generated Query
 {
-  type: NounType.Document,
-  where: {
-    publishDate: { greaterThan: 2023 },
-    citations: { greaterThan: 100 }
-  },
-  connected: {
-    to: ["stanford-researchers"],
-    via: VerbType.AffiliatedWith,
-    depth: 2
-  }
+ type: NounType.Document,
+ where: {
+ publishDate: { greaterThan: 2023 },
+ citations: { greaterThan: 100 }
+ },
+ connected: {
+ to: ["stanford-researchers"],
+ via: VerbType.AffiliatedWith,
+ depth: 2
+ }
 }
 
 // Phase 3: Execution Plan
 // 1. Metadata filter: publishDate > 2023 (O(log n) via sorted index)
-// 2. Metadata filter: citations > 100 (O(log n) via sorted index)  
+// 2. Metadata filter: citations > 100 (O(log n) via sorted index)
 // 3. Graph traversal: connected to Stanford (O(1) per hop)
 // 4. Intersection: entities matching all constraints
 // 5. Sort by relevance score
@@ -431,22 +430,22 @@ Where:
 ```typescript
 // Query: Direct structured query for maximum performance
 await brain.find({
-  type: NounType.Document,           // O(1) type filter
-  where: {
-    status: "published",             // O(1) exact match
-    year: 2024,                      // O(1) exact match  
-    citations: { greaterThan: 50 }   // O(log n) range query
-  },
-  connected: {
-    from: "author-123",              // O(1) graph lookup
-    via: VerbType.Creates
-  },
-  limit: 10
+ type: NounType.Document, // O(1) type filter
+ where: {
+ status: "published", // O(1) exact match
+ year: 2024, // O(1) exact match
+ citations: { greaterThan: 50 } // O(log n) range query
+ },
+ connected: {
+ from: "author-123", // O(1) graph lookup
+ via: VerbType.Creates
+ },
+ limit: 10
 })
 // Total performance: ~1.2ms for 100K entities
 ```
 
-## Filter Syntax Reference (v5.8.0+)
+## Filter Syntax Reference
 
 ### Where Clause: Complete Operator Guide
 
@@ -457,25 +456,25 @@ Brainy provides a comprehensive set of operators for filtering entities by metad
 **Exact Match** (shorthand):
 ```typescript
 await brain.find({
-  where: {
-    status: 'active',        // Shorthand for { eq: 'active' }
-    year: 2024,              // Exact match for numbers
-    verified: true           // Boolean matching
-  }
+ where: {
+ status: 'active', // Shorthand for { eq: 'active' }
+ year: 2024, // Exact match for numbers
+ verified: true // Boolean matching
+ }
 })
 ```
 
 **Comparison Operators**:
 ```typescript
 await brain.find({
-  where: {
-    age: { gt: 18 },                    // Greater than
-    score: { gte: 80 },                 // Greater than or equal
-    price: { lt: 100 },                 // Less than
-    stock: { lte: 10 },                 // Less than or equal
-    status: { eq: 'active' },           // Equals (explicit)
-    role: { ne: 'guest' }               // Not equals
-  }
+ where: {
+ age: { gt: 18 }, // Greater than
+ score: { gte: 80 }, // Greater than or equal
+ price: { lt: 100 }, // Less than
+ stock: { lte: 10 }, // Less than or equal
+ status: { eq: 'active' }, // Equals (explicit)
+ role: { ne: 'guest' } // Not equals
+ }
 })
 ```
 
@@ -486,11 +485,11 @@ await brain.find({
 **Between** (inclusive):
 ```typescript
 await brain.find({
-  where: {
-    publishDate: { between: [2020, 2024] },      // Year range
-    price: { between: [10.00, 99.99] },          // Price range
-    timestamp: { between: [startMs, endMs] }     // Time range
-  }
+ where: {
+ publishDate: { between: [2020, 2024] }, // Year range
+ price: { between: [10.00, 99.99] }, // Price range
+ timestamp: { between: [startMs, endMs] } // Time range
+ }
 })
 ```
 
@@ -501,11 +500,11 @@ await brain.find({
 **In/Not In**:
 ```typescript
 await brain.find({
-  where: {
-    category: { in: ['tech', 'science', 'research'] },
-    status: { notIn: ['draft', 'deleted'] },
-    priority: { in: [1, 2, 3] }
-  }
+ where: {
+ category: { in: ['tech', 'science', 'research'] },
+ status: { notIn: ['draft', 'deleted'] },
+ priority: { in: [1, 2, 3] }
+ }
 })
 ```
 
@@ -516,11 +515,11 @@ await brain.find({
 **Contains/Starts/Ends**:
 ```typescript
 await brain.find({
-  where: {
-    title: { contains: 'machine learning' },     // Substring search
-    email: { startsWith: 'admin@' },             // Prefix match
-    filename: { endsWith: '.pdf' }               // Suffix match
-  }
+ where: {
+ title: { contains: 'machine learning' }, // Substring search
+ email: { startsWith: 'admin@' }, // Prefix match
+ filename: { endsWith: '.pdf' } // Suffix match
+ }
 })
 ```
 
@@ -540,11 +539,11 @@ query: 'artificial intelligence'
 **Exists/Missing**:
 ```typescript
 await brain.find({
-  where: {
-    email: { exists: true },           // Has email field
-    deletedAt: { exists: false },      // No deletedAt field (not deleted)
-    profileImage: { exists: true }     // Has profile image
-  }
+ where: {
+ email: { exists: true }, // Has email field
+ deletedAt: { exists: false }, // No deletedAt field (not deleted)
+ profileImage: { exists: true } // Has profile image
+ }
 })
 ```
 
@@ -560,11 +559,11 @@ All conditions at the same level are implicitly AND:
 
 ```typescript
 await brain.find({
-  where: {
-    status: 'published',             // AND
-    year: { gte: 2020 },            // AND
-    citations: { gte: 50 }          // AND
-  }
+ where: {
+ status: 'published', // AND
+ year: { gte: 2020 }, // AND
+ citations: { gte: 50 } // AND
+ }
 })
 // Returns: entities matching ALL three conditions
 ```
@@ -572,13 +571,13 @@ await brain.find({
 **Explicit AND with `allOf`**:
 ```typescript
 await brain.find({
-  where: {
-    allOf: [
-      { status: 'published' },
-      { year: { gte: 2020 } },
-      { citations: { gte: 50 } }
-    ]
-  }
+ where: {
+ allOf: [
+ { status: 'published' },
+ { year: { gte: 2020 } },
+ { citations: { gte: 50 } }
+ ]
+ }
 })
 ```
 
@@ -590,13 +589,13 @@ Match ANY condition:
 
 ```typescript
 await brain.find({
-  where: {
-    anyOf: [
-      { status: 'urgent' },
-      { priority: { gte: 8 } },
-      { assignee: 'admin' }
-    ]
-  }
+ where: {
+ anyOf: [
+ { status: 'urgent' },
+ { priority: { gte: 8 } },
+ { assignee: 'admin' }
+ ]
+ }
 })
 // Returns: entities matching ANY condition
 ```
@@ -604,13 +603,13 @@ await brain.find({
 **Combined AND + OR**:
 ```typescript
 await brain.find({
-  where: {
-    status: 'active',              // Must be active
-    anyOf: [                       // AND (urgent OR high priority)
-      { tags: { contains: 'urgent' } },
-      { priority: { gte: 8 } }
-    ]
-  }
+ where: {
+ status: 'active', // Must be active
+ anyOf: [ // AND (urgent OR high priority)
+ { tags: { contains: 'urgent' } },
+ { priority: { gte: 8 } }
+ ]
+ }
 })
 ```
 
@@ -622,17 +621,17 @@ Complex boolean expressions:
 
 ```typescript
 await brain.find({
-  where: {
-    allOf: [
-      { status: 'published' },
-      {
-        anyOf: [
-          { featured: true },
-          { citations: { gte: 100 } }
-        ]
-      }
-    ]
-  }
+ where: {
+ allOf: [
+ { status: 'published' },
+ {
+ anyOf: [
+ { featured: true },
+ { citations: { gte: 100 } }
+ ]
+ }
+ ]
+ }
 })
 // Returns: published AND (featured OR highly cited)
 ```
@@ -677,8 +676,8 @@ Filter entities by NounType:
 
 ```typescript
 await brain.find({
-  type: NounType.Document,
-  where: { year: { gte: 2020 } }
+ type: NounType.Document,
+ where: { year: { gte: 2020 } }
 })
 ```
 
@@ -686,8 +685,8 @@ await brain.find({
 
 ```typescript
 await brain.find({
-  type: [NounType.Person, NounType.Organization],
-  where: { verified: true }
+ type: [NounType.Person, NounType.Organization],
+ where: { verified: true }
 })
 ```
 
@@ -728,11 +727,11 @@ Traverse relationships using the GraphIndex:
 
 ```typescript
 await brain.find({
-  connected: {
-    to: 'entity-id-123',           // Connected to this entity
-    via: VerbType.WorksFor,         // Through this relationship type
-    direction: 'out'                // Direction: 'in', 'out', or 'both'
-  }
+ connected: {
+ to: 'entity-id-123', // Connected to this entity
+ via: VerbType.WorksFor, // Through this relationship type
+ direction: 'out' // Direction: 'in', 'out', or 'both'
+ }
 })
 ```
 
@@ -742,11 +741,11 @@ await brain.find({
 
 ```typescript
 await brain.find({
-  connected: {
-    to: 'research-institution',
-    via: VerbType.AffiliatedWith,
-    depth: 2                        // Up to 2 hops away
-  }
+ connected: {
+ to: 'research-institution',
+ via: VerbType.AffiliatedWith,
+ depth: 2 // Up to 2 hops away
+ }
 })
 ```
 
@@ -756,35 +755,35 @@ await brain.find({
 
 ```typescript
 await brain.find({
-  type: NounType.Person,
-  where: {
-    verified: true,
-    reputation: { gte: 100 }
-  },
-  connected: {
-    to: 'stanford-ai-lab',
-    via: VerbType.WorksAt,
-    direction: 'out'
-  },
-  limit: 20
+ type: NounType.Person,
+ where: {
+ verified: true,
+ reputation: { gte: 100 }
+ },
+ connected: {
+ to: 'stanford-ai-lab',
+ via: VerbType.WorksAt,
+ direction: 'out'
+ },
+ limit: 20
 })
 // Returns: Verified people with high reputation who work at Stanford AI Lab
 ```
 
-#### Pagination with Graph Queries (v5.8.0+)
+#### Pagination with Graph Queries
 
 ```typescript
 // Page through high-degree nodes efficiently
 const neighbors = await brain.graphIndex.getNeighbors('hub-entity-id', {
-  direction: 'out',
-  limit: 50,
-  offset: 0
+ direction: 'out',
+ limit: 50,
+ offset: 0
 })
 
 // Get verb IDs with pagination
 const verbIds = await brain.graphIndex.getVerbIdsBySource('source-id', {
-  limit: 100,
-  offset: 0
+ limit: 100,
+ offset: 0
 })
 ```
 
@@ -792,36 +791,36 @@ const verbIds = await brain.graphIndex.getVerbIdsBySource('source-id', {
 
 **Note**: See `src/graph/graphAdjacencyIndex.ts` for low-level graph operations.
 
-### Sorting Results (v4.5.4+)
+### Sorting Results
 
 Sort query results by any field, including timestamps:
 
 ```typescript
 // Sort by timestamp (descending - newest first)
 await brain.find({
-  type: NounType.Document,
-  orderBy: 'createdAt',
-  order: 'desc',
-  limit: 10
+ type: NounType.Document,
+ orderBy: 'createdAt',
+ order: 'desc',
+ limit: 10
 })
 
 // Sort by custom field (ascending)
 await brain.find({
-  where: { status: { eq: 'published' } },
-  orderBy: 'priority',
-  order: 'asc'
+ where: { status: { eq: 'published' } },
+ orderBy: 'priority',
+ order: 'asc'
 })
 
 // Sort with filtering and pagination
 await brain.find({
-  where: {
-    publishDate: { gte: startDate },
-    citations: { gte: 50 }
-  },
-  orderBy: 'citations',
-  order: 'desc',
-  limit: 20,
-  offset: 0
+ where: {
+ publishDate: { gte: startDate },
+ citations: { gte: 50 }
+ },
+ orderBy: 'citations',
+ order: 'desc',
+ limit: 20,
+ offset: 0
 })
 ```
 
@@ -836,17 +835,17 @@ await brain.find({
 ```typescript
 // Range query + sorting
 await brain.find({
-  where: {
-    createdAt: { gte: Date.now() - 86400000 } // Last 24 hours
-  },
-  orderBy: 'createdAt',
-  order: 'desc'  // Newest first
+ where: {
+ createdAt: { gte: Date.now() - 86400000 } // Last 24 hours
+ },
+ orderBy: 'createdAt',
+ order: 'desc' // Newest first
 })
 
 // Works with updatedAt, accessed, modified
 await brain.find({
-  orderBy: 'updatedAt',
-  order: 'desc'
+ orderBy: 'updatedAt',
+ order: 'desc'
 })
 ```
 
@@ -854,22 +853,22 @@ await brain.find({
 ```typescript
 // Sort search results by custom field instead of relevance
 await brain.find({
-  query: "machine learning",
-  where: { publishDate: { gte: 2023 } },
-  orderBy: 'citations',  // Sort by citations, not relevance
-  order: 'desc'
+ query: "machine learning",
+ where: { publishDate: { gte: 2023 } },
+ orderBy: 'citations', // Sort by citations, not relevance
+ order: 'desc'
 })
 
 // Paginated sorted results
 async function getDocumentsByDate(page: number, pageSize: number = 20) {
-  return await brain.find({
-    type: NounType.Document,
-    where: { status: { eq: 'published' } },
-    orderBy: 'publishDate',
-    order: 'desc',
-    limit: pageSize,
-    offset: page * pageSize
-  })
+ return await brain.find({
+ type: NounType.Document,
+ where: { status: { eq: 'published' } },
+ orderBy: 'publishDate',
+ order: 'desc',
+ limit: pageSize,
+ offset: page * pageSize
+ })
 }
 ```
 
@@ -880,30 +879,30 @@ async function getDocumentsByDate(page: number, pageSize: number = 20) {
 **Offset-based pagination**:
 ```typescript
 async function getPaginatedResults(page: number, pageSize: number = 20) {
-  return await brain.find({
-    type: NounType.Document,
-    where: { status: 'published' },
-    orderBy: 'createdAt',
-    order: 'desc',
-    limit: pageSize,
-    offset: page * pageSize
-  })
+ return await brain.find({
+ type: NounType.Document,
+ where: { status: 'published' },
+ orderBy: 'createdAt',
+ order: 'desc',
+ limit: pageSize,
+ offset: page * pageSize
+ })
 }
 
 // Usage
-const page1 = await getPaginatedResults(0)  // First 20
-const page2 = await getPaginatedResults(1)  // Next 20
+const page1 = await getPaginatedResults(0) // First 20
+const page2 = await getPaginatedResults(1) // Next 20
 ```
 
-**Graph pagination** (v5.8.0+):
+**Graph pagination**:
 ```typescript
 // Paginate through high-degree node relationships
 async function getNeighborPage(entityId: string, page: number, pageSize: number = 50) {
-  return await brain.graphIndex.getNeighbors(entityId, {
-    direction: 'out',
-    limit: pageSize,
-    offset: page * pageSize
-  })
+ return await brain.graphIndex.getNeighbors(entityId, {
+ direction: 'out',
+ limit: pageSize,
+ offset: page * pageSize
+ })
 }
 ```
 
@@ -916,23 +915,23 @@ async function getNeighborPage(entityId: string, page: number, pageSize: number 
 // Last 24 hours
 const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
 await brain.find({
-  where: {
-    createdAt: { gte: oneDayAgo }
-  },
-  orderBy: 'createdAt',
-  order: 'desc'
+ where: {
+ createdAt: { gte: oneDayAgo }
+ },
+ orderBy: 'createdAt',
+ order: 'desc'
 })
 
 // Last 7 days with additional filters
 const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000)
 await brain.find({
-  type: NounType.Document,
-  where: {
-    createdAt: { gte: oneWeekAgo },
-    status: 'published'
-  },
-  orderBy: 'createdAt',
-  order: 'desc'
+ type: NounType.Document,
+ where: {
+ createdAt: { gte: oneWeekAgo },
+ status: 'published'
+ },
+ orderBy: 'createdAt',
+ order: 'desc'
 })
 ```
 
@@ -940,21 +939,21 @@ await brain.find({
 ```typescript
 // Specific year
 await brain.find({
-  where: {
-    publishDate: { between: [
-      new Date('2023-01-01').getTime(),
-      new Date('2023-12-31').getTime()
-    ]}
-  }
+ where: {
+ publishDate: { between: [
+ new Date('2023-01-01').getTime(),
+ new Date('2023-12-31').getTime()
+ ]}
+ }
 })
 
 // Quarter
 const Q1_2024_start = new Date('2024-01-01').getTime()
 const Q1_2024_end = new Date('2024-03-31').getTime()
 await brain.find({
-  where: {
-    createdAt: { between: [Q1_2024_start, Q1_2024_end] }
-  }
+ where: {
+ createdAt: { between: [Q1_2024_start, Q1_2024_end] }
+ }
 })
 ```
 
@@ -964,28 +963,28 @@ await brain.find({
 ```typescript
 // Find: AI research papers from verified authors at top institutions
 const results = await brain.find({
-  // Vector search (semantic)
-  query: 'artificial intelligence machine learning',
+ // Vector search (semantic)
+ query: 'artificial intelligence machine learning',
 
-  // Metadata filters
-  type: NounType.Document,
-  where: {
-    publishDate: { gte: 2020 },
-    citations: { gte: 50 },
-    peerReviewed: true
-  },
+ // Metadata filters
+ type: NounType.Document,
+ where: {
+ publishDate: { gte: 2020 },
+ citations: { gte: 50 },
+ peerReviewed: true
+ },
 
-  // Graph traversal
-  connected: {
-    to: topInstitutionIds,  // Array of institution entity IDs
-    via: VerbType.AffiliatedWith,
-    depth: 2  // Authors affiliated with institutions (2 hops)
-  },
+ // Graph traversal
+ connected: {
+ to: topInstitutionIds, // Array of institution entity IDs
+ via: VerbType.AffiliatedWith,
+ depth: 2 // Authors affiliated with institutions (2 hops)
+ },
 
-  // Results
-  limit: 50,
-  orderBy: 'citations',
-  order: 'desc'
+ // Results
+ limit: 50,
+ orderBy: 'citations',
+ order: 'desc'
 })
 ```
 
@@ -997,19 +996,19 @@ const results = await brain.find({
 ```typescript
 // Standard query excludes deleted
 await brain.find({
-  where: {
-    deletedAt: { exists: false }  // Not soft-deleted
-  }
+ where: {
+ deletedAt: { exists: false } // Not soft-deleted
+ }
 })
 
 // Or use compound filter
 await brain.find({
-  where: {
-    allOf: [
-      { status: 'active' },
-      { deletedAt: { exists: false } }
-    ]
-  }
+ where: {
+ allOf: [
+ { status: 'active' },
+ { deletedAt: { exists: false } }
+ ]
+ }
 })
 ```
 
@@ -1021,21 +1020,21 @@ await brain.find({
 ```typescript
 // Find documents similar to a specific document
 await brain.find({
-  near: {
-    id: 'doc-123',
-    threshold: 0.8  // Minimum 80% similarity
-  },
-  type: NounType.Document,
-  limit: 10
+ near: {
+ id: 'doc-123',
+ threshold: 0.8 // Minimum 80% similarity
+ },
+ type: NounType.Document,
+ limit: 10
 })
 
 // With metadata constraints
 await brain.find({
-  near: { id: 'paper-456', threshold: 0.75 },
-  where: {
-    publishDate: { gte: 2020 },
-    language: 'en'
-  }
+ near: { id: 'paper-456', threshold: 0.75 },
+ where: {
+ publishDate: { gte: 2020 },
+ language: 'en'
+ }
 })
 ```
 
@@ -1047,8 +1046,8 @@ await brain.find({
 ```typescript
 // Get total count (metadata-only query is fastest)
 const results = await brain.find({
-  where: { status: 'published' },
-  limit: 1  // We only need the count
+ where: { status: 'published' },
+ limit: 1 // We only need the count
 })
 // Note: Current API returns results, not counts
 // For production, consider caching counts or using metadata indices directly
@@ -1059,10 +1058,10 @@ const results = await brain.find({
 // Find all entities, then group by type in application
 const allEntities = await brain.find({ limit: 10000 })
 const byType = allEntities.reduce((acc, entity) => {
-  const type = entity.noun || 'unknown'
-  if (!acc[type]) acc[type] = []
-  acc[type].push(entity)
-  return acc
+ const type = entity.noun || 'unknown'
+ if (!acc[type]) acc[type] = []
+ acc[type].push(entity)
+ return acc
 }, {})
 ```
 
@@ -1071,14 +1070,14 @@ const byType = allEntities.reduce((acc, entity) => {
 **Any of multiple values**:
 ```typescript
 await brain.find({
-  where: {
-    anyOf: [
-      { priority: 'urgent' },
-      { priority: 'high' },
-      { assignee: 'admin' },
-      { dueDate: { lte: Date.now() } }
-    ]
-  }
+ where: {
+ anyOf: [
+ { priority: 'urgent' },
+ { priority: 'high' },
+ { assignee: 'admin' },
+ { dueDate: { lte: Date.now() } }
+ ]
+ }
 })
 // Returns: urgent OR high priority OR assigned to admin OR overdue
 ```
@@ -1087,23 +1086,23 @@ await brain.find({
 ```typescript
 // Find: (Premium users OR trial users with activity) AND not banned
 await brain.find({
-  type: NounType.Person,
-  where: {
-    allOf: [
-      {
-        anyOf: [
-          { subscription: 'premium' },
-          {
-            allOf: [
-              { subscription: 'trial' },
-              { lastActive: { gte: Date.now() - 86400000 } }  // 24h
-            ]
-          }
-        ]
-      },
-      { banned: { ne: true } }
-    ]
-  }
+ type: NounType.Person,
+ where: {
+ allOf: [
+ {
+ anyOf: [
+ { subscription: 'premium' },
+ {
+ allOf: [
+ { subscription: 'trial' },
+ { lastActive: { gte: Date.now() - 86400000 } } // 24h
+ ]
+ }
+ ]
+ },
+ { banned: { ne: true } }
+ ]
+ }
 })
 ```
 
@@ -1115,8 +1114,8 @@ await brain.find({
 ```typescript
 // List all entities of a type
 const all = await brain.find({
-  type: NounType.Document,
-  limit: 10
+ type: NounType.Document,
+ limit: 10
 })
 console.log(`Found ${all.length} documents`)
 ```
@@ -1124,11 +1123,11 @@ console.log(`Found ${all.length} documents`)
 **Check 2: Test filters individually**
 ```typescript
 // Remove filters one by one to find the culprit
-await brain.find({ where: { status: 'published' } })  // Works?
-await brain.find({ where: { year: 2024 } })           // Works?
+await brain.find({ where: { status: 'published' } }) // Works?
+await brain.find({ where: { year: 2024 } }) // Works?
 await brain.find({ where: {
-  status: 'published',
-  year: 2024  // Combined - works?
+ status: 'published',
+ year: 2024 // Combined - works?
 }})
 ```
 
@@ -1136,7 +1135,7 @@ await brain.find({ where: {
 ```typescript
 // Get a sample entity to see actual field names
 const sample = await brain.find({ type: NounType.Document, limit: 1 })
-console.log(Object.keys(sample[0].data))  // Actual fields
+console.log(Object.keys(sample[0].data)) // Actual fields
 ```
 
 **Common issues**:
@@ -1150,9 +1149,9 @@ console.log(Object.keys(sample[0].data))  // Actual fields
 ```typescript
 // Use explain mode (if available)
 const results = await brain.find({
-  query: 'machine learning',
-  where: { title: { contains: 'AI' } },  // ⚠️ O(n) substring search
-  explain: true
+ query: 'machine learning',
+ where: { title: { contains: 'AI' } }, // ⚠️ O(n) substring search
+ explain: true
 })
 ```
 
@@ -1175,15 +1174,15 @@ where: { status: 'published' }
 ```typescript
 // ❌ Suboptimal: Slow filter first
 where: {
-  description: { contains: 'AI' },  // O(n) - runs first
-  year: 2024                        // O(1) - runs second
+ description: { contains: 'AI' }, // O(n) - runs first
+ year: 2024 // O(1) - runs second
 }
 
 // ✅ Optimal: Fast filter first (automatic optimization)
 where: {
-  year: 2024,                       // O(1) - narrow results
-  status: 'published'               // O(1) - further narrow
-  // Only then apply O(n) operations if needed
+ year: 2024, // O(1) - narrow results
+ status: 'published' // O(1) - further narrow
+ // Only then apply O(n) operations if needed
 }
 ```
 
@@ -1205,10 +1204,10 @@ import { NounType } from '@soulcraft/brainy'
 await brain.find({ type: NounType.Document })
 
 // ❌ Error: Operator not recognized
-where: { age: { greaterThan: 18 } }  // Old API
+where: { age: { greaterThan: 18 } } // Old API
 
 // ✅ Correct: Use canonical operators
-where: { age: { gt: 18 } }           // v5.0.0+
+where: { age: { gt: 18 } }
 ```
 
 ### Graph Traversal Issues
@@ -1217,25 +1216,25 @@ where: { age: { gt: 18 } }           // v5.0.0+
 ```typescript
 // Verify relationship exists
 const relations = await brain.getRelations({
-  from: 'entity-a',
-  to: 'entity-b'
+ from: 'entity-a',
+ to: 'entity-b'
 })
 console.log('Relationships:', relations)
 
 // Check direction
 await brain.find({
-  connected: {
-    to: 'entity-id',
-    direction: 'in'   // Try 'out' or 'both'
-  }
+ connected: {
+ to: 'entity-id',
+ direction: 'in' // Try 'out' or 'both'
+ }
 })
 
 // Verify verb type
 await brain.find({
-  connected: {
-    to: 'entity-id',
-    via: VerbType.WorksFor  // Correct VerbType?
-  }
+ connected: {
+ to: 'entity-id',
+ via: VerbType.WorksFor // Correct VerbType?
+ }
 })
 ```
 
@@ -1256,12 +1255,12 @@ await brain.update(entity.id, { data: entity.data })
 ```typescript
 // ❌ Too strict: May return nothing
 await brain.find({
-  near: { id: 'doc-123', threshold: 0.95 }
+ near: { id: 'doc-123', threshold: 0.95 }
 })
 
 // ✅ Reasonable: 0.7-0.85 is typical
 await brain.find({
-  near: { id: 'doc-123', threshold: 0.75 }
+ near: { id: 'doc-123', threshold: 0.75 }
 })
 ```
 
@@ -1275,8 +1274,8 @@ console.log('Entity type:', entity.noun)
 
 // Verify type filter is working
 await brain.find({
-  type: NounType.Document,
-  where: { id: 'unexpected-id' }  // Should not return if wrong type
+ type: NounType.Document,
+ where: { id: 'unexpected-id' } // Should not return if wrong type
 })
 ```
 
@@ -1291,7 +1290,7 @@ console.log(`Results: ${results.length}, Unique: ${uniqueIds.size}`)
 // Brainy should never return duplicates - report if found
 ```
 
-## VFS (Virtual File System) Visibility (v4.7.0+)
+## VFS (Virtual File System) Visibility
 
 ### Default Behavior
 
@@ -1312,8 +1311,8 @@ If you need to exclude VFS entities from specific queries, use the `excludeVFS` 
 ```typescript
 // Exclude VFS files from results
 await brain.find({
-  query: 'machine learning',
-  excludeVFS: true  // Only return non-file entities
+ query: 'machine learning',
+ excludeVFS: true // Only return non-file entities
 })
 ```
 
@@ -1322,14 +1321,14 @@ await brain.find({
 ```typescript
 // Explicit filtering (same as excludeVFS: true)
 await brain.find({
-  query: 'machine learning',
-  where: { vfsType: { exists: false } }
+ query: 'machine learning',
+ where: { vfsType: { exists: false } }
 })
 
 // Or only search VFS files
 await brain.find({
-  query: 'setup instructions',
-  where: { vfsType: 'file' }  // Only files
+ query: 'setup instructions',
+ where: { vfsType: 'file' } // Only files
 })
 ```
 
@@ -1342,24 +1341,24 @@ await brain.find({
 
 ### Migration from v4.6.x
 
-**BREAKING CHANGE** (v4.7.0): The `includeVFS` parameter has been removed:
+**BREAKING CHANGE**: The `includeVFS` parameter has been removed:
 
 ```typescript
 // ❌ Old (v4.6.x and earlier)
 await brain.find({
-  query: 'docs',
-  includeVFS: true  // No longer needed!
+ query: 'docs',
+ includeVFS: true // No longer needed!
 })
 
-// ✅ New (v4.7.0+)
+// ✅ New
 await brain.find({
-  query: 'docs'  // VFS included by default
+ query: 'docs' // VFS included by default
 })
 
 // ✅ To exclude VFS (if needed)
 await brain.find({
-  query: 'concepts',
-  excludeVFS: true
+ query: 'concepts',
+ excludeVFS: true
 })
 ```
 

@@ -168,7 +168,7 @@ export interface TypeMatchResult {
 
 /**
  * BrainyTypes - Intelligent type detection for nouns and verbs
- * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed type embeddings
+ * PRODUCTION OPTIMIZATION: Uses pre-computed type embeddings
  * Type embeddings are loaded instantly; only input objects are embedded at runtime
  */
 export class BrainyTypes {

@@ -22,13 +22,13 @@ import { Brainy } from '@soulcraft/brainy'
 
 // ✅ CORRECT: Use filesystem storage for production
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    path: './brainy-data'  // Your data directory
-  }
+ storage: {
+ type: 'filesystem',
+ path: './brainy-data' // Your data directory
+ }
 })
 
-await brain.init()  // VFS auto-initialized!
+await brain.init() // VFS auto-initialized!
 
 console.log('🎉 VFS ready!')
 ```
@@ -47,40 +47,40 @@ const badItems = allNodes.filter(node => node.path.startsWith(dirPath))
 ```typescript
 // ✅ Method 1: Get direct children (recommended for UI)
 async function loadDirectoryContents(brain: Brainy, path: string) {
-  try {
-    const children = await brain.vfs.getDirectChildren(path)
+ try {
+ const children = await brain.vfs.getDirectChildren(path)
 
-    // Sort directories first, then files
-    return children.sort((a, b) => {
-      if (a.metadata.vfsType === 'directory' && b.metadata.vfsType === 'file') return -1
-      if (a.metadata.vfsType === 'file' && b.metadata.vfsType === 'directory') return 1
-      return a.metadata.name.localeCompare(b.metadata.name)
-    })
-  } catch (error) {
-    console.error(`Failed to load ${path}:`, error.message)
-    return []
-  }
+ // Sort directories first, then files
+ return children.sort((a, b) => {
+ if (a.metadata.vfsType === 'directory' && b.metadata.vfsType === 'file') return -1
+ if (a.metadata.vfsType === 'file' && b.metadata.vfsType === 'directory') return 1
+ return a.metadata.name.localeCompare(b.metadata.name)
+ })
+ } catch (error) {
+ console.error(`Failed to load ${path}:`, error.message)
+ return []
+ }
 }
 
 // ✅ Method 2: Get complete tree structure (for full trees)
 async function loadFullTree(brain: Brainy, path: string) {
-  const tree = await brain.vfs.getTreeStructure(path, {
-    maxDepth: 3,          // Prevent deep recursion
-    includeHidden: false, // Skip hidden files
-    sort: 'name'
-  })
-  return tree
+ const tree = await brain.vfs.getTreeStructure(path, {
+ maxDepth: 3, // Prevent deep recursion
+ includeHidden: false, // Skip hidden files
+ sort: 'name'
+ })
+ return tree
 }
 
 // ✅ Method 3: Get detailed path info
 async function inspectPath(brain: Brainy, path: string) {
-  const info = await brain.vfs.inspect(path)
-  return {
-    isDirectory: info.node.metadata.vfsType === 'directory',
-    children: info.children,
-    parent: info.parent,
-    stats: info.stats
-  }
+ const info = await brain.vfs.inspect(path)
+ return {
+ isDirectory: info.node.metadata.vfsType === 'directory',
+ children: info.children,
+ parent: info.parent,
+ stats: info.stats
+ }
 }
 ```
 
@@ -89,19 +89,19 @@ async function inspectPath(brain: Brainy, path: string) {
 ```typescript
 // ✅ Find files by content, not just filename
 async function searchFiles(brain: Brainy, query: string, basePath: string = '/') {
-  const results = await brain.vfs.search(query, {
-    path: basePath,     // Limit search to specific directory
-    limit: 50,         // Reasonable limit
-    type: 'file'       // Only search files, not directories
-  })
+ const results = await brain.vfs.search(query, {
+ path: basePath, // Limit search to specific directory
+ limit: 50, // Reasonable limit
+ type: 'file' // Only search files, not directories
+ })
 
-  return results.map(result => ({
-    path: result.path,
-    score: result.score,
-    type: result.type,
-    size: result.size,
-    modified: result.modified
-  }))
+ return results.map(result => ({
+ path: result.path,
+ score: result.score,
+ type: result.type,
+ size: result.size,
+ modified: result.modified
+ }))
 }
 
 // Example usage
@@ -118,149 +118,149 @@ import React, { useState, useEffect } from 'react'
 import { Brainy } from '@soulcraft/brainy'
 
 export function FileExplorer() {
-  const [brain, setBrain] = useState(null)
-  const [currentPath, setCurrentPath] = useState('/')
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
+ const [brain, setBrain] = useState(null)
+ const [currentPath, setCurrentPath] = useState('/')
+ const [items, setItems] = useState([])
+ const [loading, setLoading] = useState(true)
+ const [searchQuery, setSearchQuery] = useState('')
 
-  // Initialize Brainy (VFS auto-initialized!)
-  useEffect(() => {
-    async function initBrainy() {
-      const brainInstance = new Brainy({
-        storage: { type: 'filesystem', path: './brainy-data' }
-      })
-      await brainInstance.init()  // VFS ready after this!
+ // Initialize Brainy (VFS auto-initialized!)
+ useEffect(() => {
+ async function initBrainy() {
+ const brainInstance = new Brainy({
+ storage: { type: 'filesystem', path: './brainy-data' }
+ })
+ await brainInstance.init() // VFS ready after this!
 
-      setBrain(brainInstance)
-      setLoading(false)
-    }
-    initBrainy()
-  }, [])
+ setBrain(brainInstance)
+ setLoading(false)
+ }
+ initBrainy()
+ }, [])
 
-  // Load directory contents
-  const loadDirectory = async (path: string) => {
-    if (!brain) return
+ // Load directory contents
+ const loadDirectory = async (path: string) => {
+ if (!brain) return
 
-    setLoading(true)
-    try {
-      // ✅ CORRECT: Use getDirectChildren to prevent recursion
-      const children = await brain.vfs.getDirectChildren(path)
+ setLoading(true)
+ try {
+ // ✅ CORRECT: Use getDirectChildren to prevent recursion
+ const children = await brain.vfs.getDirectChildren(path)
 
-      // Sort directories first
-      const sorted = children.sort((a, b) => {
-        if (a.metadata.vfsType === 'directory' && b.metadata.vfsType === 'file') return -1
-        if (a.metadata.vfsType === 'file' && b.metadata.vfsType === 'directory') return 1
-        return a.metadata.name.localeCompare(b.metadata.name)
-      })
+ // Sort directories first
+ const sorted = children.sort((a, b) => {
+ if (a.metadata.vfsType === 'directory' && b.metadata.vfsType === 'file') return -1
+ if (a.metadata.vfsType === 'file' && b.metadata.vfsType === 'directory') return 1
+ return a.metadata.name.localeCompare(b.metadata.name)
+ })
 
-      setItems(sorted)
-      setCurrentPath(path)
-    } catch (error) {
-      console.error('Failed to load directory:', error)
-      setItems([])
-    } finally {
-      setLoading(false)
-    }
-  }
+ setItems(sorted)
+ setCurrentPath(path)
+ } catch (error) {
+ console.error('Failed to load directory:', error)
+ setItems([])
+ } finally {
+ setLoading(false)
+ }
+ }
 
-  // Search files
-  const handleSearch = async () => {
-    if (!brain || !searchQuery.trim()) {
-      loadDirectory(currentPath)
-      return
-    }
+ // Search files
+ const handleSearch = async () => {
+ if (!brain || !searchQuery.trim()) {
+ loadDirectory(currentPath)
+ return
+ }
 
-    setLoading(true)
-    try {
-      const results = await brain.vfs.search(searchQuery, {
-        path: currentPath,
-        limit: 100
-      })
-      setItems(results)
-    } catch (error) {
-      console.error('Search failed:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+ setLoading(true)
+ try {
+ const results = await brain.vfs.search(searchQuery, {
+ path: currentPath,
+ limit: 100
+ })
+ setItems(results)
+ } catch (error) {
+ console.error('Search failed:', error)
+ } finally {
+ setLoading(false)
+ }
+ }
 
-  // Initial load
-  useEffect(() => {
-    if (brain) {
-      loadDirectory('/')
-    }
-  }, [brain])
+ // Initial load
+ useEffect(() => {
+ if (brain) {
+ loadDirectory('/')
+ }
+ }, [brain])
 
-  if (loading && !brain) {
-    return <div>Initializing Brainy...</div>
-  }
+ if (loading && !brain) {
+ return <div>Initializing Brainy...</div>
+ }
 
-  return (
-    <div className="file-explorer">
-      {/* Search bar */}
-      <div className="search-bar">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search files by content..."
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-        />
-        <button onClick={handleSearch}>Search</button>
-        {searchQuery && (
-          <button onClick={() => { setSearchQuery(''); loadDirectory(currentPath) }}>
-            Clear
-          </button>
-        )}
-      </div>
+ return (
+ <div className="file-explorer">
+ {/* Search bar */}
+ <div className="search-bar">
+ <input
+ type="text"
+ value={searchQuery}
+ onChange={(e) => setSearchQuery(e.target.value)}
+ placeholder="Search files by content..."
+ onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+ />
+ <button onClick={handleSearch}>Search</button>
+ {searchQuery && (
+ <button onClick={() => { setSearchQuery(''); loadDirectory(currentPath) }}>
+ Clear
+ </button>
+ )}
+ </div>
 
-      {/* Current path */}
-      <div className="current-path">
-        📁 {currentPath}
-        {currentPath !== '/' && (
-          <button onClick={() => loadDirectory(currentPath.split('/').slice(0, -1).join('/') || '/')}>
-            ⬆️ Up
-          </button>
-        )}
-      </div>
+ {/* Current path */}
+ <div className="current-path">
+ 📁 {currentPath}
+ {currentPath !== '/' && (
+ <button onClick={() => loadDirectory(currentPath.split('/').slice(0, -1).join('/') || '/')}>
+ ⬆️ Up
+ </button>
+ )}
+ </div>
 
-      {/* File list */}
-      {loading ? (
-        <div>Loading...</div>
-      ) : (
-        <div className="file-list">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={`file-item ${item.metadata.vfsType}`}
-              onClick={() => {
-                if (item.metadata.vfsType === 'directory') {
-                  loadDirectory(item.metadata.path)
-                } else {
-                  console.log('Open file:', item.metadata.path)
-                  // Add your file opening logic here
-                }
-              }}
-            >
-              <span className="icon">
-                {item.metadata.vfsType === 'directory' ? '📁' : '📄'}
-              </span>
-              <span className="name">{item.metadata.name}</span>
-              <span className="size">
-                {item.metadata.size ? `${Math.round(item.metadata.size / 1024)}KB` : ''}
-              </span>
-            </div>
-          ))}
-          {items.length === 0 && (
-            <div className="empty">
-              {searchQuery ? 'No results found' : 'Empty directory'}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+ {/* File list */}
+ {loading ? (
+ <div>Loading...</div>
+ ) : (
+ <div className="file-list">
+ {items.map((item) => (
+ <div
+ key={item.id}
+ className={`file-item ${item.metadata.vfsType}`}
+ onClick={() => {
+ if (item.metadata.vfsType === 'directory') {
+ loadDirectory(item.metadata.path)
+ } else {
+ console.log('Open file:', item.metadata.path)
+ // Add your file opening logic here
+ }
+ }}
+ >
+ <span className="icon">
+ {item.metadata.vfsType === 'directory' ? '📁' : '📄'}
+ </span>
+ <span className="name">{item.metadata.name}</span>
+ <span className="size">
+ {item.metadata.size ? `${Math.round(item.metadata.size / 1024)}KB` : ''}
+ </span>
+ </div>
+ ))}
+ {items.length === 0 && (
+ <div className="empty">
+ {searchQuery ? 'No results found' : 'Empty directory'}
+ </div>
+ )}
+ </div>
+ )}
+ </div>
+ )
 }
 ```
 
@@ -288,13 +288,13 @@ Your file explorer is now working! Here's what to explore next:
 ### "Module not found" errors
 ```bash
 # Make sure you're using the right import
-npm ls @soulcraft/brainy  # Check version
-npm install @soulcraft/brainy@latest  # Update if needed
+npm ls @soulcraft/brainy # Check version
+npm install @soulcraft/brainy@latest # Update if needed
 ```
 
 ### "VFS not initialized" errors
 ```typescript
-// v5.1.0+: Just await brain.init() - VFS is auto-initialized!
+// Just await brain.init() - VFS is auto-initialized!
 await brain.init()
 // VFS ready - use brain.vfs directly
 await brain.vfs.writeFile('/test.txt', 'data')
@@ -304,8 +304,8 @@ await brain.vfs.writeFile('/test.txt', 'data')
 ```typescript
 // Add pagination for large directories
 const children = await brain.vfs.getDirectChildren(path, {
-  limit: 100,      // Load only first 100 items
-  offset: 0        // Start from beginning
+ limit: 100, // Load only first 100 items
+ offset: 0 // Start from beginning
 })
 ```
 
@@ -313,8 +313,8 @@ const children = await brain.vfs.getDirectChildren(path, {
 ```typescript
 // Make sure files are imported into VFS first
 await brain.vfs.importDirectory('./my-files', {
-  recursive: true,
-  extractMetadata: true  // Enable content understanding
+ recursive: true,
+ extractMetadata: true // Enable content understanding
 })
 ```
 

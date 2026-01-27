@@ -1,7 +1,7 @@
 /**
  * Universal Model Loader for Candle Embeddings
  *
- * v7.2.0: Model weights are now loaded separately from WASM for faster initialization.
+ * Model weights are now loaded separately from WASM for faster initialization.
  * This reduces WASM compilation time from 139 seconds to ~3-5 seconds.
  *
  * Loads model files from appropriate source based on environment:

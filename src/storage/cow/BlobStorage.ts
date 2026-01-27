@@ -161,7 +161,7 @@ export class BlobStorage {
   }
 
   /**
-   * v5.7.5: Ensure compression is ready before write operations
+   * Ensure compression is ready before write operations
    * Fixes race condition where write happens before async compression init completes
    */
   private async ensureCompressionReady(): Promise<void> {
@@ -206,7 +206,7 @@ export class BlobStorage {
       return hash
     }
 
-    // v5.7.5: Ensure compression is initialized before writing
+    // Ensure compression is initialized before writing
     // Fixes race condition where write happens before async init completes
     await this.ensureCompressionReady()
 
@@ -223,7 +223,7 @@ export class BlobStorage {
     }
 
     // Create metadata
-    // v5.7.5: Store ACTUAL compression state, not intended
+    // Store ACTUAL compression state, not intended
     // Prevents corruption if compression failed to initialize
     const actualCompression = finalData === data ? 'none' : compression
     const metadata: BlobMetadata = {
@@ -277,7 +277,7 @@ export class BlobStorage {
    * @returns Blob data
    */
   async read(hash: string, options: BlobReadOptions = {}): Promise<Buffer> {
-    // v5.3.4 fix: Guard against NULL hash (sentinel value)
+    // Guard against NULL hash (sentinel value)
     // NULL_HASH ('0000...0000') is used as a sentinel for "no parent" or "empty tree"
     // It should NEVER be read as actual blob data
     if (isNullHash(hash)) {
@@ -309,7 +309,7 @@ export class BlobStorage {
       metadataBuffer = await this.adapter.get(`${tryPrefix}-meta:${hash}`)
       if (metadataBuffer) {
         prefix = tryPrefix
-        // v5.10.1: Unwrap metadata before parsing (defense-in-depth)
+        // Unwrap metadata before parsing (defense-in-depth)
         // Metadata should be JSON, but adapter might return wrapped format
         const unwrappedMetadata = unwrapBinaryData(metadataBuffer)
         metadata = JSON.parse(unwrappedMetadata.toString())
@@ -338,8 +338,8 @@ export class BlobStorage {
       finalData = await this.zstdDecompress(data)
     }
 
-    // v5.10.1: Defense-in-depth unwrap (CRITICAL FIX for blob integrity regression)
-    // Even though COW adapter should unwrap (v5.7.5), verify it happened and re-unwrap if needed
+    // Defense-in-depth unwrap (CRITICAL FIX for blob integrity regression)
+    // Even though COW adapter should unwrap, verify it happened and re-unwrap if needed
     // This prevents "Blob integrity check failed" errors if adapter returns wrapped data
     // Uses shared binaryDataCodec utility (single source of truth for unwrap logic)
     const unwrappedData = unwrapBinaryData(finalData)

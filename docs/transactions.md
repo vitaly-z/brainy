@@ -1,6 +1,6 @@
 # Transaction System
 
-**Status:** ✅ Production Ready (v5.8.0+)
+**Status:** ✅ Production Ready
 
 ## Overview
 
@@ -17,11 +17,11 @@ Brainy's transaction system provides **atomic operations** with automatic rollba
 
 ```
 User Code (brain.add(), brain.update(), etc.)
-  ↓
+ ↓
 Transaction Manager (orchestration)
-  ↓
+ ↓
 Operations (SaveNounMetadataOperation, SaveNounOperation, etc.)
-  ↓
+ ↓
 Storage Adapter (COW, sharding, type-aware routing)
 ```
 
@@ -32,8 +32,8 @@ Every write operation in Brainy automatically uses transactions:
 ```typescript
 // Internally, this uses a transaction
 const id = await brain.add({
-  data: { name: 'Alice', role: 'Engineer' },
-  type: NounType.Person
+ data: { name: 'Alice', role: 'Engineer' },
+ type: NounType.Person
 })
 ```
 
@@ -51,19 +51,19 @@ Each operation implements both **execute** and **undo**:
 
 ```typescript
 class SaveNounMetadataOperation {
-  async execute(): Promise<void> {
-    // Save new metadata
-    await this.storage.saveNounMetadata(this.id, this.metadata)
-  }
+ async execute(): Promise<void> {
+ // Save new metadata
+ await this.storage.saveNounMetadata(this.id, this.metadata)
+ }
 
-  async undo(): Promise<void> {
-    // Restore previous metadata (or delete if new entity)
-    if (this.previousMetadata) {
-      await this.storage.saveNounMetadata(this.id, this.previousMetadata)
-    } else {
-      await this.storage.deleteNounMetadata(this.id)
-    }
-  }
+ async undo(): Promise<void> {
+ // Restore previous metadata (or delete if new entity)
+ if (this.previousMetadata) {
+ await this.storage.saveNounMetadata(this.id, this.previousMetadata)
+ } else {
+ await this.storage.deleteNounMetadata(this.id)
+ }
+ }
 }
 ```
 
@@ -87,8 +87,8 @@ await brain.cow.checkout('feature-branch')
 
 // Add entity (uses transaction on this branch)
 const id = await brain.add({
-  data: { name: 'Feature Entity' },
-  type: NounType.Thing
+ data: { name: 'Feature Entity' },
+ type: NounType.Thing
 })
 
 // On rollback: Branch remains clean, no partial commits
@@ -123,7 +123,7 @@ await brain.relate({ from: id1, to: id2, type: VerbType.RelatesTo })
 - Transaction operations don't need to know about shards
 - Rollback works across all shards involved
 
-### ID-First Storage (v6.0.0+)
+### ID-First Storage
 
 ✅ **Fully Compatible**
 
@@ -132,27 +132,27 @@ Transactions work with direct ID-first paths - no type routing needed!
 ```typescript
 // Entities stored with direct ID-first paths
 const personId = await brain.add({
-  data: { name: 'John Doe' },
-  type: NounType.Person  // → entities/nouns/{shard}/{id}/metadata.json
+ data: { name: 'John Doe' },
+ type: NounType.Person // → entities/nouns/{shard}/{id}/metadata.json
 })
 
 const orgId = await brain.add({
-  data: { name: 'Acme Corp' },
-  type: NounType.Organization  // → entities/nouns/{shard}/{id}/metadata.json
+ data: { name: 'Acme Corp' },
+ type: NounType.Organization // → entities/nouns/{shard}/{id}/metadata.json
 })
 
 // Type changes handled atomically (type is just metadata)
 await brain.update({
-  id: personId,
-  type: NounType.Organization,  // Type change
-  data: { name: 'Doe Corp' }
+ id: personId,
+ type: NounType.Organization, // Type change
+ data: { name: 'Doe Corp' }
 })
 ```
 
 **How It Works:**
 - Type information stored in metadata.noun field
 - Storage layer uses O(1) ID-first path construction
-- No type cache needed (removed in v6.0.0)
+- No type cache needed (removed in a previous version)
 - Type counters adjusted on commit/rollback
 - 40x faster on cloud storage (eliminates 42-type search)
 
@@ -165,10 +165,10 @@ Transactions work with distributed/remote storage:
 ```typescript
 // Works with S3, Azure, GCS, etc.
 const brain = new Brainy({
-  storage: {
-    type: 's3Compatible',
-    config: { /* S3 config */ }
-  }
+ storage: {
+ type: 's3Compatible',
+ config: { /* S3 config */ }
+ }
 })
 
 // Transactions ensure atomicity at write coordinator level
@@ -199,8 +199,8 @@ await brain.init()
 
 // Automatically uses transaction
 const id = await brain.add({
-  data: { name: 'Alice', role: 'Engineer' },
-  type: NounType.Person
+ data: { name: 'Alice', role: 'Engineer' },
+ type: NounType.Person
 })
 
 // If add fails, all changes rolled back automatically
@@ -211,15 +211,15 @@ const id = await brain.add({
 ```typescript
 // Original entity
 const id = await brain.add({
-  data: { name: 'John Smith', category: 'individual' },
-  type: NounType.Person
+ data: { name: 'John Smith', category: 'individual' },
+ type: NounType.Person
 })
 
 // Update with type change (atomic)
 await brain.update({
-  id,
-  type: NounType.Organization,  // Type change
-  data: { name: 'Smith Corp', category: 'business' }
+ id,
+ type: NounType.Organization, // Type change
+ data: { name: 'Smith Corp', category: 'business' }
 })
 
 // If update fails, original type and data restored
@@ -229,20 +229,20 @@ await brain.update({
 
 ```typescript
 const personId = await brain.add({
-  data: { name: 'Alice' },
-  type: NounType.Person
+ data: { name: 'Alice' },
+ type: NounType.Person
 })
 
 const projectId = await brain.add({
-  data: { name: 'Project X' },
-  type: NounType.Thing
+ data: { name: 'Project X' },
+ type: NounType.Thing
 })
 
 // Create relationship (atomic)
 await brain.relate({
-  from: personId,
-  to: projectId,
-  type: VerbType.WorksOn
+ from: personId,
+ to: projectId,
+ type: VerbType.WorksOn
 })
 
 // If relate fails, no partial relationship created
@@ -253,10 +253,10 @@ await brain.relate({
 ```typescript
 // Multiple operations, all atomic
 for (let i = 0; i < 100; i++) {
-  await brain.add({
-    data: { name: `Entity ${i}`, index: i },
-    type: NounType.Thing
-  })
+ await brain.add({
+ data: { name: `Entity ${i}`, index: i },
+ type: NounType.Thing
+ })
 }
 
 // Each add() is a separate transaction
@@ -267,19 +267,19 @@ for (let i = 0; i < 100; i++) {
 
 ```typescript
 const personId = await brain.add({
-  data: { name: 'Bob' },
-  type: NounType.Person
+ data: { name: 'Bob' },
+ type: NounType.Person
 })
 
 const projectId = await brain.add({
-  data: { name: 'Project Y' },
-  type: NounType.Thing
+ data: { name: 'Project Y' },
+ type: NounType.Thing
 })
 
 await brain.relate({
-  from: personId,
-  to: projectId,
-  type: VerbType.WorksOn
+ from: personId,
+ to: projectId,
+ type: VerbType.WorksOn
 })
 
 // Delete person (atomic - deletes entity + relationships)
@@ -294,15 +294,15 @@ Transactions automatically handle errors and rollback:
 
 ```typescript
 try {
-  await brain.add({
-    data: { name: 'Test Entity' },
-    type: NounType.Thing,
-    vector: [1, 2, 3]  // Wrong dimension → error
-  })
+ await brain.add({
+ data: { name: 'Test Entity' },
+ type: NounType.Thing,
+ vector: [1, 2, 3] // Wrong dimension → error
+ })
 } catch (error) {
-  // Transaction automatically rolled back
-  // No partial data in storage or indexes
-  console.error('Add failed:', error.message)
+ // Transaction automatically rolled back
+ // No partial data in storage or indexes
+ console.error('Add failed:', error.message)
 }
 ```
 
@@ -333,11 +333,11 @@ try {
 const stats = brain.transactionManager?.getStats()
 console.log(stats)
 // {
-//   totalTransactions: 1234,
-//   successfulTransactions: 1200,
-//   failedTransactions: 34,
-//   rollbacks: 34,
-//   averageOperationsPerTransaction: 4.2
+// totalTransactions: 1234,
+// successfulTransactions: 1200,
+// failedTransactions: 34,
+// rollbacks: 34,
+// averageOperationsPerTransaction: 4.2
 // }
 ```
 
@@ -359,7 +359,7 @@ await brain.update({ id, data })
 await brain.delete(id)
 
 // ❌ Avoid: Direct storage access bypasses transactions
-await brain.storage.saveNoun(noun)  // No transaction protection
+await brain.storage.saveNoun(noun) // No transaction protection
 ```
 
 ### 2. Handle Errors Gracefully
@@ -367,11 +367,11 @@ await brain.storage.saveNoun(noun)  // No transaction protection
 ```typescript
 // ✅ Recommended: Catch errors, transaction rolls back automatically
 try {
-  const id = await brain.add({ data, type })
-  return id
+ const id = await brain.add({ data, type })
+ return id
 } catch (error) {
-  console.error('Add failed, rolled back:', error)
-  // Decide how to handle (retry, log, alert user)
+ console.error('Add failed, rolled back:', error)
+ // Decide how to handle (retry, log, alert user)
 }
 ```
 
@@ -380,7 +380,7 @@ try {
 ```typescript
 // ✅ Recommended: Validate early to avoid unnecessary rollbacks
 if (!isValidVector(vector, brain.dimension)) {
-  throw new Error(`Vector must have ${brain.dimension} dimensions`)
+ throw new Error(`Vector must have ${brain.dimension} dimensions`)
 }
 
 await brain.add({ data, type, vector })
@@ -391,14 +391,14 @@ await brain.add({ data, type, vector })
 ```typescript
 // ✅ Recommended: Monitor in production
 setInterval(() => {
-  const stats = brain.transactionManager?.getStats()
-  if (stats) {
-    const failureRate = stats.failedTransactions / stats.totalTransactions
-    if (failureRate > 0.05) {  // > 5% failure rate
-      console.warn('High transaction failure rate:', failureRate)
-    }
-  }
-}, 60000)  // Check every minute
+ const stats = brain.transactionManager?.getStats()
+ if (stats) {
+ const failureRate = stats.failedTransactions / stats.totalTransactions
+ if (failureRate > 0.05) { // > 5% failure rate
+ console.warn('High transaction failure rate:', failureRate)
+ }
+ }
+}, 60000) // Check every minute
 ```
 
 ### 5. Understand Atomicity Guarantees
@@ -425,25 +425,25 @@ import { describe, it, expect } from 'vitest'
 import { Brainy } from '@soulcraft/brainy'
 
 describe('Transaction Tests', () => {
-  it('should rollback on failure', async () => {
-    const brain = new Brainy()
-    await brain.init()
+ it('should rollback on failure', async () => {
+ const brain = new Brainy()
+ await brain.init()
 
-    const id1 = await brain.add({ data: { name: 'Entity 1' }, type: NounType.Thing })
+ const id1 = await brain.add({ data: { name: 'Entity 1' }, type: NounType.Thing })
 
-    try {
-      await brain.add({
-        data: null as any,  // Invalid - will fail
-        type: NounType.Thing
-      })
-    } catch (e) {
-      // Expected failure
-    }
+ try {
+ await brain.add({
+ data: null as any, // Invalid - will fail
+ type: NounType.Thing
+ })
+ } catch (e) {
+ // Expected failure
+ }
 
-    // First entity should still exist (rollback didn't affect it)
-    const entity1 = await brain.get(id1)
-    expect(entity1).toBeTruthy()
-  })
+ // First entity should still exist (rollback didn't affect it)
+ const entity1 = await brain.get(id1)
+ expect(entity1).toBeTruthy()
+ })
 })
 ```
 
@@ -510,21 +510,21 @@ const stats = brain.transactionManager?.getStats()
 
 ```
 1. BEGIN
-   ↓
+ ↓
 2. ADD OPERATIONS
-   - SaveNounMetadataOperation
-   - SaveNounOperation
-   - UpdateGraphIndexOperation
-   ↓
+ - SaveNounMetadataOperation
+ - SaveNounOperation
+ - UpdateGraphIndexOperation
+ ↓
 3. EXECUTE (sequential)
-   - Execute operation 1 → Success
-   - Execute operation 2 → Success
-   - Execute operation 3 → FAILURE
-   ↓
+ - Execute operation 1 → Success
+ - Execute operation 2 → Success
+ - Execute operation 3 → FAILURE
+ ↓
 4. ROLLBACK (reverse order)
-   - Undo operation 2
-   - Undo operation 1
-   ↓
+ - Undo operation 2
+ - Undo operation 1
+ ↓
 5. THROW ERROR
 ```
 
@@ -544,11 +544,11 @@ Transactions use the `StorageAdapter` interface:
 
 ```typescript
 interface StorageAdapter {
-  saveNounMetadata(id: string, metadata: NounMetadata): Promise<void>
-  saveNoun(noun: Noun): Promise<void>
-  deleteNounMetadata(id: string): Promise<void>
-  deleteNoun(id: string): Promise<void>
-  // ... other methods
+ saveNounMetadata(id: string, metadata: NounMetadata): Promise<void>
+ saveNoun(noun: Noun): Promise<void>
+ deleteNounMetadata(id: string): Promise<void>
+ deleteNoun(id: string): Promise<void>
+ // ... other methods
 }
 ```
 
@@ -563,11 +563,11 @@ interface StorageAdapter {
 
 ## Version History
 
-- **v5.8.0**: Initial transaction system release
-  - Atomic operations with rollback
-  - Compatible with COW, sharding, type-aware, distributed
-  - 36/36 unit tests passing
-  - 35 integration test scenarios
+- Initial transaction system release
+ - Atomic operations with rollback
+ - Compatible with COW, sharding, type-aware, distributed
+ - 36/36 unit tests passing
+ - 35 integration test scenarios
 
 ## Summary
 

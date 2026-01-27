@@ -42,10 +42,10 @@ await experiment.updateAll(riskyTransformation)
 // Works? Great! Use the experimental branch.
 // Failed? Just discard.
 if (success) {
-  // Make experiment the new main branch
-  await brain.checkout('test-migration')
+ // Make experiment the new main branch
+ await brain.checkout('test-migration')
 } else {
-  await experiment.destroy()  // No harm done
+ await experiment.destroy() // No harm done
 }
 ```
 
@@ -61,25 +61,25 @@ if (success) {
 
 Brainy uses **Snowflake-style Copy-on-Write (COW)** for instant forking:
 
-### Architecture (v5.0.0)
+### Architecture
 
 1. **HNSW Index COW** (The Performance Bottleneck):
-   - **Shallow Copy**: O(1) Map reference copying (~10ms for 1M+ nodes)
-   - **Lazy Deep Copy**: Nodes copied only when modified (`ensureCOW()`)
-   - **Write Isolation**: Fork modifications don't affect parent
-   - **Implementation**: `src/hnsw/hnswIndex.ts` lines 2088-2150
+ - **Shallow Copy**: O(1) Map reference copying (~10ms for 1M+ nodes)
+ - **Lazy Deep Copy**: Nodes copied only when modified (`ensureCOW()`)
+ - **Write Isolation**: Fork modifications don't affect parent
+ - **Implementation**: `src/hnsw/hnswIndex.ts` lines 2088-2150
 
 2. **Metadata & Graph Indexes** (Fast Rebuild):
-   - **Rebuild from Storage**: < 500ms total for both indexes
-   - **Shared Storage**: Both indexes read from COW-enabled storage layer
-   - **Acceptable Overhead**: Fast enough not to need in-memory COW
+ - **Rebuild from Storage**: < 500ms total for both indexes
+ - **Shared Storage**: Both indexes read from COW-enabled storage layer
+ - **Acceptable Overhead**: Fast enough not to need in-memory COW
 
 3. **Storage Layer** (Shared):
-   - **RefManager**: Manages branch references
-   - **BlobStorage**: Content-addressable with deduplication
-   - **All Adapters**: Memory, FileSystem, S3, R2, GCS, Azure, OPFS
+ - **RefManager**: Manages branch references
+ - **BlobStorage**: Content-addressable with deduplication
+ - **All Adapters**: Memory, FileSystem, S3, R2, GCS, Azure, OPFS
 
-**Performance (v5.0.0)**:
+**Performance**:
 - **Fork time**: < 100ms @ 10K entities (MEASURED in tests)
 - **Storage overhead**: 10-20% (shared blobs, only changed data duplicated)
 - **Memory overhead**: 10-20% (shared HNSW nodes, only modified nodes duplicated)
@@ -87,11 +87,11 @@ Brainy uses **Snowflake-style Copy-on-Write (COW)** for instant forking:
 **Technical Details**:
 ```typescript
 // Shallow copy HNSW (instant)
-clone.index.enableCOW(this.index)  // O(1) Map reference copy
+clone.index.enableCOW(this.index) // O(1) Map reference copy
 
 // Fast rebuild small indexes from shared storage
-clone.metadataIndex = new MetadataIndexManager(clone.storage)  // <100ms
-clone.graphIndex = new GraphAdjacencyIndex(clone.storage)     // <500ms
+clone.metadataIndex = new MetadataIndexManager(clone.storage) // <100ms
+clone.graphIndex = new GraphAdjacencyIndex(clone.storage) // <500ms
 ```
 
 ---
@@ -128,11 +128,11 @@ await fork.add({ noun: 'user', data: { name: 'Charlie' } })
 
 // All APIs work
 const users = await fork.find({ noun: 'user' })
-console.log(users.length)  // 3 (Alice, Bob, Charlie)
+console.log(users.length) // 3 (Alice, Bob, Charlie)
 
 // Original brain unchanged
 const originalUsers = await brain.find({ noun: 'user' })
-console.log(originalUsers.length)  // 2 (Alice, Bob)
+console.log(originalUsers.length) // 2 (Alice, Bob)
 ```
 
 ### 3. Discard When Done
@@ -165,30 +165,30 @@ const migration = await brain.fork('migration-test')
 // Run migration on fork
 const users = await migration.find({ noun: 'user' })
 for (const user of users) {
-  await migration.update(user.id, {
-    email: user.data.email.toLowerCase(),  // Normalize emails
-    verified: user.data.verified ?? false  // Add missing field
-  })
+ await migration.update(user.id, {
+ email: user.data.email.toLowerCase(), // Normalize emails
+ verified: user.data.verified ?? false // Add missing field
+ })
 }
 
 // Validate migration
 const allValid = (await migration.find({ noun: 'user' }))
-  .every(u => u.data.email === u.data.email.toLowerCase())
+ .every(u => u.data.email === u.data.email.toLowerCase())
 
 if (allValid) {
-  console.log('✅ Migration safe! Apply changes to production brain')
-  // Apply validated migration to main brain
-  const users = await brain.find({ noun: 'user' })
-  for (const user of users) {
-    await brain.update(user.id, {
-      email: user.data.email.toLowerCase(),
-      verified: user.data.verified ?? false
-    })
-  }
-  await migration.destroy()
+ console.log('✅ Migration safe! Apply changes to production brain')
+ // Apply validated migration to main brain
+ const users = await brain.find({ noun: 'user' })
+ for (const user of users) {
+ await brain.update(user.id, {
+ email: user.data.email.toLowerCase(),
+ verified: user.data.verified ?? false
+ })
+ }
+ await migration.destroy()
 } else {
-  console.log('❌ Migration failed! Discarding fork.')
-  await migration.destroy()
+ console.log('❌ Migration failed! Discarding fork.')
+ await migration.destroy()
 }
 ```
 
@@ -203,8 +203,8 @@ const brain = new Brainy({ storage: { adapter: 's3', bucket: 'production' } })
 await brain.init()
 
 // Create two variants
-const variantA = await brain.fork('variant-a')  // Control
-const variantB = await brain.fork('variant-b')  // Test
+const variantA = await brain.fork('variant-a') // Control
+const variantB = await brain.fork('variant-b') // Test
 
 // Run different algorithms
 await variantA.processWithAlgorithm('current')
@@ -219,14 +219,14 @@ console.log('Variant B accuracy:', metricsB.accuracy)
 
 // Choose winner and update main brain
 if (metricsB.accuracy > metricsA.accuracy) {
-  console.log('B wins! Apply algorithm B to production')
-  await brain.processWithAlgorithm('improved')
-  await variantA.destroy()
-  await variantB.destroy()
+ console.log('B wins! Apply algorithm B to production')
+ await brain.processWithAlgorithm('improved')
+ await variantA.destroy()
+ await variantB.destroy()
 } else {
-  console.log('A wins! Keeping current algorithm.')
-  await variantA.destroy()
-  await variantB.destroy()
+ console.log('A wins! Keeping current algorithm.')
+ await variantA.destroy()
+ await variantB.destroy()
 }
 ```
 
@@ -311,12 +311,12 @@ await brain.update(docs[0].id, { version: 2 })
 
 // Test against original state
 const originalData = await snapshot.find({ noun: 'doc' })
-console.log(originalData[0].data.version)  // 1 (original state!)
+console.log(originalData[0].data.version) // 1 (original state!)
 
 // Clean up
 await snapshot.destroy()
 
-// Note: Time-travel queries (asOf) planned for v5.1.0
+// Note: Time-travel queries (asOf) Planned
 ```
 
 ---
@@ -330,27 +330,27 @@ await snapshot.destroy()
 const fork1 = await brain.fork('my-experiment')
 
 // Auto-generated name (uses timestamp)
-const fork2 = await brain.fork()  // 'fork-1635789012345'
+const fork2 = await brain.fork() // 'fork-1635789012345'
 
 // Fork with metadata (for tracking)
 const fork3 = await brain.fork('test', {
-  author: 'Alice',
-  message: 'Testing new feature'
+ author: 'Alice',
+ message: 'Testing new feature'
 })
 ```
 
-### Branch Management (v5.0.0)
+### Branch Management
 
-**NEW in v5.0.0:** Full branch management now available!
+ Full branch management now available!
 
 ```javascript
 // List all branches
 const branches = await brain.listBranches()
-console.log(branches)  // ['main', 'experiment', 'test']
+console.log(branches) // ['main', 'experiment', 'test']
 
 // Get current branch
 const current = await brain.getCurrentBranch()
-console.log(current)  // 'main'
+console.log(current) // 'main'
 
 // Switch between branches
 await brain.checkout('experiment')
@@ -359,33 +359,33 @@ await brain.checkout('experiment')
 await brain.deleteBranch('old-experiment')
 ```
 
-### Commit Tracking (v5.0.0)
+### Commit Tracking
 
-**NEW in v5.0.0:** Git-style commit tracking!
+ Git-style commit tracking!
 
 ```javascript
 // Create a commit (snapshot of current state)
 await brain.add({ type: 'user', data: { name: 'Alice' } })
 
 const commitHash = await brain.commit({
-  message: 'Add Alice user',
-  author: 'dev@example.com'
+ message: 'Add Alice user',
+ author: 'dev@example.com'
 })
 
-console.log(commitHash)  // 'a3f2c1b9...'
+console.log(commitHash) // 'a3f2c1b9...'
 ```
 
-### Commit History (v5.0.0)
+### Commit History
 
-**NEW in v5.0.0:** View commit history!
+ View commit history!
 
 ```javascript
 // Get commit history for current branch
 const history = await brain.getHistory({ limit: 10 })
 
 history.forEach(commit => {
-  console.log(`${commit.hash}: ${commit.message}`)
-  console.log(`  By: ${commit.author} at ${new Date(commit.timestamp)}`)
+ console.log(`${commit.hash}: ${commit.message}`)
+ console.log(` By: ${commit.author} at ${new Date(commit.timestamp)}`)
 })
 
 ## Performance Characteristics
@@ -425,7 +425,7 @@ Savings: 40% less memory
 
 ## Zero Configuration
 
-**Fork is enabled by default in v5.0.0+. No setup required.**
+**Fork is enabled by default. No setup required.**
 
 ```javascript
 // This is all you need:
@@ -467,9 +467,9 @@ await new Brainy({ storage: { adapter: 's3', bucket: 'my-data' } }).fork()
 
 ```javascript
 const brain = new Brainy({
-  storage: { adapter: 'memory' },
-  vfs: { enabled: true },
-  intelligence: { enabled: true }
+ storage: { adapter: 'memory' },
+ vfs: { enabled: true },
+ intelligence: { enabled: true }
 })
 
 await brain.init()
@@ -484,9 +484,9 @@ await brain.add({ noun: 'user', data: { name: 'Alice' } })
 const fork = await brain.fork('test')
 
 // All features work on fork:
-await fork.vfs.readFile('/project/README.md')  // ✅ VFS
-await fork.find({ noun: 'user' })  // ✅ find()
-await fork.query('users named Alice')  // ✅ Triple Intelligence
+await fork.vfs.readFile('/project/README.md') // ✅ VFS
+await fork.find({ noun: 'user' }) // ✅ find()
+await fork.query('users named Alice') // ✅ Triple Intelligence
 ```
 
 ### Works at Billion Scale
@@ -494,8 +494,8 @@ await fork.query('users named Alice')  // ✅ Triple Intelligence
 ```javascript
 // Tested at 1M entities, extrapolates to 1B
 const brain = new Brainy({
-  storage: { adapter: 'gcs', bucket: 'billion-scale' },
-  hnsw: { typeAware: true }  // 87% memory reduction
+ storage: { adapter: 'gcs', bucket: 'billion-scale' },
+ hnsw: { typeAware: true } // 87% memory reduction
 })
 
 await brain.init()
@@ -563,7 +563,7 @@ ALTER TABLE users_backup RENAME TO users;
 ```javascript
 const fork = await brain.fork('test')
 await fork.updateAll({ email: (u) => u.email.toLowerCase() })
-if (success) await brain.checkout('test')  // Make test branch active
+if (success) await brain.checkout('test') // Make test branch active
 else await fork.destroy()
 ```
 
@@ -585,7 +585,7 @@ mongoimport --db mydb --collection users_backup --file users.json
 
 **Brainy:**
 ```javascript
-const fork = await brain.fork()  // Done!
+const fork = await brain.fork() // Done!
 ```
 
 **Winner: Brainy** (100x faster, built-in)
@@ -612,8 +612,7 @@ const fork = await brain.fork()  // Done!
 
 ## What's Implemented vs. What's Next
 
-### ✅ Available in v5.0.0:
-- ✅ `fork()` - Instant clone in <100ms
+### ✅ Available in - ✅ `fork()` - Instant clone in <100ms
 - ✅ `listBranches()` - List all forks
 - ✅ `getCurrentBranch()` - Get active branch
 - ✅ `checkout()` - Switch between branches
@@ -621,14 +620,14 @@ const fork = await brain.fork()  // Done!
 - ✅ `commit()` - Create state snapshots
 - ✅ `getHistory()` - View commit history
 
-### 🔮 Planned for v5.1.0+:
+### 🔮 Planned for:
 
 **Temporal Features:**
-- `asOf(timestamp)` - Query data at specific time (✅ v5.0.0+)
+- `asOf(timestamp)` - Query data at specific time (✅ available)
 - `rollback(commitHash)` - Restore to previous state
 - Full audit trail for all changes
 
-These features require additional temporal infrastructure and are being carefully designed for v5.1.0+
+These features require additional temporal infrastructure and are being carefully designed
 
 ---
 
@@ -691,4 +690,4 @@ console.log('Fork created in < 2 seconds! 🚀')
 
 ---
 
-**Brainy v5.0.0+** | [GitHub](https://github.com/soulcraftlabs/brainy) | [npm](https://npmjs.com/package/@soulcraft/brainy)
+**Brainy** | [GitHub](https://github.com/soulcraftlabs/brainy) | [npm](https://npmjs.com/package/@soulcraft/brainy)

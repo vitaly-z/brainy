@@ -317,7 +317,7 @@ export class SemanticPathResolver {
   }
 
   /**
-   * Invalidate ALL caches (v6.3.0)
+   * Invalidate ALL caches
    * Clears both traditional path cache AND semantic cache
    * Call this when switching branches, clearing data, or forking
    */

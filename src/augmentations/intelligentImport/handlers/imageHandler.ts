@@ -1,5 +1,5 @@
 /**
- * Image Import Handler (v5.8.0 - Pure JavaScript)
+ * Image Import Handler
  *
  * Handles image files with:
  * - EXIF metadata extraction (camera, GPS, timestamps) via exifr
@@ -7,7 +7,7 @@
  * - Support for JPEG, PNG, WebP, GIF, TIFF, BMP, SVG
  *
  * NO NATIVE DEPENDENCIES - Pure JavaScript implementation
- * Replaces Sharp (v5.7.x) with lightweight pure-JS alternatives
+ * Replaces Sharp with lightweight pure-JS alternatives
  */
 
 import { BaseFormatHandler } from './base.js'
@@ -96,7 +96,7 @@ export interface ImageHandlerOptions extends FormatHandlerOptions {
  * Enables developers to import images into the knowledge graph with
  * full metadata extraction.
  *
- * v5.8.0: Pure JavaScript implementation (no native dependencies)
+ * Pure JavaScript implementation (no native dependencies)
  */
 export class ImageHandler extends BaseFormatHandler {
   readonly format = 'image'

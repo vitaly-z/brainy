@@ -1,4 +1,4 @@
-# Brainy Data Storage Architecture (v5.11.0)
+# Brainy Data Storage Architecture
 
 **Complete file structure reference for all storage backends**
 
@@ -13,7 +13,7 @@ This document explains how Brainy stores, indexes, and scales data across all st
 3. [The 4 Indexes](#3-the-4-indexes)
 4. [Sharding Strategy](#4-sharding-strategy)
 5. [COW (Copy-on-Write) Architecture](#5-cow-copy-on-write-architecture)
-6. [ID-First Storage Architecture (v6.0.0+)](#6-id-first-storage-architecture-v600)
+6. [ID-First Storage Architecture](#6-id-first-storage-architecture-v600)
 7. [VFS (Virtual File System)](#7-vfs-virtual-file-system)
 8. [Storage Backend Mapping](#8-storage-backend-mapping)
 9. [Performance Characteristics](#9-performance-characteristics)
@@ -438,7 +438,7 @@ Unlike entities and relationships, system metadata consists of **index files** t
 
 Understanding how Brainy constructs storage paths is critical for debugging and optimization.
 
-### Path Construction Steps (v6.0.0+)
+### Path Construction Steps
 
 **For an entity (noun)**:
 ```typescript
@@ -498,7 +498,7 @@ const fieldIndexPath = `_system/metadata_indexes/__metadata_field_index__${field
 const hnswNodePath = `_system/hnsw/nodes/${shard}/${entityId}.json`
 ```
 
-### Path Patterns Summary (v6.0.0+)
+### Path Patterns Summary
 
 | Data Type | Path Pattern | Sharded? | Branched? |
 |-----------|--------------|----------|-----------|
@@ -516,7 +516,7 @@ const hnswNodePath = `_system/hnsw/nodes/${shard}/${entityId}.json`
 | **HNSW node** | `_system/hnsw/nodes/{shard}/{uuid}.json` | ✅ Yes (UUID) | ❌ No |
 | **Field index** | `_system/metadata_indexes/__metadata_field_index__{field}.json` | ❌ No | ❌ No |
 
-### Key Principles (v6.0.0+)
+### Key Principles
 
 1. **Shard Extraction**: Always use first 2 hex characters of UUID/SHA-256
 2. **ID-First**: Shard + ID come BEFORE type (type is in metadata)
@@ -549,7 +549,7 @@ Brainy uses four complementary index systems for different query patterns.
 - Memory (standard): ~200MB per 100K entities
 - Memory (lazy): ~15-33MB per 100K entities (5-10x less!)
 
-**Automatic Lazy Mode** (v3.36.0+): Enables automatically when vectors don't fit in UnifiedCache
+**Automatic Lazy Mode**: Enables automatically when vectors don't fit in UnifiedCache
 
 ---
 
@@ -559,7 +559,7 @@ Brainy uses four complementary index systems for different query patterns.
 **Location**: MetadataIndexManager index on `noun` field
 **Data Structure**: RoaringBitmap32 per type value
 
-**How It Works** (v6.0.0+):
+**How It Works**:
 ```typescript
 // Find all Person entities
 const people = await brain.getNouns({ type: 'person' })
@@ -721,7 +721,7 @@ COW is Brainy's **git-like versioning system** that enables:
 - ✅ **Deduplication** (identical data stored only once)
 - ✅ **Version history** (full audit trail of all changes)
 
-**Status**: ALWAYS ENABLED (v5.11.0+) - cannot be disabled
+**Status**: ALWAYS ENABLED - cannot be disabled
 
 ---
 
@@ -782,19 +782,19 @@ _cow/blobs/ab/abc123...sha256.bin  (used by both entities)
 
 ---
 
-## 6. ID-First Storage Architecture (v6.0.0+)
+## 6. ID-First Storage Architecture
 
 ### 6.1 What is ID-First?
 
 **ID-first storage** organizes entities by **ID shard only** - no type directories! This eliminates 42-type sequential searches that caused 20-21 second delays on cloud storage.
 
-**Old type-first structure** (v5.4.0-v5.12.0):
+**Old type-first structure** (v5.12.0):
 ```
 branches/main/entities/nouns/{TYPE}/metadata/00/001234...uuid.json
 # Problem: Requires knowing type OR searching 42 type directories!
 ```
 
-**NEW ID-first structure** (v6.0.0+):
+**NEW ID-first structure**:
 ```
 branches/main/entities/nouns/00/001234...uuid/metadata.json
 # Direct O(1) lookup - no type needed!
@@ -809,7 +809,7 @@ branches/main/entities/nouns/00/001234...uuid/metadata.json
 // v5.x: Had to search 42 types if type unknown
 // Result: 21 seconds on GCS (42 types × 500ms)
 
-// v6.0.0: Direct path from ID
+// Direct path from ID
 const id = '001234...'
 const shard = id.substring(0, 2)  // '00'
 const path = `branches/main/entities/nouns/${shard}/${id}/metadata.json`
@@ -1165,7 +1165,7 @@ opfs://root/brainy/
 
 ### 10.2 clear() Operation
 
-**What clear() deletes** (v5.11.0+):
+**What clear() deletes**:
 
 ✅ Deletes:
 - `branches/` → ALL entity data (all types, all shards, all branches, all forks)
@@ -1184,7 +1184,7 @@ opfs://root/brainy/
 
 **Example**:
 ```typescript
-await brain.storage.clear()  // ✅ Deletes ALL data correctly (v5.11.0+)
+await brain.storage.clear()  // ✅ Deletes ALL data correctly
 await brain.add({ data: 'Alice', type: 'person' })  // ✅ COW reinitializes automatically
 ```
 
@@ -1353,7 +1353,7 @@ const historicalData = await yesterday.getNouns({ type: 'Character' })
 await brain.storage.clear()
 ```
 
-**What happens in storage** (v5.11.0+):
+**What happens in storage**:
 ```
 1. Delete all entity data:
    → Remove: branches/ (entire directory)
@@ -1452,7 +1452,7 @@ await brain.addBatch([
 
 ## 11. Summary
 
-**Complete Storage Structure (v6.0.0)**:
+**Complete Storage Structure**:
 - **3 storage layers**: branches/ (data), _cow/ (versions), _system/ (indexes)
 - **2 files per entity**: metadata.json + vector.json (optimized I/O)
 - **4 indexes**: HNSW (semantic), Type Index (metadata-based), Graph (relationships), Metadata (fields)

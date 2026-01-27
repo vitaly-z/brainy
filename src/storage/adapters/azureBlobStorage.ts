@@ -9,7 +9,7 @@
  * 4. SAS Token
  * 5. Azure AD (OAuth2) via DefaultAzureCredential
  *
- * v4.0.0: Fully compatible with metadata/vector separation architecture
+ * Fully compatible with metadata/vector separation architecture
  */
 
 import {
@@ -65,7 +65,7 @@ const MAX_AZURE_PAGE_SIZE = 5000
  * 3. Storage Account Key - if accountName + accountKey provided
  * 4. SAS Token - if accountName + sasToken provided
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed pagination overrides
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -105,7 +105,7 @@ export class AzureBlobStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
 
-  // v6.2.7: Write buffering always enabled for consistent performance
+  // Write buffering always enabled for consistent performance
   // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Multi-level cache manager for efficient data access
@@ -115,7 +115,7 @@ export class AzureBlobStorage extends BaseStorage {
   // Module logger
   private logger = createModuleLogger('AzureBlobStorage')
 
-  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  // HNSW mutex locks to prevent read-modify-write races
   private hnswLocks = new Map<string, Promise<void>>()
 
   /**
@@ -162,7 +162,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Azure Functions),
      *   strict locally. Zero-config optimization.
@@ -171,7 +171,6 @@ export class AzureBlobStorage extends BaseStorage {
      * - `'strict'`: Traditional blocking init. Validates container and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: InitMode
 
@@ -185,7 +184,7 @@ export class AzureBlobStorage extends BaseStorage {
     this.sasToken = options.sasToken
     this.readOnly = options.readOnly || false
 
-    // v7.3.0: Handle initMode
+    // Handle initMode
     if (options.initMode) {
       this.initMode = options.initMode
     }
@@ -201,7 +200,7 @@ export class AzureBlobStorage extends BaseStorage {
     this.nounCacheManager = new CacheManager<HNSWNode>(options.cacheConfig)
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
-    // v6.2.7: Write buffering always enabled - no env var check needed
+    // Write buffering always enabled - no env var check needed
   }
 
   /**
@@ -216,7 +215,7 @@ export class AzureBlobStorage extends BaseStorage {
    * Recent Azure improvements make parallel downloads very efficient
    *
    * @returns Azure Blob-optimized batch configuration
-   * @since v5.12.0 - Updated for native batch API
+   * Updated for native batch API
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -241,7 +240,6 @@ export class AzureBlobStorage extends BaseStorage {
    *
    * @param paths - Array of Azure blob paths to read
    * @returns Map of path -> parsed JSON data (only successful reads)
-   * @since v5.12.0
    */
   public async readBatch(paths: string[]): Promise<Map<string, any>> {
     await this.ensureInitialized()
@@ -297,7 +295,7 @@ export class AzureBlobStorage extends BaseStorage {
   /**
    * Initialize the storage adapter
    *
-   * v7.3.0: Supports progressive initialization for fast cold starts
+   * Supports progressive initialization for fast cold starts
    *
    * | Mode | Init Time | When |
    * |------|-----------|------|
@@ -404,7 +402,7 @@ export class AzureBlobStorage extends BaseStorage {
       this.verbCacheManager.clear()
       prodLog.info('✅ Cache cleared - starting fresh')
 
-      // v7.3.0: Progressive vs Strict initialization
+      // Progressive vs Strict initialization
       if (effectiveMode === 'progressive') {
         // PROGRESSIVE MODE: Fast init, background validation
         // Mark as initialized immediately - ready to accept operations
@@ -413,7 +411,7 @@ export class AzureBlobStorage extends BaseStorage {
 
         prodLog.info(`✅ Azure progressive init complete: ${this.containerName} (validation deferred)`)
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Schedule background tasks (non-blocking)
@@ -434,7 +432,7 @@ export class AzureBlobStorage extends BaseStorage {
         await this.initializeCounts()
         this.countsLoaded = true
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Mark background tasks as complete (nothing to do in background)
@@ -447,7 +445,7 @@ export class AzureBlobStorage extends BaseStorage {
   }
 
   // =============================================
-  // Progressive Initialization (v7.3.0+)
+  // Progressive Initialization
   // =============================================
 
   /**
@@ -461,7 +459,6 @@ export class AzureBlobStorage extends BaseStorage {
    *
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async runBackgroundInit(): Promise<void> {
     const startTime = Date.now()
@@ -485,7 +482,6 @@ export class AzureBlobStorage extends BaseStorage {
    * bucketValidated/bucketValidationError for lazy use.
    *
    * @private
-   * @since v7.3.0
    */
   private async validateContainerInBackground(): Promise<void> {
     try {
@@ -517,7 +513,6 @@ export class AzureBlobStorage extends BaseStorage {
    * Load counts from storage in background.
    *
    * @private
-   * @since v7.3.0
    */
   private async loadCountsInBackground(): Promise<void> {
     try {
@@ -541,7 +536,6 @@ export class AzureBlobStorage extends BaseStorage {
    * @throws Error if container validation fails
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async ensureValidatedForWrite(): Promise<void> {
     // If already validated, nothing to do
@@ -665,7 +659,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
+  // Removed checkVolumeMode() - write buffering always enabled for cloud storage
 
   /**
    * Flush noun buffer to Azure
@@ -697,20 +691,20 @@ export class AzureBlobStorage extends BaseStorage {
     await Promise.all(writes)
   }
 
-  // v5.4.0: Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed saveNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
@@ -791,7 +785,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed getNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get a node from storage
@@ -889,18 +883,18 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
+  // Removed deleteNoun_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Write an object to a specific path in Azure
    * Primitive operation required by base class
    *
-   * v7.3.0: Performs lazy container validation on first write in progressive mode.
+   * Performs lazy container validation on first write in progressive mode.
    * @protected
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy container validation for progressive init
+    // Lazy container validation for progressive init
     await this.ensureValidatedForWrite()
 
     try {
@@ -954,12 +948,12 @@ export class AzureBlobStorage extends BaseStorage {
    * Delete an object from a specific path in Azure
    * Primitive operation required by base class
    *
-   * v7.3.0: Performs lazy container validation on first delete in progressive mode.
+   * Performs lazy container validation on first delete in progressive mode.
    * @protected
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy container validation for progressive init
+    // Lazy container validation for progressive init
     await this.ensureValidatedForWrite()
 
     try {
@@ -1209,20 +1203,20 @@ export class AzureBlobStorage extends BaseStorage {
     })
   }
 
-  // v5.4.0: Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed saveVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save an edge to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveEdge(edge: Edge): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.verbWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding verb ${edge.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       this.verbCacheManager.set(edge.id, edge)
 
       await this.verbWriteBuffer.add(edge.id, edge)
@@ -1255,7 +1249,7 @@ export class AzureBlobStorage extends BaseStorage {
           ])
         ),
 
-        // CORE RELATIONAL DATA (v4.0.0)
+        // CORE RELATIONAL DATA
         verb: edge.verb,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
@@ -1280,7 +1274,7 @@ export class AzureBlobStorage extends BaseStorage {
       // Update cache
       this.verbCacheManager.set(edge.id, edge)
 
-      // Count tracking happens in baseStorage.saveVerbMetadata_internal (v4.1.2)
+      // Count tracking happens in baseStorage.saveVerbMetadata_internal
       // This fixes the race condition where metadata didn't exist yet
 
       this.logger.trace(`Edge ${edge.id} saved successfully`)
@@ -1298,7 +1292,7 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed getVerb_internal - now inherit from BaseStorage's type-first implementation
 
   /**
    * Get an edge from storage
@@ -1335,7 +1329,7 @@ export class AzureBlobStorage extends BaseStorage {
         connections.set(Number(level), new Set(verbIds as string[]))
       }
 
-      // v4.0.0: Return HNSWVerb with core relational fields (NO metadata field)
+      // Return HNSWVerb with core relational fields (NO metadata field)
       const edge: Edge = {
         id: data.id,
         vector: data.vector,
@@ -1346,7 +1340,7 @@ export class AzureBlobStorage extends BaseStorage {
         sourceId: data.sourceId,
         targetId: data.targetId
 
-        // ✅ NO metadata field in v4.0.0
+        // ✅ NO metadata field
         // User metadata retrieved separately via getVerbMetadata()
       }
 
@@ -1375,13 +1369,13 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
+  // Removed deleteVerb_internal - now inherit from BaseStorage's type-first implementation
 
-  // v5.4.0: Removed getNounsWithPagination - now inherit from BaseStorage's type-first implementation
+  // Removed getNounsWithPagination - now inherit from BaseStorage's type-first implementation
 
-  // v5.4.0: Removed getNounsByNounType_internal - now inherit from BaseStorage's type-first implementation
+  // Removed getNounsByNounType_internal - now inherit from BaseStorage's type-first implementation
 
-  // v5.4.0: Removed 3 verb query *_internal methods (getVerbsBySource, getVerbsByTarget, getVerbsByType) - now inherit from BaseStorage's type-first implementation
+  // Removed 3 verb query *_internal methods (getVerbsBySource, getVerbsByTarget, getVerbsByType) - now inherit from BaseStorage's type-first implementation
 
   /**
    * Clear all data from storage
@@ -1393,7 +1387,7 @@ export class AzureBlobStorage extends BaseStorage {
       this.logger.info('🧹 Clearing all data from Azure container...')
 
       // Delete all blobs in container
-      // v5.6.1: listBlobsFlat() returns ALL blobs including _cow/ prefix
+      // listBlobsFlat() returns ALL blobs including _cow/ prefix
       // This correctly deletes COW version control data (commits, trees, blobs, refs)
       for await (const blob of this.containerClient!.listBlobsFlat()) {
         if (blob.name) {
@@ -1402,7 +1396,7 @@ export class AzureBlobStorage extends BaseStorage {
         }
       }
 
-      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // Reset COW managers (but don't disable COW - it's always enabled)
       // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
@@ -1461,12 +1455,12 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker blob exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -1643,7 +1637,7 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Get a noun's vector for HNSW rebuild
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
@@ -1653,7 +1647,7 @@ export class AzureBlobStorage extends BaseStorage {
   /**
    * Save HNSW graph data for a noun
    *
-   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * Uses BaseStorage's getNoun/saveNoun (type-first paths)
    * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
@@ -1662,7 +1656,7 @@ export class AzureBlobStorage extends BaseStorage {
   }): Promise<void> {
     const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // CRITICAL FIX: Mutex lock to prevent read-modify-write races
     // Problem: Without mutex, concurrent operations can:
     //   1. Thread A reads noun (connections: [1,2,3])
     //   2. Thread B reads noun (connections: [1,2,3])
@@ -1682,7 +1676,7 @@ export class AzureBlobStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Use BaseStorage's getNoun (type-first paths)
       // Read existing noun data (if exists)
       const existingNoun = await this.getNoun(nounId)
 
@@ -1704,7 +1698,7 @@ export class AzureBlobStorage extends BaseStorage {
         connections: connectionsMap
       }
 
-      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      // Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
       await this.saveNoun(updatedNoun)
     } finally {
       // Release lock (ALWAYS runs, even if error thrown)
@@ -1715,7 +1709,7 @@ export class AzureBlobStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -1744,7 +1738,7 @@ export class AzureBlobStorage extends BaseStorage {
   /**
    * Save HNSW system data (entry point, max level)
    *
-   * CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
+   * CRITICAL FIX: Optimistic locking with ETags to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -1840,7 +1834,7 @@ export class AzureBlobStorage extends BaseStorage {
   }
 
   /**
-   * Set the access tier for a specific blob (v4.0.0 cost optimization)
+   * Set the access tier for a specific blob (cost optimization)
    * Azure Blob Storage tiers:
    * - Hot: $0.0184/GB/month - Frequently accessed data
    * - Cool: $0.01/GB/month - Infrequently accessed data (45% cheaper)
@@ -1906,7 +1900,7 @@ export class AzureBlobStorage extends BaseStorage {
   }
 
   /**
-   * Set access tier for multiple blobs in batch (v4.0.0 cost optimization)
+   * Set access tier for multiple blobs in batch (cost optimization)
    * Efficiently move large numbers of blobs between tiers for cost optimization
    *
    * @param blobs - Array of blob names and their target tiers
@@ -2128,7 +2122,7 @@ export class AzureBlobStorage extends BaseStorage {
   }
 
   /**
-   * Set lifecycle management policy for automatic tier transitions and deletions (v4.0.0)
+   * Set lifecycle management policy for automatic tier transitions and deletions
    * Automates cost optimization by moving old data to cheaper tiers or deleting it
    *
    * Azure Lifecycle Management rules run once per day and apply to the entire container.

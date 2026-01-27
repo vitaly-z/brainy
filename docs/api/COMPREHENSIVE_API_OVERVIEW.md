@@ -1,6 +1,6 @@
 # Brainy Complete Public API Reference
 
-> **Accurate API documentation for Brainy v6.5.0+**
+> **Accurate API documentation for Brainy**
 
 ## Initialization
 
@@ -13,14 +13,14 @@ await brain.init()
 
 // With configuration
 const brain = new Brainy({
-  storage: { type: 'memory' },  // or { path: './my-data' } for filesystem
-  embeddingModel: 'Q8',         // Q4, Q8, F16, F32
-  silent: true                  // Suppress logs
+ storage: { type: 'memory' }, // or { path: './my-data' } for filesystem
+ embeddingModel: 'Q8', // Q4, Q8, F16, F32
+ silent: true // Suppress logs
 })
 await brain.init()
 ```
 
-## Readiness API (v7.3.0+)
+## Readiness API
 
 For reliable initialization detection, especially in cloud environments with progressive initialization:
 
@@ -28,10 +28,10 @@ For reliable initialization detection, especially in cloud environments with pro
 
 ```typescript
 const brain = new Brainy()
-brain.init()  // Fire and forget
+brain.init() // Fire and forget
 
 // Elsewhere (e.g., API handler)
-await brain.ready  // Wait until init() completes
+await brain.ready // Wait until init() completes
 const results = await brain.find({ query: 'test' })
 ```
 
@@ -39,7 +39,7 @@ const results = await brain.find({ query: 'test' })
 
 ```typescript
 if (brain.isInitialized) {
-  // Safe to use brain methods
+ // Safe to use brain methods
 }
 ```
 
@@ -49,7 +49,7 @@ if (brain.isInitialized) {
 // Returns true when ALL initialization is complete, including background tasks
 // Useful for cloud storage adapters with progressive initialization
 if (brain.isFullyInitialized()) {
-  console.log('All background tasks complete')
+ console.log('All background tasks complete')
 }
 ```
 
@@ -57,7 +57,7 @@ if (brain.isFullyInitialized()) {
 
 ```typescript
 const brain = new Brainy({ storage: { type: 'gcs', ... } })
-await brain.init()  // Fast return in cloud (<200ms)
+await brain.init() // Fast return in cloud (<200ms)
 
 // Optional: wait for all background tasks (bucket validation, count sync)
 await brain.awaitBackgroundInit()
@@ -68,15 +68,15 @@ console.log('Fully initialized including background tasks')
 
 ```typescript
 app.get('/health', async (req, res) => {
-  try {
-    await brain.ready
-    res.json({
-      status: 'ready',
-      fullyInitialized: brain.isFullyInitialized()
-    })
-  } catch (error) {
-    res.status(503).json({ status: 'initializing', error: error.message })
-  }
+ try {
+ await brain.ready
+ res.json({
+ status: 'ready',
+ fullyInitialized: brain.isFullyInitialized()
+ })
+ } catch (error) {
+ res.status(503).json({ status: 'initializing', error: error.message })
+ }
 })
 ```
 
@@ -87,16 +87,16 @@ app.get('/health', async (req, res) => {
 ```typescript
 // Add with data (auto-embedded)
 const id = await brain.add({
-  data: 'Machine learning is a subset of AI',
-  type: NounType.Document,
-  metadata: { author: 'Alice', tags: ['ml', 'ai'] }
+ data: 'Machine learning is a subset of AI',
+ type: NounType.Document,
+ metadata: { author: 'Alice', tags: ['ml', 'ai'] }
 })
 
 // Add with pre-computed vector
 const id = await brain.add({
-  data: 'Content here',
-  vector: [0.1, 0.2, ...],  // 384 dimensions
-  type: NounType.Concept
+ data: 'Content here',
+ vector: [0.1, 0.2, ...], // 384 dimensions
+ type: NounType.Concept
 })
 ```
 
@@ -120,9 +120,9 @@ const entity = await brain.get('entity-id', { includeVectors: true })
 
 ```typescript
 await brain.update({
-  id: 'entity-id',
-  data: 'Updated content',      // Re-embeds if changed
-  metadata: { reviewed: true }  // Merges with existing
+ id: 'entity-id',
+ data: 'Updated content', // Re-embeds if changed
+ metadata: { reviewed: true } // Merges with existing
 })
 ```
 
@@ -144,10 +144,10 @@ await brain.clear()
 
 ```typescript
 const relationId = await brain.relate({
-  from: 'source-entity-id',
-  to: 'target-entity-id',
-  type: VerbType.RelatedTo,
-  metadata: { strength: 0.9 }
+ from: 'source-entity-id',
+ to: 'target-entity-id',
+ type: VerbType.RelatedTo,
+ metadata: { strength: 0.9 }
 })
 ```
 
@@ -168,8 +168,8 @@ const relations = await brain.getRelations({ to: 'entity-id' })
 
 // Filter by type
 const relations = await brain.getRelations({
-  from: 'entity-id',
-  type: VerbType.Contains
+ from: 'entity-id',
+ type: VerbType.Contains
 })
 ```
 
@@ -191,17 +191,17 @@ const results = await brain.find('machine learning algorithms')
 
 // With options
 const results = await brain.find({
-  query: 'machine learning',
-  limit: 10,
-  threshold: 0.7,
-  type: NounType.Document,
-  where: { author: 'Alice' },
-  excludeVFS: true  // Exclude VFS files from results
+ query: 'machine learning',
+ limit: 10,
+ threshold: 0.7,
+ type: NounType.Document,
+ where: { author: 'Alice' },
+ excludeVFS: true // Exclude VFS files from results
 })
 
 // Natural language query (Triple Intelligence)
 const results = await brain.find(
-  'Show me documents about AI written by Alice in 2024'
+ 'Show me documents about AI written by Alice in 2024'
 )
 ```
 
@@ -218,15 +218,15 @@ const results = await brain.find(
 ```typescript
 // Find similar to entity ID
 const similar = await brain.similar({
-  to: 'entity-id',
-  limit: 5
+ to: 'entity-id',
+ limit: 5
 })
 
 // Find similar to vector
 const similar = await brain.similar({
-  to: [0.1, 0.2, ...],  // Vector
-  limit: 10,
-  type: NounType.Document
+ to: [0.1, 0.2, ...], // Vector
+ limit: 10,
+ type: NounType.Document
 })
 ```
 
@@ -236,15 +236,15 @@ const similar = await brain.similar({
 
 ```typescript
 const result = await brain.addMany({
-  items: [
-    { data: 'First item', type: NounType.Document },
-    { data: 'Second item', type: NounType.Concept },
-    { data: 'Third item', metadata: { priority: 'high' } }
-  ],
-  continueOnError: true,  // Don't stop on failures
-  onProgress: (completed, total) => {
-    console.log(`${completed}/${total} complete`)
-  }
+ items: [
+ { data: 'First item', type: NounType.Document },
+ { data: 'Second item', type: NounType.Concept },
+ { data: 'Third item', metadata: { priority: 'high' } }
+ ],
+ continueOnError: true, // Don't stop on failures
+ onProgress: (completed, total) => {
+ console.log(`${completed}/${total} complete`)
+ }
 })
 
 console.log(`Added: ${result.successful.length}, Failed: ${result.failed.length}`)
@@ -255,18 +255,18 @@ console.log(`Added: ${result.successful.length}, Failed: ${result.failed.length}
 ```typescript
 // Delete by IDs
 const result = await brain.deleteMany({
-  ids: ['id1', 'id2', 'id3'],
-  continueOnError: true
+ ids: ['id1', 'id2', 'id3'],
+ continueOnError: true
 })
 
 // Delete by type
 const result = await brain.deleteMany({
-  type: NounType.TempData
+ type: NounType.TempData
 })
 
 // Delete by metadata filter
 const result = await brain.deleteMany({
-  where: { status: 'archived' }
+ where: { status: 'archived' }
 })
 ```
 
@@ -274,12 +274,12 @@ const result = await brain.deleteMany({
 
 ```typescript
 const ids = await brain.relateMany({
-  items: [
-    { from: 'a', to: 'b', type: VerbType.RelatedTo },
-    { from: 'b', to: 'c', type: VerbType.Contains },
-    { from: 'c', to: 'd', type: VerbType.References }
-  ],
-  continueOnError: true
+ items: [
+ { from: 'a', to: 'b', type: VerbType.RelatedTo },
+ { from: 'b', to: 'c', type: VerbType.Contains },
+ { from: 'c', to: 'd', type: VerbType.References }
+ ],
+ continueOnError: true
 })
 ```
 
@@ -287,11 +287,11 @@ const ids = await brain.relateMany({
 
 ```typescript
 const result = await brain.updateMany({
-  items: [
-    { id: 'id1', metadata: { reviewed: true } },
-    { id: 'id2', data: 'Updated content' }
-  ],
-  continueOnError: true
+ items: [
+ { id: 'id1', metadata: { reviewed: true } },
+ { id: 'id2', data: 'Updated content' }
+ ],
+ continueOnError: true
 })
 ```
 
@@ -309,8 +309,8 @@ const detailed = await neural.similar('text1', 'text2', { detailed: true })
 // Clustering
 const clusters = await neural.clusters()
 const clusters = await neural.clusters({
-  algorithm: 'hierarchical',
-  maxClusters: 10
+ algorithm: 'hierarchical',
+ maxClusters: 10
 })
 
 // K-nearest neighbors
@@ -327,13 +327,13 @@ const domainClusters = await neural.clusterByDomain('category')
 
 // Temporal clustering
 const temporalClusters = await neural.clusterByTime('createdAt', [
-  { start: new Date('2024-01-01'), end: new Date('2024-06-30'), label: 'H1' },
-  { start: new Date('2024-07-01'), end: new Date('2024-12-31'), label: 'H2' }
+ { start: new Date('2024-01-01'), end: new Date('2024-06-30'), label: 'H1' },
+ { start: new Date('2024-07-01'), end: new Date('2024-12-31'), label: 'H2' }
 ])
 
 // Streaming clusters (for large datasets)
 for await (const batch of neural.clusterStream({ batchSize: 100 })) {
-  console.log(`Progress: ${batch.progress.percentage}%`)
+ console.log(`Progress: ${batch.progress.percentage}%`)
 }
 ```
 
@@ -355,11 +355,11 @@ await vfs.mkdir('/project/src', { recursive: true })
 const files = await vfs.readdir('/project')
 await vfs.rmdir('/project', { recursive: true })
 
-// Bulk operations (v6.5.0+)
+// Bulk operations
 const result = await vfs.bulkWrite([
-  { type: 'mkdir', path: '/data' },
-  { type: 'write', path: '/data/config.json', data: '{}' },
-  { type: 'write', path: '/data/users.json', data: '[]' }
+ { type: 'mkdir', path: '/data' },
+ { type: 'write', path: '/data/config.json', data: '{}' },
+ { type: 'write', path: '/data/users.json', data: '[]' }
 ])
 // Note: mkdir operations run first (sequentially), then other ops in parallel
 
@@ -414,22 +414,22 @@ const snapshot = await brain.asOf('commit-id')
 ```typescript
 // Stream all entities
 for await (const entity of brain.streaming.entities()) {
-  console.log(entity.id)
+ console.log(entity.id)
 }
 
 // Stream with filters
 for await (const entity of brain.streaming.entities({
-  type: NounType.Document,
-  where: { status: 'active' }
+ type: NounType.Document,
+ where: { status: 'active' }
 })) {
-  // Process each entity
+ // Process each entity
 }
 
 // Stream relationships
 for await (const relation of brain.streaming.relations({
-  from: 'entity-id'
+ from: 'entity-id'
 })) {
-  console.log(relation)
+ console.log(relation)
 }
 ```
 
@@ -438,9 +438,9 @@ for await (const relation of brain.streaming.relations({
 ```typescript
 // Paginated queries
 const page1 = await brain.pagination.find({
-  query: 'machine learning',
-  page: 1,
-  pageSize: 20
+ query: 'machine learning',
+ page: 1,
+ pageSize: 20
 })
 
 console.log(`Page ${page1.page} of ${page1.totalPages}`)
@@ -448,9 +448,9 @@ console.log(`Total results: ${page1.total}`)
 
 // Get next page
 const page2 = await brain.pagination.find({
-  query: 'machine learning',
-  page: 2,
-  pageSize: 20
+ query: 'machine learning',
+ page: 2,
+ pageSize: 20
 })
 ```
 
@@ -517,20 +517,20 @@ VerbType.ModifiedBy
 
 ```typescript
 try {
-  await brain.get('nonexistent-id')
+ await brain.get('nonexistent-id')
 } catch (error) {
-  if (error.message.includes('not found')) {
-    // Handle missing entity
-  }
+ if (error.message.includes('not found')) {
+ // Handle missing entity
+ }
 }
 
 // VFS errors use POSIX codes
 try {
-  await vfs.readFile('/nonexistent')
+ await vfs.readFile('/nonexistent')
 } catch (error) {
-  if (error.code === 'ENOENT') {
-    // File not found
-  }
+ if (error.code === 'ENOENT') {
+ // File not found
+ }
 }
 ```
 
@@ -538,26 +538,26 @@ try {
 
 ```typescript
 const brain = new Brainy({
-  // Storage
-  storage: {
-    type: 'memory' | 'filesystem',
-    path: './data',              // For filesystem
-    forceMemoryStorage: false    // Force memory even if path exists
-  },
+ // Storage
+ storage: {
+ type: 'memory' | 'filesystem',
+ path: './data', // For filesystem
+ forceMemoryStorage: false // Force memory even if path exists
+ },
 
-  // Embeddings
-  embeddingModel: 'Q8',          // Q4, Q8, F16, F32
-  dimensions: 384,               // Auto-detected
+ // Embeddings
+ embeddingModel: 'Q8', // Q4, Q8, F16, F32
+ dimensions: 384, // Auto-detected
 
-  // Performance
-  silent: false,                 // Suppress console output
-  verbose: false,                // Extra logging
+ // Performance
+ silent: false, // Suppress console output
+ verbose: false, // Extra logging
 
-  // Augmentations (auto-enabled by default)
-  augmentations: {
-    cache: true,
-    display: true,
-    metrics: true
-  }
+ // Augmentations (auto-enabled by default)
+ augmentations: {
+ cache: true,
+ display: true,
+ metrics: true
+ }
 })
 ```

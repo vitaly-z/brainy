@@ -70,7 +70,7 @@ export type {
   NeuralImportOptions
 } from './cortex/neuralImport.js'
 
-// Export Neural Entity Extraction (v5.7.6 - Workshop request)
+// Export Neural Entity Extraction
 export { NeuralEntityExtractor } from './neural/entityExtractor.js'
 export { SmartExtractor } from './neural/SmartExtractor.js'
 export { SmartRelationshipExtractor } from './neural/SmartRelationshipExtractor.js'
@@ -220,7 +220,7 @@ export {
 // FileSystemStorage is exported separately to avoid browser build issues
 export { FileSystemStorage } from './storage/adapters/fileSystemStorage.js'
 
-// Export COW (Copy-on-Write) infrastructure for v5.0.0
+// Export COW (Copy-on-Write) infrastructure
 // Enables premium augmentations to implement temporal features
 import { CommitLog } from './storage/cow/CommitLog.js'
 import { CommitObject, CommitBuilder } from './storage/cow/CommitObject.js'
@@ -543,7 +543,7 @@ export type {
   MCPTool
 }
 
-// ============= Integration Hub (v7.4.0) =============
+// ============= Integration Hub =============
 // Connect Brainy to Excel, Power BI, Google Sheets, and more
 // Enable with: new Brainy({ integrations: true })
 

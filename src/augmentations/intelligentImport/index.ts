@@ -18,14 +18,14 @@ export { ExcelHandler } from './handlers/excelHandler.js'
 export { PDFHandler } from './handlers/pdfHandler.js'
 export { ImageHandler } from './handlers/imageHandler.js'
 
-// Format Handler Registry (v5.2.0)
+// Format Handler Registry
 export {
   FormatHandlerRegistry,
   globalHandlerRegistry
 } from './FormatHandlerRegistry.js'
 export type { HandlerRegistration } from './FormatHandlerRegistry.js'
 
-// Image Handler Types (v5.2.0)
+// Image Handler Types
 export type {
   ImageMetadata,
   EXIFData,

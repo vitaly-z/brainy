@@ -69,7 +69,7 @@ export class TemporalProjection extends BaseProjectionStrategy {
     const endOfDay = new Date(date)
     endOfDay.setHours(23, 59, 59, 999)
 
-    // v4.7.0: VFS entities are part of the knowledge graph
+    // VFS entities are part of the knowledge graph
     const results = await brain.find({
       where: {
         vfsType: 'file',

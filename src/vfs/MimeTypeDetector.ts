@@ -1,5 +1,5 @@
 /**
- * MIME Type Detection Service (v5.2.0)
+ * MIME Type Detection Service
  *
  * Provides comprehensive MIME type detection using:
  * 1. Industry-standard `mime` library (2000+ IANA types)

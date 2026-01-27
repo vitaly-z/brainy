@@ -1,23 +1,22 @@
-# Batch Operations API v5.12.0
-
+# Batch Operations API
 > **Enterprise Production-Ready** | Zero N+1 Query Patterns | 90%+ Performance Improvement
 
 ## Overview
 
-Brainy v5.12.0 introduces comprehensive batch operations at the storage layer, eliminating N+1 query patterns and dramatically improving performance for VFS operations, relationship queries, and entity retrieval on cloud storage.
+Brainy introduces comprehensive batch operations at the storage layer, eliminating N+1 query patterns and dramatically improving performance for VFS operations, relationship queries, and entity retrieval on cloud storage.
 
 ### Problem Solved
 
-**Before v5.12.0:**
+**Before optimization:**
 - VFS `getTreeStructure()` on cloud storage: **12.7 seconds** for directory with 12 files
 - N+1 query pattern: 1 directory query + N individual file queries (22 sequential calls × 580ms latency)
 
-**After v5.12.0:**
+**After optimization:**
 - VFS `getTreeStructure()`: **<1 second** for 12 files (90%+ improvement)
 - 2-3 batched calls instead of 22 sequential calls
 - Native cloud storage batch APIs for maximum throughput
 
-**IMPORTANT:** The v5.12.0 batch optimizations apply **ONLY to `getTreeStructure()`**, not to `readFile()` or individual `get()` operations. See v6.0.0 changes for comprehensive storage path optimizations.
+**IMPORTANT:** The batch optimizations apply **ONLY to `getTreeStructure()`**, not to `readFile()` or individual `get()` operations. See changes for comprehensive storage path optimizations.
 
 ---
 
@@ -56,7 +55,7 @@ results.size // → 3 (number of found entities)
 
 ### 2. `storage.getNounMetadataBatch(ids)`
 
-Batch metadata retrieval with direct O(1) path construction (v6.0.0+).
+Batch metadata retrieval with direct O(1) path construction.
 
 ```typescript
 const storage = brain.storage as BaseStorage
@@ -65,8 +64,8 @@ const ids = ['id1', 'id2', 'id3']
 const metadataMap: Map<string, NounMetadata> = await storage.getNounMetadataBatch(ids)
 
 for (const [id, metadata] of metadataMap) {
-  console.log(metadata.noun) // Type: 'document', 'person', etc.
-  console.log(metadata.data) // Entity data
+ console.log(metadata.noun) // Type: 'document', 'person', etc.
+ console.log(metadata.data) // Entity data
 }
 ```
 
@@ -92,22 +91,22 @@ const storage = brain.storage as BaseStorage
 
 // Get all relationships from multiple sources
 const results: Map<string, GraphVerb[]> = await storage.getVerbsBySourceBatch([
-  'person1',
-  'person2'
+ 'person1',
+ 'person2'
 ])
 
 // Filter by verb type
 const createsResults = await storage.getVerbsBySourceBatch(
-  ['person1', 'person2'],
-  'creates'
+ ['person1', 'person2'],
+ 'creates'
 )
 
 // Process results
 for (const [sourceId, verbs] of results) {
-  console.log(`${sourceId} has ${verbs.length} relationships`)
-  verbs.forEach(verb => {
-    console.log(`  → ${verb.verb} → ${verb.targetId}`)
-  })
+ console.log(`${sourceId} has ${verbs.length} relationships`)
+ verbs.forEach(verb => {
+ console.log(` → ${verb.verb} → ${verb.targetId}`)
+ })
 }
 ```
 
@@ -130,8 +129,8 @@ COW-aware batch path resolution with branch inheritance.
 const storage = brain.storage as BaseStorage
 
 const paths = [
-  'entities/nouns/{shard}/id1/metadata.json',
-  'entities/nouns/{shard}/id2/metadata.json'
+ 'entities/nouns/{shard}/id1/metadata.json',
+ 'entities/nouns/{shard}/id2/metadata.json'
 ]
 
 // Resolves to: branches/{branch}/entities/nouns/{shard}/{id}/metadata.json
@@ -160,9 +159,9 @@ const results = await gcsStorage.readBatch(paths)
 
 // Configuration
 gcsStorage.getBatchConfig() // → {
-//   maxBatchSize: 1000,
-//   maxConcurrent: 100,
-//   operationsPerSecond: 1000
+// maxBatchSize: 1000,
+// maxConcurrent: 100,
+// operationsPerSecond: 1000
 // }
 ```
 
@@ -185,9 +184,9 @@ const results = await s3Storage.readBatch(paths)
 
 // Configuration
 s3Storage.getBatchConfig() // → {
-//   maxBatchSize: 1000,
-//   maxConcurrent: 150,
-//   operationsPerSecond: 5000
+// maxBatchSize: 1000,
+// maxConcurrent: 150,
+// operationsPerSecond: 5000
 // }
 ```
 
@@ -208,9 +207,9 @@ const results = await r2Storage.readBatch(paths)
 
 // Configuration
 r2Storage.getBatchConfig() // → {
-//   maxBatchSize: 1000,
-//   maxConcurrent: 150,
-//   operationsPerSecond: 6000
+// maxBatchSize: 1000,
+// maxConcurrent: 150,
+// operationsPerSecond: 6000
 // }
 ```
 
@@ -231,9 +230,9 @@ const results = await azureStorage.readBatch(paths)
 
 // Configuration
 azureStorage.getBatchConfig() // → {
-//   maxBatchSize: 1000,
-//   maxConcurrent: 100,
-//   operationsPerSecond: 3000
+// maxBatchSize: 1000,
+// maxConcurrent: 100,
+// operationsPerSecond: 3000
 // }
 ```
 
@@ -254,7 +253,7 @@ VFS operations automatically use batch APIs for maximum performance.
 // OLD: Sequential N+1 pattern (12.7 seconds for 12 files)
 const tree = await brain.vfs.getTreeStructure('/my-dir')
 
-// NEW v5.12.0: Parallel breadth-first with batching (<1 second)
+// NEW Parallel breadth-first with batching (<1 second)
 // ✅ PathResolver.getChildren() uses brain.batchGet() internally
 // ✅ Parallel traversal of directories at same tree level
 // ✅ 2-3 batched calls instead of 22 sequential calls
@@ -264,16 +263,16 @@ const tree = await brain.vfs.getTreeStructure('/my-dir')
 
 ```
 VFS.getTreeStructure()
-  ↓ PARALLEL (breadth-first traversal)
-  → PathResolver.getChildren() [all dirs at level processed in parallel]
-      ↓ BATCHED
-      → brain.batchGet(childIds) [1 call instead of N]
-          ↓ BATCHED
-          → storage.getNounMetadataBatch(ids) [1 call instead of N]
-              ↓ ADAPTER-SPECIFIC
-              → GCS: readBatch() with 100 concurrent downloads
-              → S3: readBatch() with 150 concurrent downloads
-              → Memory: Promise.all() parallel reads
+ ↓ PARALLEL (breadth-first traversal)
+ → PathResolver.getChildren() [all dirs at level processed in parallel]
+ ↓ BATCHED
+ → brain.batchGet(childIds) [1 call instead of N]
+ ↓ BATCHED
+ → storage.getNounMetadataBatch(ids) [1 call instead of N]
+ ↓ ADAPTER-SPECIFIC
+ → GCS: readBatch() with 100 concurrent downloads
+ → S3: readBatch() with 150 concurrent downloads
+ → Memory: Promise.all() parallel reads
 ```
 
 **Performance Gains:**
@@ -285,11 +284,11 @@ VFS.getTreeStructure()
 
 ## Advanced Features Compatibility
 
-### ✅ ID-First Storage Architecture (v6.0.0+)
+### ✅ ID-First Storage Architecture
 
 All batch operations use direct ID-first paths - no type lookup needed!
 
-**NEW v6.0.0 Path Structure:**
+**ID-First Path Structure:**
 ```
 entities/nouns/{SHARD}/{ID}/metadata.json
 entities/verbs/{SHARD}/{ID}/metadata.json
@@ -299,7 +298,7 @@ entities/verbs/{SHARD}/{ID}/metadata.json
 ```typescript
 // Every ID maps directly to exactly ONE path - 40x faster!
 const id = 'abc-123'
-const shard = getShardIdFromUuid(id)  // → 'ab' (first 2 hex chars)
+const shard = getShardIdFromUuid(id) // → 'ab' (first 2 hex chars)
 const path = `entities/nouns/${shard}/${id}/metadata.json`
 
 // No type cache needed!
@@ -343,7 +342,7 @@ const fork = await brain.fork('experiment')
 
 // Batch operations are isolated
 await brain.batchGet([id1, id2]) // → Reads from: branches/main/...
-await fork.batchGet([id1, id2])  // → Reads from: branches/experiment/...
+await fork.batchGet([id1, id2]) // → Reads from: branches/experiment/...
 ```
 
 **Inheritance:**
@@ -391,7 +390,7 @@ Historical queries use `HistoricalStorageAdapter` which wraps batch operations t
 
 ### VFS Operations (12 Files)
 
-| Storage | Before v5.12.0 | After v5.12.0 | Improvement |
+| Storage | Before optimization | After optimization | Improvement |
 |---------|---------------|---------------|-------------|
 | **GCS** | 12.7s | <1s | **92% faster** |
 | **S3** | 13.2s | <1s | **92% faster** |
@@ -430,8 +429,8 @@ Batch operations gracefully handle missing or invalid entities:
 ```typescript
 const validId = 'abc-123-...'
 const invalidIds = [
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+ '11111111-1111-1111-1111-111111111111',
+ '22222222-2222-2222-2222-222222222222'
 ]
 
 const results = await brain.batchGet([validId, ...invalidIds])
@@ -471,8 +470,8 @@ results.size // → 1 (deduplicated automatically)
 ```typescript
 const entities = []
 for (const id of ids) {
-  const entity = await brain.get(id)
-  if (entity) entities.push(entity)
+ const entity = await brain.get(id)
+ if (entity) entities.push(entity)
 }
 ```
 
@@ -492,8 +491,8 @@ const entities = Array.from(results.values())
 ```typescript
 const allVerbs = []
 for (const sourceId of sourceIds) {
-  const verbs = await brain.getRelations({ from: sourceId })
-  allVerbs.push(...verbs)
+ const verbs = await brain.getRelations({ from: sourceId })
+ allVerbs.push(...verbs)
 }
 ```
 
@@ -504,7 +503,7 @@ const results = await storage.getVerbsBySourceBatch(sourceIds)
 
 const allVerbs = []
 for (const verbs of results.values()) {
-  allVerbs.push(...verbs)
+ allVerbs.push(...verbs)
 }
 ```
 
@@ -522,7 +521,7 @@ const results = await brain.batchGet(ids)
 
 // ❌ BAD: Individual gets in loop
 for (const id of ids) {
-  await brain.get(id)
+ await brain.get(id)
 }
 ```
 
@@ -556,13 +555,13 @@ const results = await brain.batchGet(ids)
 
 // Check results
 for (const id of ids) {
-  if (results.has(id)) {
-    // Entity exists
-    const entity = results.get(id)
-  } else {
-    // Entity missing (not an error)
-    console.log(`Entity ${id} not found`)
-  }
+ if (results.has(id)) {
+ // Entity exists
+ const entity = results.get(id)
+ } else {
+ // Entity missing (not an error)
+ console.log(`Entity ${id} not found`)
+ }
 }
 ```
 
@@ -597,15 +596,15 @@ npx vitest run tests/integration/storage-batch-operations.test.ts
 
 ```
 User Code (brain.batchGet)
-     ↓
+ ↓
 High-Level API (src/brainy.ts)
-     ↓
+ ↓
 Storage Layer (src/storage/baseStorage.ts)
-     ↓
+ ↓
 COW Layer (readBatchWithInheritance)
-     ↓
+ ↓
 Adapter Layer (readBatchFromAdapter)
-     ↓
+ ↓
 Cloud Adapter (GCS/S3/Azure native batch APIs)
 ```
 
@@ -616,11 +615,11 @@ If an adapter doesn't implement `readBatch()`, the system automatically falls ba
 ```typescript
 // BaseStorage.readBatchFromAdapter()
 if (typeof selfWithBatch.readBatch === 'function') {
-  // Use native batch API
-  return await selfWithBatch.readBatch(resolvedPaths)
+ // Use native batch API
+ return await selfWithBatch.readBatch(resolvedPaths)
 } else {
-  // Automatic parallel fallback
-  return await Promise.all(resolvedPaths.map(path => this.read(path)))
+ // Automatic parallel fallback
+ return await Promise.all(resolvedPaths.map(path => this.read(path)))
 }
 ```
 
@@ -658,7 +657,7 @@ if (typeof selfWithBatch.readBatch === 'function') {
 - Zero N+1 query patterns
 
 **Compatibility:**
-- ✅ ID-first storage (v6.0.0+)
+- ✅ ID-first storage
 - ✅ Sharding (256 shards)
 - ✅ COW (branch isolation, inheritance)
 - ✅ fork() and checkout()

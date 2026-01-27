@@ -1,6 +1,6 @@
 # Capacity Planning & Operations Guide
 
-**Brainy v3.36.0+ Enterprise Operations**
+**Brainy Enterprise Operations**
 
 This guide provides production-ready capacity planning formulas, deployment strategies, and operational guidelines for scaling Brainy from development (2GB) to enterprise (128GB+) deployments.
 
@@ -24,13 +24,13 @@ Where:
 ### Adaptive Caching Strategy
 
 ```
-estimatedVectorMemory = entityCount × 1536 bytes  // 384 dims × 4 bytes per float
-hnswCacheBudget = cacheSize × 0.80  // 80% threshold for preloading decision
+estimatedVectorMemory = entityCount × 1536 bytes // 384 dims × 4 bytes per float
+hnswCacheBudget = cacheSize × 0.80 // 80% threshold for preloading decision
 
 if estimatedVectorMemory < hnswCacheBudget:
-    cachingStrategy = 'preloaded'  // All vectors loaded at init
+ cachingStrategy = 'preloaded' // All vectors loaded at init
 else:
-    cachingStrategy = 'on-demand'  // Vectors loaded adaptively via UnifiedCache
+ cachingStrategy = 'on-demand' // Vectors loaded adaptively via UnifiedCache
 ```
 
 ---
@@ -46,19 +46,19 @@ else:
 
 **Memory Breakdown:**
 ```
-System Memory:        2048 MB
-OS Reserved (20%):    -410 MB
-Available:            1638 MB
-Model Memory:         -140 MB
-  ├─ WASM + Weights:  90 MB
-  └─ Workspace:       50 MB
+System Memory: 2048 MB
+OS Reserved (20%): -410 MB
+Available: 1638 MB
+Model Memory: -140 MB
+ ├─ WASM + Weights: 90 MB
+ └─ Workspace: 50 MB
 ───────────────────────────
-Available for Cache:  1488 MB
+Available for Cache: 1488 MB
 Dev Allocation (25%): 372 MB UnifiedCache
-  ├─ HNSW (30%):      112 MB
-  ├─ Metadata (40%):  149 MB
-  ├─ Search (20%):    74 MB
-  └─ Shared (10%):    37 MB
+ ├─ HNSW (30%): 112 MB
+ ├─ Metadata (40%): 149 MB
+ ├─ Search (20%): 74 MB
+ └─ Shared (10%): 37 MB
 ```
 
 **Capacity:**
@@ -75,9 +75,9 @@ Dev Allocation (25%): 372 MB UnifiedCache
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'filesystem', path: './brainy-data' },
-  model: { precision: 'q8' },
-  cache: { /* auto-sized to 372MB */ }
+ storage: { type: 'filesystem', path: './brainy-data' },
+ model: { precision: 'q8' },
+ cache: { /* auto-sized to 372MB */ }
 })
 ```
 
@@ -92,17 +92,17 @@ const brain = new Brainy({
 
 **Memory Breakdown:**
 ```
-System Memory:        8192 MB
-OS Reserved (20%):    -1638 MB
-Available:            6554 MB
-Model Memory (Q8):    -150 MB
+System Memory: 8192 MB
+OS Reserved (20%): -1638 MB
+Available: 6554 MB
+Model Memory (Q8): -150 MB
 ───────────────────────────
-Available for Cache:  6404 MB
+Available for Cache: 6404 MB
 Prod Allocation (50%): 3202 MB UnifiedCache
-  ├─ HNSW (30%):      961 MB
-  ├─ Metadata (40%):  1281 MB
-  ├─ Search (20%):    640 MB
-  └─ Shared (10%):    320 MB
+ ├─ HNSW (30%): 961 MB
+ ├─ Metadata (40%): 1281 MB
+ ├─ Search (20%): 640 MB
+ └─ Shared (10%): 320 MB
 ```
 
 **Capacity:**
@@ -119,9 +119,9 @@ Prod Allocation (50%): 3202 MB UnifiedCache
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'filesystem', path: '/var/lib/brainy' },
-  model: { precision: 'q8' },
-  // Auto-sized cache: 3202MB
+ storage: { type: 'filesystem', path: '/var/lib/brainy' },
+ model: { precision: 'q8' },
+ // Auto-sized cache: 3202MB
 })
 
 // Monitor health
@@ -141,17 +141,17 @@ console.log(`Caching strategy: ${stats.cachingStrategy}`)
 
 **Memory Breakdown:**
 ```
-System Memory:        32768 MB
-OS Reserved (20%):    -6554 MB
-Available:            26214 MB
-Model Memory (Q8):    -150 MB
+System Memory: 32768 MB
+OS Reserved (20%): -6554 MB
+Available: 26214 MB
+Model Memory (Q8): -150 MB
 ───────────────────────────
-Available for Cache:  26064 MB
+Available for Cache: 26064 MB
 Prod Allocation (50%): 13032 MB UnifiedCache
-  ├─ HNSW (30%):      3910 MB
-  ├─ Metadata (40%):  5213 MB
-  ├─ Search (20%):    2606 MB
-  └─ Shared (10%):    1303 MB
+ ├─ HNSW (30%): 3910 MB
+ ├─ Metadata (40%): 5213 MB
+ ├─ Search (20%): 2606 MB
+ └─ Shared (10%): 1303 MB
 ```
 
 **Capacity:**
@@ -168,11 +168,11 @@ Prod Allocation (50%): 13032 MB UnifiedCache
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',
-    gcsNativeStorage: { bucketName: 'production-data' }
-  },
-  model: { precision: 'q8' }  // or 'fp32' for +0.5% accuracy
+ storage: {
+ type: 'gcs-native',
+ gcsNativeStorage: { bucketName: 'production-data' }
+ },
+ model: { precision: 'q8' } // or 'fp32' for +0.5% accuracy
 })
 
 // Verify allocation
@@ -192,17 +192,17 @@ console.log(`Environment: ${memoryInfo.memoryInfo.environment}`)
 
 **Memory Breakdown:**
 ```
-System Memory:         131072 MB
-OS Reserved (20%):     -26214 MB
-Available:             104858 MB
-Model Memory (FP32):   -250 MB
+System Memory: 131072 MB
+OS Reserved (20%): -26214 MB
+Available: 104858 MB
+Model Memory (FP32): -250 MB
 ───────────────────────────────
-Available for Cache:   104608 MB
+Available for Cache: 104608 MB
 Prod Allocation (50%): 52304 MB UnifiedCache (logarithmic scaling applies)
-  ├─ HNSW (30%):       15691 MB
-  ├─ Metadata (40%):   20922 MB
-  ├─ Search (20%):     10461 MB
-  └─ Shared (10%):     5230 MB
+ ├─ HNSW (30%): 15691 MB
+ ├─ Metadata (40%): 20922 MB
+ ├─ Search (20%): 10461 MB
+ └─ Shared (10%): 5230 MB
 ```
 
 **Logarithmic Scaling Applied:**
@@ -227,30 +227,30 @@ Actual cache size: ~40GB (prevents waste on 128GB systems)
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    s3Storage: {
-      bucketName: 'enterprise-data',
-      region: 'us-east-1'
-    }
-  },
-  model: { precision: 'fp32' }  // Maximum accuracy
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'enterprise-data',
+ region: 'us-east-1'
+ }
+ },
+ model: { precision: 'fp32' } // Maximum accuracy
 })
 
 // Enterprise monitoring
 setInterval(() => {
-  const stats = brain.hnsw.getCacheStats()
+ const stats = brain.hnsw.getCacheStats()
 
-  if (stats.fairness.fairnessViolation) {
-    console.warn('FAIRNESS VIOLATION: HNSW using too much cache')
-    console.warn(`HNSW: ${stats.fairness.hnswAccessPercent}% access, ${stats.hnswCache.sizePercent}% size`)
-  }
+ if (stats.fairness.fairnessViolation) {
+ console.warn('FAIRNESS VIOLATION: HNSW using too much cache')
+ console.warn(`HNSW: ${stats.fairness.hnswAccessPercent}% access, ${stats.hnswCache.sizePercent}% size`)
+ }
 
-  if (stats.unifiedCache.hitRatePercent < 75) {
-    console.warn(`Low cache hit rate: ${stats.unifiedCache.hitRatePercent}%`)
-    console.warn('Recommendations:', stats.recommendations)
-  }
-}, 60000)  // Check every minute
+ if (stats.unifiedCache.hitRatePercent < 75) {
+ console.warn(`Low cache hit rate: ${stats.unifiedCache.hitRatePercent}%`)
+ console.warn('Recommendations:', stats.recommendations)
+ }
+}, 60000) // Check every minute
 ```
 
 ---
@@ -263,12 +263,12 @@ Brainy auto-detects container memory limits via cgroups v1/v2:
 
 ```typescript
 // Automatic detection
-const brain = new Brainy()  // Detects cgroup limits automatically
+const brain = new Brainy() // Detects cgroup limits automatically
 
 // Verify detection
 const memoryInfo = brain.hnsw.unifiedCache.getMemoryInfo()
 console.log(`Container: ${memoryInfo.memoryInfo.isContainer}`)
-console.log(`Source: ${memoryInfo.memoryInfo.source}`)  // 'cgroup-v2' or 'cgroup-v1'
+console.log(`Source: ${memoryInfo.memoryInfo.source}`) // 'cgroup-v2' or 'cgroup-v1'
 console.log(`Limit: ${Math.round(memoryInfo.memoryInfo.available / 1024 / 1024)}MB`)
 ```
 
@@ -294,37 +294,37 @@ CMD ["node", "dist/index.js"]
 
 ```bash
 docker run \
-  --memory="2g" \
-  --memory-reservation="1.5g" \
-  --cpus="2" \
-  my-brainy-app
+ --memory="2g" \
+ --memory-reservation="1.5g" \
+ --cpus="2" \
+ my-brainy-app
 ```
 
 **Expected allocation:**
 ```
-Container Limit:      2048 MB
-Available:            1638 MB (80% usable)
-Model Memory:         -150 MB
-Available for Cache:  1488 MB
+Container Limit: 2048 MB
+Available: 1638 MB (80% usable)
+Model Memory: -150 MB
+Available for Cache: 1488 MB
 Container Ratio (40%): 595 MB UnifiedCache
 ```
 
 **Medium Container (8GB)**
 ```bash
 docker run \
-  --memory="8g" \
-  --memory-reservation="6g" \
-  --cpus="4" \
-  -e NODE_OPTIONS="--max-old-space-size=6144" \
-  my-brainy-app
+ --memory="8g" \
+ --memory-reservation="6g" \
+ --cpus="4" \
+ -e NODE_OPTIONS="--max-old-space-size=6144" \
+ my-brainy-app
 ```
 
 **Expected allocation:**
 ```
-Container Limit:      8192 MB
-Available:            6554 MB
-Model Memory:         -150 MB
-Available for Cache:  6404 MB
+Container Limit: 8192 MB
+Available: 6554 MB
+Model Memory: -150 MB
+Available for Cache: 6404 MB
 Container Ratio (40%): 2562 MB UnifiedCache
 ```
 
@@ -335,24 +335,24 @@ Container Ratio (40%): 2562 MB UnifiedCache
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: brainy-api
+ name: brainy-api
 spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-      - name: brainy
-        image: my-brainy-app:latest
-        resources:
-          requests:
-            memory: "1.5Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "1000m"
-        env:
-        - name: NODE_OPTIONS
-          value: "--max-old-space-size=1536"
+ replicas: 3
+ template:
+ spec:
+ containers:
+ - name: brainy
+ image: my-brainy-app:latest
+ resources:
+ requests:
+ memory: "1.5Gi"
+ cpu: "500m"
+ limits:
+ memory: "2Gi"
+ cpu: "1000m"
+ env:
+ - name: NODE_OPTIONS
+ value: "--max-old-space-size=1536"
 ```
 
 **Medium Pod (8GB)**
@@ -360,24 +360,24 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: brainy-api
+ name: brainy-api
 spec:
-  replicas: 2
-  template:
-    spec:
-      containers:
-      - name: brainy
-        image: my-brainy-app:latest
-        resources:
-          requests:
-            memory: "6Gi"
-            cpu: "2000m"
-          limits:
-            memory: "8Gi"
-            cpu: "4000m"
-        env:
-        - name: NODE_OPTIONS
-          value: "--max-old-space-size=6144"
+ replicas: 2
+ template:
+ spec:
+ containers:
+ - name: brainy
+ image: my-brainy-app:latest
+ resources:
+ requests:
+ memory: "6Gi"
+ cpu: "2000m"
+ limits:
+ memory: "8Gi"
+ cpu: "4000m"
+ env:
+ - name: NODE_OPTIONS
+ value: "--max-old-space-size=6144"
 ```
 
 **Best Practices:**
@@ -399,15 +399,15 @@ The system automatically chooses the optimal caching strategy:
 
 **Auto-detection logic:**
 ```typescript
-const vectorMemoryNeeded = entityCount × 1536  // bytes
+const vectorMemoryNeeded = entityCount × 1536 // bytes
 const hnswCacheAvailable = unifiedCache.maxSize × 0.80
 
 if (vectorMemoryNeeded < hnswCacheAvailable) {
-  // Preload strategy: all vectors loaded at init
-  console.log('Caching strategy: preloaded (all vectors in memory)')
+ // Preload strategy: all vectors loaded at init
+ console.log('Caching strategy: preloaded (all vectors in memory)')
 } else {
-  // On-demand strategy: vectors loaded adaptively
-  console.log('Caching strategy: on-demand (adaptive loading via UnifiedCache)')
+ // On-demand strategy: vectors loaded adaptively
+ console.log('Caching strategy: on-demand (adaptive loading via UnifiedCache)')
 }
 ```
 
@@ -422,12 +422,12 @@ Consider increasing RAM when:
 **Decision tree:**
 ```
 If cache hit rate < 70%:
-  └─> Is working set < 50% of total entities?
-      ├─> YES: Increase cache size (add RAM)
-      └─> NO: Working set too large, consider:
-          ├─> Application-level caching
-          ├─> Query optimization
-          └─> Sharding dataset
+ └─> Is working set < 50% of total entities?
+ ├─> YES: Increase cache size (add RAM)
+ └─> NO: Working set too large, consider:
+ ├─> Application-level caching
+ ├─> Query optimization
+ └─> Sharding dataset
 ```
 
 ### When to Shard/Distribute
@@ -442,17 +442,17 @@ Consider sharding when:
 ```typescript
 // Example: Geographic sharding
 const usEastBrain = new Brainy({
-  storage: { type: 's3', s3Storage: { bucket: 'us-east-data' } }
+ storage: { type: 's3', s3Storage: { bucket: 'us-east-data' } }
 })
 
 const euWestBrain = new Brainy({
-  storage: { type: 's3', s3Storage: { bucket: 'eu-west-data' } }
+ storage: { type: 's3', s3Storage: { bucket: 'eu-west-data' } }
 })
 
 // Route queries based on user location
 async function search(query, userRegion) {
-  const brain = userRegion === 'US' ? usEastBrain : euWestBrain
-  return await brain.search(query)
+ const brain = userRegion === 'US' ? usEastBrain : euWestBrain
+ return await brain.search(query)
 }
 ```
 
@@ -482,7 +482,7 @@ console.log(`Pressure: ${memoryInfo.currentPressure.pressure}`)
 // Values: 'low', 'moderate', 'high', 'critical'
 
 if (memoryInfo.currentPressure.warnings.length > 0) {
-  console.warn('Memory warnings:', memoryInfo.currentPressure.warnings)
+ console.warn('Memory warnings:', memoryInfo.currentPressure.warnings)
 }
 ```
 
@@ -491,9 +491,9 @@ if (memoryInfo.currentPressure.warnings.length > 0) {
 const stats = brain.hnsw.getCacheStats()
 
 if (stats.fairness.fairnessViolation) {
-  console.warn('Cache fairness violation detected')
-  console.warn(`HNSW: ${stats.fairness.hnswAccessPercent}% access`)
-  console.warn(`HNSW: ${stats.hnswCache.sizePercent}% of cache`)
+ console.warn('Cache fairness violation detected')
+ console.warn(`HNSW: ${stats.fairness.hnswAccessPercent}% access`)
+ console.warn(`HNSW: ${stats.hnswCache.sizePercent}% of cache`)
 }
 ```
 
@@ -502,7 +502,7 @@ if (stats.fairness.fairnessViolation) {
 // Track search latency
 console.time('search')
 const results = await brain.search('query')
-console.timeEnd('search')  // Target: <10ms for hot queries
+console.timeEnd('search') // Target: <10ms for hot queries
 ```
 
 ### Alerting Thresholds
@@ -516,26 +516,26 @@ Set up alerts for:
 **Example monitoring script:**
 ```typescript
 async function monitorHealth() {
-  const stats = brain.hnsw.getCacheStats()
+ const stats = brain.hnsw.getCacheStats()
 
-  // Alert on low cache hit rate
-  if (stats.unifiedCache.hitRatePercent < 70) {
-    await sendAlert({
-      severity: 'warning',
-      message: `Low cache hit rate: ${stats.unifiedCache.hitRatePercent}%`,
-      recommendations: stats.recommendations
-    })
-  }
+ // Alert on low cache hit rate
+ if (stats.unifiedCache.hitRatePercent < 70) {
+ await sendAlert({
+ severity: 'warning',
+ message: `Low cache hit rate: ${stats.unifiedCache.hitRatePercent}%`,
+ recommendations: stats.recommendations
+ })
+ }
 
-  // Alert on memory pressure
-  const memoryInfo = brain.hnsw.unifiedCache.getMemoryInfo()
-  if (memoryInfo.currentPressure.pressure === 'high') {
-    await sendAlert({
-      severity: 'critical',
-      message: 'High memory pressure detected',
-      warnings: memoryInfo.currentPressure.warnings
-    })
-  }
+ // Alert on memory pressure
+ const memoryInfo = brain.hnsw.unifiedCache.getMemoryInfo()
+ if (memoryInfo.currentPressure.pressure === 'high') {
+ await sendAlert({
+ severity: 'critical',
+ message: 'High memory pressure detected',
+ warnings: memoryInfo.currentPressure.warnings
+ })
+ }
 }
 
 // Run every 60 seconds
@@ -552,9 +552,9 @@ setInterval(monitorHealth, 60000)
 
 **Sizing:**
 ```
-Products:              500,000
-Vector memory needed:  500K × 1536 bytes = 768 MB
-HNSW cache available:  (16GB × 0.8 - 150MB) × 0.5 × 0.3 = 1,915 MB
+Products: 500,000
+Vector memory needed: 500K × 1536 bytes = 768 MB
+HNSW cache available: (16GB × 0.8 - 150MB) × 0.5 × 0.3 = 1,915 MB
 
 Result: Standard mode (all vectors fit in HNSW cache)
 ```
@@ -562,16 +562,16 @@ Result: Standard mode (all vectors fit in HNSW cache)
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'filesystem', path: '/var/lib/brainy' },
-  model: { precision: 'q8' }
+ storage: { type: 'filesystem', path: '/var/lib/brainy' },
+ model: { precision: 'q8' }
 })
 
 await brain.init()
 
 // Verify preloaded strategy (all vectors in memory)
 const stats = brain.hnsw.getCacheStats()
-console.log(`Caching strategy: ${stats.cachingStrategy}`)  // 'preloaded'
-console.log(`Search latency: ${stats.performance.avgSearchMs}ms`)  // ~3ms
+console.log(`Caching strategy: ${stats.cachingStrategy}`) // 'preloaded'
+console.log(`Search latency: ${stats.performance.avgSearchMs}ms`) // ~3ms
 ```
 
 ### Example 2: Document Search (5M documents)
@@ -580,9 +580,9 @@ console.log(`Search latency: ${stats.performance.avgSearchMs}ms`)  // ~3ms
 
 **Sizing:**
 ```
-Documents:             5,000,000
-Vector memory needed:  5M × 1536 bytes = 7,680 MB
-HNSW cache available:  (32GB × 0.8 - 150MB) × 0.5 × 0.3 = 3,910 MB
+Documents: 5,000,000
+Vector memory needed: 5M × 1536 bytes = 7,680 MB
+HNSW cache available: (32GB × 0.8 - 150MB) × 0.5 × 0.3 = 3,910 MB
 
 Result: On-demand caching (vectors loaded adaptively)
 ```
@@ -590,20 +590,20 @@ Result: On-demand caching (vectors loaded adaptively)
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',
-    gcsNativeStorage: { bucketName: 'docs-production' }
-  },
-  model: { precision: 'q8' }
+ storage: {
+ type: 'gcs-native',
+ gcsNativeStorage: { bucketName: 'docs-production' }
+ },
+ model: { precision: 'q8' }
 })
 
 await brain.init()
 
 // Monitor cache performance
 const stats = brain.hnsw.getCacheStats()
-console.log(`Caching strategy: ${stats.cachingStrategy}`)  // 'on-demand'
-console.log(`Cache hit rate: ${stats.unifiedCache.hitRatePercent}%`)  // Target >80%
-console.log(`Cold search latency: ${stats.performance.avgSearchMs}ms`)  // ~12ms
+console.log(`Caching strategy: ${stats.cachingStrategy}`) // 'on-demand'
+console.log(`Cache hit rate: ${stats.unifiedCache.hitRatePercent}%`) // Target >80%
+console.log(`Cold search latency: ${stats.performance.avgSearchMs}ms`) // ~12ms
 
 // Recommendations
 console.log('Recommendations:', stats.recommendations)
@@ -616,9 +616,9 @@ console.log('Recommendations:', stats.recommendations)
 
 **Sizing:**
 ```
-Entities:              20,000,000
-Vector memory needed:  20M × 1536 bytes = 30,720 MB
-HNSW cache available:  ~15,691 MB (after logarithmic scaling)
+Entities: 20,000,000
+Vector memory needed: 20M × 1536 bytes = 30,720 MB
+HNSW cache available: ~15,691 MB (after logarithmic scaling)
 
 Result: On-demand caching with high-performance adaptive loading
 ```
@@ -626,14 +626,14 @@ Result: On-demand caching with high-performance adaptive loading
 **Configuration:**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    s3Storage: {
-      bucketName: 'knowledge-graph-prod',
-      region: 'us-east-1'
-    }
-  },
-  model: { precision: 'fp32' }  // Maximum accuracy
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'knowledge-graph-prod',
+ region: 'us-east-1'
+ }
+ },
+ model: { precision: 'fp32' } // Maximum accuracy
 })
 
 await brain.init()
@@ -641,13 +641,13 @@ await brain.init()
 // Enterprise monitoring
 const stats = brain.hnsw.getCacheStats()
 console.log(`Entities: ${stats.autoDetection.entityCount.toLocaleString()}`)
-console.log(`Caching strategy: ${stats.cachingStrategy}`)  // 'on-demand'
-console.log(`Cache hit rate: ${stats.unifiedCache.hitRatePercent}%`)  // Target >85%
+console.log(`Caching strategy: ${stats.cachingStrategy}`) // 'on-demand'
+console.log(`Cache hit rate: ${stats.unifiedCache.hitRatePercent}%`) // Target >85%
 console.log(`HNSW cache: ${stats.hnswCache.estimatedMemoryMB}MB`)
 
 // Fairness check
 if (stats.fairness.fairnessViolation) {
-  console.warn('HNSW dominating cache - consider tuning eviction policies')
+ console.warn('HNSW dominating cache - consider tuning eviction policies')
 }
 ```
 
@@ -690,8 +690,8 @@ console.log(`Warnings:`, memoryInfo.currentPressure.warnings)
 ```typescript
 const stats = brain.hnsw.getCacheStats()
 if (stats.fairness.fairnessViolation) {
-  console.log(`HNSW access: ${stats.fairness.hnswAccessPercent}%`)
-  console.log(`HNSW cache: ${stats.hnswCache.sizePercent}%`)
+ console.log(`HNSW access: ${stats.fairness.hnswAccessPercent}%`)
+ console.log(`HNSW cache: ${stats.hnswCache.sizePercent}%`)
 }
 ```
 
@@ -704,8 +704,7 @@ if (stats.fairness.fairnessViolation) {
 
 ## 📚 Additional Resources
 
-- **[Migration Guide](../guides/migration-3.36.0.md)** - Upgrading to v3.36.0
-- **[Architecture Overview](../architecture/data-storage-architecture.md)** - Deep dive into storage and caching
+- **[Migration Guide](../guides/migration-3.36.0.md)** - Upgrading to **[Architecture Overview](../architecture/data-storage-architecture.md)** - Deep dive into storage and caching
 - **[GitHub Issues](https://github.com/soulcraftlabs/brainy/issues)** - Report problems or ask questions
 
 ---

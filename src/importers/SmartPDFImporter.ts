@@ -40,17 +40,17 @@ export interface SmartPDFOptions extends FormatHandlerOptions {
   /** Group by page or full document */
   groupBy?: 'page' | 'document'
 
-  /** Progress callback (v3.39.0: Enhanced with performance metrics) */
+  /** Progress callback (Enhanced with performance metrics) */
   onProgress?: (stats: {
     processed: number
     total: number
     entities: number
     relationships: number
-    /** Sections per second (v3.39.0) */
+    /** Sections per second */
     throughput?: number
-    /** Estimated time remaining in ms (v3.39.0) */
+    /** Estimated time remaining in ms */
     eta?: number
-    /** Current phase (v3.39.0) */
+    /** Current phase */
     phase?: string
   }) => void
 }
@@ -181,7 +181,7 @@ export class SmartPDFImporter {
     }
 
     // Parse PDF using existing handler
-    // v4.5.0: Pass progress hooks to handler for file parsing progress
+    // Pass progress hooks to handler for file parsing progress
     const processedData = await this.pdfHandler.process(buffer, {
       ...options,
       totalBytes: buffer.length,
@@ -228,7 +228,7 @@ export class SmartPDFImporter {
     // Group data by page or combine into single document
     const grouped = this.groupData(data, opts)
 
-    // Process each group with BATCHED PARALLEL PROCESSING (v3.39.0)
+    // Process each group with BATCHED PARALLEL PROCESSING
     const sections: ExtractedSection[] = []
     const entityMap = new Map<string, string>()
     const stats = {
@@ -270,7 +270,7 @@ export class SmartPDFImporter {
         total: totalGroups,
         entities: sections.reduce((sum, s) => sum + s.entities.length, 0),
         relationships: sections.reduce((sum, s) => sum + s.relationships.length, 0),
-        // Additional performance metrics (v3.39.0)
+        // Additional performance metrics
         throughput: Math.round(sectionsPerSecond * 10) / 10,
         eta: Math.round(estimatedTimeRemaining),
         phase: 'extracting'
@@ -367,7 +367,7 @@ export class SmartPDFImporter {
 
     const combinedText = texts.join('\n\n')
 
-    // Parallel extraction: entities AND concepts at the same time (v3.39.0)
+    // Parallel extraction: entities AND concepts at the same time
     const [extractedEntities, concepts] = await Promise.all([
       // Extract entities if enabled
       options.enableNeuralExtraction && combinedText.length > 0

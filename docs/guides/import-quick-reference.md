@@ -91,7 +91,7 @@ await brain.import(file, {
 })
 ```
 
-### Import Tracking (v4.10.0+)
+### Import Tracking
 
 Track and organize imports by project:
 
@@ -149,7 +149,7 @@ await brain.import(file, {
 })
 ```
 
-### Always-On Streaming (v4.2.0+)
+### Always-On Streaming
 
 All imports use streaming with adaptive flush intervals. Query data as it's imported:
 

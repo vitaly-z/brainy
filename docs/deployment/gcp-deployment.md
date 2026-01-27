@@ -10,10 +10,10 @@ Deploy Brainy on GCP with automatic scaling, global distribution, and zero-confi
 ```bash
 # Build and deploy with one command
 gcloud run deploy brainy \
-  --source . \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
+ --source . \
+ --platform managed \
+ --region us-central1 \
+ --allow-unauthenticated
 
 # Brainy auto-detects Cloud Run and configures:
 # - Memory-optimized caching
@@ -30,44 +30,44 @@ const { Brainy } = require('@soulcraft/brainy')
 let brain
 
 exports.brainyHandler = async (req, res) => {
-  // Zero-config - auto-adapts to Cloud Functions
-  if (!brain) {
-    brain = new Brainy() // Detects GCP environment automatically
-    await brain.init()
-  }
-  
-  const { method, ...params } = req.body
-  
-  try {
-    let result
-    switch(method) {
-      case 'add':
-        result = await brain.add(params)
-        break
-      case 'find':
-        result = await brain.find(params)
-        break
-      case 'relate':
-        result = await brain.relate(params)
-        break
-      default:
-        return res.status(400).json({ error: 'Unknown method' })
-    }
-    res.json({ result })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
+ // Zero-config - auto-adapts to Cloud Functions
+ if (!brain) {
+ brain = new Brainy() // Detects GCP environment automatically
+ await brain.init()
+ }
+
+ const { method, ...params } = req.body
+
+ try {
+ let result
+ switch(method) {
+ case 'add':
+ result = await brain.add(params)
+ break
+ case 'find':
+ result = await brain.find(params)
+ break
+ case 'relate':
+ result = await brain.relate(params)
+ break
+ default:
+ return res.status(400).json({ error: 'Unknown method' })
+ }
+ res.json({ result })
+ } catch (error) {
+ res.status(500).json({ error: error.message })
+ }
 }
 ```
 
 Deploy:
 ```bash
 gcloud functions deploy brainy \
-  --runtime nodejs20 \
-  --trigger-http \
-  --entry-point brainyHandler \
-  --memory 512MB \
-  --timeout 60s
+ --runtime nodejs20 \
+ --trigger-http \
+ --entry-point brainyHandler \
+ --memory 512MB \
+ --timeout 60s
 ```
 
 ### Option 3: Google Kubernetes Engine (GKE)
@@ -75,7 +75,7 @@ gcloud functions deploy brainy \
 ```bash
 # Create autopilot cluster (fully managed, zero-config)
 gcloud container clusters create-auto brainy-cluster \
-  --region us-central1
+ --region us-central1
 
 # Deploy using Cloud Build
 gcloud builds submit --tag gcr.io/$PROJECT_ID/brainy
@@ -85,39 +85,39 @@ kubectl apply -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: brainy
+ name: brainy
 spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: brainy
-  template:
-    metadata:
-      labels:
-        app: brainy
-    spec:
-      containers:
-      - name: brainy
-        image: gcr.io/$PROJECT_ID/brainy
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-        env:
-        - name: NODE_ENV
-          value: production
+ replicas: 3
+ selector:
+ matchLabels:
+ app: brainy
+ template:
+ metadata:
+ labels:
+ app: brainy
+ spec:
+ containers:
+ - name: brainy
+ image: gcr.io/$PROJECT_ID/brainy
+ resources:
+ requests:
+ memory: "512Mi"
+ cpu: "250m"
+ env:
+ - name: NODE_ENV
+ value: production
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: brainy-service
+ name: brainy-service
 spec:
-  type: LoadBalancer
-  selector:
-    app: brainy
-  ports:
-  - port: 80
-    targetPort: 3000
+ type: LoadBalancer
+ selector:
+ app: brainy
+ ports:
+ - port: 80
+ targetPort: 3000
 EOF
 ```
 
@@ -139,14 +139,14 @@ const brain = new Brainy()
 
 ```javascript
 const brain = new Brainy({
-  storage: {
-    type: 's3', // GCS is S3-compatible
-    options: {
-      endpoint: 'https://storage.googleapis.com',
-      bucket: process.env.GCS_BUCKET || 'auto', // Auto-creates bucket
-      // Uses Application Default Credentials automatically
-    }
-  }
+ storage: {
+ type: 's3', // GCS is S3-compatible
+ options: {
+ endpoint: 'https://storage.googleapis.com',
+ bucket: process.env.GCS_BUCKET || 'auto', // Auto-creates bucket
+ // Uses Application Default Credentials automatically
+ }
+ }
 })
 ```
 
@@ -154,13 +154,13 @@ const brain = new Brainy({
 
 ```javascript
 const brain = new Brainy({
-  storage: {
-    type: 'firestore',
-    options: {
-      projectId: process.env.GCP_PROJECT || 'auto',
-      collection: 'brainy-data'
-    }
-  }
+ storage: {
+ type: 'firestore',
+ options: {
+ projectId: process.env.GCP_PROJECT || 'auto',
+ collection: 'brainy-data'
+ }
+ }
 })
 ```
 
@@ -173,24 +173,24 @@ const brain = new Brainy({
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: brainy
-  annotations:
-    run.googleapis.com/execution-environment: gen2
+ name: brainy
+ annotations:
+ run.googleapis.com/execution-environment: gen2
 spec:
-  template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/minScale: "1"
-        autoscaling.knative.dev/maxScale: "1000"
-        autoscaling.knative.dev/target: "80"
-    spec:
-      containerConcurrency: 100
-      containers:
-      - image: gcr.io/PROJECT_ID/brainy
-        resources:
-          limits:
-            cpu: "2"
-            memory: "2Gi"
+ template:
+ metadata:
+ annotations:
+ autoscaling.knative.dev/minScale: "1"
+ autoscaling.knative.dev/maxScale: "1000"
+ autoscaling.knative.dev/target: "80"
+ spec:
+ containerConcurrency: 100
+ containers:
+ - image: gcr.io/PROJECT_ID/brainy
+ resources:
+ limits:
+ cpu: "2"
+ memory: "2Gi"
 ```
 
 ### 2. GKE Horizontal Pod Autoscaling
@@ -199,27 +199,27 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: brainy-hpa
+ name: brainy-hpa
 spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: brainy
-  minReplicas: 3
-  maxReplicas: 100
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
+ scaleTargetRef:
+ apiVersion: apps/v1
+ kind: Deployment
+ name: brainy
+ minReplicas: 3
+ maxReplicas: 100
+ metrics:
+ - type: Resource
+ resource:
+ name: cpu
+ target:
+ type: Utilization
+ averageUtilization: 70
+ - type: Resource
+ resource:
+ name: memory
+ target:
+ type: Utilization
+ averageUtilization: 80
 ```
 
 ## Global Distribution
@@ -229,11 +229,11 @@ spec:
 ```javascript
 // Brainy automatically handles multi-region with GCS
 const brain = new Brainy({
-  distributed: {
-    enabled: true,
-    regions: ['us-central1', 'europe-west1', 'asia-northeast1'],
-    replication: 'auto' // Automatic cross-region replication
-  }
+ distributed: {
+ enabled: true,
+ regions: ['us-central1', 'europe-west1', 'asia-northeast1'],
+ replication: 'auto' // Automatic cross-region replication
+ }
 })
 ```
 
@@ -242,14 +242,14 @@ const brain = new Brainy({
 ```bash
 # Global load balancing with Traffic Director
 gcloud compute backend-services create brainy-global \
-  --global \
-  --load-balancing-scheme=INTERNAL_SELF_MANAGED \
-  --protocol=HTTP2
+ --global \
+ --load-balancing-scheme=INTERNAL_SELF_MANAGED \
+ --protocol=HTTP2
 
 gcloud compute backend-services add-backend brainy-global \
-  --global \
-  --network-endpoint-group=brainy-neg \
-  --network-endpoint-group-region=us-central1
+ --global \
+ --network-endpoint-group=brainy-neg \
+ --network-endpoint-group-region=us-central1
 ```
 
 ## Monitoring & Observability
@@ -277,22 +277,22 @@ const { Monitoring } = require('@google-cloud/monitoring')
 const monitoring = new Monitoring.MetricServiceClient()
 
 const brain = new Brainy({
-  onMetric: async (metric) => {
-    // Send custom metrics to Cloud Monitoring
-    await monitoring.createTimeSeries({
-      name: monitoring.projectPath(projectId),
-      timeSeries: [{
-        metric: {
-          type: `custom.googleapis.com/brainy/${metric.name}`,
-          labels: metric.labels
-        },
-        points: [{
-          interval: { endTime: { seconds: Date.now() / 1000 } },
-          value: { doubleValue: metric.value }
-        }]
-      }]
-    })
-  }
+ onMetric: async (metric) => {
+ // Send custom metrics to Cloud Monitoring
+ await monitoring.createTimeSeries({
+ name: monitoring.projectPath(projectId),
+ timeSeries: [{
+ metric: {
+ type: `custom.googleapis.com/brainy/${metric.name}`,
+ labels: metric.labels
+ },
+ points: [{
+ interval: { endTime: { seconds: Date.now() / 1000 } },
+ value: { doubleValue: metric.value }
+ }]
+ }]
+ })
+ }
 })
 ```
 
@@ -300,10 +300,10 @@ const brain = new Brainy({
 
 ```javascript
 const brain = new Brainy({
-  tracing: {
-    enabled: true,
-    sampleRate: 0.1 // Sample 10% of requests
-  }
+ tracing: {
+ enabled: true,
+ sampleRate: 0.1 // Sample 10% of requests
+ }
 })
 ```
 
@@ -316,9 +316,9 @@ const brain = new Brainy({
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: brainy-sa
-  annotations:
-    iam.gke.io/gcp-service-account: brainy@PROJECT_ID.iam.gserviceaccount.com
+ name: brainy-sa
+ annotations:
+ iam.gke.io/gcp-service-account: brainy@PROJECT_ID.iam.gserviceaccount.com
 ```
 
 ### 2. Binary Authorization
@@ -328,11 +328,11 @@ metadata:
 apiVersion: binaryauthorization.grafeas.io/v1beta1
 kind: Policy
 metadata:
-  name: brainy-policy
+ name: brainy-policy
 spec:
-  defaultAdmissionRule:
-    requireAttestationsBy:
-    - projects/PROJECT_ID/attestors/prod-attestor
+ defaultAdmissionRule:
+ requireAttestationsBy:
+ - projects/PROJECT_ID/attestors/prod-attestor
 ```
 
 ### 3. VPC Service Controls
@@ -340,9 +340,9 @@ spec:
 ```bash
 # Create VPC Service Perimeter
 gcloud access-context-manager perimeters create brainy_perimeter \
-  --resources=projects/PROJECT_NUMBER \
-  --restricted-services=storage.googleapis.com \
-  --title="Brainy Security Perimeter"
+ --resources=projects/PROJECT_NUMBER \
+ --restricted-services=storage.googleapis.com \
+ --title="Brainy Security Perimeter"
 ```
 
 ## Cost Optimization
@@ -354,16 +354,16 @@ gcloud access-context-manager perimeters create brainy_perimeter \
 apiVersion: container.cnrm.cloud.google.com/v1beta1
 kind: ContainerNodePool
 metadata:
-  name: brainy-preemptible-pool
+ name: brainy-preemptible-pool
 spec:
-  clusterRef:
-    name: brainy-cluster
-  config:
-    preemptible: true
-    machineType: n2-standard-2
-  autoscaling:
-    minNodeCount: 1
-    maxNodeCount: 10
+ clusterRef:
+ name: brainy-cluster
+ config:
+ preemptible: true
+ machineType: n2-standard-2
+ autoscaling:
+ minNodeCount: 1
+ maxNodeCount: 10
 ```
 
 ### 2. Cloud CDN for Static Assets
@@ -371,11 +371,11 @@ spec:
 ```bash
 # Enable Cloud CDN for frequently accessed data
 gcloud compute backend-buckets create brainy-assets \
-  --gcs-bucket-name=brainy-static
+ --gcs-bucket-name=brainy-static
 
 gcloud compute backend-buckets update brainy-assets \
-  --enable-cdn \
-  --cache-mode=CACHE_ALL_STATIC
+ --enable-cdn \
+ --cache-mode=CACHE_ALL_STATIC
 ```
 
 ### 3. Committed Use Discounts
@@ -383,8 +383,8 @@ gcloud compute backend-buckets update brainy-assets \
 ```bash
 # Purchase committed use for predictable workloads
 gcloud compute commitments create brainy-commitment \
-  --plan=TWELVE_MONTH \
-  --resources=vcpu=100,memory=400
+ --plan=TWELVE_MONTH \
+ --resources=vcpu=100,memory=400
 ```
 
 ## Deployment Automation
@@ -394,28 +394,28 @@ gcloud compute commitments create brainy-commitment \
 ```yaml
 # cloudbuild.yaml
 steps:
-  # Build container
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/brainy:$SHORT_SHA', '.']
-  
-  # Push to registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/brainy:$SHORT_SHA']
-  
-  # Deploy to Cloud Run
-  - name: 'gcr.io/cloud-builders/gcloud'
-    args:
-    - 'run'
-    - 'deploy'
-    - 'brainy'
-    - '--image=gcr.io/$PROJECT_ID/brainy:$SHORT_SHA'
-    - '--region=us-central1'
-    - '--platform=managed'
+ # Build container
+ - name: 'gcr.io/cloud-builders/docker'
+ args: ['build', '-t', 'gcr.io/$PROJECT_ID/brainy:$SHORT_SHA', '.']
+
+ # Push to registry
+ - name: 'gcr.io/cloud-builders/docker'
+ args: ['push', 'gcr.io/$PROJECT_ID/brainy:$SHORT_SHA']
+
+ # Deploy to Cloud Run
+ - name: 'gcr.io/cloud-builders/gcloud'
+ args:
+ - 'run'
+ - 'deploy'
+ - 'brainy'
+ - '--image=gcr.io/$PROJECT_ID/brainy:$SHORT_SHA'
+ - '--region=us-central1'
+ - '--platform=managed'
 
 # Trigger on push to main
 trigger:
-  branch:
-    name: main
+ branch:
+ name: main
 ```
 
 ### Terraform Infrastructure
@@ -423,40 +423,40 @@ trigger:
 ```hcl
 # main.tf
 resource "google_cloud_run_service" "brainy" {
-  name     = "brainy"
-  location = "us-central1"
+ name = "brainy"
+ location = "us-central1"
 
-  template {
-    spec {
-      containers {
-        image = "gcr.io/${var.project_id}/brainy"
-        
-        resources {
-          limits = {
-            cpu    = "2"
-            memory = "2Gi"
-          }
-        }
-        
-        env {
-          name  = "NODE_ENV"
-          value = "production"
-        }
-      }
-    }
-  }
+ template {
+ spec {
+ containers {
+ image = "gcr.io/${var.project_id}/brainy"
 
-  traffic {
-    percent         = 100
-    latest_revision = true
-  }
+ resources {
+ limits = {
+ cpu = "2"
+ memory = "2Gi"
+ }
+ }
+
+ env {
+ name = "NODE_ENV"
+ value = "production"
+ }
+ }
+ }
+ }
+
+ traffic {
+ percent = 100
+ latest_revision = true
+ }
 }
 
 resource "google_cloud_run_service_iam_member" "public" {
-  service  = google_cloud_run_service.brainy.name
-  location = google_cloud_run_service.brainy.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
+ service = google_cloud_run_service.brainy.name
+ location = google_cloud_run_service.brainy.location
+ role = "roles/run.invoker"
+ member = "allUsers"
 }
 ```
 
@@ -467,13 +467,13 @@ resource "google_cloud_run_service_iam_member" "public" {
 ```javascript
 // Brainy can use Memorystore for caching
 const brain = new Brainy({
-  cache: {
-    type: 'redis',
-    options: {
-      host: process.env.REDIS_HOST || 'auto-detect',
-      port: 6379
-    }
-  }
+ cache: {
+ type: 'redis',
+ options: {
+ host: process.env.REDIS_HOST || 'auto-detect',
+ port: 6379
+ }
+ }
 })
 ```
 
@@ -481,13 +481,13 @@ const brain = new Brainy({
 
 ```javascript
 const brain = new Brainy({
-  metadata: {
-    type: 'spanner',
-    options: {
-      instance: 'brainy-instance',
-      database: 'brainy-db'
-    }
-  }
+ metadata: {
+ type: 'spanner',
+ options: {
+ instance: 'brainy-instance',
+ database: 'brainy-db'
+ }
+ }
 })
 ```
 
@@ -496,116 +496,116 @@ const brain = new Brainy({
 ### Common Issues
 
 1. **Quota Exceeded**
-   ```bash
-   # Check quotas
-   gcloud compute project-info describe --project=$PROJECT_ID
-   
-   # Request increase
-   gcloud compute project-info add-metadata \
-     --metadata google-compute-default-region=us-central1
-   ```
+ ```bash
+ # Check quotas
+ gcloud compute project-info describe --project=$PROJECT_ID
+
+ # Request increase
+ gcloud compute project-info add-metadata \
+ --metadata google-compute-default-region=us-central1
+ ```
 
 2. **Cold Starts**
 
-   **v7.3.0+ Progressive Initialization (Zero-Config)**
+ **Progressive Initialization (Zero-Config)**
 
-   Brainy automatically detects Cloud Run and Cloud Functions environments
-   and uses progressive initialization for <200ms cold starts:
+ Brainy automatically detects Cloud Run and Cloud Functions environments
+ and uses progressive initialization for <200ms cold starts:
 
-   ```javascript
-   // Zero-config - Brainy auto-detects Cloud Run (K_SERVICE env var)
-   const brain = new Brainy({
-     storage: {
-       type: 'gcs',
-       gcsNativeStorage: { bucketName: 'my-bucket' }
-     }
-   })
-   await brain.init() // Returns in <200ms
+ ```javascript
+ // Zero-config - Brainy auto-detects Cloud Run (K_SERVICE env var)
+ const brain = new Brainy({
+ storage: {
+ type: 'gcs',
+ gcsNativeStorage: { bucketName: 'my-bucket' }
+ }
+ })
+ await brain.init() // Returns in <200ms
 
-   // First write validates bucket (lazy validation)
-   await brain.add('noun', { name: 'test' }) // Validates here
-   ```
+ // First write validates bucket (lazy validation)
+ await brain.add('noun', { name: 'test' }) // Validates here
+ ```
 
-   **Manual Override (if needed)**
-   ```javascript
-   const brain = new Brainy({
-     storage: {
-       type: 'gcs',
-       gcsNativeStorage: {
-         bucketName: 'my-bucket',
-         // Force specific mode
-         initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
-       }
-     }
-   })
-   ```
+ **Manual Override (if needed)**
+ ```javascript
+ const brain = new Brainy({
+ storage: {
+ type: 'gcs',
+ gcsNativeStorage: {
+ bucketName: 'my-bucket',
+ // Force specific mode
+ initMode: 'progressive' // 'auto' | 'progressive' | 'strict'
+ }
+ }
+ })
+ ```
 
-   | Mode | Cold Start | Best For |
-   |------|------------|----------|
-   | `auto` (default) | <200ms in cloud | Zero-config, auto-detects |
-   | `progressive` | <200ms always | Force fast init everywhere |
-   | `strict` | 100-500ms+ | Local dev, tests, debugging |
+ | Mode | Cold Start | Best For |
+ |------|------------|----------|
+ | `auto` (default) | <200ms in cloud | Zero-config, auto-detects |
+ | `progressive` | <200ms always | Force fast init everywhere |
+ | `strict` | 100-500ms+ | Local dev, tests, debugging |
 
-   **Keep Warm (Alternative)**
-   ```javascript
-   // Keep minimum instances warm
-   const brain = new Brainy({
-     warmup: {
-       enabled: true,
-       interval: 60000 // Ping every minute
-     }
-   })
-   ```
+ **Keep Warm (Alternative)**
+ ```javascript
+ // Keep minimum instances warm
+ const brain = new Brainy({
+ warmup: {
+ enabled: true,
+ interval: 60000 // Ping every minute
+ }
+ })
+ ```
 
-   **Readiness Detection (v7.3.0+)**
+ **Readiness Detection**
 
-   Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
+ Use the `brain.ready` Promise to ensure Brainy is initialized before handling requests:
 
-   ```javascript
-   let brain
+ ```javascript
+ let brain
 
-   async function handleRequest(req, res) {
-     if (!brain) {
-       brain = new Brainy({ storage: { type: 'gcs', ... } })
-       brain.init()  // Fire and forget
-     }
+ async function handleRequest(req, res) {
+ if (!brain) {
+ brain = new Brainy({ storage: { type: 'gcs', ... } })
+ brain.init() // Fire and forget
+ }
 
-     // Wait for initialization to complete
-     await brain.ready
+ // Wait for initialization to complete
+ await brain.ready
 
-     // Now safe to use brain methods
-     const results = await brain.find({ query: req.query.q })
-     res.json(results)
-   }
-   ```
+ // Now safe to use brain methods
+ const results = await brain.find({ query: req.query.q })
+ res.json(results)
+ }
+ ```
 
-   For Cloud Run health checks, use `isFullyInitialized()` to verify all background tasks are complete:
+ For Cloud Run health checks, use `isFullyInitialized()` to verify all background tasks are complete:
 
-   ```javascript
-   // Health check endpoint for Cloud Run
-   app.get('/health', async (req, res) => {
-     try {
-       await brain.ready
-       res.json({
-         status: 'ready',
-         fullyInitialized: brain.isFullyInitialized()
-       })
-     } catch (error) {
-       res.status(503).json({ status: 'initializing' })
-     }
-   })
-   ```
+ ```javascript
+ // Health check endpoint for Cloud Run
+ app.get('/health', async (req, res) => {
+ try {
+ await brain.ready
+ res.json({
+ status: 'ready',
+ fullyInitialized: brain.isFullyInitialized()
+ })
+ } catch (error) {
+ res.status(503).json({ status: 'initializing' })
+ }
+ })
+ ```
 
 3. **Memory Pressure**
-   ```javascript
-   // Optimize for GCP memory constraints
-   const brain = new Brainy({
-     memory: {
-       mode: 'aggressive', // Aggressive garbage collection
-       maxHeap: 0.8        // Use 80% of available memory
-     }
-   })
-   ```
+ ```javascript
+ // Optimize for GCP memory constraints
+ const brain = new Brainy({
+ memory: {
+ mode: 'aggressive', // Aggressive garbage collection
+ maxHeap: 0.8 // Use 80% of available memory
+ }
+ })
+ ```
 
 ## Production Checklist
 

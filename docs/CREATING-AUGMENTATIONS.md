@@ -1,6 +1,6 @@
 # Creating Augmentations for Brainy
 
-> **Updated for v4.0.0** - Includes metadata structure changes and type system improvements
+> **Updated** - Includes metadata structure changes and type system improvements
 
 ## The BrainyAugmentation Interface
 
@@ -8,38 +8,38 @@ Every augmentation implements this simple yet powerful interface:
 
 ```typescript
 interface BrainyAugmentation {
-  // Identification
-  name: string                    // Unique name for your augmentation
+ // Identification
+ name: string // Unique name for your augmentation
 
-  // Execution control
-  timing: 'before' | 'after' | 'around' | 'replace'  // When to execute
-  operations: string[]            // Which operations to intercept
-  priority: number                 // Execution order (higher = first)
+ // Execution control
+ timing: 'before' | 'after' | 'around' | 'replace' // When to execute
+ operations: string[] // Which operations to intercept
+ priority: number // Execution order (higher = first)
 
-  // Lifecycle methods
-  initialize(context: AugmentationContext): Promise<void>
-  execute<T>(operation: string, params: any, next: () => Promise<T>): Promise<T>
-  shutdown?(): Promise<void>      // Optional cleanup
+ // Lifecycle methods
+ initialize(context: AugmentationContext): Promise<void>
+ execute<T>(operation: string, params: any, next: () => Promise<T>): Promise<T>
+ shutdown?(): Promise<void> // Optional cleanup
 }
 ```
 
-## v4.0.0 Breaking Changes for Augmentation Developers
+## Breaking Changes for Augmentation Developers
 
 ### 1. Metadata Structure Separation
-v4.0.0 introduces strict metadata/vector separation for billion-scale performance:
+Brainy introduces strict metadata/vector separation for billion-scale performance:
 
 ```typescript
-// ✅ v4.0.0: Metadata has required type field
+// ✅ Metadata has required type field
 interface NounMetadata {
-  noun: NounType               // Required! Must be a valid noun type
-  [key: string]: any          // Your custom metadata
+ noun: NounType // Required! Must be a valid noun type
+ [key: string]: any // Your custom metadata
 }
 
 interface VerbMetadata {
-  verb: VerbType               // Required! Must be a valid verb type
-  sourceId: string
-  targetId: string
-  [key: string]: any
+ verb: VerbType // Required! Must be a valid verb type
+ sourceId: string
+ targetId: string
+ [key: string]: any
 }
 ```
 
@@ -61,7 +61,7 @@ The verb relationship field changed from `type` to `verb`:
 // ❌ v3.x
 verb.type === 'relatedTo'
 
-// ✅ v4.0.0
+// ✅ Current
 verb.verb === 'relatedTo'
 ```
 
@@ -69,7 +69,7 @@ verb.verb === 'relatedTo'
 
 Storage augmentations are special - they provide the storage backend for Brainy.
 
-### Important: v4.0.0 Storage Requirements
+### Important: Storage Requirements
 
 Your storage adapter MUST:
 1. **Wrap metadata** with required `noun`/`verb` fields
@@ -81,67 +81,67 @@ import { StorageAugmentation } from 'brainy/augmentations'
 import { BaseStorageAdapter, HNSWNoun, HNSWNounWithMetadata, NounMetadata } from 'brainy'
 
 export class MyCustomStorage extends BaseStorageAdapter {
-  // Internal method: Returns pure structure
-  async _getNoun(id: string): Promise<HNSWNoun | null> {
-    const data = await this.fetchFromDatabase(id)
-    return data ? {
-      id: data.id,
-      vector: data.vector,
-      nounType: data.type
-    } : null
-  }
+ // Internal method: Returns pure structure
+ async _getNoun(id: string): Promise<HNSWNoun | null> {
+ const data = await this.fetchFromDatabase(id)
+ return data ? {
+ id: data.id,
+ vector: data.vector,
+ nounType: data.type
+ } : null
+ }
 
-  // Public method: Returns WithMetadata structure
-  async getNoun(id: string): Promise<HNSWNounWithMetadata | null> {
-    const noun = await this._getNoun(id)
-    if (!noun) return null
+ // Public method: Returns WithMetadata structure
+ async getNoun(id: string): Promise<HNSWNounWithMetadata | null> {
+ const noun = await this._getNoun(id)
+ if (!noun) return null
 
-    // Fetch metadata separately (v4.0.0 pattern)
-    const metadata = await this.getNounMetadata(id)
+ // Fetch metadata separately
+ const metadata = await this.getNounMetadata(id)
 
-    return {
-      ...noun,
-      metadata: metadata || { noun: noun.nounType || 'thing' }
-    }
-  }
+ return {
+ ...noun,
+ metadata: metadata || { noun: noun.nounType || 'thing' }
+ }
+ }
 
-  // CRITICAL: Always save with proper metadata structure
-  async saveNoun(noun: HNSWNoun, metadata?: NounMetadata): Promise<void> {
-    // Validate metadata has required 'noun' field
-    if (!metadata?.noun) {
-      throw new Error('v4.0.0: NounMetadata requires "noun" field')
-    }
+ // CRITICAL: Always save with proper metadata structure
+ async saveNoun(noun: HNSWNoun, metadata?: NounMetadata): Promise<void> {
+ // Validate metadata has required 'noun' field
+ if (!metadata?.noun) {
+ throw new Error('NounMetadata requires "noun" field')
+ }
 
-    await this.database.save({
-      id: noun.id,
-      vector: noun.vector,
-      nounType: noun.nounType,
-      metadata: metadata  // Stored separately in v4.0.0
-    })
-  }
+ await this.database.save({
+ id: noun.id,
+ vector: noun.vector,
+ nounType: noun.nounType,
+ metadata: metadata // Stored separately
+ })
+ }
 }
 
 export class MyStorageAugmentation extends StorageAugmentation {
-  private config: MyStorageConfig
+ private config: MyStorageConfig
 
-  constructor(config: MyStorageConfig) {
-    super()
-    this.name = 'my-custom-storage'
-    this.config = config
-  }
+ constructor(config: MyStorageConfig) {
+ super()
+ this.name = 'my-custom-storage'
+ this.config = config
+ }
 
-  // Called during storage resolution phase
-  async provideStorage(): Promise<StorageAdapter> {
-    const storage = new MyCustomStorage(this.config)
-    this.storageAdapter = storage
-    return storage
-  }
+ // Called during storage resolution phase
+ async provideStorage(): Promise<StorageAdapter> {
+ const storage = new MyCustomStorage(this.config)
+ this.storageAdapter = storage
+ return storage
+ }
 
-  // Called during augmentation initialization
-  protected async onInitialize(): Promise<void> {
-    await this.storageAdapter!.init()
-    this.log(`Custom storage initialized`)
-  }
+ // Called during augmentation initialization
+ protected async onInitialize(): Promise<void> {
+ await this.storageAdapter!.init()
+ this.log(`Custom storage initialized`)
+ }
 }
 ```
 
@@ -151,9 +151,9 @@ export class MyStorageAugmentation extends StorageAugmentation {
 // Register before brain.init()
 const brain = new Brainy()
 brain.augmentations.register(new MyStorageAugmentation({
-  connectionString: 'redis://localhost:6379'
+ connectionString: 'redis://localhost:6379'
 }))
-await brain.init()  // Will use your storage!
+await brain.init() // Will use your storage!
 ```
 
 ## Creating a Feature Augmentation
@@ -164,43 +164,43 @@ Here's a complete example of a caching augmentation:
 import { BaseAugmentation, BrainyAugmentation } from 'brainy/augmentations'
 
 export class CachingAugmentation extends BaseAugmentation {
-  private cache = new Map<string, any>()
-  
-  constructor() {
-    super()
-    this.name = 'smart-cache'
-    this.timing = 'around'        // Wrap operations
-    this.operations = ['search']   // Only cache searches
-    this.priority = 50             // Mid-priority
-  }
-  
-  async execute<T>(operation: string, params: any, next: () => Promise<T>): Promise<T> {
-    if (operation === 'search') {
-      // Check cache
-      const cacheKey = JSON.stringify(params)
-      if (this.cache.has(cacheKey)) {
-        this.log('Cache hit!')
-        return this.cache.get(cacheKey)
-      }
-      
-      // Execute and cache
-      const result = await next()
-      this.cache.set(cacheKey, result)
-      return result
-    }
-    
-    // Pass through other operations
-    return next()
-  }
-  
-  protected async onInitialize(): Promise<void> {
-    this.log('Cache initialized')
-  }
-  
-  async shutdown(): Promise<void> {
-    this.cache.clear()
-    await super.shutdown()
-  }
+ private cache = new Map<string, any>()
+
+ constructor() {
+ super()
+ this.name = 'smart-cache'
+ this.timing = 'around' // Wrap operations
+ this.operations = ['search'] // Only cache searches
+ this.priority = 50 // Mid-priority
+ }
+
+ async execute<T>(operation: string, params: any, next: () => Promise<T>): Promise<T> {
+ if (operation === 'search') {
+ // Check cache
+ const cacheKey = JSON.stringify(params)
+ if (this.cache.has(cacheKey)) {
+ this.log('Cache hit!')
+ return this.cache.get(cacheKey)
+ }
+
+ // Execute and cache
+ const result = await next()
+ this.cache.set(cacheKey, result)
+ return result
+ }
+
+ // Pass through other operations
+ return next()
+ }
+
+ protected async onInitialize(): Promise<void> {
+ this.log('Cache initialized')
+ }
+
+ async shutdown(): Promise<void> {
+ this.cache.clear()
+ await super.shutdown()
+ }
 }
 ```
 
@@ -210,20 +210,20 @@ export class CachingAugmentation extends BaseAugmentation {
 ```typescript
 timing = 'before'
 async execute(op, params, next) {
-  // Validate/transform input
-  const validated = await validate(params)
-  return next(validated)  // Pass modified params
+ // Validate/transform input
+ const validated = await validate(params)
+ return next(validated) // Pass modified params
 }
 ```
 
-### 2. `after` - Post-processing  
+### 2. `after` - Post-processing
 ```typescript
 timing = 'after'
 async execute(op, params, next) {
-  const result = await next()
-  // Log, analyze, or modify result
-  console.log(`Operation ${op} returned:`, result)
-  return result
+ const result = await next()
+ // Log, analyze, or modify result
+ console.log(`Operation ${op} returned:`, result)
+ return result
 }
 ```
 
@@ -231,15 +231,15 @@ async execute(op, params, next) {
 ```typescript
 timing = 'around'
 async execute(op, params, next) {
-  console.log('Starting', op)
-  try {
-    const result = await next()
-    console.log('Success', op)
-    return result
-  } catch (error) {
-    console.log('Failed', op, error)
-    throw error
-  }
+ console.log('Starting', op)
+ try {
+ const result = await next()
+ console.log('Success', op)
+ return result
+ } catch (error) {
+ console.log('Failed', op, error)
+ throw error
+ }
 }
 ```
 
@@ -247,8 +247,8 @@ async execute(op, params, next) {
 ```typescript
 timing = 'replace'
 async execute(op, params, next) {
-  // Don't call next() - replace entirely!
-  return myCustomImplementation(params)
+ // Don't call next() - replace entirely!
+ return myCustomImplementation(params)
 }
 ```
 
@@ -266,10 +266,10 @@ Common operations in Brainy:
 
 ```typescript
 interface AugmentationContext {
-  brain: Brainy         // The brain instance
-  storage: StorageAdapter   // Storage backend
-  config: BrainyConfig  // Configuration
-  log: (message: string, level?: 'info' | 'warn' | 'error') => void
+ brain: Brainy // The brain instance
+ storage: StorageAdapter // Storage backend
+ config: BrainyConfig // Configuration
+ log: (message: string, level?: 'info' | 'warn' | 'error') => void
 }
 ```
 
@@ -278,50 +278,50 @@ interface AugmentationContext {
 ### 1. Redis Storage Augmentation
 ```typescript
 export class RedisStorageAugmentation extends StorageAugmentation {
-  async provideStorage(): Promise<StorageAdapter> {
-    return new RedisAdapter({
-      host: 'localhost',
-      port: 6379,
-      // Implement full StorageAdapter interface
-    })
-  }
+ async provideStorage(): Promise<StorageAdapter> {
+ return new RedisAdapter({
+ host: 'localhost',
+ port: 6379,
+ // Implement full StorageAdapter interface
+ })
+ }
 }
 ```
 
 ### 2. Audit Trail Augmentation
 ```typescript
 export class AuditAugmentation extends BaseAugmentation {
-  timing = 'after'
-  operations = ['add', 'update', 'delete']
-  
-  async execute(op, params, next) {
-    const result = await next()
-    
-    // Log to audit trail
-    await this.logAudit({
-      operation: op,
-      params,
-      result,
-      timestamp: new Date(),
-      user: this.context.config.currentUser
-    })
-    
-    return result
-  }
+ timing = 'after'
+ operations = ['add', 'update', 'delete']
+
+ async execute(op, params, next) {
+ const result = await next()
+
+ // Log to audit trail
+ await this.logAudit({
+ operation: op,
+ params,
+ result,
+ timestamp: new Date(),
+ user: this.context.config.currentUser
+ })
+
+ return result
+ }
 }
 ```
 
 ### 3. Rate Limiting Augmentation
 ```typescript
 export class RateLimitAugmentation extends BaseAugmentation {
-  timing = 'before'
-  operations = ['search']
-  private limiter = new RateLimiter({ rps: 100 })
-  
-  async execute(op, params, next) {
-    await this.limiter.acquire()  // Wait if rate limited
-    return next()
-  }
+ timing = 'before'
+ operations = ['search']
+ private limiter = new RateLimiter({ rps: 100 })
+
+ async execute(op, params, next) {
+ await this.limiter.acquire() // Wait if rate limited
+ return next()
+ }
 }
 ```
 
@@ -332,12 +332,12 @@ Future capability for premium augmentations:
 ```typescript
 // package.json
 {
-  "name": "@brain-cloud/redis-storage",
-  "brainy": {
-    "type": "augmentation",
-    "category": "storage",
-    "premium": true
-  }
+ "name": "@brain-cloud/redis-storage",
+ "brainy": {
+ "type": "augmentation",
+ "category": "storage",
+ "premium": true
+ }
 }
 
 // Users can install via:
@@ -356,43 +356,43 @@ Future capability for premium augmentations:
 6. **Log appropriately** - Use context.log() for consistent output
 7. **Document your augmentation** - Include examples
 
-### v4.0.0 Specific Best Practices
+### Specific Best Practices
 
 8. **Always include `noun` field** when creating/modifying NounMetadata:
-   ```typescript
-   const metadata: NounMetadata = {
-     noun: 'thing',  // REQUIRED!
-     yourField: 'value'
-   }
-   ```
+ ```typescript
+ const metadata: NounMetadata = {
+ noun: 'thing', // REQUIRED!
+ yourField: 'value'
+ }
+ ```
 
 9. **Use `verb` property** not `type` when working with relationships:
-   ```typescript
-   // ✅ Correct
-   if (verb.verb === 'relatedTo') { ... }
+ ```typescript
+ // ✅ Correct
+ if (verb.verb === 'relatedTo') { ... }
 
-   // ❌ Wrong (v3.x pattern)
-   if (verb.type === 'relatedTo') { ... }
-   ```
+ // ❌ Wrong (v3.x pattern)
+ if (verb.type === 'relatedTo') { ... }
+ ```
 
 10. **Access metadata correctly** from storage:
-    ```typescript
-    // ✅ Correct - metadata is already structured
-    const nounType = noun.metadata.noun
+ ```typescript
+ // ✅ Correct - metadata is already structured
+ const nounType = noun.metadata.noun
 
-    // ⚠️ Fallback pattern for robustness
-    const nounType = noun.metadata?.noun || 'thing'
-    ```
+ // ⚠️ Fallback pattern for robustness
+ const nounType = noun.metadata?.noun || 'thing'
+ ```
 
 11. **Respect the two-file storage pattern** - Don't mix vector and metadata operations:
-    ```typescript
-    // ✅ Good - Separate concerns
-    await storage.saveNoun(noun)
-    await storage.saveMetadata(noun.id, metadata)
+ ```typescript
+ // ✅ Good - Separate concerns
+ await storage.saveNoun(noun)
+ await storage.saveMetadata(noun.id, metadata)
 
-    // ❌ Bad - Mixing concerns
-    await storage.saveNounWithEverything(combinedData)
-    ```
+ // ❌ Bad - Mixing concerns
+ await storage.saveNounWithEverything(combinedData)
+ ```
 
 ## Testing Your Augmentation
 
@@ -401,23 +401,23 @@ import { Brainy } from 'brainy'
 import { MyAugmentation } from './my-augmentation'
 
 describe('MyAugmentation', () => {
-  let brain: Brainy
-  
-  beforeEach(async () => {
-    brain = new Brainy()
-    brain.augmentations.register(new MyAugmentation())
-    await brain.init()
-  })
-  
-  afterEach(async () => {
-    await brain.destroy()
-  })
-  
-  it('should enhance searches', async () => {
-    // Test your augmentation's effect
-    const results = await brain.search('test')
-    expect(results).toHaveProperty('enhanced', true)
-  })
+ let brain: Brainy
+
+ beforeEach(async () => {
+ brain = new Brainy()
+ brain.augmentations.register(new MyAugmentation())
+ await brain.init()
+ })
+
+ afterEach(async () => {
+ await brain.destroy()
+ })
+
+ it('should enhance searches', async () => {
+ // Test your augmentation's effect
+ const results = await brain.search('test')
+ expect(results).toHaveProperty('enhanced', true)
+ })
 })
 ```
 

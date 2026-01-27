@@ -85,7 +85,7 @@ type S3Command = any
  * - endpoint: GCS endpoint (e.g., 'https://storage.googleapis.com')
  * - bucketName: GCS bucket name
  *
- * v5.4.0: Type-aware storage now built into BaseStorage
+ * Type-aware storage now built into BaseStorage
  * - Removed 10 *_internal method overrides (now inherit from BaseStorage's type-first implementation)
  * - Removed 2 pagination method overrides (getNounsWithPagination, getVerbsWithPagination)
  * - Updated HNSW methods to use BaseStorage's getNoun/saveNoun (type-first paths)
@@ -152,7 +152,7 @@ export class S3CompatibleStorage extends BaseStorage {
   // Request coalescer for deduplication
   private requestCoalescer: RequestCoalescer | null = null
   
-  // v6.2.7: Write buffering always enabled for consistent performance
+  // Write buffering always enabled for consistent performance
   // Removes dynamic mode switching complexity - cloud storage always benefits from batching
 
   // Operation executors for timeout and retry handling
@@ -165,7 +165,7 @@ export class S3CompatibleStorage extends BaseStorage {
   // Module logger
   private logger = createModuleLogger('S3Storage')
 
-  // v5.4.0: HNSW mutex locks to prevent read-modify-write races
+  // HNSW mutex locks to prevent read-modify-write races
   private hnswLocks = new Map<string, Promise<void>>()
 
   /**
@@ -210,7 +210,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
 
     /**
-     * Initialization mode for fast cold starts (v7.3.0+)
+     * Initialization mode for fast cold starts
      *
      * - `'auto'` (default): Progressive in cloud environments (Lambda, Cloud Run),
      *   strict locally. Zero-config optimization.
@@ -219,7 +219,6 @@ export class S3CompatibleStorage extends BaseStorage {
      * - `'strict'`: Traditional blocking init. Validates bucket and loads counts
      *   before init() returns.
      *
-     * @since v7.3.0
      */
     initMode?: InitMode
 
@@ -236,7 +235,7 @@ export class S3CompatibleStorage extends BaseStorage {
     this.serviceType = options.serviceType || 's3'
     this.readOnly = options.readOnly || false
 
-    // v7.3.0: Handle initMode
+    // Handle initMode
     if (options.initMode) {
       this.initMode = options.initMode
     }
@@ -270,7 +269,7 @@ export class S3CompatibleStorage extends BaseStorage {
    * S3 supports ~5000 operations/second with burst capacity up to 10,000
    *
    * @returns S3-optimized batch configuration
-   * @since v5.12.0 - Updated for native batch API
+   * Updated for native batch API
    */
   public getBatchConfig(): StorageBatchConfig {
     return {
@@ -295,7 +294,6 @@ export class S3CompatibleStorage extends BaseStorage {
    *
    * @param paths - Array of S3 object keys to read
    * @returns Map of path -> parsed JSON data (only successful reads)
-   * @since v5.12.0
    */
   public async readBatch(paths: string[]): Promise<Map<string, any>> {
     await this.ensureInitialized()
@@ -358,7 +356,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Initialize the storage adapter
    *
-   * v7.3.0: Supports progressive initialization for fast cold starts
+   * Supports progressive initialization for fast cold starts
    *
    * | Mode | Init Time | When |
    * |------|-----------|------|
@@ -514,7 +512,7 @@ export class S3CompatibleStorage extends BaseStorage {
       // Initialize request coalescer
       this.initializeCoalescer()
 
-      // CRITICAL FIX (v3.37.7): Clear any stale cache entries from previous runs
+      // CRITICAL FIX: Clear any stale cache entries from previous runs
       // This prevents cache poisoning from causing silent failures on container restart
       const nodeCacheSize = this.nodeCache?.size || 0
       if (nodeCacheSize > 0) {
@@ -524,7 +522,7 @@ export class S3CompatibleStorage extends BaseStorage {
         prodLog.info('🧹 Node cache is empty - starting fresh')
       }
 
-      // v7.3.0: Progressive vs Strict initialization
+      // Progressive vs Strict initialization
       if (effectiveMode === 'progressive') {
         // PROGRESSIVE MODE: Fast init, background validation
         // Mark as initialized immediately - ready to accept operations
@@ -533,7 +531,7 @@ export class S3CompatibleStorage extends BaseStorage {
 
         prodLog.info(`✅ S3 progressive init complete: ${this.bucketName} (validation deferred)`)
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Schedule background tasks (non-blocking)
@@ -556,7 +554,7 @@ export class S3CompatibleStorage extends BaseStorage {
         await this.initializeCounts()
         this.countsLoaded = true
 
-        // v6.0.0: Initialize GraphAdjacencyIndex and type statistics
+        // Initialize GraphAdjacencyIndex and type statistics
         await super.init()
 
         // Mark background tasks as complete (nothing to do in background)
@@ -573,7 +571,7 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   // =============================================
-  // Progressive Initialization (v7.3.0+)
+  // Progressive Initialization
   // =============================================
 
   /**
@@ -588,7 +586,6 @@ export class S3CompatibleStorage extends BaseStorage {
    *
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async runBackgroundInit(): Promise<void> {
     const startTime = Date.now()
@@ -614,7 +611,6 @@ export class S3CompatibleStorage extends BaseStorage {
    * Stores result in bucketValidated/bucketValidationError for lazy use.
    *
    * @private
-   * @since v7.3.0
    */
   private async validateBucketInBackground(): Promise<void> {
     try {
@@ -638,7 +634,6 @@ export class S3CompatibleStorage extends BaseStorage {
    * Load counts from storage in background.
    *
    * @private
-   * @since v7.3.0
    */
   private async loadCountsInBackground(): Promise<void> {
     try {
@@ -662,7 +657,6 @@ export class S3CompatibleStorage extends BaseStorage {
    * @throws Error if bucket does not exist or is not accessible
    * @protected
    * @override
-   * @since v7.3.0
    */
   protected async ensureValidatedForWrite(): Promise<void> {
     // If already validated, nothing to do
@@ -918,7 +912,7 @@ export class S3CompatibleStorage extends BaseStorage {
     )
   }
   
-  // v6.2.7: Removed checkVolumeMode() - write buffering always enabled for cloud storage
+  // Removed checkVolumeMode() - write buffering always enabled for cloud storage
 
   /**
    * Bulk write nouns to S3
@@ -1179,20 +1173,20 @@ export class S3CompatibleStorage extends BaseStorage {
     return this.socketManager.getBatchSize()
   }
 
-  // v5.4.0: Removed 10 *_internal method overrides (lines 984-2069) - now inherit from BaseStorage's type-first implementation
+  // Removed 10 *_internal method overrides (lines 984-2069) - now inherit from BaseStorage's type-first implementation
 
   /**
    * Save a node to storage
-   * v6.2.7: Always uses write buffer for consistent performance
+   * Always uses write buffer for consistent performance
    */
   protected async saveNode(node: HNSWNode): Promise<void> {
     await this.ensureInitialized()
 
-    // v6.2.7: Always use write buffer - cloud storage benefits from batching
+    // Always use write buffer - cloud storage benefits from batching
     if (this.nounWriteBuffer) {
       this.logger.trace(`📝 BUFFERING: Adding noun ${node.id} to write buffer`)
 
-      // v6.2.6: Populate cache BEFORE buffering for read-after-write consistency
+      // Populate cache BEFORE buffering for read-after-write consistency
       if (node.vector && Array.isArray(node.vector) && node.vector.length > 0) {
         this.nounCacheManager.set(node.id, node)
       }
@@ -1242,7 +1236,7 @@ export class S3CompatibleStorage extends BaseStorage {
 
       this.logger.debug(`Node ${node.id} saved successfully`)
 
-      // Log the change for efficient synchronization (v4.0.0: no metadata on node)
+      // Log the change for efficient synchronization (no metadata on node)
       await this.appendToChangeLog({
         timestamp: Date.now(),
         operation: 'add', // Could be 'update' if we track existing nodes
@@ -1250,7 +1244,7 @@ export class S3CompatibleStorage extends BaseStorage {
         entityId: node.id,
         data: {
           vector: node.vector
-          // ✅ NO metadata field in v4.0.0 - stored separately
+          // ✅ NO metadata field - stored separately
         }
       })
 
@@ -1296,7 +1290,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getNoun_internal override - uses BaseStorage type-first implementation
+  // Removed getNoun_internal override - uses BaseStorage type-first implementation
 
   /**
    * Get a node from storage
@@ -1307,7 +1301,7 @@ export class S3CompatibleStorage extends BaseStorage {
     // Check cache first
     const cached = this.nodeCache.get(id)
 
-    // Validate cached object before returning (v3.37.8+)
+    // Validate cached object before returning
     if (cached !== undefined && cached !== null) {
       // Validate cached object has required fields (including non-empty vector!)
       if (!cached.id || !cached.vector || !Array.isArray(cached.vector) || cached.vector.length === 0) {
@@ -1607,7 +1601,7 @@ export class S3CompatibleStorage extends BaseStorage {
     return nodes
   }
 
-  // v5.4.0: Removed 4 *_internal method overrides (getNounsByNounType_internal, deleteNoun_internal, saveVerb_internal, getVerb_internal)
+  // Removed 4 *_internal method overrides (getNounsByNounType_internal, deleteNoun_internal, saveVerb_internal, getVerb_internal)
   // Now inherit from BaseStorage's type-first implementation
 
 
@@ -1788,23 +1782,23 @@ export class S3CompatibleStorage extends BaseStorage {
     return true // Return all edges since filtering requires metadata
   }
   
-  // v5.4.0: Removed getVerbsWithPagination override - use BaseStorage's type-first implementation
+  // Removed getVerbsWithPagination override - use BaseStorage's type-first implementation
 
 
 
 
-  // v5.4.0: Removed 4 more *_internal method overrides (getVerbsBySource, getVerbsByTarget, getVerbsByType, deleteVerb)
+  // Removed 4 more *_internal method overrides (getVerbsBySource, getVerbsByTarget, getVerbsByType, deleteVerb)
   // Total: 8 *_internal methods removed - all now inherit from BaseStorage's type-first implementation
 
   /**
    * Primitive operation: Write object to path
    * All metadata operations use this internally via base class routing
    *
-   * v7.3.0: Performs lazy bucket validation on first write in progressive mode.
+   * Performs lazy bucket validation on first write in progressive mode.
    */
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     // Apply backpressure before starting operation
@@ -1897,11 +1891,11 @@ export class S3CompatibleStorage extends BaseStorage {
    * Primitive operation: Delete object from path
    * All metadata operations use this internally via base class routing
    *
-   * v7.3.0: Performs lazy bucket validation on first delete in progressive mode.
+   * Performs lazy bucket validation on first delete in progressive mode.
    */
   protected async deleteObjectFromPath(path: string): Promise<void> {
     await this.ensureInitialized()
-    // v7.3.0: Lazy bucket validation for progressive init
+    // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
     try {
@@ -2315,7 +2309,7 @@ export class S3CompatibleStorage extends BaseStorage {
         }
       }
 
-      // v5.11.0: Clear ALL data using correct paths
+      // Clear ALL data using correct paths
       // Delete entire branches/ directory (includes ALL entities, ALL types, ALL VFS data, ALL forks)
       await deleteObjectsWithPrefix('branches/')
 
@@ -2325,7 +2319,7 @@ export class S3CompatibleStorage extends BaseStorage {
       // Delete system metadata
       await deleteObjectsWithPrefix('_system/')
 
-      // v5.11.0: Reset COW managers (but don't disable COW - it's always enabled)
+      // Reset COW managers (but don't disable COW - it's always enabled)
       // COW will re-initialize automatically on next use
       this.refManager = undefined
       this.blobStorage = undefined
@@ -2335,7 +2329,7 @@ export class S3CompatibleStorage extends BaseStorage {
       this.statisticsCache = null
       this.statisticsModified = false
 
-      // v5.6.1: Reset entity counters (inherited from BaseStorageAdapter)
+      // Reset entity counters (inherited from BaseStorageAdapter)
       // These in-memory counters must be reset to 0 after clearing all data
       ;(this as any).totalNounCount = 0
       ;(this as any).totalVerbCount = 0
@@ -2457,12 +2451,12 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Check if COW has been explicitly disabled via clear()
-   * v5.10.4: Fixes bug where clear() doesn't persist across instance restarts
+   * Fixes bug where clear() doesn't persist across instance restarts
    * @returns true if marker object exists, false otherwise
    * @protected
    */
   /**
-   * v5.11.0: Removed checkClearMarker() and createClearMarker() methods
+   * Removed checkClearMarker() and createClearMarker() methods
    * COW is now always enabled - marker files are no longer used
    */
 
@@ -2851,7 +2845,7 @@ export class S3CompatibleStorage extends BaseStorage {
           totalEdges: this.totalVerbCount
         }
       }
-      // CRITICAL FIX (v3.37.4): Statistics file doesn't exist yet (first restart)
+      // CRITICAL FIX: Statistics file doesn't exist yet (first restart)
       // Return minimal stats with counts instead of null
       // This prevents HNSW from seeing entityCount=0 during index rebuild
       return {
@@ -3415,7 +3409,7 @@ export class S3CompatibleStorage extends BaseStorage {
     }
   }
 
-  // v5.4.0: Removed getNounsWithPagination override - use BaseStorage's type-first implementation
+  // Removed getNounsWithPagination override - use BaseStorage's type-first implementation
 
   /**
    * Estimate total noun count by listing objects across all shards
@@ -3549,7 +3543,7 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
-   * Override base class to enable smart batching for cloud storage (v3.32.3+)
+   * Override base class to enable smart batching for cloud storage
    *
    * S3 is cloud storage with network latency (~50ms per write).
    * Smart batching reduces writes from 1000 ops → 100 batches.
@@ -3560,11 +3554,11 @@ export class S3CompatibleStorage extends BaseStorage {
     return true  // S3 benefits from batching
   }
 
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
 
   /**
    * Get a noun's vector for HNSW rebuild
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getNounVector(id: string): Promise<number[] | null> {
     const noun = await this.getNoun(id)
@@ -3574,7 +3568,7 @@ export class S3CompatibleStorage extends BaseStorage {
   /**
    * Save HNSW graph data for a noun
    *
-   * v5.4.0: Uses BaseStorage's getNoun/saveNoun (type-first paths)
+   * Uses BaseStorage's getNoun/saveNoun (type-first paths)
    * CRITICAL: Uses mutex locking to prevent read-modify-write races
    */
   public async saveHNSWData(nounId: string, hnswData: {
@@ -3583,7 +3577,7 @@ export class S3CompatibleStorage extends BaseStorage {
   }): Promise<void> {
     const lockKey = `hnsw/${nounId}`
 
-    // CRITICAL FIX (v4.10.1): Mutex lock to prevent read-modify-write races
+    // CRITICAL FIX: Mutex lock to prevent read-modify-write races
     // Problem: Without mutex, concurrent operations can:
     //   1. Thread A reads noun (connections: [1,2,3])
     //   2. Thread B reads noun (connections: [1,2,3])
@@ -3603,7 +3597,7 @@ export class S3CompatibleStorage extends BaseStorage {
     this.hnswLocks.set(lockKey, lockPromise)
 
     try {
-      // v5.4.0: Use BaseStorage's getNoun (type-first paths)
+      // Use BaseStorage's getNoun (type-first paths)
       // Read existing noun data (if exists)
       const existingNoun = await this.getNoun(nounId)
 
@@ -3625,7 +3619,7 @@ export class S3CompatibleStorage extends BaseStorage {
         connections: connectionsMap
       }
 
-      // v5.4.0: Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
+      // Use BaseStorage's saveNoun (type-first paths, atomic write via writeObjectToBranch)
       await this.saveNoun(updatedNoun)
     } finally {
       // Release lock (ALWAYS runs, even if error thrown)
@@ -3636,7 +3630,7 @@ export class S3CompatibleStorage extends BaseStorage {
 
   /**
    * Get HNSW graph data for a noun
-   * v5.4.0: Uses BaseStorage's getNoun (type-first paths)
+   * Uses BaseStorage's getNoun (type-first paths)
    */
   public async getHNSWData(nounId: string): Promise<{
     level: number
@@ -3666,7 +3660,7 @@ export class S3CompatibleStorage extends BaseStorage {
    * Save HNSW system data (entry point, max level)
    * Storage path: system/hnsw-system.json
    *
-   * CRITICAL FIX (v4.10.1): Optimistic locking with ETags to prevent race conditions
+   * CRITICAL FIX: Optimistic locking with ETags to prevent race conditions
    */
   public async saveHNSWSystem(systemData: {
     entryPointId: string | null
@@ -3781,7 +3775,7 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
-   * Set S3 lifecycle policy for automatic tier transitions and deletions (v4.0.0)
+   * Set S3 lifecycle policy for automatic tier transitions and deletions
    * Automates cost optimization by moving old data to cheaper storage classes
    *
    * S3 Storage Classes:
@@ -3976,7 +3970,7 @@ export class S3CompatibleStorage extends BaseStorage {
   }
 
   /**
-   * Enable S3 Intelligent-Tiering for automatic cost optimization (v4.0.0)
+   * Enable S3 Intelligent-Tiering for automatic cost optimization
    * Automatically moves objects between access tiers based on usage patterns
    *
    * Intelligent-Tiering automatically saves up to 95% on storage costs:

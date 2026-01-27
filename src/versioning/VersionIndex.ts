@@ -1,5 +1,5 @@
 /**
- * VersionIndex - Pure Key-Value Version Storage (v6.3.0)
+ * VersionIndex - Pure Key-Value Version Storage
  *
  * Stores version metadata using simple key-value storage:
  * - Version list per entity: __version_meta_{entityId}_{branch}

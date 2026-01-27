@@ -40,7 +40,7 @@ export class CSVHandler extends BaseFormatHandler {
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf-8')
     const totalBytes = buffer.length
 
-    // v4.5.0: Report total bytes for progress tracking
+    // Report total bytes for progress tracking
     if (progressHooks?.onBytesProcessed) {
       progressHooks.onBytesProcessed(0)
     }
@@ -55,7 +55,7 @@ export class CSVHandler extends BaseFormatHandler {
     // Detect delimiter if not specified
     const delimiter = options.csvDelimiter || this.detectDelimiter(text)
 
-    // v4.5.0: Report progress - parsing started
+    // Report progress - parsing started
     if (progressHooks?.onCurrentItem) {
       progressHooks.onCurrentItem(`Parsing CSV rows (delimiter: "${delimiter}")...`)
     }
@@ -75,7 +75,7 @@ export class CSVHandler extends BaseFormatHandler {
         cast: false // We'll do type inference ourselves
       })
 
-      // v4.5.0: Report bytes processed (entire file parsed)
+      // Report bytes processed (entire file parsed)
       if (progressHooks?.onBytesProcessed) {
         progressHooks.onBytesProcessed(totalBytes)
       }
@@ -83,7 +83,7 @@ export class CSVHandler extends BaseFormatHandler {
       // Convert to array of objects
       const data = Array.isArray(records) ? records : [records]
 
-      // v4.5.0: Report data extraction progress
+      // Report data extraction progress
       if (progressHooks?.onDataExtracted) {
         progressHooks.onDataExtracted(data.length, data.length)
       }
@@ -101,7 +101,7 @@ export class CSVHandler extends BaseFormatHandler {
           converted[key] = this.convertValue(value, types[key] || 'string')
         }
 
-        // v4.5.0: Report progress every 1000 rows
+        // Report progress every 1000 rows
         if (progressHooks?.onCurrentItem && index > 0 && index % 1000 === 0) {
           progressHooks.onCurrentItem(`Converting types: ${index}/${data.length} rows...`)
         }
@@ -111,7 +111,7 @@ export class CSVHandler extends BaseFormatHandler {
 
       const processingTime = Date.now() - startTime
 
-      // v4.5.0: Final progress update
+      // Final progress update
       if (progressHooks?.onCurrentItem) {
         progressHooks.onCurrentItem(`CSV processing complete: ${convertedData.length} rows`)
       }

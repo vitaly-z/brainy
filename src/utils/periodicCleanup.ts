@@ -215,7 +215,7 @@ export class PeriodicCleanup {
       
       for (const noun of nounsResult.items) {
         try {
-          // v4.0.0: Cast NounMetadata to NamespacedMetadata for isDeleted check
+          // Cast NounMetadata to NamespacedMetadata for isDeleted check
           if (!noun.metadata || !isDeleted(noun.metadata as any)) {
             continue // Not deleted, skip
           }

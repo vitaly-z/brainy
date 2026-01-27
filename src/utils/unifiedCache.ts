@@ -2,7 +2,7 @@
  * UnifiedCache - Single cache for both HNSW and MetadataIndex
  * Prevents resource competition with cost-aware eviction
  *
- * Features (v3.36.0+):
+ * Features:
  * - Adaptive sizing: Automatically scales from 2GB to 128GB+ based on available memory
  * - Container-aware: Detects Docker/K8s limits (cgroups v1/v2)
  * - Environment detection: Production vs development allocation strategies
@@ -67,14 +67,14 @@ export class UnifiedCache {
   private readonly maxSize: number
   private readonly config: UnifiedCacheConfig
 
-  // Memory management (v3.36.0+)
+  // Memory management
   private readonly memoryInfo: MemoryInfo
   private readonly allocationStrategy: CacheAllocationStrategy
   private memoryPressureCheckTimer: NodeJS.Timeout | null = null
   private lastMemoryWarning = 0
 
   constructor(config: UnifiedCacheConfig = {}) {
-    // Adaptive cache sizing (v3.36.0+)
+    // Adaptive cache sizing
     const recommendation = getRecommendedCacheConfig({
       manualSize: config.maxSize,
       minSize: config.minSize,
@@ -85,7 +85,7 @@ export class UnifiedCache {
     this.allocationStrategy = recommendation.allocation
     this.maxSize = recommendation.allocation.cacheSize
 
-    // Log allocation decision (v3.36.0+: includes model memory)
+    // Log allocation decision (includes model memory)
     prodLog.info(
       `UnifiedCache initialized: ${formatBytes(this.maxSize)} ` +
       `(${this.allocationStrategy.environment} mode, ` +
@@ -113,7 +113,7 @@ export class UnifiedCache {
     this.config = {
       enableRequestCoalescing: true,
       enableFairnessCheck: true,
-      fairnessCheckInterval: 30000,  // Check fairness every 30 seconds (v3.40.2: was 60s)
+      fairnessCheckInterval: 30000,  // Check fairness every 30 seconds (was 60s)
       persistPatterns: true,
       enableMemoryMonitoring: true,
       memoryCheckInterval: 30000,  // Check memory every 30s
@@ -175,7 +175,7 @@ export class UnifiedCache {
   }
 
   /**
-   * Synchronous cache lookup (v3.36.0+)
+   * Synchronous cache lookup
    * Returns cached data immediately or undefined if not cached
    * Use for sync fast path optimization - zero async overhead
    */
@@ -232,7 +232,7 @@ export class UnifiedCache {
     this.typeAccessCounts[type]++
     this.totalAccessCount++
 
-    // Proactive fairness check (v3.40.2): Check immediately if adding to a dominant type
+    // Proactive fairness check: Check immediately if adding to a dominant type
     // This prevents imbalance formation instead of reacting to it
     if (this.config.enableFairnessCheck && this.cache.size > 10) {
       this.checkProactiveFairness(type)
@@ -341,7 +341,7 @@ export class UnifiedCache {
       other: typeSizes.other / totalSize
     }
 
-    // Check for starvation (v3.40.2: more aggressive - 70% cache with <15% accesses)
+    // Check for starvation (more aggressive - 70% cache with <15% accesses)
     // Previous: 90% cache, <10% access (too lenient, caused thrashing)
     for (const type of ['hnsw', 'metadata', 'embedding', 'other'] as const) {
       if (sizeRatios[type] > 0.7 && accessRatios[type] < 0.15) {
@@ -352,7 +352,7 @@ export class UnifiedCache {
   }
 
   /**
-   * Proactive fairness check (v3.40.2)
+   * Proactive fairness check
    * Called immediately when adding items to prevent imbalance formation
    * Uses same thresholds as periodic check but runs on-demand
    */
@@ -391,7 +391,7 @@ export class UnifiedCache {
     // Sort by score (lower is worse)
     candidates.sort((a, b) => a[1] - b[1])
 
-    // Evict bottom 50% of this type (v3.40.2: was 20%, too slow to prevent thrashing)
+    // Evict bottom 50% of this type (was 20%, too slow to prevent thrashing)
     const evictCount = Math.max(1, Math.floor(candidates.length * 0.5))
 
     for (let i = 0; i < evictCount && i < candidates.length; i++) {
@@ -417,7 +417,7 @@ export class UnifiedCache {
 
   /**
    * Delete all items with keys starting with the given prefix
-   * v6.2.9: Added for VFS cache invalidation (fixes stale parent ID bug)
+   * Added for VFS cache invalidation (fixes stale parent ID bug)
    * @param prefix - The key prefix to match
    * @returns Number of items deleted
    */
@@ -526,7 +526,7 @@ export class UnifiedCache {
       totalAccessCount: this.totalAccessCount,
       hitRate,
 
-      // Memory management (v3.36.0+)
+      // Memory management
       memory: {
         available: this.memoryInfo.available,
         source: this.memoryInfo.source,

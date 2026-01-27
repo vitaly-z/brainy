@@ -99,7 +99,7 @@ export class NaturalLanguageProcessor {
   
   /**
    * Initialize embeddings for all NounTypes and VerbTypes
-   * PRODUCTION OPTIMIZATION (v3.33.0): Uses pre-computed type embeddings
+   * PRODUCTION OPTIMIZATION: Uses pre-computed type embeddings
    * Zero runtime cost - embeddings are loaded instantly from embedded data
    */
   private async initializeTypeEmbeddings(): Promise<void> {

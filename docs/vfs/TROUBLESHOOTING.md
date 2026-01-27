@@ -12,8 +12,8 @@
 **Root Cause:**
 The root directory entity exists but doesn't have the proper metadata structure.
 
-**Solution (v3.15.0+):**
-This issue has been fixed in v3.15.0. The VFS now:
+**Solution:**
+This issue has been fixed. The VFS now:
 1. Ensures root directory has `vfsType: 'directory'` metadata
 2. Adds compatibility layer for entities with malformed metadata
 3. Automatically repairs metadata on entity retrieval
@@ -21,17 +21,17 @@ This issue has been fixed in v3.15.0. The VFS now:
 **Manual Fix (if needed):**
 ```javascript
 // Force re-initialization of root directory
-await vfs.init()  // Will repair root if needed
+await vfs.init() // Will repair root if needed
 
 // Or manually update root entity
 const rootId = vfs.rootEntityId
 await brain.update({
-  id: rootId,
-  metadata: {
-    path: '/',
-    vfsType: 'directory',
-    // ... other metadata
-  }
+ id: rootId,
+ metadata: {
+ path: '/',
+ vfsType: 'directory',
+ // ... other metadata
+ }
 })
 ```
 
@@ -47,7 +47,7 @@ await brain.update({
 **Root Cause:**
 Contains relationships are missing between parent directories and files.
 
-**Solution (v3.15.0+):**
+**Solution:**
 This issue has been fixed. The VFS now:
 1. Creates Contains relationships when writing new files
 2. Ensures Contains relationships exist when updating files
@@ -60,9 +60,9 @@ const parentId = await vfs.resolvePath('/directory')
 const fileId = await vfs.resolvePath('/directory/file.txt')
 
 await brain.relate({
-  from: parentId,
-  to: fileId,
-  type: VerbType.Contains
+ from: parentId,
+ to: fileId,
+ type: VerbType.Contains
 })
 ```
 
@@ -80,8 +80,8 @@ The VFS `init()` method wasn't called after getting the VFS instance.
 **Solution:**
 ```javascript
 // ✅ CORRECT
-const vfs = brain.vfs()  // Get instance
-await vfs.init()         // Initialize (REQUIRED!)
+const vfs = brain.vfs() // Get instance
+await vfs.init() // Initialize (REQUIRED!)
 
 // ❌ WRONG
 const vfs = brain.vfs()
@@ -104,15 +104,15 @@ Using in-memory storage instead of persistent storage.
 ```javascript
 // ✅ Use persistent storage
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',  // Persistent
-    path: './brainy-data'
-  }
+ storage: {
+ type: 'filesystem', // Persistent
+ path: './brainy-data'
+ }
 })
 
 // ❌ Don't use memory for production
 const brain = new Brainy({
-  storage: { type: 'memory' }  // Data lost on restart!
+ storage: { type: 'memory' } // Data lost on restart!
 })
 ```
 
@@ -136,7 +136,7 @@ const children = await vfs.getDirectChildren('/directory')
 // ❌ WRONG - Path prefix matching causes recursion
 const allNodes = await brain.find({})
 const children = allNodes.filter(n =>
-  n.metadata.path.startsWith('/directory/'))  // Directory matches itself!
+ n.metadata.path.startsWith('/directory/')) // Directory matches itself!
 ```
 
 ---
@@ -153,13 +153,13 @@ Files aren't being properly embedded or indexed.
 **Solution:**
 ```javascript
 // Ensure files have content for embedding
-await vfs.writeFile('/doc.txt', 'Actual content here')  // Not empty!
+await vfs.writeFile('/doc.txt', 'Actual content here') // Not empty!
 
 // Use semantic search correctly
 const results = await vfs.search('machine learning', {
-  path: '/documents',  // Search within path
-  limit: 10,
-  type: 'file'
+ path: '/documents', // Search within path
+ limit: 10,
+ type: 'file'
 })
 ```
 
@@ -184,8 +184,8 @@ console.log('VFS type:', entity.metadata.vfsType)
 ```javascript
 const parentId = await vfs.resolvePath('/directory')
 const relations = await brain.getRelations({
-  from: parentId,
-  type: VerbType.Contains
+ from: parentId,
+ type: VerbType.Contains
 })
 console.log('Child count:', relations.length)
 ```
@@ -193,11 +193,11 @@ console.log('Child count:', relations.length)
 ### 4. Enable Debug Logging
 ```javascript
 const brain = new Brainy({
-  storage: { type: 'filesystem' },
-  logger: {
-    level: 'debug',
-    enabled: true
-  }
+ storage: { type: 'filesystem' },
+ logger: {
+ level: 'debug',
+ enabled: true
+ }
 })
 ```
 
@@ -209,11 +209,11 @@ const brain = new Brainy({
 ```javascript
 // Enable caching in VFS config
 const vfs = brain.vfs({
-  cache: {
-    enabled: true,
-    ttl: 300000,  // 5 minutes
-    maxSize: 1000
-  }
+ cache: {
+ enabled: true,
+ ttl: 300000, // 5 minutes
+ maxSize: 1000
+ }
 })
 ```
 
@@ -221,12 +221,12 @@ const vfs = brain.vfs({
 ```javascript
 // Write multiple files efficiently
 const files = [
-  { path: '/file1.txt', content: 'content1' },
-  { path: '/file2.txt', content: 'content2' }
+ { path: '/file1.txt', content: 'content1' },
+ { path: '/file2.txt', content: 'content2' }
 ]
 
 await Promise.all(
-  files.map(f => vfs.writeFile(f.path, f.content))
+ files.map(f => vfs.writeFile(f.path, f.content))
 )
 ```
 
@@ -234,8 +234,8 @@ await Promise.all(
 ```javascript
 // Don't traverse too deep
 const tree = await vfs.getTreeStructure('/', {
-  maxDepth: 3,  // Limit recursion
-  includeHidden: false
+ maxDepth: 3, // Limit recursion
+ includeHidden: false
 })
 ```
 

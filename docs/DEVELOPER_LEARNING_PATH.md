@@ -613,7 +613,7 @@ vfsFiles.forEach(f => {
 })
 
 // 3. VFS FILTERING IN KNOWLEDGE QUERIES
-console.log('\n🔍 Understanding VFS filtering (v4.4.0)...\n')
+console.log('\n🔍 Understanding VFS filtering...\n')
 
 // Create some knowledge entities
 const conceptId = await brain.add({
@@ -758,7 +758,7 @@ await brain.close()
 
 ### Key Concepts
 
-#### 1. **VFS Filtering Architecture (v4.4.0)**
+#### 1. **VFS Filtering Architecture**
 
 ```typescript
 // 🎯 DEFAULT BEHAVIOR: Clean Separation

@@ -24,11 +24,11 @@ Where:
 - `f` = number of fields for entity type
 - `t` = number of types (42 nouns, 127 verbs)
 
-### v5.11.1: brain.get() Metadata-Only Optimization
+### brain.get() Metadata-Only Optimization
 
 ✨ **Massive Performance Improvement**: `brain.get()` is now **76-81% faster** by default!
 
-| Operation | Before (v5.11.0) | After (v5.11.1) | Speedup | Use Case |
+| Operation | Before | After | Speedup | Use Case |
 |-----------|------------------|-----------------|---------|----------|
 | **brain.get() (metadata-only)** | 43ms, 6KB | **10ms, 300 bytes** | **76-81%** | VFS, existence checks, metadata |
 | **brain.get({ includeVectors: true })** | 43ms, 6KB | 43ms, 6KB | 0% | Similarity calculations |
@@ -308,7 +308,7 @@ const results = await Promise.all(searchPromises)
 - ✅ **Horizontally Scalable**: Stateless operations support clustering
 - ✅ **Zero Stubs**: Every line of code is production-ready
 
-## Lazy Loading Performance (v5.7.7+)
+## Lazy Loading Performance
 
 Brainy supports two initialization modes for optimal performance across different use cases:
 
@@ -324,7 +324,7 @@ await brain.init()  // Rebuilds indexes during init (~500ms-3s for 10K entities)
 - First query: Instant (indexes already loaded)
 - Use case: Traditional applications, long-running servers
 
-### Mode 2: Lazy Loading (v5.7.7+)
+### Mode 2: Lazy Loading
 
 ```javascript
 const brain = new Brainy({ disableAutoRebuild: true })

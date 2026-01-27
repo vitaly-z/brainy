@@ -35,7 +35,7 @@ export class IntelligentImportAugmentation extends BaseAugmentation {
       enableCSV: true,
       enableExcel: true,
       enablePDF: true,
-      enableImage: true, // v5.2.0: Image handler enabled by default
+      enableImage: true, // Image handler enabled by default
       maxFileSize: 100 * 1024 * 1024, // 100MB default
       enableCache: true,
       cacheTTL: 24 * 60 * 60 * 1000, // 24 hours

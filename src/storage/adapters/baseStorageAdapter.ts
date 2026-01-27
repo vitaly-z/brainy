@@ -19,7 +19,7 @@ import { extractFieldNamesFromJson, mapToStandardField } from '../../utils/field
 import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
 
 // =============================================================================
-// Progressive Initialization Types (v7.3.0+)
+// Progressive Initialization Types
 // =============================================================================
 
 /**
@@ -29,7 +29,6 @@ import { getGlobalMutex, cleanupMutexes } from '../../utils/mutex.js'
  * fast cold starts in serverless environments while maintaining strict
  * validation for local development.
  *
- * @since v7.3.0
  *
  * | Mode | Description | Use Case |
  * |------|-------------|----------|
@@ -96,7 +95,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
 
   abstract getVerbMetadata(id: string): Promise<any | null>
 
-  // HNSW Index Persistence (v3.35.0+)
+  // HNSW Index Persistence
   // These methods enable HNSW index rebuilding after container restarts
 
   abstract getNounVector(id: string): Promise<number[] | null>
@@ -139,7 +138,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * relateMany(), and import operations to automatically adapt to storage capabilities.
    *
    * @returns Batch configuration optimized for this storage type
-   * @since v4.11.0
    */
   public getBatchConfig(): StorageBatchConfig {
     // Conservative defaults that work safely across all storage types
@@ -295,7 +293,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   }> = new Map()
 
   // =============================================
-  // Progressive Initialization State (v7.3.0+)
+  // Progressive Initialization State
   // =============================================
   // These properties enable fast cold starts in cloud environments
   // by deferring validation and count loading to background tasks.
@@ -308,7 +306,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * - `'strict'`: Always validate during init (traditional behavior)
    *
    * @protected
-   * @since v7.3.0
    */
   protected initMode: InitMode = 'auto'
 
@@ -319,7 +316,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * after the first successful write operation or background validation.
    *
    * @protected
-   * @since v7.3.0
    */
   protected bucketValidated = false
 
@@ -329,7 +325,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * Stored here so subsequent operations can fail fast with the same error.
    *
    * @protected
-   * @since v7.3.0
    */
   protected bucketValidationError: Error | null = null
 
@@ -340,7 +335,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * Operations work immediately; counts become accurate after background load.
    *
    * @protected
-   * @since v7.3.0
    */
   protected countsLoaded = false
 
@@ -350,7 +344,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * Useful for tests and diagnostics to ensure full initialization.
    *
    * @protected
-   * @since v7.3.0
    */
   protected backgroundTasksComplete = false
 
@@ -361,7 +354,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * before proceeding (e.g., in tests).
    *
    * @protected
-   * @since v7.3.0
    */
   protected backgroundInitPromise: Promise<void> | null = null
 
@@ -1057,7 +1049,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   protected readonly COUNT_CACHE_TTL = 60000 // 1 minute cache TTL
 
   // =============================================
-  // Smart Count Batching (v3.32.3+)
+  // Smart Count Batching
   // =============================================
 
   // Count batching state - mirrors statistics batching pattern
@@ -1112,7 +1104,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.incrementEntityCount(type)
-      // Smart batching (v3.32.3+): Adapts to storage type
+      // Smart batching: Adapts to storage type
       // - Cloud storage (GCS, S3): Batches 10 ops OR 5 seconds
       // - Local storage (File, Memory): Persists immediately
       await this.scheduleCountPersist()
@@ -1147,13 +1139,13 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-entity-${type}`, async () => {
       this.decrementEntityCount(type)
-      // Smart batching (v3.32.3+): Adapts to storage type
+      // Smart batching: Adapts to storage type
       await this.scheduleCountPersist()
     })
   }
 
   /**
-   * Increment verb count - O(1) operation (v4.1.2: now synchronous)
+   * Increment verb count - O(1) operation (now synchronous)
    * Protected by storage-specific mechanisms (mutex, distributed consensus, etc.)
    * @param type The verb type
    */
@@ -1168,7 +1160,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Thread-safe increment for verb counts (v4.1.2)
+   * Thread-safe increment for verb counts
    * Uses mutex for single-node, distributed consensus for multi-node
    * @param type The verb type
    */
@@ -1176,13 +1168,13 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-verb-${type}`, async () => {
       this.incrementVerbCount(type)
-      // Smart batching (v3.32.3+): Adapts to storage type
+      // Smart batching: Adapts to storage type
       await this.scheduleCountPersist()
     })
   }
 
   /**
-   * Decrement verb count - O(1) operation (v4.1.2: now synchronous)
+   * Decrement verb count - O(1) operation (now synchronous)
    * @param type The verb type
    */
   protected decrementVerbCount(type: string): void {
@@ -1203,20 +1195,20 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   }
 
   /**
-   * Thread-safe decrement for verb counts (v4.1.2)
+   * Thread-safe decrement for verb counts
    * @param type The verb type
    */
   protected async decrementVerbCountSafe(type: string): Promise<void> {
     const mutex = getGlobalMutex()
     await mutex.runExclusive(`count-verb-${type}`, async () => {
       this.decrementVerbCount(type)
-      // Smart batching (v3.32.3+): Adapts to storage type
+      // Smart batching: Adapts to storage type
       await this.scheduleCountPersist()
     })
   }
 
   // =============================================
-  // Smart Batching Methods (v3.32.3+)
+  // Smart Batching Methods
   // =============================================
 
   /**
@@ -1235,7 +1227,7 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   }
 
   // =============================================
-  // Progressive Initialization Methods (v7.3.0+)
+  // Progressive Initialization Methods
   // =============================================
 
   /**
@@ -1254,7 +1246,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    *
    * @returns `true` if running in a detected cloud environment
    * @protected
-   * @since v7.3.0
    */
   protected detectCloudEnvironment(): boolean {
     return !!(
@@ -1274,7 +1265,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    *
    * @returns The resolved init mode (`'progressive'` or `'strict'`)
    * @protected
-   * @since v7.3.0
    */
   protected resolveInitMode(): 'progressive' | 'strict' {
     if (this.initMode === 'auto') {
@@ -1295,7 +1285,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * Always call `super.scheduleBackgroundInit()` first.
    *
    * @protected
-   * @since v7.3.0
    */
   protected scheduleBackgroundInit(): void {
     // Create a promise that tracks all background work
@@ -1320,7 +1309,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * The default implementation does nothing (for local storage adapters).
    *
    * @protected
-   * @since v7.3.0
    */
   protected async runBackgroundInit(): Promise<void> {
     // Default implementation: nothing to do for local storage
@@ -1348,7 +1336,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * ```
    *
    * @public
-   * @since v7.3.0
    */
   public async awaitBackgroundInit(): Promise<void> {
     if (this.backgroundInitPromise) {
@@ -1361,7 +1348,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    *
    * @returns `true` if all background tasks are complete
    * @public
-   * @since v7.3.0
    */
   public isBackgroundInitComplete(): boolean {
     return this.backgroundTasksComplete
@@ -1379,7 +1365,6 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    *
    * @throws Error if bucket validation fails
    * @protected
-   * @since v7.3.0
    */
   protected async ensureValidatedForWrite(): Promise<void> {
     // If already validated, nothing to do

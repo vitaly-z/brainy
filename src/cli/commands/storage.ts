@@ -1,5 +1,5 @@
 /**
- * 💾 Storage Management Commands - v4.0.0
+ * 💾 Storage Management Commands
  *
  * Modern interactive CLI for storage lifecycle, cost optimization, and management
  */

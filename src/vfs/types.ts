@@ -33,8 +33,8 @@ export interface VFSMetadata {
   name: string                    // Filename or directory name
   parent?: string                 // Parent directory entity ID
   vfsType: 'file' | 'directory' | 'symlink'
-  isVFS?: boolean                 // v4.3.3: Mark as VFS entity (internal, separates from knowledge graph)
-  isVFSEntity?: boolean           // v5.3.0: Explicit developer-facing flag for filtering VFS entities
+  isVFS?: boolean                 // Mark as VFS entity (internal, separates from knowledge graph)
+  isVFSEntity?: boolean           // Explicit developer-facing flag for filtering VFS entities
 
   // File attributes
   size: number                    // Size in bytes (0 for directories)
@@ -50,7 +50,7 @@ export interface VFSMetadata {
   accessed: number               // Last access timestamp (ms)
   modified: number               // Last modification timestamp (ms)
 
-  // Content storage strategy (v5.2.0: unified blob storage)
+  // Content storage strategy (unified blob storage)
   storage?: {
     type: 'blob'                 // All files now use BlobStorage (was 'inline'|'reference'|'chunked')
     hash: string                 // SHA-256 content hash from BlobStorage

@@ -18,7 +18,7 @@ export interface BrainyInterface<T = unknown> {
   init(): Promise<void>
 
   /**
-   * Promise that resolves when initialization is complete (v7.3.0+)
+   * Promise that resolves when initialization is complete
    * Can be awaited multiple times safely.
    */
   readonly ready: Promise<void>
@@ -29,12 +29,12 @@ export interface BrainyInterface<T = unknown> {
   readonly isInitialized: boolean
 
   /**
-   * Check if all initialization including background tasks is complete (v7.3.0+)
+   * Check if all initialization including background tasks is complete
    */
   isFullyInitialized(): boolean
 
   /**
-   * Wait for all background initialization tasks to complete (v7.3.0+)
+   * Wait for all background initialization tasks to complete
    * For cloud storage adapters, this waits for bucket validation and count sync.
    */
   awaitBackgroundInit(): Promise<void>

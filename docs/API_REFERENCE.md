@@ -26,16 +26,16 @@ import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
 // Initialize
 const brain = new Brainy({
-  storage: { type: 'filesystem', path: './brainy-data' },
-  model: { type: 'fast', precision: 'Q8' }
+ storage: { type: 'filesystem', path: './brainy-data' },
+ model: { type: 'fast', precision: 'Q8' }
 })
 await brain.init()
 
 // Add entities
 const id = await brain.add({
-  data: 'John Smith is a software engineer',
-  type: NounType.Person,
-  metadata: { role: 'engineer' }
+ data: 'John Smith is a software engineer',
+ type: NounType.Person,
+ metadata: { role: 'engineer' }
 })
 
 // Search
@@ -60,9 +60,9 @@ Creates a new Brainy instance.
 **Example:**
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'filesystem', options: { path: './data' } },
-  model: { type: 'accurate', precision: 'FP32' },
-  cache: { maxSize: 5000, ttl: 600000 }
+ storage: { type: 'filesystem', options: { path: './data' } },
+ model: { type: 'accurate', precision: 'FP32' },
+ cache: { maxSize: 5000, ttl: 600000 }
 })
 ```
 
@@ -90,8 +90,8 @@ Adds a new entity to the brain.
 - `id` - Custom ID (auto-generated if not provided)
 - `vector` - Pre-computed embedding vector
 - `service` - Service name for multi-tenancy
-- `confidence` - Type classification confidence (0-1) ✨ *New in v4.3.0*
-- `weight` - Entity importance/salience (0-1) ✨ *New in v4.3.0*
+- `confidence` - Type classification confidence (0-1) ✨
+- `weight` - Entity importance/salience (0-1) ✨
 - `writeOnly` - Skip validation for high-speed ingestion
 
 **Returns:** Entity ID
@@ -99,15 +99,15 @@ Adds a new entity to the brain.
 **Example:**
 ```typescript
 const id = await brain.add({
-  data: 'Important meeting notes from Q4 planning',
-  type: NounType.Document,
-  metadata: {
-    date: '2024-01-15',
-    author: 'John Smith',
-    tags: ['planning', 'Q4']
-  },
-  confidence: 0.95,  // High confidence in Document classification
-  weight: 0.85       // High importance
+ data: 'Important meeting notes from Q4 planning',
+ type: NounType.Document,
+ metadata: {
+ date: '2024-01-15',
+ author: 'John Smith',
+ tags: ['planning', 'Q4']
+ },
+ confidence: 0.95, // High confidence in Document classification
+ weight: 0.85 // High importance
 })
 ```
 
@@ -116,18 +116,18 @@ const id = await brain.add({
 ### `async get(id: string, options?: GetOptions): Promise<Entity | null>`
 Retrieves an entity by ID.
 
-✨ **v5.11.1 Performance Optimization**:
+✨ **Performance Optimization**:
 - **Default (metadata-only)**: 76-81% faster, 95% less bandwidth - perfect for VFS, existence checks, metadata access
 - **Opt-in vectors**: Use `{ includeVectors: true }` when computing similarity
 
 **Parameters:**
 - `id` - Entity ID
 - `options` (optional):
-  - `includeVectors?: boolean` - Include 384-dim vectors (default: false for 76-81% speedup)
+ - `includeVectors?: boolean` - Include 384-dim vectors (default: false for 76-81% speedup)
 
 **Returns:** Entity object or null if not found
 
-**Entity Properties:** ✨ *Updated in v4.3.0, v5.11.1*
+**Entity Properties:**
 - `id` - Unique identifier
 - `type` - NounType classification
 - `data` - Original content
@@ -144,9 +144,9 @@ Retrieves an entity by ID.
 // Perfect for VFS, metadata access, existence checks
 const entity = await brain.get('uuid-1234')
 if (entity) {
-  console.log(entity.type)        // NounType.Document
-  console.log(entity.metadata)    // { date: '2024-01-15', ... }
-  console.log(entity.vector)      // [] (empty - not loaded for performance)
+ console.log(entity.type) // NounType.Document
+ console.log(entity.metadata) // { date: '2024-01-15', ... }
+ console.log(entity.vector) // [] (empty - not loaded for performance)
 }
 ```
 
@@ -155,8 +155,8 @@ if (entity) {
 // Use when computing similarity on this specific entity
 const entity = await brain.get('uuid-1234', { includeVectors: true })
 if (entity) {
-  console.log(entity.vector.length)  // 384 (full embeddings loaded)
-  // Now can use for similarity calculations
+ console.log(entity.vector.length) // 384 (full embeddings loaded)
+ // Now can use for similarity calculations
 }
 ```
 
@@ -172,17 +172,17 @@ Updates an existing entity.
 - `metadata` - New or partial metadata
 - `merge` - Merge metadata (true) or replace (false), default: true
 - `vector` - New embedding vector
-- `confidence` - Update type classification confidence ✨ *New in v4.3.0*
-- `weight` - Update entity importance/salience ✨ *New in v4.3.0*
+- `confidence` - Update type classification confidence ✨
+- `weight` - Update entity importance/salience ✨
 
 **Example:**
 ```typescript
 await brain.update({
-  id: 'uuid-1234',
-  metadata: { status: 'reviewed' },
-  confidence: 0.98,  // Increase confidence after review
-  weight: 0.90,      // Boost importance
-  merge: true        // Keeps existing metadata, adds status
+ id: 'uuid-1234',
+ metadata: { status: 'reviewed' },
+ confidence: 0.98, // Increase confidence after review
+ weight: 0.90, // Boost importance
+ merge: true // Keeps existing metadata, adds status
 })
 ```
 
@@ -224,12 +224,12 @@ Creates a relationship between two entities.
 **Example:**
 ```typescript
 const relationId = await brain.relate({
-  from: 'person-123',
-  to: 'org-456',
-  type: VerbType.WorksWith,
-  weight: 0.95,
-  metadata: { since: '2020-01-01' },
-  bidirectional: true
+ from: 'person-123',
+ to: 'org-456',
+ type: VerbType.WorksWith,
+ weight: 0.95,
+ metadata: { since: '2020-01-01' },
+ bidirectional: true
 })
 ```
 
@@ -263,9 +263,9 @@ Gets relationships for entities.
 ```typescript
 // Get all relationships from an entity
 const relations = await brain.getRelations({
-  from: 'person-123',
-  type: [VerbType.WorksWith, VerbType.ReportsTo],
-  limit: 50
+ from: 'person-123',
+ type: [VerbType.WorksWith, VerbType.ReportsTo],
+ limit: 50
 })
 ```
 
@@ -298,13 +298,13 @@ Adds multiple entities in batch.
 **Example:**
 ```typescript
 const result = await brain.addMany({
-  items: [
-    { data: 'Doc 1', type: NounType.Document },
-    { data: 'Doc 2', type: NounType.Document },
-    { data: 'Doc 3', type: NounType.Document }
-  ],
-  parallel: true,
-  onProgress: (done, total) => console.log(`${done}/${total}`)
+ items: [
+ { data: 'Doc 1', type: NounType.Document },
+ { data: 'Doc 2', type: NounType.Document },
+ { data: 'Doc 3', type: NounType.Document }
+ ],
+ parallel: true,
+ onProgress: (done, total) => console.log(`${done}/${total}`)
 })
 
 console.log(`Added: ${result.successful.length}`)
@@ -325,12 +325,12 @@ Updates multiple entities in batch.
 **Example:**
 ```typescript
 const result = await brain.updateMany({
-  updates: ids.map(id => ({
-    id,
-    metadata: { processed: true },
-    merge: true
-  })),
-  parallel: true
+ updates: ids.map(id => ({
+ id,
+ metadata: { processed: true },
+ merge: true
+ })),
+ parallel: true
 })
 ```
 
@@ -350,14 +350,14 @@ Deletes multiple entities.
 ```typescript
 // Delete specific IDs
 await brain.deleteMany({
-  ids: ['id1', 'id2', 'id3']
+ ids: ['id1', 'id2', 'id3']
 })
 
 // Delete by type
 await brain.deleteMany({
-  type: NounType.Document,
-  where: { status: 'draft' },
-  limit: 100
+ type: NounType.Document,
+ where: { status: 'draft' },
+ limit: 100
 })
 ```
 
@@ -375,11 +375,11 @@ Creates multiple relationships in batch.
 **Example:**
 ```typescript
 const result = await brain.relateMany({
-  relations: [
-    { from: 'a', to: 'b', type: VerbType.RelatedTo },
-    { from: 'b', to: 'c', type: VerbType.DependsOn },
-    { from: 'c', to: 'a', type: VerbType.References }
-  ]
+ relations: [
+ { from: 'a', to: 'b', type: VerbType.RelatedTo },
+ { from: 'b', to: 'c', type: VerbType.DependsOn },
+ { from: 'c', to: 'a', type: VerbType.References }
+ ]
 })
 ```
 
@@ -406,7 +406,7 @@ Universal search with Triple Intelligence fusion.
 
 **Returns:** Array of Result objects with scores
 
-**Result Properties:** ✨ *Enhanced in v4.3.0*
+**Result Properties:** ✨
 - `id` - Entity ID
 - `score` - Relevance score (0-1)
 - `type` - Entity type (flattened for convenience) *Enhanced*
@@ -422,38 +422,38 @@ Universal search with Triple Intelligence fusion.
 // Natural language search
 const results = await brain.find('recent product launches')
 
-// NEW in v4.3.0: Direct access to flattened fields
-console.log(results[0].metadata)    // Direct access (convenient!)
-console.log(results[0].confidence)  // Type confidence
-console.log(results[0].weight)      // Entity importance
+// Direct access to flattened fields
+console.log(results[0].metadata) // Direct access (convenient!)
+console.log(results[0].confidence) // Type confidence
+console.log(results[0].weight) // Entity importance
 
 // Backward compatible: Nested access still works
-console.log(results[0].entity.metadata)  // Also works
+console.log(results[0].entity.metadata) // Also works
 
 // Structured search with fusion
 const results = await brain.find({
-  query: 'machine learning',
-  type: [NounType.Document, NounType.Project],
-  where: { year: 2024 },
-  connected: {
-    to: 'research-dept',
-    via: VerbType.CreatedBy
-  },
-  fusion: {
-    strategy: 'adaptive',
-    weights: { vector: 0.5, graph: 0.3, field: 0.2 }
-  },
-  limit: 20,
-  explain: true
+ query: 'machine learning',
+ type: [NounType.Document, NounType.Project],
+ where: { year: 2024 },
+ connected: {
+ to: 'research-dept',
+ via: VerbType.CreatedBy
+ },
+ fusion: {
+ strategy: 'adaptive',
+ weights: { vector: 0.5, graph: 0.3, field: 0.2 }
+ },
+ limit: 20,
+ explain: true
 })
 
 // Access results with clean, predictable patterns
 for (const result of results) {
-  console.log(`Score: ${result.score}`)
-  console.log(`Type: ${result.type}`)
-  console.log(`Confidence: ${result.confidence ?? 'N/A'}`)
-  console.log(`Weight: ${result.weight ?? 'N/A'}`)
-  console.log(`Metadata:`, result.metadata)
+ console.log(`Score: ${result.score}`)
+ console.log(`Type: ${result.type}`)
+ console.log(`Confidence: ${result.confidence ?? 'N/A'}`)
+ console.log(`Weight: ${result.weight ?? 'N/A'}`)
+ console.log(`Metadata:`, result.metadata)
 }
 ```
 
@@ -469,29 +469,29 @@ Finds similar entities using vector similarity.
 - `type` - Filter by type(s)
 - `where` - Metadata filters
 
-**Returns:** Array of Result objects (same structure as `find()`) ✨ *Enhanced in v4.3.0*
+**Returns:** Array of Result objects (same structure as `find()`) ✨
 
 **Example:**
 ```typescript
 const similar = await brain.similar({
-  to: 'doc-123',
-  limit: 5,
-  threshold: 0.8,
-  type: NounType.Document
+ to: 'doc-123',
+ limit: 5,
+ threshold: 0.8,
+ type: NounType.Document
 })
 
-// NEW in v4.3.0: Access flattened fields directly
+// Access flattened fields directly
 for (const result of similar) {
-  console.log(`Similarity: ${result.score}`)
-  console.log(`Type: ${result.type}`)           // Flattened
-  console.log(`Confidence: ${result.confidence}`) // Flattened
-  console.log(`Metadata:`, result.metadata)     // Flattened
+ console.log(`Similarity: ${result.score}`)
+ console.log(`Type: ${result.type}`) // Flattened
+ console.log(`Confidence: ${result.confidence}`) // Flattened
+ console.log(`Metadata:`, result.metadata) // Flattened
 }
 ```
 
 ---
 
-### `async embed(data: any): Promise<Vector>` ✨ *v7.1.0*
+### `async embed(data: any): Promise<Vector>`
 Generates an embedding vector from data.
 
 **Parameters:**
@@ -507,7 +507,7 @@ console.log(vector.length) // 384
 
 ---
 
-### `async embedBatch(texts: string[]): Promise<number[][]>` ✨ *v7.1.0, Optimized v7.9.0*
+### `async embedBatch(texts: string[]): Promise<number[][]>`
 Batch embed multiple texts using native WASM batch API (single forward pass).
 
 **Parameters:**
@@ -515,22 +515,22 @@ Batch embed multiple texts using native WASM batch API (single forward pass).
 
 **Returns:** Array of 384-dimensional vectors
 
-> **v7.9.0**: Uses the engine's native `embed_batch()` for a single model forward pass instead of N individual `embed()` calls.
+> Uses the engine's native `embed_batch()` for a single model forward pass instead of N individual `embed()` calls.
 
 **Example:**
 ```typescript
 const embeddings = await brain.embedBatch([
-  'Machine learning is fascinating',
-  'Deep neural networks',
-  'Natural language processing'
+ 'Machine learning is fascinating',
+ 'Deep neural networks',
+ 'Natural language processing'
 ])
-console.log(embeddings.length)    // 3
+console.log(embeddings.length) // 3
 console.log(embeddings[0].length) // 384
 ```
 
 ---
 
-### `async similarity(textA: string, textB: string): Promise<number>` ✨ *v7.1.0*
+### `async similarity(textA: string, textB: string): Promise<number>`
 Calculate semantic similarity between two texts.
 
 **Parameters:**
@@ -542,15 +542,15 @@ Calculate semantic similarity between two texts.
 **Example:**
 ```typescript
 const score = await brain.similarity(
-  'The cat sat on the mat',
-  'A feline was resting on the rug'
+ 'The cat sat on the mat',
+ 'A feline was resting on the rug'
 )
 console.log(score) // ~0.85 (high semantic similarity)
 ```
 
 ---
 
-### `async neighbors(entityId: string, options?): Promise<string[]>` ✨ *v7.1.0*
+### `async neighbors(entityId: string, options?): Promise<string[]>`
 Get graph neighbors of an entity.
 
 **Parameters:**
@@ -569,20 +569,20 @@ const neighbors = await brain.neighbors(entityId)
 
 // Get outgoing connections only
 const outgoing = await brain.neighbors(entityId, {
-  direction: 'outgoing',
-  limit: 10
+ direction: 'outgoing',
+ limit: 10
 })
 
 // Multi-hop traversal
 const extended = await brain.neighbors(entityId, {
-  depth: 2,
-  direction: 'both'
+ depth: 2,
+ direction: 'both'
 })
 ```
 
 ---
 
-### `async findDuplicates(options?): Promise<DuplicateResult[]>` ✨ *v7.1.0*
+### `async findDuplicates(options?): Promise<DuplicateResult[]>`
 Find semantic duplicates in the database.
 
 **Parameters:**
@@ -598,23 +598,23 @@ Find semantic duplicates in the database.
 const duplicates = await brain.findDuplicates()
 
 for (const group of duplicates) {
-  console.log('Original:', group.entity.id)
-  for (const dup of group.duplicates) {
-    console.log(`  Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
-  }
+ console.log('Original:', group.entity.id)
+ for (const dup of group.duplicates) {
+ console.log(` Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
+ }
 }
 
 // Find person duplicates with higher threshold
 const personDupes = await brain.findDuplicates({
-  type: NounType.PERSON,
-  threshold: 0.9,
-  limit: 50
+ type: NounType.PERSON,
+ threshold: 0.9,
+ limit: 50
 })
 ```
 
 ---
 
-### `async indexStats(): Promise<IndexStats>` ✨ *v7.1.0*
+### `async indexStats(): Promise<IndexStats>`
 Get comprehensive index statistics.
 
 **Returns:**
@@ -639,7 +639,7 @@ console.log(`Fields: ${stats.metadataFields.join(', ')}`)
 
 ---
 
-### `async cluster(options?): Promise<ClusterResult[]>` ✨ *v7.1.0*
+### `async cluster(options?): Promise<ClusterResult[]>`
 Cluster entities by semantic similarity.
 
 Groups entities into clusters based on their embedding similarity using
@@ -660,23 +660,23 @@ a greedy algorithm with HNSW-based neighbor lookup.
 const clusters = await brain.cluster()
 
 for (const cluster of clusters) {
-  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+ console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
 }
 
 // Find document clusters with centroids
 const docClusters = await brain.cluster({
-  type: NounType.Document,
-  threshold: 0.85,
-  minClusterSize: 3,
-  includeCentroid: true
+ type: NounType.Document,
+ threshold: 0.85,
+ minClusterSize: 3,
+ includeCentroid: true
 })
 
 // Use centroids for cluster comparison
 for (const cluster of docClusters) {
-  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
-  if (cluster.centroid) {
-    console.log(`  Centroid dimensions: ${cluster.centroid.length}`)
-  }
+ console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+ if (cluster.centroid) {
+ console.log(` Centroid dimensions: ${cluster.centroid.length}`)
+ }
 }
 ```
 
@@ -719,13 +719,13 @@ AI-powered suggestions based on current data.
 **Example:**
 ```typescript
 const suggestions = await brain.suggest({
-  context: 'product development',
-  limit: 5
+ context: 'product development',
+ limit: 5
 })
 
 // Use suggestions
 for (const query of suggestions.queries) {
-  console.log(`Try searching: ${query}`)
+ console.log(`Try searching: ${query}`)
 }
 ```
 
@@ -826,10 +826,10 @@ Persistent local storage using the filesystem.
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    rootDirectory: './brainy-data'
-  }
+ storage: {
+ type: 'filesystem',
+ rootDirectory: './brainy-data'
+ }
 })
 ```
 
@@ -838,15 +838,15 @@ Scalable cloud storage with S3.
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    s3Storage: {
-      bucketName: 'my-bucket',
-      region: 'us-east-1',
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'my-bucket',
+ region: 'us-east-1',
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ }
+ }
 })
 ```
 
@@ -855,15 +855,15 @@ Scalable cloud storage with Cloudflare R2 (S3-compatible).
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'r2',
-    r2Storage: {
-      bucketName: 'my-bucket',
-      accountId: process.env.CF_ACCOUNT_ID,
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 'r2',
+ r2Storage: {
+ bucketName: 'my-bucket',
+ accountId: process.env.CF_ACCOUNT_ID,
+ accessKeyId: process.env.R2_ACCESS_KEY_ID,
+ secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+ }
+ }
 })
 ```
 
@@ -881,42 +881,42 @@ const brain = new Brainy({
 With Application Default Credentials (Cloud Run/GCE):
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',  // ⚠️ Must be 'gcs-native' for native SDK
-    gcsNativeStorage: {
-      bucketName: 'my-bucket'
-      // No credentials needed - ADC automatic!
-    }
-  }
+ storage: {
+ type: 'gcs-native', // ⚠️ Must be 'gcs-native' for native SDK
+ gcsNativeStorage: {
+ bucketName: 'my-bucket'
+ // No credentials needed - ADC automatic!
+ }
+ }
 })
 ```
 
 With Service Account Key File:
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',
-    gcsNativeStorage: {
-      bucketName: 'my-bucket',
-      keyFilename: '/path/to/service-account.json'
-    }
-  }
+ storage: {
+ type: 'gcs-native',
+ gcsNativeStorage: {
+ bucketName: 'my-bucket',
+ keyFilename: '/path/to/service-account.json'
+ }
+ }
 })
 ```
 
 With Service Account Credentials Object:
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',
-    gcsNativeStorage: {
-      bucketName: 'my-bucket',
-      credentials: {
-        client_email: 'service@project.iam.gserviceaccount.com',
-        private_key: process.env.GCS_PRIVATE_KEY
-      }
-    }
-  }
+ storage: {
+ type: 'gcs-native',
+ gcsNativeStorage: {
+ bucketName: 'my-bucket',
+ credentials: {
+ client_email: 'service@project.iam.gserviceaccount.com',
+ private_key: process.env.GCS_PRIVATE_KEY
+ }
+ }
+ }
 })
 ```
 
@@ -925,12 +925,12 @@ const brain = new Brainy({
 You can omit the `type` field and let Brainy auto-detect based on the config object:
 ```typescript
 const brain = new Brainy({
-  storage: {
-    gcsNativeStorage: {
-      bucketName: 'my-bucket'
-      // type defaults to 'auto', will use native SDK
-    }
-  }
+ storage: {
+ gcsNativeStorage: {
+ bucketName: 'my-bucket'
+ // type defaults to 'auto', will use native SDK
+ }
+ }
 })
 ```
 
@@ -939,16 +939,16 @@ GCS using HMAC keys for S3-compatible access. **Consider migrating to 'gcs-nativ
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs',  // ⚠️ Must be 'gcs' for S3-compatible mode
-    gcsStorage: {  // ⚠️ Must use 'gcsStorage' (not 'gcsNativeStorage')
-      bucketName: 'my-bucket',
-      region: 'us-central1',
-      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY,
-      endpoint: 'https://storage.googleapis.com'
-    }
-  }
+ storage: {
+ type: 'gcs', // ⚠️ Must be 'gcs' for S3-compatible mode
+ gcsStorage: { // ⚠️ Must use 'gcsStorage' (not 'gcsNativeStorage')
+ bucketName: 'my-bucket',
+ region: 'us-central1',
+ accessKeyId: process.env.GCS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY,
+ endpoint: 'https://storage.googleapis.com'
+ }
+ }
 })
 ```
 
@@ -956,25 +956,25 @@ const brain = new Brainy({
 ```typescript
 // ❌ WRONG - type/config mismatch (will fall back to memory storage)
 {
-  type: 'gcs',
-  gcsNativeStorage: { bucketName: 'my-bucket' }
+ type: 'gcs',
+ gcsNativeStorage: { bucketName: 'my-bucket' }
 }
 
 // ❌ WRONG - type/config mismatch (will fall back to memory storage)
 {
-  type: 'gcs-native',
-  gcsStorage: { bucketName: 'my-bucket', accessKeyId: '...', secretAccessKey: '...' }
+ type: 'gcs-native',
+ gcsStorage: { bucketName: 'my-bucket', accessKeyId: '...', secretAccessKey: '...' }
 }
 
 // ✅ CORRECT - type matches config object
 {
-  type: 'gcs-native',
-  gcsNativeStorage: { bucketName: 'my-bucket' }
+ type: 'gcs-native',
+ gcsNativeStorage: { bucketName: 'my-bucket' }
 }
 
 // ✅ CORRECT - auto-detection
 {
-  gcsNativeStorage: { bucketName: 'my-bucket' }
+ gcsNativeStorage: { bucketName: 'my-bucket' }
 }
 ```
 
@@ -995,51 +995,51 @@ If you're currently using `type: 'gcs'` with HMAC keys, migrating to `type: 'gcs
 **Before (S3-Compatible with HMAC):**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs',              // ⚠️ Old: S3-compatible mode
-    gcsStorage: {              // ⚠️ Old: HMAC credentials
-      bucketName: 'my-bucket',
-      accessKeyId: process.env.GCS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 'gcs', // ⚠️ Old: S3-compatible mode
+ gcsStorage: { // ⚠️ Old: HMAC credentials
+ bucketName: 'my-bucket',
+ accessKeyId: process.env.GCS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.GCS_SECRET_ACCESS_KEY
+ }
+ }
 })
 ```
 
 **After (Native SDK with ADC):**
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs-native',        // ✅ New: Native SDK mode
-    gcsNativeStorage: {        // ✅ New: ADC authentication
-      bucketName: 'my-bucket'
-      // ADC handles authentication automatically
-    }
-  }
+ storage: {
+ type: 'gcs-native', // ✅ New: Native SDK mode
+ gcsNativeStorage: { // ✅ New: ADC authentication
+ bucketName: 'my-bucket'
+ // ADC handles authentication automatically
+ }
+ }
 })
 ```
 
 **⚠️ Important Migration Notes:**
 
 1. **Change BOTH the type AND the config object:**
-   - `type: 'gcs'` → `type: 'gcs-native'`
-   - `gcsStorage` → `gcsNativeStorage`
+ - `type: 'gcs'` → `type: 'gcs-native'`
+ - `gcsStorage` → `gcsNativeStorage`
 
 2. **Remove HMAC keys** - Not needed with ADC:
-   - Remove `accessKeyId`
-   - Remove `secretAccessKey`
-   - Remove `region` (optional with native SDK)
+ - Remove `accessKeyId`
+ - Remove `secretAccessKey`
+ - Remove `region` (optional with native SDK)
 
 3. **Set up ADC in your environment:**
-   ```bash
-   # Cloud Run/GCE: Nothing needed, ADC is automatic
+ ```bash
+ # Cloud Run/GCE: Nothing needed, ADC is automatic
 
-   # Local development:
-   gcloud auth application-default login
+ # Local development:
+ gcloud auth application-default login
 
-   # Or set GOOGLE_APPLICATION_CREDENTIALS:
-   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-   ```
+ # Or set GOOGLE_APPLICATION_CREDENTIALS:
+ export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+ ```
 
 **Data Migration:**
 ✅ **No data migration required!** Both adapters use the same path structure:
@@ -1066,9 +1066,9 @@ Sets configuration value.
 **Example:**
 ```typescript
 await config.set({
-  key: 'api.key',
-  value: 'secret-key-123',
-  encrypt: true
+ key: 'api.key',
+ value: 'secret-key-123',
+ encrypt: true
 })
 ```
 
@@ -1085,9 +1085,9 @@ Gets configuration value.
 **Example:**
 ```typescript
 const apiKey = await config.get({
-  key: 'api.key',
-  decrypt: true,
-  defaultValue: 'default-key'
+ key: 'api.key',
+ decrypt: true,
+ defaultValue: 'default-key'
 })
 ```
 
@@ -1137,8 +1137,8 @@ Creates backup of all data.
 **Example:**
 ```typescript
 const backup = await data.backup({
-  includeVectors: true,
-  compress: true
+ includeVectors: true,
+ compress: true
 })
 // Save backup to file
 fs.writeFileSync('backup.json', JSON.stringify(backup))
@@ -1159,9 +1159,9 @@ Restores from backup.
 ```typescript
 const backup = JSON.parse(fs.readFileSync('backup.json'))
 await data.restore({
-  backup,
-  merge: false,
-  overwrite: true
+ backup,
+ merge: false,
+ overwrite: true
 })
 ```
 
@@ -1178,8 +1178,8 @@ Clears specified data types.
 **Example:**
 ```typescript
 await data.clear({
-  entities: true,
-  relations: true
+ entities: true,
+ relations: true
 })
 ```
 
@@ -1216,44 +1216,44 @@ const csvResult = await brain.import('customers.csv')
 
 // Import Excel workbook
 const excelResult = await brain.import('sales-data.xlsx', {
-  excelSheets: ['Q1', 'Q2']  // Import specific sheets
+ excelSheets: ['Q1', 'Q2'] // Import specific sheets
 })
 
 // Import PDF with table extraction
 const pdfResult = await brain.import('report.pdf', {
-  pdfExtractTables: true
+ pdfExtractTables: true
 })
 
 // Import data array
 const dataResult = await brain.import([
-  { name: 'Alice', role: 'Engineer' },
-  { name: 'Bob', role: 'Designer' }
+ { name: 'Alice', role: 'Engineer' },
+ { name: 'Bob', role: 'Designer' }
 ], {
-  batchSize: 100,
-  relationships: true  // Auto-extract relationships
+ batchSize: 100,
+ relationships: true // Auto-extract relationships
 })
 
 // Import with custom CSV delimiter
 const tsvResult = await brain.import('data.tsv', {
-  format: 'csv',
-  csvDelimiter: '\t'
+ format: 'csv',
+ csvDelimiter: '\t'
 })
 ```
 
 **Returns:**
 ```typescript
 {
-  success: boolean
-  imported: number      // Number of items successfully imported
-  failed: number        // Number of items that failed
-  entityIds: string[]   // IDs of created entities
-  metadata: {
-    format: string      // Detected format
-    encoding?: string   // Detected encoding (CSV)
-    delimiter?: string  // Detected delimiter (CSV)
-    sheets?: string[]   // Processed sheets (Excel)
-    pageCount?: number  // Number of pages (PDF)
-  }
+ success: boolean
+ imported: number // Number of items successfully imported
+ failed: number // Number of items that failed
+ entityIds: string[] // IDs of created entities
+ metadata: {
+ format: string // Detected format
+ encoding?: string // Detected encoding (CSV)
+ delimiter?: string // Detected delimiter (CSV)
+ sheets?: string[] // Processed sheets (Excel)
+ pageCount?: number // Number of pages (PDF)
+ }
 }
 ```
 
@@ -1270,9 +1270,9 @@ Exports data in various formats.
 **Example:**
 ```typescript
 const exported = await data.export({
-  format: 'csv',
-  where: { type: NounType.Document },
-  includeVectors: false
+ format: 'csv',
+ where: { type: NounType.Document },
+ includeVectors: false
 })
 ```
 
@@ -1284,18 +1284,18 @@ Gets complete statistics about entities and relationships. All stats are **O(1) 
 **Returns:**
 ```typescript
 {
-  entities: {
-    total: number                      // Total entity count
-    byType: Record<string, number>     // Entity count by type
-  }
-  relationships: {
-    totalRelationships: number         // Total relationship/edge count
-    relationshipsByType: Record<string, number>  // Relationship count by type
-    uniqueSourceNodes: number          // Number of unique source entities
-    uniqueTargetNodes: number          // Number of unique target entities
-    totalNodes: number                 // Total unique entities in relationships
-  }
-  density: number  // Relationships per entity ratio
+ entities: {
+ total: number // Total entity count
+ byType: Record<string, number> // Entity count by type
+ }
+ relationships: {
+ totalRelationships: number // Total relationship/edge count
+ relationshipsByType: Record<string, number> // Relationship count by type
+ uniqueSourceNodes: number // Number of unique source entities
+ uniqueTargetNodes: number // Number of unique target entities
+ totalNodes: number // Total unique entities in relationships
+ }
+ density: number // Relationships per entity ratio
 }
 ```
 
@@ -1306,7 +1306,7 @@ const stats = brain.getStats()
 // Total counts (O(1) operations)
 const totalNouns = stats.entities.total
 const totalVerbs = stats.relationships.totalRelationships
-const totalRelations = stats.relationships.totalRelationships  // alias
+const totalRelations = stats.relationships.totalRelationships // alias
 
 // Counts by type (O(1) operations)
 const nounTypes = stats.entities.byType
@@ -1346,16 +1346,16 @@ Query entities with pagination.
 **Example:**
 ```typescript
 const result = await brain.query.entities({
-  type: NounType.Document,
-  where: { status: 'published' },
-  limit: 50
+ type: NounType.Document,
+ where: { status: 'published' },
+ limit: 50
 })
 
 // Get next page
 if (result.nextCursor) {
-  const nextPage = await brain.query.entities({
-    cursor: result.nextCursor
-  })
+ const nextPage = await brain.query.entities({
+ cursor: result.nextCursor
+ })
 }
 ```
 
@@ -1385,7 +1385,7 @@ Calculates similarity between items.
 **Example:**
 ```typescript
 const similarity = await neural.similar('doc1', 'doc2', {
-  explain: true
+ explain: true
 })
 ```
 
@@ -1405,8 +1405,8 @@ General purpose clustering.
 **Example:**
 ```typescript
 const clusters = await neural.clusters({
-  algorithm: 'kmeans',
-  k: 5
+ algorithm: 'kmeans',
+ k: 5
 })
 ```
 
@@ -1418,9 +1418,9 @@ Domain-specific clustering.
 **Example:**
 ```typescript
 const clusters = await neural.clustersByDomain({
-  domain: 'technology',
-  field: 'category',
-  maxClusters: 10
+ domain: 'technology',
+ field: 'category',
+ maxClusters: 10
 })
 ```
 
@@ -1439,9 +1439,9 @@ Detects anomalous entities.
 **Example:**
 ```typescript
 const outliers = await neural.outliers({
-  method: 'isolation',
-  threshold: 3.0,
-  returnScores: true
+ method: 'isolation',
+ threshold: 3.0,
+ returnScores: true
 })
 ```
 
@@ -1460,9 +1460,9 @@ Generates visualization data for entities.
 **Example:**
 ```typescript
 const vizData = await neural.visualize({
-  layout: 'force',
-  dimensions: 3,
-  includeEdges: true
+ layout: 'force',
+ dimensions: 3,
+ includeEdges: true
 })
 ```
 
@@ -1478,7 +1478,7 @@ Converts natural language to structured query.
 **Example:**
 ```typescript
 const structured = await nlp.processNaturalQuery(
-  "Find all documents about AI created last month"
+ "Find all documents about AI created last month"
 )
 // Returns structured query with type, time filters, etc.
 ```
@@ -1499,18 +1499,18 @@ Extracts entities from text using neural matching to NounTypes.
 **Example:**
 ```typescript
 const entities = await nlp.extract(
-  "John Smith from Microsoft visited New York on Jan 15",
-  {
-    types: [NounType.Person, NounType.Organization, NounType.Location],
-    confidence: 0.7,
-    neuralMatching: true
-  }
+ "John Smith from Microsoft visited New York on Jan 15",
+ {
+ types: [NounType.Person, NounType.Organization, NounType.Location],
+ confidence: 0.7,
+ neuralMatching: true
+ }
 )
 // Returns:
 // [
-//   { text: "John Smith", type: NounType.Person, confidence: 0.92 },
-//   { text: "Microsoft", type: NounType.Organization, confidence: 0.88 },
-//   { text: "New York", type: NounType.Location, confidence: 0.85 }
+// { text: "John Smith", type: NounType.Person, confidence: 0.92 },
+// { text: "Microsoft", type: NounType.Organization, confidence: 0.88 },
+// { text: "New York", type: NounType.Location, confidence: 0.85 }
 // ]
 ```
 
@@ -1531,17 +1531,17 @@ Analyzes text sentiment.
 **Example:**
 ```typescript
 const sentiment = await nlp.sentiment(
-  "The product quality is excellent but the price is too high",
-  {
-    granularity: 'aspect',
-    aspects: ['quality', 'price']
-  }
+ "The product quality is excellent but the price is too high",
+ {
+ granularity: 'aspect',
+ aspects: ['quality', 'price']
+ }
 )
 // Returns:
 // overall: { score: 0.2, label: 'mixed' }
 // aspects: {
-//   quality: { score: 0.9, magnitude: 0.8 },
-//   price: { score: -0.7, magnitude: 0.7 }
+// quality: { score: 0.9, magnitude: 0.8 },
+// price: { score: -0.7, magnitude: 0.7 }
 // }
 ```
 
@@ -1559,16 +1559,16 @@ Sets data source.
 **Example:**
 ```typescript
 async function* dataGenerator() {
-  for (let i = 0; i < 100; i++) {
-    yield { id: i, data: `Item ${i}` }
-  }
+ for (let i = 0; i < 100; i++) {
+ yield { id: i, data: `Item ${i}` }
+ }
 }
 
 brain.stream()
-  .source(dataGenerator())
-  .map(item => item.data)
-  .sink(console.log)
-  .run()
+ .source(dataGenerator())
+ .map(item => item.data)
+ .sink(console.log)
+ .run()
 ```
 
 ---
@@ -1616,14 +1616,14 @@ Sinks data to Brainy.
 **Example:**
 ```typescript
 brain.stream()
-  .source(dataSource)
-  .map(transform)
-  .batch(100)
-  .toBrainy({
-    type: NounType.Document,
-    metadata: { source: 'stream' }
-  })
-  .run()
+ .source(dataSource)
+ .map(transform)
+ .batch(100)
+ .toBrainy({
+ type: NounType.Document,
+ metadata: { source: 'stream' }
+ })
+ .run()
 ```
 
 ---
@@ -1665,56 +1665,56 @@ Executes the pipeline.
 
 ### Core Interfaces
 
-✨ *Updated in v4.3.0 - Added confidence/weight to Entity, flattened Result fields*
+✨ *Updated in Added confidence/weight to Entity, flattened Result fields*
 
 ```typescript
 interface Entity<T = any> {
-  id: string
-  vector: Vector
-  type: NounType
-  data?: any
-  metadata?: T
-  service?: string
-  createdAt: number
-  updatedAt?: number
-  confidence?: number  // NEW: Type classification confidence (0-1)
-  weight?: number      // NEW: Entity importance/salience (0-1)
+ id: string
+ vector: Vector
+ type: NounType
+ data?: any
+ metadata?: T
+ service?: string
+ createdAt: number
+ updatedAt?: number
+ confidence?: number // NEW: Type classification confidence (0-1)
+ weight?: number // NEW: Entity importance/salience (0-1)
 }
 
 interface Relation<T = any> {
-  id: string
-  from: string
-  to: string
-  type: VerbType
-  weight?: number
-  confidence?: number  // Relationship confidence
-  metadata?: T
-  evidence?: RelationEvidence  // Why this relationship exists
-  service?: string
-  createdAt: number
+ id: string
+ from: string
+ to: string
+ type: VerbType
+ weight?: number
+ confidence?: number // Relationship confidence
+ metadata?: T
+ evidence?: RelationEvidence // Why this relationship exists
+ service?: string
+ createdAt: number
 }
 
 interface Result<T = any> {
-  // Search metadata
-  id: string
-  score: number
+ // Search metadata
+ id: string
+ score: number
 
-  // NEW: Flattened entity fields for convenience
-  type?: NounType
-  metadata?: T
-  data?: any
-  confidence?: number
-  weight?: number
+ // NEW: Flattened entity fields for convenience
+ type?: NounType
+ metadata?: T
+ data?: any
+ confidence?: number
+ weight?: number
 
-  // Full entity (backward compatible)
-  entity: Entity<T>
+ // Full entity (backward compatible)
+ entity: Entity<T>
 
-  // Score explanation
-  explanation?: ScoreExplanation
+ // Score explanation
+ explanation?: ScoreExplanation
 }
 ```
 
-**Key Changes in v4.3.0:**
+**Key Changes:**
 - ✅ `Entity` now exposes `confidence` and `weight`
 - ✅ `Result` flattens commonly-used entity fields to top level
 - ✅ Direct access: `result.metadata` instead of `result.entity.metadata`
@@ -1767,7 +1767,7 @@ await brain.addMany({ items: documents })
 
 // ❌ Bad - individual adds in loop
 for (const doc of documents) {
-  await brain.add(doc) // Slow!
+ await brain.add(doc) // Slow!
 }
 ```
 
@@ -1775,18 +1775,18 @@ for (const doc of documents) {
 ```typescript
 // For high-speed ingestion
 await brain.add({
-  data: content,
-  type: NounType.Document,
-  writeOnly: true // Skip validation
+ data: content,
+ type: NounType.Document,
+ writeOnly: true // Skip validation
 })
 ```
 
 ### 5. Clean Up Resources
 ```typescript
 try {
-  // Your operations
+ // Your operations
 } finally {
-  await brain.close() // Always close
+ await brain.close() // Always close
 }
 ```
 
@@ -1819,22 +1819,22 @@ All methods validate parameters and throw descriptive errors:
 
 ```typescript
 try {
-  await brain.add({ data: '', type: NounType.Document })
+ await brain.add({ data: '', type: NounType.Document })
 } catch (error) {
-  // Error: "must provide either data or vector"
+ // Error: "must provide either data or vector"
 }
 
 try {
-  await brain.find({ limit: -1 })
+ await brain.find({ limit: -1 })
 } catch (error) {
-  // Error: "limit must be non-negative"
+ // Error: "limit must be non-negative"
 }
 
 try {
-  await brain.update({ id: 'xyz', metadata: null, merge: false })
+ await brain.update({ id: 'xyz', metadata: null, merge: false })
 } catch (error) {
-  // Error: "must specify at least one field to update"
-  // Note: Use metadata: {} to clear, not null
+ // Error: "must specify at least one field to update"
+ // Note: Use metadata: {} to clear, not null
 }
 ```
 

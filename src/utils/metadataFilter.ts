@@ -323,7 +323,7 @@ export function filterSearchResultsByMetadata<T>(
 
 /**
  * Filter nouns by metadata before search
- * v4.0.0: Takes HNSWNounWithMetadata which includes metadata field
+ * Takes HNSWNounWithMetadata which includes metadata field
  */
 export function filterNounsByMetadata(
   nouns: HNSWNounWithMetadata[],

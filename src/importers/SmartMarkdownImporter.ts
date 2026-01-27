@@ -174,7 +174,7 @@ export class SmartMarkdownImporter {
       ...options
     }
 
-    // v4.5.0: Report parsing start
+    // Report parsing start
     opts.onProgress({
       processed: 0,
       total: 0,
@@ -185,7 +185,7 @@ export class SmartMarkdownImporter {
     // Parse markdown into sections
     const parsedSections = this.parseMarkdown(markdown, opts)
 
-    // v4.5.0: Report parsing complete
+    // Report parsing complete
     opts.onProgress({
       processed: 0,
       total: parsedSections.length,
@@ -218,7 +218,7 @@ export class SmartMarkdownImporter {
       })
     }
 
-    // v4.5.0: Report completion
+    // Report completion
     const totalEntities = sections.reduce((sum, s) => sum + s.entities.length, 0)
     const totalRelationships = sections.reduce((sum, s) => sum + s.relationships.length, 0)
     opts.onProgress({

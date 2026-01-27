@@ -10,7 +10,7 @@ export { VirtualFileSystem } from './VirtualFileSystem.js'
 export { PathResolver } from './PathResolver.js'
 export * from './types.js'
 
-// MIME Type Detection (v5.2.0)
+// MIME Type Detection
 export { MimeTypeDetector, mimeDetector } from './MimeTypeDetector.js'
 
 // fs compatibility layer

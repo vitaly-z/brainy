@@ -1,10 +1,9 @@
-# AWS S3 Cost Optimization Guide for Brainy v4.0.0
-
+# AWS S3 Cost Optimization Guide for Brainy
 > **Cost Impact**: Reduce storage costs from $138k/year to $5.9k/year at 500TB scale (**96% savings**)
 
 ## Overview
 
-Brainy v4.0.0 provides enterprise-grade cost optimization features for AWS S3 storage, enabling automatic tier transitions that dramatically reduce storage costs while maintaining performance.
+Brainy provides enterprise-grade cost optimization features for AWS S3 storage, enabling automatic tier transitions that dramatically reduce storage costs while maintaining performance.
 
 ## Cost Breakdown (Before Optimization)
 
@@ -39,10 +38,10 @@ import { S3CompatibleStorage } from '@soulcraft/brainy/storage'
 
 // Initialize Brainy with S3 storage
 const storage = new S3CompatibleStorage({
-  bucket: 'my-brainy-data',
-  region: 'us-east-1',
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ bucket: 'my-brainy-data',
+ region: 'us-east-1',
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
 })
 
 const brain = new Brainy({ storage })
@@ -50,24 +49,24 @@ await brain.init()
 
 // Set lifecycle policy for automatic archival
 await storage.setLifecyclePolicy({
-  rules: [{
-    id: 'optimize-vectors',
-    prefix: 'entities/nouns/vectors/',
-    status: 'Enabled',
-    transitions: [
-      { days: 30, storageClass: 'STANDARD_IA' },      // Infrequent Access after 30 days
-      { days: 90, storageClass: 'GLACIER' },          // Glacier after 90 days
-      { days: 365, storageClass: 'DEEP_ARCHIVE' }     // Deep Archive after 1 year
-    ]
-  }, {
-    id: 'optimize-metadata',
-    prefix: 'entities/nouns/metadata/',
-    status: 'Enabled',
-    transitions: [
-      { days: 30, storageClass: 'STANDARD_IA' },
-      { days: 180, storageClass: 'GLACIER' }
-    ]
-  }]
+ rules: [{
+ id: 'optimize-vectors',
+ prefix: 'entities/nouns/vectors/',
+ status: 'Enabled',
+ transitions: [
+ { days: 30, storageClass: 'STANDARD_IA' }, // Infrequent Access after 30 days
+ { days: 90, storageClass: 'GLACIER' }, // Glacier after 90 days
+ { days: 365, storageClass: 'DEEP_ARCHIVE' } // Deep Archive after 1 year
+ ]
+ }, {
+ id: 'optimize-metadata',
+ prefix: 'entities/nouns/metadata/',
+ status: 'Enabled',
+ transitions: [
+ { days: 30, storageClass: 'STANDARD_IA' },
+ { days: 180, storageClass: 'GLACIER' }
+ ]
+ }]
 })
 
 // Verify lifecycle policy
@@ -84,10 +83,10 @@ console.log('Lifecycle policy active:', policy.rules.length, 'rules')
 - 10% of data 365+ days old (Deep Archive)
 
 ```
-Standard (200TB):        200TB × $0.023/GB × 12 = $55,200/year
-Standard-IA (150TB):     150TB × $0.0125/GB × 12 = $22,500/year
-Glacier (100TB):         100TB × $0.004/GB × 12 = $4,800/year
-Deep Archive (50TB):     50TB × $0.00099/GB × 12 = $594/year
+Standard (200TB): 200TB × $0.023/GB × 12 = $55,200/year
+Standard-IA (150TB): 150TB × $0.0125/GB × 12 = $22,500/year
+Glacier (100TB): 100TB × $0.004/GB × 12 = $4,800/year
+Deep Archive (50TB): 50TB × $0.00099/GB × 12 = $594/year
 
 Total Storage Cost: $83,094/year (instead of $138,000)
 Total with Operations: ~$88,000/year
@@ -133,11 +132,11 @@ Intelligent-Tiering automatically moves objects between:
 - 30% Deep Archive Access
 
 ```
-Frequent (75TB):        75TB × $0.023/GB × 12 = $20,700/year
-Infrequent (100TB):     100TB × $0.0125/GB × 12 = $15,000/year
-Archive (175TB):        175TB × $0.004/GB × 12 = $8,400/year
-Deep Archive (150TB):   150TB × $0.00099/GB × 12 = $1,782/year
-Monitoring:             ~$300/year (minimal)
+Frequent (75TB): 75TB × $0.023/GB × 12 = $20,700/year
+Infrequent (100TB): 100TB × $0.0125/GB × 12 = $15,000/year
+Archive (175TB): 175TB × $0.004/GB × 12 = $8,400/year
+Deep Archive (150TB): 150TB × $0.00099/GB × 12 = $1,782/year
+Monitoring: ~$300/year (minimal)
 
 Total Storage Cost: $46,182/year
 Total with Operations: ~$51,000/year
@@ -157,21 +156,21 @@ await storage.enableIntelligentTiering('entities/verbs/vectors/', 'verbs-auto')
 
 // Set lifecycle policy for metadata (less frequently accessed)
 await storage.setLifecyclePolicy({
-  rules: [{
-    id: 'archive-old-metadata',
-    prefix: 'entities/nouns/metadata/',
-    status: 'Enabled',
-    transitions: [
-      { days: 30, storageClass: 'STANDARD_IA' },
-      { days: 60, storageClass: 'GLACIER' },
-      { days: 180, storageClass: 'DEEP_ARCHIVE' }
-    ]
-  }, {
-    id: 'cleanup-old-system-data',
-    prefix: '_system/',
-    status: 'Enabled',
-    expiration: { days: 365 }  // Delete old statistics
-  }]
+ rules: [{
+ id: 'archive-old-metadata',
+ prefix: 'entities/nouns/metadata/',
+ status: 'Enabled',
+ transitions: [
+ { days: 30, storageClass: 'STANDARD_IA' },
+ { days: 60, storageClass: 'GLACIER' },
+ { days: 180, storageClass: 'DEEP_ARCHIVE' }
+ ]
+ }, {
+ id: 'cleanup-old-system-data',
+ prefix: '_system/',
+ status: 'Enabled',
+ expiration: { days: 365 } // Delete old statistics
+ }]
 })
 ```
 
@@ -179,19 +178,19 @@ await storage.setLifecyclePolicy({
 
 **Vectors (300TB with Intelligent-Tiering):**
 ```
-Frequent (45TB):        45TB × $0.023/GB × 12 = $12,420/year
-Infrequent (60TB):      60TB × $0.0125/GB × 12 = $9,000/year
-Archive (105TB):        105TB × $0.004/GB × 12 = $5,040/year
-Deep Archive (90TB):    90TB × $0.00099/GB × 12 = $1,069/year
+Frequent (45TB): 45TB × $0.023/GB × 12 = $12,420/year
+Infrequent (60TB): 60TB × $0.0125/GB × 12 = $9,000/year
+Archive (105TB): 105TB × $0.004/GB × 12 = $5,040/year
+Deep Archive (90TB): 90TB × $0.00099/GB × 12 = $1,069/year
 Subtotal: $27,529/year
 ```
 
 **Metadata (200TB with Lifecycle Policy):**
 ```
-Standard (60TB):        60TB × $0.023/GB × 12 = $16,560/year
-Standard-IA (40TB):     40TB × $0.0125/GB × 12 = $6,000/year
-Glacier (60TB):         60TB × $0.004/GB × 12 = $2,880/year
-Deep Archive (40TB):    40TB × $0.00099/GB × 12 = $475/year
+Standard (60TB): 60TB × $0.023/GB × 12 = $16,560/year
+Standard-IA (40TB): 40TB × $0.0125/GB × 12 = $6,000/year
+Glacier (60TB): 60TB × $0.004/GB × 12 = $2,880/year
+Deep Archive (40TB): 40TB × $0.00099/GB × 12 = $475/year
 Subtotal: $25,915/year
 ```
 
@@ -206,16 +205,16 @@ Subtotal: $25,915/year
 
 ```typescript
 await storage.setLifecyclePolicy({
-  rules: [{
-    id: 'aggressive-archival',
-    prefix: 'entities/',
-    status: 'Enabled',
-    transitions: [
-      { days: 14, storageClass: 'STANDARD_IA' },      // IA after 2 weeks
-      { days: 30, storageClass: 'GLACIER' },          // Glacier after 1 month
-      { days: 90, storageClass: 'DEEP_ARCHIVE' }      // Deep Archive after 3 months
-    ]
-  }]
+ rules: [{
+ id: 'aggressive-archival',
+ prefix: 'entities/',
+ status: 'Enabled',
+ transitions: [
+ { days: 14, storageClass: 'STANDARD_IA' }, // IA after 2 weeks
+ { days: 30, storageClass: 'GLACIER' }, // Glacier after 1 month
+ { days: 90, storageClass: 'DEEP_ARCHIVE' } // Deep Archive after 3 months
+ ]
+ }]
 })
 ```
 
@@ -223,10 +222,10 @@ await storage.setLifecyclePolicy({
 
 **After 1 year:**
 ```
-Standard (50TB):        50TB × $0.023/GB × 12 = $13,800/year
-Standard-IA (50TB):     50TB × $0.0125/GB × 12 = $7,500/year
-Glacier (100TB):        100TB × $0.004/GB × 12 = $4,800/year
-Deep Archive (300TB):   300TB × $0.00099/GB × 12 = $3,564/year
+Standard (50TB): 50TB × $0.023/GB × 12 = $13,800/year
+Standard-IA (50TB): 50TB × $0.0125/GB × 12 = $7,500/year
+Glacier (100TB): 100TB × $0.004/GB × 12 = $4,800/year
+Deep Archive (300TB): 300TB × $0.00099/GB × 12 = $3,564/year
 
 Total Storage Cost: $29,664/year
 Total with Operations: ~$34,000/year
@@ -250,16 +249,16 @@ Note: Retrieval costs may be significant if archived data is accessed frequently
 ### Efficient Cleanup
 
 ```typescript
-// v4.0.0: Batch delete (1000 objects per request)
+// Batch delete (1000 objects per request)
 const idsToDelete = [/* array of entity IDs */]
 
 // Generate paths for both vector and metadata files
 const paths = idsToDelete.flatMap(id => {
-  const shard = id.substring(0, 2)
-  return [
-    `entities/nouns/vectors/${shard}/${id}.json`,
-    `entities/nouns/metadata/${shard}/${id}.json`
-  ]
+ const shard = id.substring(0, 2)
+ return [
+ `entities/nouns/vectors/${shard}/${id}.json`,
+ `entities/nouns/metadata/${shard}/${id}.json`
+ ]
 })
 
 // Batch delete (much faster and cheaper than individual deletes)
@@ -280,14 +279,14 @@ console.log('Active rules:', policy.rules)
 
 // Example output:
 // {
-//   rules: [
-//     {
-//       id: 'optimize-vectors',
-//       prefix: 'entities/nouns/vectors/',
-//       status: 'Enabled',
-//       transitions: [...]
-//     }
-//   ]
+// rules: [
+// {
+// id: 'optimize-vectors',
+// prefix: 'entities/nouns/vectors/',
+// status: 'Enabled',
+// transitions: [...]
+// }
+// ]
 // }
 ```
 
@@ -396,6 +395,5 @@ await storage.enableIntelligentTiering('entities/', 'new-config')
 
 ---
 
-**Version**: v4.0.0
 **Last Updated**: 2025-10-17
 **Cloud Provider**: AWS S3

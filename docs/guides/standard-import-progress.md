@@ -65,7 +65,7 @@ interface ImportProgress {
   /** Estimated time remaining (milliseconds) */
   eta?: number
 
-  /** Whether data is queryable at this point (v4.2.0+) */
+  /** Whether data is queryable at this point */
   queryable?: boolean
 }
 ```

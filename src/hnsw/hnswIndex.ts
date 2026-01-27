@@ -35,18 +35,18 @@ export class HNSWIndex {
   private distanceFunction: DistanceFunction
   private dimension: number | null = null
   private useParallelization: boolean = true // Whether to use parallelization for performance-critical operations
-  private storage: BaseStorage | null = null // Storage adapter for HNSW persistence (v3.35.0+)
+  private storage: BaseStorage | null = null // Storage adapter for HNSW persistence
 
-  // Universal memory management (v3.36.0+)
+  // Universal memory management
   private unifiedCache: UnifiedCache // Shared cache with Graph and Metadata indexes
-  // Always-adaptive caching (v3.36.0+) - no "mode" concept, system adapts automatically
+  // Always-adaptive caching - no "mode" concept, system adapts automatically
 
-  // COW (Copy-on-Write) support - v5.0.0
+  // COW (Copy-on-Write) support
   private cowEnabled: boolean = false
   private cowModifiedNodes: Set<string> = new Set()
   private cowParent: HNSWIndex | null = null
 
-  // v6.2.8: Deferred HNSW persistence for cloud storage performance
+  // Deferred HNSW persistence for cloud storage performance
   // In deferred mode, HNSW connections are only persisted on flush/close
   // This reduces GCS operations from 70 to 2-3 per add() (30-50× faster)
   private persistMode: 'immediate' | 'deferred' = 'immediate'
@@ -86,7 +86,7 @@ export class HNSWIndex {
   }
 
   /**
-   * v6.2.8: Flush dirty HNSW data to storage
+   * Flush dirty HNSW data to storage
    *
    * In deferred persistence mode, HNSW connections are tracked as dirty but not
    * immediately persisted. Call flush() to persist all pending changes.
@@ -361,6 +361,19 @@ export class HNSWIndex {
       this.entryPointId = id
       this.maxLevel = nounLevel
       this.nouns.set(id, noun)
+
+      // Persist system data for first noun (previously skipped)
+      if (this.storage && this.persistMode === 'immediate') {
+        await this.storage.saveHNSWSystem({
+          entryPointId: this.entryPointId,
+          maxLevel: this.maxLevel
+        }).catch(error => {
+          console.error('Failed to persist initial HNSW system data:', error)
+        })
+      } else if (this.persistMode === 'deferred') {
+        this.dirtySystem = true
+      }
+
       return id
     }
 
@@ -438,7 +451,7 @@ export class HNSWIndex {
       )
 
       // Add bidirectional connections
-      // PERFORMANCE OPTIMIZATION (v4.10.0): Collect all neighbor updates for concurrent execution
+      // PERFORMANCE OPTIMIZATION: Collect all neighbor updates for concurrent execution
       const neighborUpdates: Array<{
         neighborId: string
         promise: Promise<void>
@@ -467,9 +480,9 @@ export class HNSWIndex {
           await this.pruneConnections(neighbor, level)
         }
 
-        // Persist updated neighbor HNSW data (v3.35.0+)
+        // Persist updated neighbor HNSW data
         //
-        // v6.2.8: Deferred persistence mode for cloud storage performance
+        // Deferred persistence mode for cloud storage performance
         // In deferred mode, we track dirty nodes instead of persisting immediately
         // This reduces GCS operations from 70 to 2-3 per add() (30-50× faster)
         if (this.storage && this.persistMode === 'immediate') {
@@ -561,8 +574,8 @@ export class HNSWIndex {
       this.highLevelNodes.get(nounLevel)!.add(id)
     }
 
-    // Persist HNSW graph data to storage (v3.35.0+)
-    // v6.2.8: Respect persistMode setting
+    // Persist HNSW graph data to storage
+    // Respect persistMode setting
     if (this.storage && this.persistMode === 'immediate') {
       // IMMEDIATE MODE: Original behavior - persist new entity and system data
       const connectionsObj: Record<string, string[]> = {}
@@ -594,7 +607,7 @@ export class HNSWIndex {
   }
 
   /**
-   * O(1) entry point recovery using highLevelNodes index (v6.2.3).
+   * O(1) entry point recovery using highLevelNodes index.
    * At any reasonable scale (1000+ nodes), level 2+ nodes are guaranteed to exist.
    * For tiny indexes with only level 0-1 nodes, any node works as entry point.
    */
@@ -640,7 +653,7 @@ export class HNSWIndex {
     }
 
     // Start from the entry point
-    // If entry point is null but nouns exist, attempt O(1) recovery (v6.2.3)
+    // If entry point is null but nouns exist, attempt O(1) recovery
     if (!this.entryPointId && this.nouns.size > 0) {
       const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
       if (recoveredId) {
@@ -656,7 +669,7 @@ export class HNSWIndex {
 
     let entryPoint = this.nouns.get(this.entryPointId)
     if (!entryPoint) {
-      // Entry point ID exists but noun was deleted - O(1) recovery (v6.2.3)
+      // Entry point ID exists but noun was deleted - O(1) recovery
       if (this.nouns.size > 0) {
         const { id: recoveredId, level: recoveredLevel } = this.recoverEntryPointO1()
         if (recoveredId) {
@@ -944,7 +957,7 @@ export class HNSWIndex {
   /**
    * Get vector safely (always uses adaptive caching via UnifiedCache)
    *
-   * Production-grade adaptive caching (v3.36.0+):
+   * Production-grade adaptive caching:
    * - Vector already loaded: Returns immediately (O(1))
    * - Vector in cache: Loads from UnifiedCache (O(1) hash lookup)
    * - Vector on disk: Loads from storage → UnifiedCache (O(disk))
@@ -990,7 +1003,7 @@ export class HNSWIndex {
   }
 
   /**
-   * Get vector synchronously if available in memory (v3.36.0+)
+   * Get vector synchronously if available in memory
    *
    * Sync fast path optimization:
    * - Vector in memory: Returns immediately (zero overhead)
@@ -1048,7 +1061,7 @@ export class HNSWIndex {
   }
 
   /**
-   * Calculate distance with sync fast path (v3.36.0+)
+   * Calculate distance with sync fast path
    *
    * Eliminates async overhead when vectors are in memory:
    * - Sync path: Vector in memory → returns number (zero overhead)
@@ -1093,7 +1106,7 @@ export class HNSWIndex {
   }
 
   /**
-   * Rebuild HNSW index from persisted graph data (v3.35.0+)
+   * Rebuild HNSW index from persisted graph data
    *
    * This is a production-grade O(N) rebuild that restores the pre-computed graph structure
    * from storage. Much faster than re-building which is O(N log N).
@@ -1157,7 +1170,7 @@ export class HNSWIndex {
         )
       }
 
-      // Step 4: Adaptive loading strategy based on storage type (v4.2.4)
+      // Step 4: Adaptive loading strategy based on storage type
       // FileSystem/Memory/OPFS: Load all at once (avoids repeated getAllShardedFiles() calls)
       // Cloud (GCS/S3/R2): Use pagination (efficient native cloud APIs)
       const storageType = this.storage?.constructor.name || ''
@@ -1238,7 +1251,7 @@ export class HNSWIndex {
         prodLog.info(`HNSW: Using cloud pagination strategy (${storageType})`)
 
         let hasMore = true
-        let offset = 0  // v5.7.11: Use offset-based pagination instead of cursor (bug fix for infinite loop)
+        let offset = 0  // Use offset-based pagination instead of cursor (bug fix for infinite loop)
 
         while (hasMore) {
           // Fetch batch of nouns from storage (cast needed as method is not in base interface)
@@ -1249,7 +1262,7 @@ export class HNSWIndex {
             nextCursor?: string
           } = await (this.storage as any).getNounsWithPagination({
             limit: batchSize,
-            offset  // v5.7.11: Pass offset for proper pagination (previously passed cursor which was ignored)
+            offset  // Pass offset for proper pagination (previously passed cursor which was ignored)
           })
 
           // Set total count on first batch
@@ -1307,11 +1320,11 @@ export class HNSWIndex {
 
           // Check for more data
           hasMore = result.hasMore
-          offset += batchSize  // v5.7.11: Increment offset for next page
+          offset += batchSize  // Increment offset for next page
         }
       }
 
-      // Step 5: CRITICAL - Recover entry point if missing (v6.2.3 - O(1))
+      // Step 5: CRITICAL - Recover entry point if missing)
       // This ensures consistency even if getHNSWSystem() returned null
       if (this.nouns.size > 0 && this.entryPointId === null) {
         prodLog.warn('HNSW rebuild: Entry point was null after loading nouns - recovering with O(1) lookup')
@@ -1426,7 +1439,7 @@ export class HNSWIndex {
   }
 
   /**
-   * Get cache performance statistics for monitoring and diagnostics (v3.36.0+)
+   * Get cache performance statistics for monitoring and diagnostics
    *
    * Production-grade monitoring:
    * - Adaptive caching strategy (preloading vs on-demand)

@@ -300,7 +300,7 @@ interface ImportProgress {
   relationships?: number          // Relationships inferred so far
 
   /**
-   * Whether data is queryable (v4.2.0+)
+   * Whether data is queryable
    *
    * true  = Indexes flushed, queries will be fast and complete
    * false/undefined = Data in storage but indexes not flushed yet
@@ -376,7 +376,7 @@ No changes required! Streaming is now always enabled with optimal defaults:
 // Before (v3.x, v4.0, v4.1): Works the same
 await brain.import(file)
 
-// After (v4.2.0+): Streaming always on, zero config
+// After: Streaming always on, zero config
 await brain.import(file)
 ```
 

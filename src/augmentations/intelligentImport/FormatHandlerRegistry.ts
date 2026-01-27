@@ -1,5 +1,5 @@
 /**
- * Format Handler Registry (v5.2.0)
+ * Format Handler Registry
  *
  * Central registry for format handlers with:
  * - MIME type-based routing

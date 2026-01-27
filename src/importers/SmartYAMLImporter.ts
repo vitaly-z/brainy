@@ -8,7 +8,7 @@
  * - NaturalLanguageProcessor for relationship inference
  * - Hierarchical relationship creation (parent-child, contains, etc.)
  *
- * v4.2.0: New format handler
+ * New format handler
  * NO MOCKS - Production-ready implementation
  */
 
@@ -159,7 +159,7 @@ export class SmartYAMLImporter {
   ): Promise<SmartYAMLResult> {
     const startTime = Date.now()
 
-    // v4.5.0: Report parsing start
+    // Report parsing start
     options.onProgress?.({
       processed: 0,
       entities: 0,
@@ -178,7 +178,7 @@ export class SmartYAMLImporter {
       throw new Error(`Failed to parse YAML: ${error.message}`)
     }
 
-    // v4.5.0: Report parsing complete
+    // Report parsing complete
     options.onProgress?.({
       processed: 0,
       entities: 0,

@@ -42,17 +42,17 @@ export interface SmartCSVOptions extends FormatHandlerOptions {
   csvDelimiter?: string
   csvHeaders?: boolean
 
-  /** Progress callback (v3.39.0: Enhanced with performance metrics) */
+  /** Progress callback (Enhanced with performance metrics) */
   onProgress?: (stats: {
     processed: number
     total: number
     entities: number
     relationships: number
-    /** Rows per second (v3.39.0) */
+    /** Rows per second */
     throughput?: number
-    /** Estimated time remaining in ms (v3.39.0) */
+    /** Estimated time remaining in ms */
     eta?: number
-    /** Current phase (v3.39.0) */
+    /** Current phase */
     phase?: string
   }) => void
 }
@@ -169,7 +169,7 @@ export class SmartCSVImporter {
     }
 
     // Parse CSV using existing handler
-    // v4.5.0: Pass progress hooks to handler for file parsing progress
+    // Pass progress hooks to handler for file parsing progress
     const processedData = await this.csvHandler.process(buffer, {
       ...options,
       csvDelimiter: opts.csvDelimiter,
@@ -217,7 +217,7 @@ export class SmartCSVImporter {
     // Detect column names
     const columns = this.detectColumns(rows[0], opts)
 
-    // Process each row with BATCHED PARALLEL PROCESSING (v3.39.0)
+    // Process each row with BATCHED PARALLEL PROCESSING
     const extractedRows: ExtractedRow[] = []
     const entityMap = new Map<string, string>()
     const stats = {
@@ -375,7 +375,7 @@ export class SmartCSVImporter {
         total: rows.length,
         entities: extractedRows.reduce((sum, row) => sum + 1 + row.relatedEntities.length, 0),
         relationships: extractedRows.reduce((sum, row) => sum + row.relationships.length, 0),
-        // Additional performance metrics (v3.39.0)
+        // Additional performance metrics
         throughput: Math.round(rowsPerSecond * 10) / 10,
         eta: Math.round(estimatedTimeRemaining),
         phase: 'extracting'

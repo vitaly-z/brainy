@@ -57,7 +57,7 @@ export type DistanceFunction = (a: Vector, b: Vector) => number
 
 /**
  * Embedding function for converting data to vectors
- * v4.0.0: Now properly typed - accepts string, string array (batch), or object, no `any`
+ * Now properly typed - accepts string, string array (batch), or object, no `any`
  */
 export type EmbeddingFunction = (data: string | string[] | Record<string, unknown>) => Promise<Vector>
 
@@ -72,7 +72,7 @@ export interface EmbeddingModel {
 
   /**
    * Embed data into a vector
-   * v4.0.0: Now properly typed - accepts string, string array (batch), or object, no `any`
+   * Now properly typed - accepts string, string array (batch), or object, no `any`
    */
   embed(data: string | string[] | Record<string, unknown>): Promise<Vector>
 
@@ -83,9 +83,9 @@ export interface EmbeddingModel {
 }
 
 /**
- * HNSW graph noun - Pure vector structure (v4.0.0)
+ * HNSW graph noun - Pure vector structure
  *
- * v4.0.0 BREAKING CHANGE: metadata field removed
+ * metadata field removed
  * - Stores ONLY vector data for optimal memory usage
  * - Metadata stored separately and combined on retrieval
  * - 25% memory reduction @ 1B scale (no in-memory metadata)
@@ -100,15 +100,15 @@ export interface HNSWNoun {
 }
 
 /**
- * Lightweight verb for HNSW index storage - Core relational structure (v4.0.0)
+ * Lightweight verb for HNSW index storage - Core relational structure
  *
- * Core fields (v3.50.1+): verb/sourceId/targetId are first-class fields
+ * Core fields: verb/sourceId/targetId are first-class fields
  * These are NOT metadata - they're the essence of what a verb IS:
  * - verb: The relationship type (creates, contains, etc.) - needed for routing & display
  * - sourceId: What entity this verb connects FROM - needed for graph traversal
  * - targetId: What entity this verb connects TO - needed for graph traversal
  *
- * v4.0.0 BREAKING CHANGE: metadata field removed
+ * metadata field removed
  * - Stores ONLY vector + core relational data
  * - User metadata (weight, custom fields) stored separately
  * - 10x faster metadata-only updates (skip HNSW rebuild)
@@ -134,9 +134,9 @@ export interface HNSWVerb {
 }
 
 /**
- * Noun metadata structure (v4.8.0)
+ * Noun metadata structure
  *
- * v4.8.0 BREAKING CHANGE: Now contains ONLY custom user-defined fields
+ * Now contains ONLY custom user-defined fields
  * - Standard fields (confidence, weight, timestamps, etc.) moved to top-level in HNSWNounWithMetadata
  * - This interface represents custom metadata stored separately from vector data
  * - Storage format unchanged (backward compatible at storage layer)
@@ -162,9 +162,9 @@ export interface NounMetadata {
 }
 
 /**
- * Verb metadata structure (v4.8.0)
+ * Verb metadata structure
  *
- * v4.8.0 BREAKING CHANGE: Now contains ONLY custom user-defined fields
+ * Now contains ONLY custom user-defined fields
  * - Standard fields (weight, confidence, timestamps, etc.) moved to top-level in HNSWVerbWithMetadata
  * - This interface represents custom metadata stored separately from vector + core relational data
  * - Storage format unchanged (backward compatible at storage layer)
@@ -190,9 +190,9 @@ export interface VerbMetadata {
 }
 
 /**
- * Combined noun structure for transport/API boundaries (v4.8.0)
+ * Combined noun structure for transport/API boundaries
  *
- * v4.8.0 BREAKING CHANGE: Standard fields moved to top-level
+ * Standard fields moved to top-level
  * - ALL standard fields (confidence, weight, timestamps, etc.) are now at top-level
  * - metadata contains ONLY custom user-defined fields
  * - Provides clean, predictable API: entity.confidence always works
@@ -230,9 +230,9 @@ export interface HNSWNounWithMetadata {
 }
 
 /**
- * Combined verb structure for transport/API boundaries (v4.8.0)
+ * Combined verb structure for transport/API boundaries
  *
- * v4.8.0 BREAKING CHANGE: Standard fields moved to top-level
+ * Standard fields moved to top-level
  * - ALL standard fields (weight, confidence, timestamps, etc.) are now at top-level
  * - metadata contains ONLY custom user-defined fields
  * - Provides clean, predictable API: verb.weight always works
@@ -308,7 +308,7 @@ export interface HNSWConfig {
   efSearch: number // Size of the dynamic candidate list during search
   ml: number // Maximum level
   useDiskBasedIndex?: boolean // Whether to use disk-based index
-  maxConcurrentNeighborWrites?: number // Maximum concurrent neighbor updates during insert (v4.10.0+). Default: unlimited (full concurrency)
+  maxConcurrentNeighborWrites?: number // Maximum concurrent neighbor updates during insert. Default: unlimited (full concurrency)
 }
 
 /**
@@ -548,7 +548,7 @@ export interface StatisticsData {
 }
 
 /**
- * Change record for getChangesSince (v4.0.0)
+ * Change record for getChangesSince
  * Replaces `any[]` with properly typed structure
  */
 export interface Change {
@@ -563,27 +563,27 @@ export interface StorageAdapter {
   init(): Promise<void>
 
   /**
-   * Save noun - Pure HNSW vector data only (v4.0.0)
+   * Save noun - Pure HNSW vector data only
    * @param noun Pure HNSW vector data (no metadata)
    * Note: Use saveNounMetadata() to save metadata separately
    */
   saveNoun(noun: HNSWNoun): Promise<void>
 
   /**
-   * Save noun metadata separately (v4.0.0)
+   * Save noun metadata separately
    * @param id Noun ID
    * @param metadata Noun metadata
    */
   saveNounMetadata(id: string, metadata: NounMetadata): Promise<void>
 
   /**
-   * Delete noun metadata (v4.0.0)
+   * Delete noun metadata
    * @param id Noun ID
    */
   deleteNounMetadata(id: string): Promise<void>
 
   /**
-   * Get noun with metadata combined (v4.0.0)
+   * Get noun with metadata combined
    * @returns Combined HNSWNounWithMetadata or null
    */
   getNoun(id: string): Promise<HNSWNounWithMetadata | null>
@@ -622,14 +622,14 @@ export interface StorageAdapter {
   deleteNoun(id: string): Promise<void>
 
   /**
-   * Save verb - Pure HNSW verb with core fields only (v4.0.0)
+   * Save verb - Pure HNSW verb with core fields only
    * @param verb Pure HNSW verb data (vector + core fields, no user metadata)
    * Note: Use saveVerbMetadata() to save metadata separately
    */
   saveVerb(verb: HNSWVerb): Promise<void>
 
   /**
-   * Get verb with metadata combined (v4.0.0)
+   * Get verb with metadata combined
    * @returns Combined HNSWVerbWithMetadata or null
    */
   getVerb(id: string): Promise<HNSWVerbWithMetadata | null>
@@ -686,14 +686,14 @@ export interface StorageAdapter {
   deleteVerb(id: string): Promise<void>
 
   /**
-   * Save metadata (v4.0.0: now typed)
+   * Save metadata
    * @param id Entity ID
    * @param metadata Typed noun metadata
    */
   saveMetadata(id: string, metadata: NounMetadata): Promise<void>
 
   /**
-   * Get metadata (v4.0.0: now typed)
+   * Get metadata
    * @param id Entity ID
    * @returns Typed noun metadata or null
    */
@@ -702,26 +702,26 @@ export interface StorageAdapter {
   /**
    * Get multiple metadata objects in batches (prevents socket exhaustion)
    * @param ids Array of IDs to get metadata for
-   * @returns Promise that resolves to a Map of id -> metadata (v4.0.0: typed)
+   * @returns Promise that resolves to a Map of id -> metadata
    */
   getMetadataBatch?(ids: string[]): Promise<Map<string, NounMetadata>>
 
   /**
-   * Get noun metadata from storage (v4.0.0: now typed)
+   * Get noun metadata from storage
    * @param id The ID of the noun
    * @returns Promise that resolves to the metadata or null if not found
    */
   getNounMetadata(id: string): Promise<NounMetadata | null>
 
   /**
-   * Batch get multiple nouns with vectors (v6.2.0 - N+1 fix)
+   * Batch get multiple nouns with vectors
    * @param ids Array of noun IDs to fetch
    * @returns Map of id → HNSWNounWithMetadata (only successful reads included)
    */
   getNounBatch?(ids: string[]): Promise<Map<string, HNSWNounWithMetadata>>
 
   /**
-   * Save verb metadata to storage (v4.0.0: now typed)
+   * Save verb metadata to storage
    * @param id The ID of the verb
    * @param metadata The metadata to save
    * @returns Promise that resolves when the metadata is saved
@@ -729,14 +729,14 @@ export interface StorageAdapter {
   saveVerbMetadata(id: string, metadata: VerbMetadata): Promise<void>
 
   /**
-   * Get verb metadata from storage (v4.0.0: now typed)
+   * Get verb metadata from storage
    * @param id The ID of the verb
    * @returns Promise that resolves to the metadata or null if not found
    */
   getVerbMetadata(id: string): Promise<VerbMetadata | null>
 
   /**
-   * Batch get multiple verbs (v6.2.0 - N+1 fix)
+   * Batch get multiple verbs
    * @param ids Array of verb IDs to fetch
    * @returns Map of id → HNSWVerbWithMetadata (only successful reads included)
    */
@@ -745,7 +745,7 @@ export interface StorageAdapter {
   clear(): Promise<void>
 
   /**
-   * Batch delete multiple objects from storage (v4.0.0)
+   * Batch delete multiple objects from storage
    * Efficient deletion of large numbers of entities using cloud provider batch APIs.
    * Significantly faster and cheaper than individual deletes (up to 1000x speedup).
    *
@@ -853,7 +853,7 @@ export interface StorageAdapter {
   flushStatisticsToStorage(): Promise<void>
 
   /**
-   * Track field names from a JSON document (v4.0.0: now typed)
+   * Track field names from a JSON document
    * @param jsonDocument The JSON document to extract field names from
    * @param service The service that inserted the data
    */
@@ -872,7 +872,7 @@ export interface StorageAdapter {
   getStandardFieldMappings(): Promise<Record<string, Record<string, string[]>>>
 
   /**
-   * Get changes since a specific timestamp (v4.0.0: now typed)
+   * Get changes since a specific timestamp
    * @param timestamp The timestamp to get changes since
    * @param limit Optional limit on the number of changes to return
    * @returns Promise that resolves to an array of properly typed changes

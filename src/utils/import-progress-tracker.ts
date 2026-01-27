@@ -1,5 +1,5 @@
 /**
- * Import Progress Tracker (v4.5.0)
+ * Import Progress Tracker
  *
  * Comprehensive progress tracking for imports with:
  * - Multi-dimensional progress (bytes, entities, stages, timing)
@@ -8,7 +8,6 @@
  * - Throttled callbacks (avoid spam)
  * - Weighted overall progress
  *
- * @since v4.5.0
  */
 
 import {

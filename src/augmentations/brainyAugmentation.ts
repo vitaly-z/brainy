@@ -375,7 +375,7 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   }
 
   /**
-   * Get CommitLog for temporal features (v5.0.0+)
+   * Get CommitLog for temporal features
    *
    * Provides access to commit history for time-travel queries, audit trails,
    * and branch management. Available after initialize() is called.
@@ -414,7 +414,7 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   }
 
   /**
-   * Get BlobStorage for content-addressable storage (v5.0.0+)
+   * Get BlobStorage for content-addressable storage
    *
    * Provides access to the underlying blob storage system for storing
    * and retrieving content-addressed data. Available after initialize() is called.
@@ -454,7 +454,7 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   }
 
   /**
-   * Get RefManager for branch/ref management (v5.0.0+)
+   * Get RefManager for branch/ref management
    *
    * Provides access to the reference manager for creating, updating,
    * and managing Git-style branches and refs. Available after initialize() is called.
@@ -496,7 +496,7 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
   }
 
   /**
-   * Get current branch name (v5.0.0+)
+   * Get current branch name
    *
    * Convenience helper for getting the current branch from the Brainy instance.
    * Available after initialize() is called.
@@ -525,7 +525,7 @@ export abstract class BaseAugmentation implements BrainyAugmentation {
     if (typeof brain.getCurrentBranch !== 'function') {
       throw new Error(
         `${this.name}: getCurrentBranch() not available on Brainy instance. ` +
-        `This method requires Brainy v5.0.0+.`
+        `This method requires Brainy with VFS support.`
       )
     }
 

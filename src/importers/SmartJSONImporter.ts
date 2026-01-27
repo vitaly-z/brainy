@@ -167,7 +167,7 @@ export class SmartJSONImporter {
       ...options
     }
 
-    // v4.5.0: Report parsing start
+    // Report parsing start
     opts.onProgress({
       processed: 0,
       entities: 0,
@@ -186,7 +186,7 @@ export class SmartJSONImporter {
       jsonData = data
     }
 
-    // v4.5.0: Report parsing complete, starting traversal
+    // Report parsing complete, starting traversal
     opts.onProgress({
       processed: 0,
       entities: 0,
@@ -228,7 +228,7 @@ export class SmartJSONImporter {
       }
     )
 
-    // v4.5.0: Report completion
+    // Report completion
     opts.onProgress({
       processed: nodesProcessed,
       entities: entities.length,

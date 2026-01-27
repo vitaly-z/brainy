@@ -418,7 +418,7 @@ await vfs.importDirectory()// Import directory from filesystem
 
 ## Bulk Write Operations
 
-**v6.5.0**: `bulkWrite` efficiently processes multiple VFS operations with automatic ordering to prevent race conditions.
+`bulkWrite` efficiently processes multiple VFS operations with automatic ordering to prevent race conditions.
 
 ```javascript
 const result = await vfs.bulkWrite([
@@ -439,7 +439,7 @@ console.log(`Successful: ${result.successful}, Failed: ${result.failed.length}`)
 - `delete` - Delete file
 - `update` - Update file metadata only
 
-**Operation ordering (v6.5.0):**
+**Operation ordering:**
 1. `mkdir` operations run **first**, sequentially, sorted by path depth (shallowest first)
 2. Other operations (`write`, `delete`, `update`) run **after** in parallel batches of 10
 

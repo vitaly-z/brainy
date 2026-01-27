@@ -1,8 +1,8 @@
-# Brainy Documentation (v6.5.0)
+# Brainy Documentation
 
 Welcome to the comprehensive documentation for Brainy, the multi-dimensional AI database with Triple Intelligence Engine.
 
-## 🆕 What's New in v4.0.0
+## 🆕 What's New in
 
 **Production-Ready Cost Optimization:**
 - **Lifecycle Management**: Automatic tier transitions for S3, GCS, Azure (96% cost savings!)
@@ -14,7 +14,7 @@ Welcome to the comprehensive documentation for Brainy, the multi-dimensional AI 
 
 **Cost Impact Example (500TB dataset):**
 - Before: $138,000/year
-- After v4.0.0: $5,940/year
+- After $5,940/year
 - **Savings: $132,060/year (96%)**
 
 ## 📊 Implementation Status
@@ -85,23 +85,23 @@ await brain.init()
 
 // Add entities (nouns)
 const articleId = await brain.add({
-  data: "Revolutionary AI Breakthrough",
-  type: NounType.Document,
-  metadata: { category: "technology", rating: 4.8 }
+ data: "Revolutionary AI Breakthrough",
+ type: NounType.Document,
+ metadata: { category: "technology", rating: 4.8 }
 })
 
 const authorId = await brain.add({
-  data: "Dr. Sarah Chen",
-  type: NounType.Person,
-  metadata: { role: "researcher" }
+ data: "Dr. Sarah Chen",
+ type: NounType.Person,
+ metadata: { role: "researcher" }
 })
 
 // Create relationships (verbs)
 await brain.relate({
-  from: authorId,
-  to: articleId,
-  type: VerbType.CreatedBy,
-  metadata: { date: "2024-01-15", contribution: "primary" }
+ from: authorId,
+ to: articleId,
+ type: VerbType.CreatedBy,
+ metadata: { date: "2024-01-15", contribution: "primary" }
 })
 
 // Query naturally
@@ -117,7 +117,7 @@ const results = await brain.find("highly rated technology articles by researcher
 | [API Reference](./api/README.md) | **START HERE** - Complete API documentation with examples |
 | [VFS Quick Start](./vfs/QUICK_START.md) | Virtual filesystem in 30 seconds |
 
-### 🆕 v4.0.0 Migration & Optimization
+### 🆕 Migration & Optimization
 
 | Document | Description |
 |----------|-------------|
@@ -135,15 +135,15 @@ const results = await brain.find("highly rated technology articles by researcher
 | [Noun-Verb Taxonomy](./architecture/noun-verb-taxonomy.md) | Revolutionary data model - entities and relationships |
 | [Triple Intelligence](./architecture/triple-intelligence.md) | Vector + Graph + Field unified query system |
 | [Zero Configuration](./architecture/zero-config.md) | Auto-adapts to any environment |
-| [Storage Architecture](./architecture/storage-architecture.md) | **v4.0.0** - Storage adapters and optimization |
-| [Data Storage Architecture](./architecture/data-storage-architecture.md) | **v4.0.0** - Metadata/vector separation, sharding |
+| [Storage Architecture](./architecture/storage-architecture.md) | Storage adapters and optimization |
+| [Data Storage Architecture](./architecture/data-storage-architecture.md) | Metadata/vector separation, sharding |
 | [Index Architecture](./architecture/index-architecture.md) | HNSW, Graph, and Metadata indexing |
 
 ### 💾 Storage & Deployment
 
 | Document | Description |
 |----------|-------------|
-| [Cloud Deployment Guide](./deployment/CLOUD_DEPLOYMENT_GUIDE.md) | **v4.0.0** - Deploy on AWS, GCP, Azure, Cloudflare |
+| [Cloud Deployment Guide](./deployment/CLOUD_DEPLOYMENT_GUIDE.md) | Deploy on AWS, GCP, Azure, Cloudflare |
 | [AWS Deployment](./deployment/aws-deployment.md) | AWS-specific deployment patterns |
 | [GCP Deployment](./deployment/gcp-deployment.md) | Google Cloud deployment |
 | [Kubernetes Deployment](./deployment/kubernetes-deployment.md) | K8s deployment configurations |
@@ -257,75 +257,68 @@ const results = await brain.find("highly rated technology articles by researcher
 
 ```
 docs/
-├── README.md (this file)          # Complete documentation index
-├── MIGRATION-V3-TO-V4.md          # v4.0.0 migration guide
+├── README.md (this file) # Complete documentation index
+├── MIGRATION-V3-TO-V4.md # Migration guide
 │
-├── guides/                        # User guides
-│   ├── natural-language.md
-│   ├── neural-api.md
-│   ├── import-anything.md
-│   ├── framework-integration.md
-│   ├── nextjs-integration.md
-│   ├── vue-integration.md
-│   ├── distributed-system.md
-│   ├── model-loading.md
-│   └── enterprise-for-everyone.md
+├── guides/ # User guides
+│ ├── natural-language.md
+│ ├── neural-api.md
+│ ├── import-anything.md
+│ ├── framework-integration.md
+│ ├── nextjs-integration.md
+│ ├── vue-integration.md
+│ ├── distributed-system.md
+│ ├── model-loading.md
+│ └── enterprise-for-everyone.md
 │
-├── architecture/                  # System architecture
-│   ├── overview.md
-│   ├── noun-verb-taxonomy.md
-│   ├── triple-intelligence.md
-│   ├── zero-config.md
-│   ├── storage-architecture.md    # v4.0.0
-│   ├── data-storage-architecture.md # v4.0.0
-│   ├── index-architecture.md
-│   ├── distributed-storage.md
-│   ├── augmentations.md
-│   ├── augmentation-system-audit.md
-│   ├── augmentations-actual.md
-│   ├── finite-type-system.md
-│   └── ...
+├── architecture/ # System architecture
+│ ├── overview.md
+│ ├── noun-verb-taxonomy.md
+│ ├── triple-intelligence.md
+│ ├── zero-config.md
+│ ├── storage-architecture.md│ ├── data-storage-architecture.md│ ├── index-architecture.md
+│ ├── distributed-storage.md
+│ ├── augmentations.md
+│ ├── augmentation-system-audit.md
+│ ├── augmentations-actual.md
+│ ├── finite-type-system.md
+│ └── ...
 │
-├── operations/                    # Operations guides
-│   ├── cost-optimization-aws-s3.md       # v4.0.0
-│   ├── cost-optimization-gcs.md          # v4.0.0
-│   ├── cost-optimization-azure.md        # v4.0.0
-│   ├── cost-optimization-cloudflare-r2.md # v4.0.0
-│   └── capacity-planning.md
+├── operations/ # Operations guides
+│ ├── cost-optimization-aws-s3.md│ ├── cost-optimization-gcs.md│ ├── cost-optimization-azure.md│ ├── cost-optimization-cloudflare-r2.md│ └── capacity-planning.md
 │
-├── deployment/                    # Deployment guides
-│   ├── CLOUD_DEPLOYMENT_GUIDE.md  # v4.0.0
-│   ├── aws-deployment.md
-│   ├── gcp-deployment.md
-│   └── kubernetes-deployment.md
+├── deployment/ # Deployment guides
+│ ├── CLOUD_DEPLOYMENT_GUIDE.md│ ├── aws-deployment.md
+│ ├── gcp-deployment.md
+│ └── kubernetes-deployment.md
 │
-├── vfs/                          # Virtual Filesystem docs
-│   ├── QUICK_START.md
-│   ├── VFS_CORE.md
-│   ├── SEMANTIC_VFS.md
-│   ├── VFS_API_GUIDE.md
-│   ├── NEURAL_EXTRACTION.md
-│   ├── COMMON_PATTERNS.md
-│   └── ...
+├── vfs/ # Virtual Filesystem docs
+│ ├── QUICK_START.md
+│ ├── VFS_CORE.md
+│ ├── SEMANTIC_VFS.md
+│ ├── VFS_API_GUIDE.md
+│ ├── NEURAL_EXTRACTION.md
+│ ├── COMMON_PATTERNS.md
+│ └── ...
 │
-├── api/                          # API documentation
-│   ├── README.md
-│   └── COMPREHENSIVE_API_OVERVIEW.md
+├── api/ # API documentation
+│ ├── README.md
+│ └── COMPREHENSIVE_API_OVERVIEW.md
 │
-├── augmentations/                # Augmentation docs
-│   ├── COMPLETE-REFERENCE.md
-│   ├── DEVELOPER-GUIDE.md
-│   ├── CONFIGURATION.md
-│   └── api-server.md
+├── augmentations/ # Augmentation docs
+│ ├── COMPLETE-REFERENCE.md
+│ ├── DEVELOPER-GUIDE.md
+│ ├── CONFIGURATION.md
+│ └── api-server.md
 │
-├── features/                     # Feature documentation
-│   ├── complete-feature-list.md
-│   └── v3-features.md
+├── features/ # Feature documentation
+│ ├── complete-feature-list.md
+│ └── v3-features.md
 │
-└── internal/                     # Internal docs
-    ├── AUDIT_REPORT.md
-    ├── CLEANUP_SUMMARY.md
-    └── HONEST_STATUS.md
+└── internal/ # Internal docs
+ ├── AUDIT_REPORT.md
+ ├── CLEANUP_SUMMARY.md
+ └── HONEST_STATUS.md
 ```
 
 ## Community

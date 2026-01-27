@@ -45,7 +45,7 @@ export class GraphAdjacencyIndex {
   private lsmTreeVerbsBySource: LSMTree  // sourceId -> verbIds
   private lsmTreeVerbsByTarget: LSMTree  // targetId -> verbIds
 
-  // v5.7.0: ID-only tracking for billion-scale memory optimization
+  // ID-only tracking for billion-scale memory optimization
   // Previous: Map<string, GraphVerb> stored full objects (128GB @ 1B verbs)
   // Now: Set<string> stores only IDs (~100KB @ 1B verbs) = 1,280,000x reduction
   private verbIdSet = new Set<string>()
@@ -117,7 +117,7 @@ export class GraphAdjacencyIndex {
 
   /**
    * Initialize the graph index (lazy initialization)
-   * v6.3.0: Added defensive auto-rebuild check for verbIdSet consistency
+   * Added defensive auto-rebuild check for verbIdSet consistency
    */
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) {
@@ -129,7 +129,7 @@ export class GraphAdjacencyIndex {
     await this.lsmTreeVerbsBySource.init()
     await this.lsmTreeVerbsByTarget.init()
 
-    // v6.3.0: Defensive check - if LSM-trees have data but verbIdSet is empty,
+    // Defensive check - if LSM-trees have data but verbIdSet is empty,
     // the index was created without proper rebuild (shouldn't happen with singleton
     // pattern but protects against edge cases and future refactoring)
     const lsmTreeSize = this.lsmTreeVerbsBySource.size()
@@ -151,7 +151,7 @@ export class GraphAdjacencyIndex {
   }
 
   /**
-   * Populate verbIdSet from storage without full rebuild (v6.3.0)
+   * Populate verbIdSet from storage without full rebuild
    * Lighter weight than full rebuild - only loads verb IDs, not all verb data
    * @private
    */
@@ -192,7 +192,7 @@ export class GraphAdjacencyIndex {
    * Core API - Neighbor lookup with LSM-tree storage
    *
    * O(log n) with bloom filter optimization (90% of queries skip disk I/O)
-   * v5.8.0: Added pagination support for high-degree nodes
+   * Added pagination support for high-degree nodes
    *
    * @param id Entity ID to get neighbors for
    * @param optionsOrDirection Optional: direction string OR options object
@@ -252,7 +252,7 @@ export class GraphAdjacencyIndex {
     // Convert to array for pagination
     let result = Array.from(neighbors)
 
-    // Apply pagination if requested (v5.8.0)
+    // Apply pagination if requested
     if (options?.limit !== undefined || options?.offset !== undefined) {
       const offset = options.offset || 0
       const limit = options.limit !== undefined ? options.limit : result.length
@@ -273,8 +273,8 @@ export class GraphAdjacencyIndex {
    * Get verb IDs by source - Billion-scale optimization for getVerbsBySource
    *
    * O(log n) LSM-tree lookup with bloom filter optimization
-   * v5.7.1: Filters out deleted verb IDs (tombstone deletion workaround)
-   * v5.8.0: Added pagination support for entities with many relationships
+   * Filters out deleted verb IDs (tombstone deletion workaround)
+   * Added pagination support for entities with many relationships
    *
    * @param sourceId Source entity ID
    * @param options Optional configuration
@@ -318,7 +318,7 @@ export class GraphAdjacencyIndex {
     const allIds = verbIds || []
     let result = allIds.filter(id => this.verbIdSet.has(id))
 
-    // Apply pagination if requested (v5.8.0)
+    // Apply pagination if requested
     if (options?.limit !== undefined || options?.offset !== undefined) {
       const offset = options.offset || 0
       const limit = options.limit !== undefined ? options.limit : result.length
@@ -332,8 +332,8 @@ export class GraphAdjacencyIndex {
    * Get verb IDs by target - Billion-scale optimization for getVerbsByTarget
    *
    * O(log n) LSM-tree lookup with bloom filter optimization
-   * v5.7.1: Filters out deleted verb IDs (tombstone deletion workaround)
-   * v5.8.0: Added pagination support for popular target entities
+   * Filters out deleted verb IDs (tombstone deletion workaround)
+   * Added pagination support for popular target entities
    *
    * @param targetId Target entity ID
    * @param options Optional configuration
@@ -377,7 +377,7 @@ export class GraphAdjacencyIndex {
     const allIds = verbIds || []
     let result = allIds.filter(id => this.verbIdSet.has(id))
 
-    // Apply pagination if requested (v5.8.0)
+    // Apply pagination if requested
     if (options?.limit !== undefined || options?.offset !== undefined) {
       const offset = options.offset || 0
       const limit = options.limit !== undefined ? options.limit : result.length
@@ -414,7 +414,7 @@ export class GraphAdjacencyIndex {
   }
 
   /**
-   * Batch get multiple verbs with caching (v6.2.0 - N+1 fix)
+   * Batch get multiple verbs with caching
    *
    * **Performance**: Eliminates N+1 pattern for verb loading
    * - Current: N × getVerbCached() = N × 50ms on GCS = 250ms for 5 verbs
@@ -433,7 +433,6 @@ export class GraphAdjacencyIndex {
    * @param verbIds Array of verb IDs to fetch
    * @returns Map of verbId → GraphVerb (only successful reads included)
    *
-   * @since v6.2.0
    */
   async getVerbsBatchCached(verbIds: string[]): Promise<Map<string, GraphVerb>> {
     const results = new Map<string, GraphVerb>()
@@ -514,7 +513,7 @@ export class GraphAdjacencyIndex {
     const targetStats = this.lsmTreeTarget.getStats()
 
     // Note: Exact unique node counts would require full LSM-tree scan
-    // v5.7.0: Using verbIdSet (ID-only tracking) for memory efficiency
+    // Using verbIdSet (ID-only tracking) for memory efficiency
     const uniqueSourceNodes = this.verbIdSet.size
     const uniqueTargetNodes = this.verbIdSet.size
     const totalNodes = this.verbIdSet.size
@@ -622,13 +621,13 @@ export class GraphAdjacencyIndex {
       // Clear current index
       this.verbIdSet.clear()
       this.totalRelationshipsIndexed = 0
-      // v6.2.4: CRITICAL FIX - Clear relationship counts to prevent accumulation
+      // CRITICAL FIX - Clear relationship counts to prevent accumulation
       this.relationshipCountsByType.clear()
 
       // Note: LSM-trees will be recreated from storage via their own initialization
       // Verb data will be loaded on-demand via UnifiedCache
 
-      // Adaptive loading strategy based on storage type (v4.2.4)
+      // Adaptive loading strategy based on storage type
       const storageType = this.storage?.constructor.name || ''
       const isLocalStorage =
         storageType === 'FileSystemStorage' ||
@@ -754,7 +753,7 @@ export class GraphAdjacencyIndex {
     bytes += targetStats.memTableMemory
 
     // Verb ID set (memory-efficient: IDs only, ~8 bytes per ID pointer)
-    // v5.7.0: Previous verbIndex Map stored full objects (128 bytes each = 128GB @ 1B verbs)
+    // Previous verbIndex Map stored full objects (128 bytes each = 128GB @ 1B verbs)
     // Now: verbIdSet stores only IDs (~8 bytes each = ~100KB @ 1B verbs) = 1,280,000x reduction
     bytes += this.verbIdSet.size * 8
 
@@ -792,7 +791,7 @@ export class GraphAdjacencyIndex {
 
   /**
    * Flush LSM-tree MemTables to disk
-   * CRITICAL FIX (v3.43.2): Now public so it can be called from brain.flush()
+   * CRITICAL FIX: Now public so it can be called from brain.flush()
    */
   async flush(): Promise<void> {
     if (!this.initialized) {

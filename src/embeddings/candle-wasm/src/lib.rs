@@ -26,7 +26,7 @@ use js_sys::{Array, Float32Array};
 use tokenizers::Tokenizer;
 use wasm_bindgen::prelude::*;
 
-// v7.2.0: Model weights are NO LONGER embedded in WASM
+// Model weights are NO LONGER embedded in WASM
 //
 // Previous design: 90MB WASM with model weights embedded via include_bytes!()
 // Problem: WASM parsing/compilation took 139+ seconds on throttled CPU (Cloud Run)
@@ -78,7 +78,7 @@ impl EmbeddingEngine {
 
     /// Load the model and tokenizer from bytes
     ///
-    /// v7.2.0: This is now the ONLY way to initialize the engine.
+    /// This is now the ONLY way to initialize the engine.
     /// Model weights are no longer embedded in WASM for faster initialization.
     ///
     /// # Arguments

@@ -107,7 +107,7 @@ export class OptimizedS3Search {
       }
 
       // Determine if there are more items
-      const hasMore = listResult.hasMore || nouns.length > limit  // v5.7.11: Fixed >= to > (was causing infinite loop)
+      const hasMore = listResult.hasMore || nouns.length > limit  // Fixed >= to > (was causing infinite loop)
 
       // Set next cursor
       let nextCursor: string | undefined
@@ -190,7 +190,7 @@ export class OptimizedS3Search {
       }
 
       // Determine if there are more items
-      const hasMore = listResult.hasMore || verbs.length > limit  // v5.7.11: Fixed >= to > (was causing infinite loop)
+      const hasMore = listResult.hasMore || verbs.length > limit  // Fixed >= to > (was causing infinite loop)
 
       // Set next cursor
       let nextCursor: string | undefined

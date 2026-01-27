@@ -1,13 +1,13 @@
 /**
- * VersionStorage - Hybrid Storage for Entity Versions (v5.3.0, v6.3.0 fix)
+ * VersionStorage - Hybrid Storage for Entity Versions
  *
  * Implements content-addressable storage for entity versions:
  * - SHA-256 content hashing for deduplication
- * - Uses BaseStorage.saveMetadata/getMetadata for storage (v6.3.0)
+ * - Uses BaseStorage.saveMetadata/getMetadata for storage
  * - Integrates with COW commit system
  * - Space-efficient: Only stores unique content
  *
- * Storage structure (v6.3.0):
+ * Storage structure:
  * Version content is stored using system metadata keys:
  *   __system_version_{entityId}_{contentHash}
  *
@@ -160,7 +160,7 @@ export class VersionStorage {
    * @returns Storage key for version content
    */
   private getVersionPath(entityId: string, contentHash: string): string {
-    // v6.3.0: Use system-prefixed key for BaseStorage.saveMetadata/getMetadata
+    // Use system-prefixed key for BaseStorage.saveMetadata/getMetadata
     // BaseStorage recognizes __system_ prefix and routes to _system/ directory
     return `__system_version_${entityId}_${contentHash}`
   }
@@ -173,7 +173,7 @@ export class VersionStorage {
    */
   private async contentExists(key: string): Promise<boolean> {
     try {
-      // v6.3.0: Use getMetadata to check existence
+      // Use getMetadata to check existence
       const adapter = this.brain.storageAdapter
       if (!adapter) return false
 
@@ -200,7 +200,7 @@ export class VersionStorage {
       throw new Error('Storage adapter not available')
     }
 
-    // v6.3.0: Use saveMetadata for storing version content
+    // Use saveMetadata for storing version content
     // The key is system-prefixed so it routes to _system/ directory
     await adapter.saveMetadata(key, entity)
   }
@@ -218,7 +218,7 @@ export class VersionStorage {
       throw new Error('Storage adapter not available')
     }
 
-    // v6.3.0: Use getMetadata for reading version content
+    // Use getMetadata for reading version content
     const entity = await adapter.getMetadata(key)
     if (!entity) {
       throw new Error(`Version data not found: ${key}`)
@@ -234,14 +234,14 @@ export class VersionStorage {
    * Deleting the version index entry (via VersionIndex.removeVersion) is sufficient.
    * The content may be shared with other versions (same contentHash).
    *
-   * v6.3.0: We don't actually delete version content to avoid breaking
+   * We don't actually delete version content to avoid breaking
    * other versions that may reference the same content hash.
    * A separate garbage collection process could clean up unreferenced content.
    *
    * @param key Storage key (unused - kept for API compatibility)
    */
   private async deleteVersionData(_key: string): Promise<void> {
-    // v6.3.0: Version content is content-addressed and may be shared.
+    // Version content is content-addressed and may be shared.
     // We don't delete it here to prevent breaking other versions.
     // The version INDEX is deleted via VersionIndex.removeVersion().
     // A GC process could clean up unreferenced content in the future.

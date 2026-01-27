@@ -5,7 +5,7 @@
  * Pure Rust/WASM implementation for sentence embeddings.
  * Works with Bun, Node.js, Bun --compile, and browsers.
  *
- * v7.2.0 Architecture (20x faster initialization):
+ * Architecture (20x faster initialization):
  * - WASM file: ~2.4MB (inference code only)
  * - Model files: ~88MB (loaded separately as raw bytes)
  * - Init time: ~5-7 seconds (vs 139 seconds with embedded model)
@@ -34,7 +34,7 @@ interface CandleWasmModule {
 }
 
 interface CandleEngineInstance {
-  // v7.2.0: load() is the only initialization method (no more embedded model)
+  // load() is the only initialization method (no more embedded model)
   load(modelBytes: Uint8Array, tokenizerBytes: Uint8Array, configBytes: Uint8Array): void
   is_ready(): boolean
   embed(text: string): Float32Array
@@ -54,7 +54,7 @@ let globalInitPromise: Promise<void> | null = null
  * Uses the Candle ML framework (Rust/WASM) for inference.
  * Supports all-MiniLM-L6-v2 with 384-dimensional embeddings.
  *
- * v7.2.0: Model weights are loaded separately from WASM for 20x faster init.
+ * Model weights are loaded separately from WASM for 20x faster init.
  * For bun --compile deployments, both WASM and model files are automatically
  * embedded in the binary - single file deployment still works.
  */
@@ -104,7 +104,7 @@ export class CandleEmbeddingEngine {
   /**
    * Perform actual initialization
    *
-   * v7.2.0: WASM and model files are loaded separately for 20x faster init.
+   * WASM and model files are loaded separately for 20x faster init.
    * - WASM (~2.4MB): Compiles in ~3-5 seconds
    * - Model (~88MB): Loads as raw bytes in ~1-2 seconds
    * - Total: ~5-7 seconds (vs 139 seconds with embedded model)
@@ -153,7 +153,7 @@ export class CandleEmbeddingEngine {
   /**
    * Load the WASM module
    *
-   * v7.2.0: WASM is now only ~2.4MB (inference code only, no model weights).
+   * WASM is now only ~2.4MB (inference code only, no model weights).
    * Uses wasmLoader.ts for cross-environment compatibility.
    */
   private async loadWasmModule(): Promise<CandleWasmModule> {

@@ -337,7 +337,7 @@ export class CommitObject {
     let currentHash: string | null = startHash
     let depth = 0
 
-    // v5.3.4 fix: Guard against NULL hash (sentinel for "no parent")
+    // Guard against NULL hash (sentinel for "no parent")
     // The initial commit has parent = null or NULL_HASH ('0000...0000')
     // We must stop walking when we reach it, not try to read it
     while (currentHash && !isNullHash(currentHash)) {
