@@ -25,6 +25,7 @@ Brainy has **3 main indexes** at the top level, each with multiple sub-indexes m
 - **FieldTypeInference** - DuckDB-inspired value-based field type detection
 - **Field Sparse Indexes** - Per-field sparse indexes with roaring bitmaps (dynamic count)
 - **Sorted Indexes** - Support orderBy queries (automatically maintained)
+- **Word Index (`__words__`)** - Text search via FNV-1a word hashes (v7.7.0)
 
 **GraphAdjacencyIndex contains:**
 - **lsmTreeSource** - Source → Targets (outgoing edges)
@@ -227,6 +228,37 @@ interface ZoneMap {
 ```
 
 **Use case**: Enables NLP to understand "find characters named John" → knows 'name' is a character field
+
+#### Word Index (`__words__`) - v7.7.0
+```typescript
+// Special field for text/keyword search
+// Entity text content is tokenized and indexed as word hashes
+
+// Tokenization:
+// "David Smith is a software engineer" → ["david", "smith", "is", "software", "engineer"]
+
+// Word Hashing (FNV-1a):
+// "david" → hashWord("david") → 1234567  (int32)
+// "smith" → hashWord("smith") → 9876543  (int32)
+
+// Index structure (same as other fields):
+// __words__ → 1234567 → RoaringBitmap{entity1, entity5, ...}
+// __words__ → 9876543 → RoaringBitmap{entity1, entity3, ...}
+```
+
+**Design Decisions**:
+- **Max 50 words per entity**: Prevents index bloat for large documents
+- **FNV-1a hashing**: Fast, low collision rate, int32 output
+- **Min word length 2 chars**: Filters out noise words
+- **Lowercase normalization**: Case-insensitive matching
+- **Automatic integration**: Words extracted via `extractIndexableFields()`
+
+**Hybrid Search** (v7.7.0): Text results combined with vector results using Reciprocal Rank Fusion (RRF):
+```typescript
+// RRF formula: score(d) = sum(1 / (k + rank(d)))
+// where k = 60 (standard constant)
+// alpha = weight for semantic (0 = text only, 1 = semantic only)
+```
 
 ### Query Algorithm (v3.42.0)
 

@@ -399,6 +399,23 @@ await brain.find({
 
 **→ [See all query methods in API Reference](docs/api/README.md#search--query)**
 
+### 🔍 **Zero-Config Hybrid Search** (v7.7.0)
+
+Automatically combines text (keyword) and semantic (vector) search for optimal results:
+
+```javascript
+// Just works - no configuration needed
+const results = await brain.find({ query: 'David Smith' })
+// Finds exact text matches AND semantically similar content
+
+// Override when needed
+await brain.find({ query: 'exact match', searchMode: 'text' })     // Text only
+await brain.find({ query: 'AI concepts', searchMode: 'semantic' }) // Semantic only
+await brain.find({ query: 'hybrid', hybridAlpha: 0.3 })            // Custom weighting
+```
+
+**→ [Hybrid Search Documentation](docs/api/README.md#hybrid-search-v770)**
+
 ### 🌐 **Virtual Filesystem** — Intelligent File Management
 
 Build file explorers and IDEs that never crash:
