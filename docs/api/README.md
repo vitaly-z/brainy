@@ -1,9 +1,9 @@
-# 🧠 Brainy v7.1.0 API Reference
+# 🧠 Brainy API Reference
 
-> **Complete API documentation for Brainy v7.1.0**
+> **Complete API documentation for Brainy**
 > Zero Configuration • Triple Intelligence • Git-Style Branching • Entity Versioning • Candle WASM Embeddings
 
-**Updated:** 2026-01-06 for v7.1.0
+**Updated:** 2026-01-06
 **All APIs verified against actual code**
 
 ---
@@ -13,29 +13,29 @@
 ```typescript
 import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
-const brain = new Brainy()  // Zero config!
-await brain.init()          // VFS auto-initialized in v5.1.0!
+const brain = new Brainy() // Zero config!
+await brain.init() // VFS auto-initialized!
 
 // Add data (text auto-embeds!)
 const id = await brain.add({
-  data: 'The future of AI is here',
-  type: NounType.Concept,
-  metadata: { category: 'technology' }
+ data: 'The future of AI is here',
+ type: NounType.Concept,
+ metadata: { category: 'technology' }
 })
 
 // Search with Triple Intelligence
 const results = await brain.find({
-  query: 'artificial intelligence',
-  where: { year: { greaterThan: 2020 } },
-  connected: { from: id, depth: 2 }
+ query: 'artificial intelligence',
+ where: { year: { greaterThan: 2020 } },
+ connected: { from: id, depth: 2 }
 })
 
-// Fork for safe experimentation (v5.0.0+)
+// Fork for safe experimentation
 const experiment = await brain.fork('test-feature')
 await experiment.add({ data: 'test', type: NounType.Document })
 await experiment.commit({ message: 'Add test data' })
 
-// Entity versioning (v5.3.0+)
+// Entity versioning
 await brain.versions.save(id, { tag: 'v1.0', description: 'Initial version' })
 await brain.update(id, { category: 'AI' })
 await brain.versions.save(id, { tag: 'v2.0' })
@@ -54,10 +54,10 @@ Typed connections between entities - building knowledge graphs.
 ### 🧠 Triple Intelligence
 Vector search + Graph traversal + Metadata filtering in one unified query.
 
-### 🌳 Git-Style Branching (v5.0.0+)
+### 🌳 Git-Style Branching
 Fork, experiment, and commit - Snowflake-style copy-on-write isolation.
 
-### 📜 Entity Versioning (v5.3.0+)
+### 📜 Entity Versioning
 Time-travel and history tracking for individual entities - Git-like version control with content-addressable storage.
 
 ---
@@ -68,15 +68,15 @@ Time-travel and history tracking for individual entities - Git-like version cont
 - [Search & Query](#search--query)
 - [Relationships](#relationships)
 - [Batch Operations](#batch-operations)
-- [Branch Management (v5.0+)](#branch-management-v50)
-- [Entity Versioning (v5.3.0+)](#entity-versioning-v530)
+- [Branch Management](#branch-management)
+- [Entity Versioning](#entity-versioning)
 - [Virtual Filesystem (VFS)](#virtual-filesystem-vfs)
 - [Neural API](#neural-api)
 - [Import & Export](#import--export)
 - [Configuration](#configuration)
 - [Storage Adapters](#storage-adapters)
 - [Utility Methods](#utility-methods)
-- [Embedding & Analysis APIs (v7.1.0)](#embedding--analysis-apis-v710)
+- [Embedding & Analysis APIs](#embedding--analysis-apis)
 - [Type System Reference](#type-system-reference)
 
 ---
@@ -89,12 +89,12 @@ Add a single entity to the database.
 
 ```typescript
 const id = await brain.add({
-  data: 'JavaScript is a programming language',  // Text or pre-computed vector
-  type: NounType.Concept,                        // Required: Entity type
-  metadata: {                                     // Optional metadata
-    category: 'programming',
-    year: 1995
-  }
+ data: 'JavaScript is a programming language', // Text or pre-computed vector
+ type: NounType.Concept, // Required: Entity type
+ metadata: { // Optional metadata
+ category: 'programming',
+ year: 1995
+ }
 })
 ```
 
@@ -113,9 +113,9 @@ Retrieve a single entity by ID.
 
 ```typescript
 const entity = await brain.get(id)
-console.log(entity?.data)      // Original data
-console.log(entity?.metadata)  // Metadata
-console.log(entity?.vector)    // Embedding vector
+console.log(entity?.data) // Original data
+console.log(entity?.metadata) // Metadata
+console.log(entity?.vector) // Embedding vector
 ```
 
 **Parameters:**
@@ -131,9 +131,9 @@ Update an existing entity.
 
 ```typescript
 await brain.update({
-  id: entityId,
-  data: 'Updated content',           // Optional: new data
-  metadata: { updated: true }        // Optional: new metadata (merges)
+ id: entityId,
+ data: 'Updated content', // Optional: new data
+ metadata: { updated: true } // Optional: new metadata (merges)
 })
 ```
 
@@ -173,72 +173,72 @@ const results = await brain.find('machine learning')
 
 // Advanced Triple Intelligence query
 const results = await brain.find({
-  query: 'artificial intelligence',     // Vector similarity
-  where: {                               // Metadata filtering
-    year: { greaterThan: 2020 },
-    category: { oneOf: ['AI', 'ML'] }
-  },
-  connected: {                           // Graph traversal
-    to: conceptId,
-    depth: 2,
-    type: VerbType.RelatedTo
-  },
-  limit: 10
+ query: 'artificial intelligence', // Vector similarity
+ where: { // Metadata filtering
+ year: { greaterThan: 2020 },
+ category: { oneOf: ['AI', 'ML'] }
+ },
+ connected: { // Graph traversal
+ to: conceptId,
+ depth: 2,
+ type: VerbType.RelatedTo
+ },
+ limit: 10
 })
 ```
 
 **Parameters:**
 - `query`: `string | FindParams`
-  - **Simple:** Just text for vector search
-  - **Advanced:** Object with vector + graph + metadata filters
+ - **Simple:** Just text for vector search
+ - **Advanced:** Object with vector + graph + metadata filters
 
 **FindParams:**
 - `query?`: `string` - Text for vector similarity
 - `where?`: `object` - Metadata filters (see [Query Operators](#query-operators))
 - `connected?`: `object` - Graph traversal options
-  - `to?`: `string` - Target entity ID
-  - `from?`: `string` - Source entity ID
-  - `type?`: `VerbType` - Relationship type
-  - `depth?`: `number` - Traversal depth
+ - `to?`: `string` - Target entity ID
+ - `from?`: `string` - Source entity ID
+ - `type?`: `VerbType` - Relationship type
+ - `depth?`: `number` - Traversal depth
 - `limit?`: `number` - Max results (default: 10)
 - `offset?`: `number` - Skip results
-- `searchMode?`: `'auto' | 'text' | 'semantic' | 'hybrid'` - Search strategy (v7.7.0):
-  - `'auto'` (default): Zero-config hybrid combining text + semantic search
-  - `'text'`: Pure keyword/text matching
-  - `'semantic'`: Pure vector similarity
-  - `'hybrid'`: Explicit hybrid mode
+- `searchMode?`: `'auto' | 'text' | 'semantic' | 'hybrid'` - Search strategy:
+ - `'auto'` (default): Zero-config hybrid combining text + semantic search
+ - `'text'`: Pure keyword/text matching
+ - `'semantic'`: Pure vector similarity
+ - `'hybrid'`: Explicit hybrid mode
 - `hybridAlpha?`: `number` - Balance between text (0.0) and semantic (1.0) search. Auto-detected by query length if not specified.
 
 **Returns:** `Promise<Result[]>` - Matching entities with scores
 
 ---
 
-### Hybrid Search (v7.7.0)
+### Hybrid Search
 
 Brainy automatically combines text (keyword) and semantic (vector) search for optimal results. No configuration needed.
 
 ```typescript
 // Zero-config hybrid search (just works)
 const results = await brain.find({
-  query: 'David Smith'  // Finds both exact text matches AND semantically similar
+ query: 'David Smith' // Finds both exact text matches AND semantically similar
 })
 
 // Force text-only search (exact keyword matching)
 const textResults = await brain.find({
-  query: 'exact keyword',
-  searchMode: 'text'
+ query: 'exact keyword',
+ searchMode: 'text'
 })
 
 // Force semantic-only search (vector similarity)
 const semanticResults = await brain.find({
-  query: 'artificial intelligence concepts',
-  searchMode: 'semantic'
+ query: 'artificial intelligence concepts',
+ searchMode: 'semantic'
 })
 
 // Custom hybrid weighting (0 = text only, 1 = semantic only)
 const customResults = await brain.find({
-  query: 'David Smith',
-  hybridAlpha: 0.3  // Favor text matching
+ query: 'David Smith',
+ hybridAlpha: 0.3 // Favor text matching
 })
 ```
 
@@ -249,7 +249,7 @@ const customResults = await brain.find({
 
 ---
 
-### Match Visibility (v7.8.0)
+### Match Visibility
 
 Search results include detailed match information:
 
@@ -257,10 +257,10 @@ Search results include detailed match information:
 const results = await brain.find({ query: 'david the warrior' })
 
 // Each result now includes:
-results[0].textMatches     // ["david", "warrior"] - exact query words found
-results[0].textScore       // 0.25 - text match quality (0-1)
-results[0].semanticScore   // 0.87 - semantic similarity (0-1)
-results[0].matchSource     // 'both' | 'text' | 'semantic'
+results[0].textMatches // ["david", "warrior"] - exact query words found
+results[0].textScore // 0.25 - text match quality (0-1)
+results[0].semanticScore // 0.87 - semantic similarity (0-1)
+results[0].matchSource // 'both' | 'text' | 'semantic'
 ```
 
 **Use cases:**
@@ -270,7 +270,7 @@ results[0].matchSource     // 'both' | 'text' | 'semantic'
 
 ---
 
-### `highlight(params)` → `Promise<Highlight[]>` ✨ *New v7.8.0, Enhanced v7.9.0*
+### `highlight(params)` → `Promise<Highlight[]>` ✨
 
 Zero-config highlighting for both exact matches AND semantic concepts.
 Handles plain text, rich-text JSON (TipTap, Slate, Lexical, Draft.js, Quill), HTML, and Markdown automatically.
@@ -278,37 +278,37 @@ Handles plain text, rich-text JSON (TipTap, Slate, Lexical, Draft.js, Quill), HT
 ```typescript
 // Plain text (works as before)
 const highlights = await brain.highlight({
-  query: "david the warrior",
-  text: "David Smith is a brave fighter who battles dragons"
+ query: "david the warrior",
+ text: "David Smith is a brave fighter who battles dragons"
 })
 // [
-//   { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
-//   { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
-//   { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
+// { text: "David", score: 1.0, position: [0, 5], matchType: 'text' },
+// { text: "fighter", score: 0.78, position: [25, 32], matchType: 'semantic' },
+// { text: "battles", score: 0.72, position: [37, 44], matchType: 'semantic' }
 // ]
 
-// Rich-text JSON (auto-detected, v7.9.0)
+// Rich-text JSON (auto-detected)
 const highlights = await brain.highlight({
-  query: "david the warrior",
-  text: JSON.stringify(tiptapDocument)  // TipTap, Slate, Lexical, Draft.js, Quill
+ query: "david the warrior",
+ text: JSON.stringify(tiptapDocument) // TipTap, Slate, Lexical, Draft.js, Quill
 })
 // Extracts text from nodes, annotates with contentCategory:
 // [
-//   { text: "David", score: 1.0, matchType: 'text', contentCategory: 'heading' },
-//   { text: "fighter", score: 0.78, matchType: 'semantic', contentCategory: 'prose' }
+// { text: "David", score: 1.0, matchType: 'text', contentCategory: 'title' },
+// { text: "fighter", score: 0.78, matchType: 'semantic', contentCategory: 'content' }
 // ]
 
-// HTML input (auto-detected, v7.9.0)
+// HTML input (auto-detected)
 const highlights = await brain.highlight({
-  query: "warrior",
-  text: "<h1>David the Warrior</h1><p>A brave fighter.</p>"
+ query: "warrior",
+ text: "<h1>David the Warrior</h1><p>A brave fighter.</p>"
 })
 
-// Custom extractor for proprietary formats (v7.9.0)
+// Custom extractor for proprietary formats
 const highlights = await brain.highlight({
-  query: "function",
-  text: sourceCode,
-  contentExtractor: (text) => treeSitterParse(text)  // Your custom parser
+ query: "function",
+ text: sourceCode,
+ contentExtractor: (text) => treeSitterParse(text) // Your custom parser
 })
 ```
 
@@ -317,17 +317,17 @@ const highlights = await brain.highlight({
 - `text`: `string` - Text to highlight (plain text, JSON, HTML, or Markdown)
 - `granularity?`: `'word' | 'phrase' | 'sentence'` - Highlight unit (default: 'word')
 - `threshold?`: `number` - Min similarity for semantic matches (default: 0.5)
-- `contentType?`: `ContentType` - Optional hint: `'plaintext' | 'richtext-json' | 'html' | 'markdown'`. Skips auto-detection when provided. *(v7.9.0)*
-- `contentExtractor?`: `(text: string) => ExtractedSegment[]` - Custom parser. Bypasses built-in detection entirely. *(v7.9.0)*
+- `contentType?`: `ContentType` - Optional hint: `'plaintext' | 'richtext-json' | 'html' | 'markdown'`. Skips auto-detection when provided.
+- `contentExtractor?`: `(text: string) => ExtractedSegment[]` - Custom parser. Bypasses built-in detection entirely.
 
 **Returns:** `Promise<Highlight[]>`
 - `text` - The matched text
 - `score` - Match score (1.0 for text matches, varies for semantic)
 - `position` - [start, end] indices in extracted text
 - `matchType` - `'text'` (exact) or `'semantic'` (concept)
-- `contentCategory?` - `'prose' | 'heading' | 'code' | 'label'` — Role of the source text in the document. Present when input is structured. *(v7.9.0)*
+- `contentCategory?` - `'title' | 'annotation' | 'content' | 'value' | 'code' | 'structural'` — Role of the source text. Built-in extractors produce `'title'`, `'content'`, `'code'`. All 6 categories are available for custom parsers.
 
-**Supported Rich-Text Formats (v7.9.0):**
+**Supported Rich-Text Formats:**
 
 | Format | Detection | Text nodes |
 |--------|-----------|------------|
@@ -339,17 +339,18 @@ const highlights = await brain.highlight({
 | HTML | Tags like `<h1>`, `<p>`, `<code>` | Visible text content |
 | Markdown | `#` headings, ` ``` ` code blocks | Stripped markup |
 
-**Timeout Protection (v7.9.0):**
+**Timeout Protection:**
 Semantic matching has a 10-second timeout. If embedding takes too long (e.g., WASM stall), `highlight()` returns text-only matches instead of hanging.
 
 **UI Pattern:**
 ```typescript
 // Style differently based on match type and content category
 highlights.forEach(h => {
-  const style = h.matchType === 'text' ? 'font-weight: bold' : 'background: yellow'
-  if (h.contentCategory === 'heading') { /* render as heading highlight */ }
-  if (h.contentCategory === 'code') { /* render with code styling */ }
-  // Apply style from h.position[0] to h.position[1]
+ const style = h.matchType === 'text' ? 'font-weight: bold' : 'background: yellow'
+ if (h.contentCategory === 'title') { /* render as heading highlight */ }
+ if (h.contentCategory === 'code') { /* render with code styling */ }
+ if (h.contentCategory === 'annotation') { /* render as comment/caption */ }
+ // Apply style from h.position[0] to h.position[1]
 })
 ```
 
@@ -384,13 +385,13 @@ Create a typed relationship between entities.
 
 ```typescript
 const relId = await brain.relate({
-  from: sourceId,
-  to: targetId,
-  type: VerbType.RelatedTo,
-  metadata: {                   // Optional
-    strength: 0.9,
-    confidence: 0.85
-  }
+ from: sourceId,
+ to: targetId,
+ type: VerbType.RelatedTo,
+ metadata: { // Optional
+ strength: 0.9,
+ confidence: 0.85
+ }
 })
 ```
 
@@ -417,8 +418,8 @@ const incoming = await brain.getRelations({ to: entityId })
 
 // Filter by type
 const related = await brain.getRelations({
-  from: entityId,
-  type: VerbType.Contains
+ from: entityId,
+ type: VerbType.Contains
 })
 ```
 
@@ -439,14 +440,14 @@ Add multiple entities in one operation.
 
 ```typescript
 const result = await brain.addMany({
-  items: [
-    { data: 'Entity 1', type: NounType.Document },
-    { data: 'Entity 2', type: NounType.Concept }
-  ]
+ items: [
+ { data: 'Entity 1', type: NounType.Document },
+ { data: 'Entity 2', type: NounType.Concept }
+ ]
 })
 
-console.log(result.successful)  // Array of IDs
-console.log(result.failed)      // Array of errors
+console.log(result.successful) // Array of IDs
+console.log(result.failed) // Array of errors
 ```
 
 **Returns:** `Promise<BatchResult<string>>` - Success/failure results
@@ -459,7 +460,7 @@ Delete multiple entities.
 
 ```typescript
 const result = await brain.deleteMany({
-  ids: [id1, id2, id3]
+ ids: [id1, id2, id3]
 })
 ```
 
@@ -471,10 +472,10 @@ Update multiple entities.
 
 ```typescript
 const result = await brain.updateMany({
-  updates: [
-    { id: id1, metadata: { updated: true } },
-    { id: id2, data: 'New content' }
-  ]
+ updates: [
+ { id: id1, metadata: { updated: true } },
+ { id: id2, data: 'New content' }
+ ]
 })
 ```
 
@@ -486,18 +487,18 @@ Create multiple relationships.
 
 ```typescript
 const ids = await brain.relateMany({
-  relations: [
-    { from: id1, to: id2, type: VerbType.RelatedTo },
-    { from: id1, to: id3, type: VerbType.Contains }
-  ]
+ relations: [
+ { from: id1, to: id2, type: VerbType.RelatedTo },
+ { from: id1, to: id3, type: VerbType.Contains }
+ ]
 })
 ```
 
 ---
 
-## Branch Management (v5.0+)
+## Branch Management
 
-**NEW in v5.0.0:** Git-style branching with Snowflake-style copy-on-write.
+Git-style branching with Snowflake-style copy-on-write.
 
 ### `fork(branch?, options?)` → `Promise<Brainy>`
 
@@ -512,13 +513,13 @@ await experiment.add({ data: 'Test entity', type: NounType.Document })
 await experiment.update({ id: someId, metadata: { modified: true } })
 
 // Parent is unaffected!
-const parentData = await brain.find({})  // Original data unchanged
+const parentData = await brain.find({}) // Original data unchanged
 ```
 
 **Parameters:**
 - `branch?`: `string` - Branch name (auto-generated if omitted)
 - `options?`: `object`
-  - `description?`: `string` - Branch description
+ - `description?`: `string` - Branch description
 
 **Returns:** `Promise<Brainy>` - New Brainy instance on forked branch
 
@@ -568,9 +569,9 @@ Create a commit snapshot.
 
 ```typescript
 const commitId = await brain.commit({
-  message: 'Add new features',
-  author: 'dev@example.com',
-  metadata: { ticket: 'PROJ-123' }
+ message: 'Add new features',
+ author: 'dev@example.com',
+ metadata: { ticket: 'PROJ-123' }
 })
 ```
 
@@ -600,8 +601,8 @@ Get commit history.
 
 ```typescript
 const history = await brain.getHistory({
-  branch: 'main',
-  limit: 10
+ branch: 'main',
+ limit: 10
 })
 ```
 
@@ -618,13 +619,13 @@ const commitId = commits[0].id
 
 // Create snapshot (lazy-loading, no eager data loading)
 const snapshot = await brain.asOf(commitId, {
-  cacheSize: 10000  // LRU cache size (default: 10000)
+ cacheSize: 10000 // LRU cache size (default: 10000)
 })
 
 // Query historical state - full Triple Intelligence works!
 const results = await snapshot.find({
-  query: 'AI research',
-  where: { category: 'technology' }
+ query: 'AI research',
+ where: { category: 'technology' }
 })
 
 // Get historical relationships
@@ -637,7 +638,7 @@ await snapshot.close()
 **Parameters:**
 - `commitId`: `string` - Commit hash to snapshot from
 - `options?`: `object`
-  - `cacheSize?`: `number` - LRU cache size for lazy-loading (default: 10000)
+ - `cacheSize?`: `number` - LRU cache size for lazy-loading (default: 10000)
 
 **Returns:** `Promise<Brainy>` - Read-only Brainy instance with historical state
 
@@ -651,9 +652,9 @@ await snapshot.close()
 
 ---
 
-## Entity Versioning (v5.3.0+)
+## Entity Versioning
 
-**NEW in v5.3.0:** Git-style versioning for individual entities with content-addressable storage.
+Git-style versioning for individual entities with content-addressable storage.
 
 ### Overview
 
@@ -664,7 +665,7 @@ Entity Versioning provides time-travel and history tracking for individual entit
 - **Branch-Isolated** - Versions isolated per branch
 - **Selective Auto-Versioning** - Optional augmentation for automatic version creation
 - **Production-Scale** - Designed for billions of entities
-- **VFS File Support (v6.3.2+)** - Full versioning for VFS files with actual blob content
+- **VFS File Support** - Full versioning for VFS files with actual blob content
 
 ---
 
@@ -675,22 +676,22 @@ Save a new version of an entity.
 ```typescript
 // Save version with tag
 const version = await brain.versions.save('user-123', {
-  tag: 'v1.0',
-  description: 'Initial user profile',
-  metadata: { author: 'dev@example.com' }
+ tag: 'v1.0',
+ description: 'Initial user profile',
+ metadata: { author: 'dev@example.com' }
 })
 
-console.log(version.version)      // 1
-console.log(version.contentHash)  // SHA-256 hash
-console.log(version.createdAt)    // Timestamp
+console.log(version.version) // 1
+console.log(version.contentHash) // SHA-256 hash
+console.log(version.createdAt) // Timestamp
 ```
 
 **Parameters:**
 - `entityId`: `string` - Entity ID to version
 - `options?`: `object`
-  - `tag?`: `string` - Version tag (e.g., 'v1.0', 'beta')
-  - `description?`: `string` - Version description
-  - `metadata?`: `object` - Additional version metadata
+ - `tag?`: `string` - Version tag (e.g., 'v1.0', 'beta')
+ - `description?`: `string` - Version description
+ - `metadata?`: `object` - Additional version metadata
 
 **Returns:** `Promise<EntityVersion>` - Created version
 
@@ -707,20 +708,20 @@ List all versions of an entity.
 
 ```typescript
 const versions = await brain.versions.list('user-123', {
-  limit: 10,
-  offset: 0
+ limit: 10,
+ offset: 0
 })
 
 versions.forEach(v => {
-  console.log(`Version ${v.version}: ${v.tag} - ${v.description}`)
+ console.log(`Version ${v.version}: ${v.tag} - ${v.description}`)
 })
 ```
 
 **Parameters:**
 - `entityId`: `string` - Entity ID
 - `options?`: `object`
-  - `limit?`: `number` - Max versions to return
-  - `offset?`: `number` - Skip versions
+ - `limit?`: `number` - Max versions to return
+ - `offset?`: `number` - Skip versions
 
 **Returns:** `Promise<EntityVersion[]>` - Versions (newest first)
 
@@ -751,10 +752,10 @@ Compare two versions.
 ```typescript
 const diff = await brain.versions.compare('user-123', 1, 2)
 
-console.log(diff.totalChanges)    // Total changes
-console.log(diff.modified)        // Modified fields
-console.log(diff.added)           // Added fields
-console.log(diff.removed)         // Removed fields
+console.log(diff.totalChanges) // Total changes
+console.log(diff.modified) // Modified fields
+console.log(diff.added) // Added fields
+console.log(diff.removed) // Removed fields
 
 // Check specific changes
 const nameChange = diff.modified.find(c => c.path === 'metadata.name')
@@ -772,11 +773,11 @@ Get version content without restoring.
 ```typescript
 // View old version without changing current state
 const v1Content = await brain.versions.getContent('user-123', 1)
-console.log(v1Content.metadata.name)  // Old name
+console.log(v1Content.metadata.name) // Old name
 
 // Current state unchanged
 const current = await brain.get('user-123')
-console.log(current.metadata.name)  // Current name
+console.log(current.metadata.name) // Current name
 ```
 
 ---
@@ -803,9 +804,9 @@ Clean up old versions.
 
 ```typescript
 const result = await brain.versions.prune('user-123', {
-  keepRecent: 10,      // Keep 10 most recent
-  keepTagged: true,    // Always keep tagged versions
-  olderThan: Date.now() - 30 * 24 * 60 * 60 * 1000  // Older than 30 days
+ keepRecent: 10, // Keep 10 most recent
+ keepTagged: true, // Always keep tagged versions
+ olderThan: Date.now() - 30 * 24 * 60 * 60 * 1000 // Older than 30 days
 })
 
 console.log(`Deleted ${result.deleted}, kept ${result.kept}`)
@@ -825,7 +826,7 @@ Get latest version.
 ```typescript
 const latest = await brain.versions.getLatest('user-123')
 if (latest) {
-  console.log(`Latest: v${latest.version} (${latest.tag})`)
+ console.log(`Latest: v${latest.version} (${latest.tag})`)
 }
 ```
 
@@ -858,7 +859,7 @@ Check if entity has versions.
 
 ```typescript
 if (await brain.versions.hasVersions('user-123')) {
-  console.log('Entity has version history')
+ console.log('Entity has version history')
 }
 ```
 
@@ -873,14 +874,14 @@ import { VersioningAugmentation } from '@soulcraft/brainy'
 
 // Configure auto-versioning
 const versioning = new VersioningAugmentation({
-  enabled: true,
-  onUpdate: true,           // Version on update()
-  onDelete: false,          // Don't version on delete
-  entities: ['user-*'],     // Only version users
-  excludeEntities: ['temp-*'],
-  excludeTypes: ['temporary'],
-  keepRecent: 50,           // Auto-prune old versions
-  keepTagged: true
+ enabled: true,
+ onUpdate: true, // Version on update()
+ onDelete: false, // Don't version on delete
+ entities: ['user-*'], // Only version users
+ excludeEntities: ['temp-*'],
+ excludeTypes: ['temporary'],
+ keepRecent: 50, // Auto-prune old versions
+ keepTagged: true
 })
 
 // Apply augmentation
@@ -930,7 +931,7 @@ await feature.versions.save('doc-1', { tag: 'feature-v1' })
 const mainVersions = await brain.versions.list('doc-1')
 const featureVersions = await feature.versions.list('doc-1')
 
-console.log(mainVersions.length !== featureVersions.length)  // true
+console.log(mainVersions.length !== featureVersions.length) // true
 ```
 
 ---
@@ -949,8 +950,8 @@ console.log(mainVersions.length !== featureVersions.length)  // true
 
 **Storage Structure:**
 ```
-_version:{entityId}:{versionNum}:{branch}  // Version metadata
-_version_blob:{contentHash}                // Content blob (deduplicated)
+_version:{entityId}:{versionNum}:{branch} // Version metadata
+_version_blob:{contentHash} // Content blob (deduplicated)
 ```
 
 **Performance:**
@@ -968,10 +969,10 @@ _version_blob:{contentHash}                // Content blob (deduplicated)
 ```typescript
 // Create entity
 await brain.add({
-  data: 'User profile',
-  id: 'user-123',
-  type: 'user',
-  metadata: { name: 'Alice', email: 'alice@example.com' }
+ data: 'User profile',
+ id: 'user-123',
+ type: 'user',
+ metadata: { name: 'Alice', email: 'alice@example.com' }
 })
 
 // Save v1
@@ -1012,10 +1013,10 @@ await brain.versions.restore('app-config', 'beta')
 ```typescript
 // Track all changes
 const versioning = new VersioningAugmentation({
-  enabled: true,
-  onUpdate: true,
-  entities: ['audit-*'],
-  keepRecent: 100  // Keep 100 versions for audit
+ enabled: true,
+ onUpdate: true,
+ entities: ['audit-*'],
+ keepRecent: 100 // Keep 100 versions for audit
 })
 
 brain.augment(versioning)
@@ -1027,11 +1028,11 @@ await brain.update('audit-record-1', { status: 'approved' })
 // View complete history
 const versions = await brain.versions.list('audit-record-1')
 versions.forEach(v => {
-  console.log(`${v.createdAt}: ${v.description}`)
+ console.log(`${v.createdAt}: ${v.description}`)
 })
 ```
 
-#### VFS File Versioning (v6.3.2+)
+#### VFS File Versioning
 
 ```typescript
 // VFS files can be versioned with actual blob content
@@ -1049,17 +1050,17 @@ await brain.vfs.writeFile('/docs/readme.md', 'Version 2 - updated content')
 // Save version 2
 await brain.versions.save(stat.entityId, { tag: 'v2', description: 'Updated docs' })
 
-// Compare versions - content is DIFFERENT (fixed in v6.3.2)
+// Compare versions - content is DIFFERENT
 const v1 = await brain.versions.getContent(stat.entityId, 1)
 const v2 = await brain.versions.getContent(stat.entityId, 2)
-console.log(v1.data !== v2.data)  // true
+console.log(v1.data !== v2.data) // true
 
 // Restore to v1 - writes content back to blob storage
 await brain.versions.restore(stat.entityId, 'v1')
 
 // File is now back to v1
 const content = await brain.vfs.readFile('/docs/readme.md')
-console.log(content.toString())  // 'Version 1 content'
+console.log(content.toString()) // 'Version 1 content'
 ```
 
 ---
@@ -1070,33 +1071,33 @@ console.log(content.toString())  // 'Version 1 content'
 
 ## Virtual Filesystem (VFS)
 
-**Auto-initialized in v5.1.0!** Access via `brain.vfs` (property, not method).
+Access via `brain.vfs` (property, not method). Auto-initialized during `brain.init()`.
 
 ### Filtering VFS Entities
 
-**NEW in v5.3.0:** All VFS entities (files/folders) have `metadata.isVFSEntity: true` set automatically.
+All VFS entities (files/folders) have `metadata.isVFSEntity: true` set automatically.
 
 Use this to filter VFS entities from semantic search results:
 
 ```typescript
 // Exclude VFS entities from semantic search
 const semanticOnly = await brain.find({
-  query: 'artificial intelligence',
-  where: {
-    isVFSEntity: { notEquals: true }  // Only semantic entities
-  }
+ query: 'artificial intelligence',
+ where: {
+ isVFSEntity: { notEquals: true } // Only semantic entities
+ }
 })
 
 // Or filter to ONLY VFS entities
 const vfsOnly = await brain.find({
-  where: {
-    isVFSEntity: { equals: true }  // Only VFS files/folders
-  }
+ where: {
+ isVFSEntity: { equals: true } // Only VFS files/folders
+ }
 })
 
 // Check if an entity is a VFS entity
 if (entity.metadata.isVFSEntity === true) {
-  console.log('This is a VFS file or folder')
+ console.log('This is a VFS file or folder')
 }
 ```
 
@@ -1123,7 +1124,7 @@ Write file content.
 
 ```typescript
 await brain.vfs.writeFile('/docs/README.md', 'New content', {
-  encoding: 'utf-8'
+ encoding: 'utf-8'
 })
 ```
 
@@ -1161,7 +1162,7 @@ const files = await brain.vfs.readdir('/projects')
 // With file types
 const entries = await brain.vfs.readdir('/projects', { withFileTypes: true })
 entries.forEach(entry => {
-  console.log(entry.name, entry.isDirectory() ? 'DIR' : 'FILE')
+ console.log(entry.name, entry.isDirectory() ? 'DIR' : 'FILE')
 })
 ```
 
@@ -1183,9 +1184,9 @@ Get file/directory stats.
 
 ```typescript
 const stats = await brain.vfs.stat('/docs/README.md')
-console.log(stats.size)        // File size
-console.log(stats.mtime)       // Modified time
-console.log(stats.isDirectory())  // Is directory?
+console.log(stats.size) // File size
+console.log(stats.mtime) // Modified time
+console.log(stats.isDirectory()) // Is directory?
 ```
 
 ---
@@ -1198,8 +1199,8 @@ Semantic file search.
 
 ```typescript
 const results = await brain.vfs.search('React components with hooks', {
-  path: '/src',
-  limit: 10
+ path: '/src',
+ limit: 10
 })
 ```
 
@@ -1211,8 +1212,8 @@ Find similar files.
 
 ```typescript
 const similar = await brain.vfs.findSimilar('/src/App.tsx', {
-  limit: 5,
-  threshold: 0.7
+ limit: 5,
+ threshold: 0.7
 })
 ```
 
@@ -1226,7 +1227,7 @@ Get directory tree (prevents infinite recursion).
 
 ```typescript
 const tree = await brain.vfs.getTreeStructure('/projects', {
-  maxDepth: 3
+ maxDepth: 3
 })
 ```
 
@@ -1238,7 +1239,7 @@ Get all descendants with optional filtering.
 
 ```typescript
 const files = await brain.vfs.getDescendants('/src', {
-  filter: (entity) => entity.name.endsWith('.tsx')
+ filter: (entity) => entity.name.endsWith('.tsx')
 })
 ```
 
@@ -1252,8 +1253,8 @@ Get file metadata.
 
 ```typescript
 const meta = await brain.vfs.getMetadata('/src/App.tsx')
-console.log(meta.todos)        // Extracted TODOs
-console.log(meta.tags)         // Tags
+console.log(meta.todos) // Extracted TODOs
+console.log(meta.tags) // Tags
 ```
 
 ---
@@ -1299,7 +1300,7 @@ Get project statistics.
 const stats = await brain.vfs.getProjectStats('/projects/my-app')
 console.log(stats.fileCount)
 console.log(stats.totalSize)
-console.log(stats.fileTypes)  // Breakdown by extension
+console.log(stats.fileTypes) // Breakdown by extension
 ```
 
 ---
@@ -1310,8 +1311,8 @@ Search for VFS entities by metadata.
 
 ```typescript
 const tsxFiles = await brain.vfs.searchEntities({
-  type: 'file',
-  extension: '.tsx'
+ type: 'file',
+ extension: '.tsx'
 })
 ```
 
@@ -1332,13 +1333,13 @@ Calculate semantic similarity.
 ```typescript
 // Simple similarity score
 const score = await brain.neural().similar(
-  'renewable energy',
-  'sustainable power'
-)  // 0.87
+ 'renewable energy',
+ 'sustainable power'
+) // 0.87
 
 // Detailed result
 const result = await brain.neural().similar('text1', 'text2', {
-  detailed: true
+ detailed: true
 })
 console.log(result.score)
 console.log(result.explanation)
@@ -1352,15 +1353,15 @@ Automatic clustering.
 
 ```typescript
 const clusters = await brain.neural().clusters({
-  algorithm: 'kmeans',
-  k: 5,
-  minSize: 3
+ algorithm: 'kmeans',
+ k: 5,
+ minSize: 3
 })
 
 clusters.forEach(cluster => {
-  console.log(cluster.label)
-  console.log(cluster.items)
-  console.log(cluster.centroid)
+ console.log(cluster.label)
+ console.log(cluster.items)
+ console.log(cluster.centroid)
 })
 ```
 
@@ -1372,8 +1373,8 @@ Find k-nearest neighbors.
 
 ```typescript
 const neighbors = await brain.neural().neighbors(entityId, {
-  k: 10,
-  threshold: 0.7
+ k: 10,
+ threshold: 0.7
 })
 ```
 
@@ -1396,10 +1397,10 @@ Generate visualization data.
 
 ```typescript
 const vizData = await brain.neural().visualize({
-  maxNodes: 100,
-  dimensions: 3,
-  algorithm: 'force',
-  includeEdges: true
+ maxNodes: 100,
+ dimensions: 3,
+ algorithm: 'force',
+ includeEdges: true
 })
 // Use with D3.js, Cytoscape, GraphML tools
 ```
@@ -1414,8 +1415,8 @@ Fast clustering for large datasets.
 
 ```typescript
 const clusters = await brain.neural().clusterFast({
-  k: 10,
-  maxIterations: 50
+ k: 10,
+ maxIterations: 50
 })
 ```
 
@@ -1427,8 +1428,8 @@ Streaming clustering for very large datasets.
 
 ```typescript
 const clusters = await brain.neural().clusterLarge({
-  k: 20,
-  batchSize: 1000
+ k: 20,
+ batchSize: 1000
 })
 ```
 
@@ -1443,20 +1444,20 @@ Smart import with auto-detection (CSV, Excel, PDF, JSON, URLs).
 ```typescript
 // CSV import
 await brain.import('data.csv', {
-  format: 'csv',
-  createEntities: true
+ format: 'csv',
+ createEntities: true
 })
 
 // Excel import
 await brain.import('sales.xlsx', {
-  format: 'excel',
-  sheets: ['Q1', 'Q2']
+ format: 'excel',
+ sheets: ['Q1', 'Q2']
 })
 
 // PDF import
 await brain.import('research.pdf', {
-  format: 'pdf',
-  extractTables: true
+ format: 'pdf',
+ extractTables: true
 })
 
 // URL import
@@ -1466,14 +1467,14 @@ await brain.import('https://api.example.com/data.json')
 **Parameters:**
 - `source`: `string | Buffer | object` - File path, URL, buffer, or object
 - `options?`: Import configuration
-  - `format?`: `'csv' | 'excel' | 'pdf' | 'json'` - Auto-detected if omitted
-  - `createEntities?`: `boolean` - Create entities from rows
-  - `sheets?`: `string[]` - Excel sheets to import
-  - `extractTables?`: `boolean` - Extract tables from PDF
+ - `format?`: `'csv' | 'excel' | 'pdf' | 'json'` - Auto-detected if omitted
+ - `createEntities?`: `boolean` - Create entities from rows
+ - `sheets?`: `string[]` - Excel sheets to import
+ - `extractTables?`: `boolean` - Extract tables from PDF
 
 **Returns:** `Promise<ImportResult>` - Import statistics
 
-**Note:** Import always uses the current branch (v5.1.0 verified).
+**Note:** Import always uses the current branch.
 
 **[📖 Complete Import Guide →](../guides/import-anything.md)**
 
@@ -1501,53 +1502,53 @@ const entities = await snapshot.find({ limit: 100 })
 
 ```typescript
 const brain = new Brainy({
-  // Storage configuration
-  storage: {
-    type: 'memory',              // memory | opfs | filesystem | s3 | r2 | gcs | azure
-    path: './brainy-data',       // For filesystem storage
-    compression: true,           // Enable gzip compression (60-80% savings)
+ // Storage configuration
+ storage: {
+ type: 'memory', // memory | opfs | filesystem | s3 | r2 | gcs | azure
+ path: './brainy-data', // For filesystem storage
+ compression: true, // Enable gzip compression (60-80% savings)
 
-    // Cloud storage configs (see Storage Adapters section)
-    s3Storage: { ... },
-    r2Storage: { ... },
-    gcsStorage: { ... },
-    azureStorage: { ... }
-  },
+ // Cloud storage configs (see Storage Adapters section)
+ s3Storage: { ... },
+ r2Storage: { ... },
+ gcsStorage: { ... },
+ azureStorage: { ... }
+ },
 
-  // HNSW vector index config
-  hnsw: {
-    M: 16,                       // Connections per layer
-    efConstruction: 200,         // Construction quality
-    efSearch: 100,               // Search quality
-    typeAware: true              // Enable type-aware indexing (v4.0+)
-  },
+ // HNSW vector index config
+ hnsw: {
+ M: 16, // Connections per layer
+ efConstruction: 200, // Construction quality
+ efSearch: 100, // Search quality
+ typeAware: true // Enable type-aware indexing
+ },
 
-  // Model configuration (embedded in WASM - zero config needed)
-  // Model: all-MiniLM-L6-v2 (384 dimensions)
-  // Device: CPU via WASM (works everywhere)
+ // Model configuration (embedded in WASM - zero config needed)
+ // Model: all-MiniLM-L6-v2 (384 dimensions)
+ // Device: CPU via WASM (works everywhere)
 
-  // Cache configuration
-  cache: {
-    enabled: true,
-    maxSize: 10000,
-    ttl: 3600000                 // 1 hour in ms
-  }
+ // Cache configuration
+ cache: {
+ enabled: true,
+ maxSize: 10000,
+ ttl: 3600000 // 1 hour in ms
+ }
 })
 
-await brain.init()  // Required! VFS auto-initialized in v5.1.0
+await brain.init() // Required! VFS auto-initialized
 ```
 
 ---
 
 ## Storage Adapters
 
-All 7 storage adapters support **copy-on-write branching** (v5.0+).
+All 7 storage adapters support **copy-on-write branching**.
 
 ### Memory (Default)
 
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'memory' }
+ storage: { type: 'memory' }
 })
 ```
 
@@ -1559,7 +1560,7 @@ const brain = new Brainy({
 
 ```typescript
 const brain = new Brainy({
-  storage: { type: 'opfs' }
+ storage: { type: 'opfs' }
 })
 ```
 
@@ -1571,11 +1572,11 @@ const brain = new Brainy({
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'filesystem',
-    path: './brainy-data',
-    compression: true  // 60-80% space savings
-  }
+ storage: {
+ type: 'filesystem',
+ path: './brainy-data',
+ compression: true // 60-80% space savings
+ }
 })
 ```
 
@@ -1587,15 +1588,15 @@ const brain = new Brainy({
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 's3',
-    s3Storage: {
-      bucketName: 'my-brainy-data',
-      region: 'us-east-1',
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 's3',
+ s3Storage: {
+ bucketName: 'my-brainy-data',
+ region: 'us-east-1',
+ accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+ secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+ }
+ }
 })
 
 // Enable Intelligent-Tiering for 96% cost savings
@@ -1612,15 +1613,15 @@ await brain.storage.enableIntelligentTiering('entities/', 'auto-tier')
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'r2',
-    r2Storage: {
-      accountId: process.env.CF_ACCOUNT_ID,
-      bucketName: 'my-brainy-data',
-      accessKeyId: process.env.CF_ACCESS_KEY_ID,
-      secretAccessKey: process.env.CF_SECRET_ACCESS_KEY
-    }
-  }
+ storage: {
+ type: 'r2',
+ r2Storage: {
+ accountId: process.env.CF_ACCOUNT_ID,
+ bucketName: 'my-brainy-data',
+ accessKeyId: process.env.CF_ACCESS_KEY_ID,
+ secretAccessKey: process.env.CF_SECRET_ACCESS_KEY
+ }
+ }
 })
 ```
 
@@ -1634,19 +1635,19 @@ const brain = new Brainy({
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'gcs',
-    gcsStorage: {
-      bucketName: 'my-brainy-data',
-      projectId: process.env.GCP_PROJECT_ID,
-      keyFilename: './gcp-key.json'
-    }
-  }
+ storage: {
+ type: 'gcs',
+ gcsStorage: {
+ bucketName: 'my-brainy-data',
+ projectId: process.env.GCP_PROJECT_ID,
+ keyFilename: './gcp-key.json'
+ }
+ }
 })
 
 // Enable auto-tiering
 await brain.storage.enableAutoclass({
-  terminalStorageClass: 'ARCHIVE'
+ terminalStorageClass: 'ARCHIVE'
 })
 ```
 
@@ -1660,14 +1661,14 @@ await brain.storage.enableAutoclass({
 
 ```typescript
 const brain = new Brainy({
-  storage: {
-    type: 'azure',
-    azureStorage: {
-      accountName: process.env.AZURE_STORAGE_ACCOUNT,
-      accountKey: process.env.AZURE_STORAGE_KEY,
-      containerName: 'brainy-data'
-    }
-  }
+ storage: {
+ type: 'azure',
+ azureStorage: {
+ accountName: process.env.AZURE_STORAGE_ACCOUNT,
+ accountKey: process.env.AZURE_STORAGE_KEY,
+ containerName: 'brainy-data'
+ }
+ }
 })
 ```
 
@@ -1709,7 +1710,7 @@ const count = await brain.getVerbCount()
 
 ---
 
-### `embed(data)` → `Promise<number[]>` ✨ *Enhanced v7.1.0*
+### `embed(data)` → `Promise<number[]>` ✨
 
 Generate embedding vector from text or data.
 
@@ -1721,32 +1722,32 @@ console.log(vector.length) // 384
 
 ---
 
-### `embedBatch(texts)` → `Promise<number[][]>` ✨ *New v7.1.0, Optimized v7.9.0*
+### `embedBatch(texts)` → `Promise<number[][]>` ✨
 
 Batch embed multiple texts using native WASM batch API (single forward pass).
 
 ```typescript
 const embeddings = await brain.embedBatch([
-  'Machine learning is fascinating',
-  'Deep neural networks',
-  'Natural language processing'
+ 'Machine learning is fascinating',
+ 'Deep neural networks',
+ 'Natural language processing'
 ])
-console.log(embeddings.length)    // 3
+console.log(embeddings.length) // 3
 console.log(embeddings[0].length) // 384
 ```
 
-> **v7.9.0**: Now uses the WASM engine's native `embed_batch()` for a single model forward pass instead of N individual calls. This is the same batch API used internally by `highlight()`.
+> Uses the WASM engine's native `embed_batch()` for a single model forward pass instead of N individual calls. This is the same batch API used internally by `highlight()`.
 
 ---
 
-### `similarity(textA, textB)` → `Promise<number>` ✨ *New v7.1.0*
+### `similarity(textA, textB)` → `Promise<number>` ✨
 
 Calculate semantic similarity between two texts.
 
 ```typescript
 const score = await brain.similarity(
-  'The cat sat on the mat',
-  'A feline was resting on the rug'
+ 'The cat sat on the mat',
+ 'A feline was resting on the rug'
 )
 console.log(score) // ~0.85 (high semantic similarity)
 ```
@@ -1755,7 +1756,7 @@ console.log(score) // ~0.85 (high semantic similarity)
 
 ---
 
-### `neighbors(entityId, options?)` → `Promise<string[]>` ✨ *New v7.1.0*
+### `neighbors(entityId, options?)` → `Promise<string[]>` ✨
 
 Get graph neighbors of an entity.
 
@@ -1765,14 +1766,14 @@ const neighbors = await brain.neighbors(entityId)
 
 // Get outgoing connections only
 const outgoing = await brain.neighbors(entityId, {
-  direction: 'outgoing',
-  limit: 10
+ direction: 'outgoing',
+ limit: 10
 })
 
 // Multi-hop traversal
 const extended = await brain.neighbors(entityId, {
-  depth: 2,
-  direction: 'both'
+ depth: 2,
+ direction: 'both'
 })
 ```
 
@@ -1784,7 +1785,7 @@ const extended = await brain.neighbors(entityId, {
 
 ---
 
-### `findDuplicates(options?)` → `Promise<DuplicateResult[]>` ✨ *New v7.1.0*
+### `findDuplicates(options?)` → `Promise<DuplicateResult[]>` ✨
 
 Find semantic duplicates in the database.
 
@@ -1793,17 +1794,17 @@ Find semantic duplicates in the database.
 const duplicates = await brain.findDuplicates()
 
 for (const group of duplicates) {
-  console.log('Original:', group.entity.id)
-  for (const dup of group.duplicates) {
-    console.log(`  Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
-  }
+ console.log('Original:', group.entity.id)
+ for (const dup of group.duplicates) {
+ console.log(` Duplicate: ${dup.entity.id} (${dup.similarity.toFixed(2)})`)
+ }
 }
 
 // Find person duplicates with higher threshold
 const personDupes = await brain.findDuplicates({
-  type: NounType.PERSON,
-  threshold: 0.9,
-  limit: 50
+ type: NounType.PERSON,
+ threshold: 0.9,
+ limit: 50
 })
 ```
 
@@ -1814,7 +1815,7 @@ const personDupes = await brain.findDuplicates({
 
 ---
 
-### `indexStats()` → `Promise<IndexStats>` ✨ *New v7.1.0*
+### `indexStats()` → `Promise<IndexStats>` ✨
 
 Get comprehensive index statistics.
 
@@ -1839,7 +1840,7 @@ console.log(`Fields: ${stats.metadataFields.join(', ')}`)
 
 ---
 
-### `cluster(options?)` → `Promise<ClusterResult[]>` ✨ *New v7.1.0*
+### `cluster(options?)` → `Promise<ClusterResult[]>` ✨
 
 Cluster entities by semantic similarity.
 
@@ -1848,15 +1849,15 @@ Cluster entities by semantic similarity.
 const clusters = await brain.cluster()
 
 for (const cluster of clusters) {
-  console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
+ console.log(`${cluster.clusterId}: ${cluster.entities.length} entities`)
 }
 
 // Find document clusters with centroids
 const docClusters = await brain.cluster({
-  type: NounType.Document,
-  threshold: 0.85,
-  minClusterSize: 3,
-  includeCentroid: true
+ type: NounType.Document,
+ threshold: 0.85,
+ minClusterSize: 3,
+ includeCentroid: true
 })
 ```
 
@@ -1893,17 +1894,17 @@ console.log(stats.cacheHitRate)
 
 ```typescript
 const brain = new Brainy(config)
-await brain.init()  // Required! VFS auto-initialized here (v5.1.0)
+await brain.init() // Required! VFS auto-initialized here
 ```
 
-**v5.1.0 Change:** VFS is now auto-initialized during `brain.init()` - no separate `vfs.init()` needed!
+VFS is auto-initialized during `brain.init()` - no separate `vfs.init()` needed!
 
 ---
 
 ### Shutdown
 
 ```typescript
-await brain.shutdown()  // Graceful shutdown, flush caches
+await brain.shutdown() // Graceful shutdown, flush caches
 ```
 
 ---
@@ -1915,9 +1916,9 @@ await brain.shutdown()  // Graceful shutdown, flush caches
 ```typescript
 // Create
 const id = await brain.add({
-  data: 'Quantum computing breakthrough',
-  type: NounType.Concept,
-  metadata: { category: 'tech', year: 2024 }
+ data: 'Quantum computing breakthrough',
+ type: NounType.Concept,
+ metadata: { category: 'tech', year: 2024 }
 })
 
 // Read
@@ -1925,8 +1926,8 @@ const entity = await brain.get(id)
 
 // Update
 await brain.update({
-  id,
-  metadata: { updated: true }
+ id,
+ metadata: { updated: true }
 })
 
 // Delete
@@ -1940,25 +1941,25 @@ await brain.delete(id)
 ```typescript
 // Create entities
 const ai = await brain.add({
-  data: 'Artificial Intelligence',
-  type: NounType.Concept
+ data: 'Artificial Intelligence',
+ type: NounType.Concept
 })
 
 const ml = await brain.add({
-  data: 'Machine Learning',
-  type: NounType.Concept
+ data: 'Machine Learning',
+ type: NounType.Concept
 })
 
 // Create relationship
 await brain.relate({
-  from: ml,
-  to: ai,
-  type: VerbType.IsA
+ from: ml,
+ to: ai,
+ type: VerbType.IsA
 })
 
 // Traverse graph
 const results = await brain.find({
-  connected: { from: ai, depth: 2 }
+ connected: { from: ai, depth: 2 }
 })
 ```
 
@@ -1968,23 +1969,23 @@ const results = await brain.find({
 
 ```typescript
 const results = await brain.find({
-  query: 'modern frontend frameworks',      // 🔍 Vector
-  where: {                                   // 📊 Document
-    year: { greaterThan: 2020 },
-    category: { oneOf: ['framework', 'library'] }
-  },
-  connected: {                               // 🕸️ Graph
-    to: reactId,
-    depth: 2,
-    type: VerbType.BuiltOn
-  },
-  limit: 10
+ query: 'modern frontend frameworks', // 🔍 Vector
+ where: { // 📊 Document
+ year: { greaterThan: 2020 },
+ category: { oneOf: ['framework', 'library'] }
+ },
+ connected: { // 🕸️ Graph
+ to: reactId,
+ depth: 2,
+ type: VerbType.BuiltOn
+ },
+ limit: 10
 })
 ```
 
 ---
 
-### Git-Style Workflow (v5.0+)
+### Git-Style Workflow
 
 ```typescript
 // Fork for experimentation
@@ -1992,14 +1993,14 @@ const experiment = await brain.fork('test-migration')
 
 // Make changes in isolation
 await experiment.add({
-  data: 'New feature',
-  type: NounType.Document
+ data: 'New feature',
+ type: NounType.Document
 })
 
 // Commit your work
 await experiment.commit({
-  message: 'Add new feature',
-  author: 'dev@example.com'
+ message: 'Add new feature',
+ author: 'dev@example.com'
 })
 
 // Switch to experimental branch to make it active
@@ -2020,12 +2021,12 @@ const content = await brain.vfs.readFile('/docs/README.md')
 
 // Semantic search
 const reactFiles = await brain.vfs.search('React components with hooks', {
-  path: '/src'
+ path: '/src'
 })
 
 // Get tree structure (safe, prevents infinite recursion)
 const tree = await brain.vfs.getTreeStructure('/projects', {
-  maxDepth: 3
+ maxDepth: 3
 })
 ```
 
@@ -2033,7 +2034,7 @@ const tree = await brain.vfs.getTreeStructure('/projects', {
 
 ## Type System Reference
 
-**NEW in v5.5.0:** Stage 3 CANONICAL taxonomy with 169 types (42 nouns + 127 verbs)
+Stage 3 CANONICAL taxonomy with 169 types (42 nouns + 127 verbs)
 
 ### Noun Types (42)
 
@@ -2107,8 +2108,7 @@ For the full taxonomy with all 169 types and their descriptions, see:
 - **[Stage 3 CANONICAL Taxonomy](../STAGE3-CANONICAL-TAXONOMY.md)** - Complete list with categories
 - **[Noun-Verb Taxonomy Architecture](../architecture/noun-verb-taxonomy.md)** - Design rationale
 
-### Migration from v5.4.0
-
+### Migration from
 **Breaking Changes:**
 - `NounType.Content` removed → Use `Document`, `Message`, or `InformationContent`
 - `NounType.User` removed → Use `Person` or `Agent`
@@ -2120,34 +2120,24 @@ For the full taxonomy with all 169 types and their descriptions, see:
 
 ---
 
-## What's New in v5.0
-
-### v5.3.0 (Latest)
+## Key Features
 
 - ✅ **Entity Versioning** - Git-style versioning for individual entities
 - ✅ **Content-Addressable Storage** - SHA-256 deduplication for versions
 - ✅ **Auto-Versioning Augmentation** - Automatic version creation on updates
 - ✅ **Branch-Isolated Versions** - Versions isolated per branch
 - ✅ **VFS Entity Filtering** - All VFS entities now have `isVFSEntity: true` flag
-- ✅ **CRITICAL FIX:** commit() now updates branch refs correctly (brainy.ts:2385)
-- ✅ **CRITICAL FIX:** VFS entities now properly flagged for filtering
-
-### v5.1.0
-
 - ✅ **VFS Auto-Initialization** - No more separate `vfs.init()` calls
 - ✅ **VFS Property Access** - Use `brain.vfs.method()` instead of `brain.vfs().method()`
 - ✅ **Complete COW Support** - All 20 TypeAware methods use COW helpers
 - ✅ **Verified Import/Export** - Work correctly with current branch
-
-### v5.0.0
-
 - ✅ **Instant Fork** - Snowflake-style copy-on-write (<100ms fork time)
 - ✅ **Git-Style Branching** - fork, commit, checkout, listBranches
 - ✅ **Full Branch Isolation** - Parent and fork fully isolated
 - ✅ **Read-Through Inheritance** - Forks see parent + own data
 - ✅ **Universal Storage Support** - All 7 adapters support branching
 
-**[📖 Complete v5.0 Changes →](../../.strategy/v5.1.0-CHANGES.md)**
+**[📖 Complete Changes →](../../.strategy/v5.1.0-CHANGES.md)**
 
 ---
 
@@ -2175,5 +2165,5 @@ For the full taxonomy with all 169 types and their descriptions, see:
 
 ---
 
-*Brainy v5.0+ - The Knowledge Operating System*
+*Brainy - The Knowledge Operating System*
 *From prototype to planet-scale • Zero configuration • Triple Intelligence™ • Git-Style Branching*

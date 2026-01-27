@@ -83,11 +83,12 @@ export interface Result<T = any> {
   // Score transparency
   explanation?: ScoreExplanation
 
-  // Match visibility (v7.8.0) - shows what matched in hybrid search
+  // Match visibility - shows what matched in hybrid search
   textMatches?: string[]      // Query words found in entity (e.g., ["david", "warrior"])
   textScore?: number          // Normalized text match score (0-1)
   semanticScore?: number      // Semantic similarity score (0-1)
   matchSource?: 'text' | 'semantic' | 'both'  // Where this result came from
+  rrfScore?: number           // Raw RRF fusion score (for advanced ranking analysis)
 }
 
 /**
@@ -188,7 +189,7 @@ export interface FindParams<T = any> {
   offset?: number            // Skip N results
   cursor?: string            // Cursor-based pagination
 
-  // Sorting (v4.5.4)
+  // Sorting
   orderBy?: string           // Field to sort by (e.g., 'createdAt', 'title', 'metadata.priority')
   order?: 'asc' | 'desc'     // Sort direction: 'asc' (default) or 'desc'
 
@@ -196,10 +197,10 @@ export interface FindParams<T = any> {
   mode?: SearchMode          // Search strategy
   explain?: boolean          // Return scoring explanation
   includeRelations?: boolean // Include entity relationships
-  excludeVFS?: boolean       // v4.7.0: Exclude VFS entities from results (default: false - VFS included)
+  excludeVFS?: boolean       // Exclude VFS entities from results (default: false - VFS included)
   service?: string           // Multi-tenancy filter
 
-  // Hybrid search options (v7.7.0)
+  // Hybrid search options
   searchMode?: 'auto' | 'text' | 'semantic' | 'vector' | 'hybrid'  // Search strategy: auto (default), text-only, semantic/vector-only, or explicit hybrid
   hybridAlpha?: number       // Weight between text (0.0) and semantic (1.0) search, default: auto-detected by query length
   
@@ -252,7 +253,7 @@ export interface SimilarParams<T = any> {
   type?: NounType | NounType[]    // Restrict to types
   where?: Partial<T>               // Additional filters
   service?: string                 // Multi-tenancy
-  excludeVFS?: boolean             // v4.7.0: Exclude VFS entities (default: false - VFS included)
+  excludeVFS?: boolean             // Exclude VFS entities (default: false - VFS included)
 }
 
 /**
@@ -289,8 +290,8 @@ export interface SimilarParams<T = any> {
  * })
  * ```
  *
- * @since v4.1.3 - Fixed bug where calling without parameters returned empty array
- * @since v4.1.3 - Added string ID shorthand syntax
+ * Fixed bug where calling without parameters returned empty array
+ * Added string ID shorthand syntax
  */
 export interface GetRelationsParams {
   /**
@@ -376,7 +377,7 @@ export interface DeleteManyParams {
   where?: any               // Delete by metadata
   limit?: number            // Max to delete (safety)
   onProgress?: (done: number, total: number) => void
-  continueOnError?: boolean  // v6.2.0: Continue processing if a delete fails
+  continueOnError?: boolean  // Continue processing if a delete fails
 }
 
 /**
@@ -403,7 +404,7 @@ export interface BatchResult<T = any> {
   duration: number          // Time taken in ms
 }
 
-// ============= Import Progress (v4.5.0) =============
+// ============= Import Progress =============
 
 /**
  * Import stage enumeration
@@ -435,7 +436,6 @@ export type ImportStatus =
  * - Time estimates
  * - Performance metrics
  *
- * @since v4.5.0
  */
 export interface ImportProgress {
   // Overall Progress
@@ -540,7 +540,7 @@ export interface ImportResult {
 /**
  * Options for brain.get() entity retrieval
  *
- * **Performance Optimization (v5.11.1)**:
+ * **Performance Optimization**:
  * By default, brain.get() loads ONLY metadata (not vectors), resulting in:
  * - **76-81% faster** reads (10ms vs 43ms for metadata-only)
  * - **95% less bandwidth** (300 bytes vs 6KB per entity)
@@ -573,7 +573,6 @@ export interface ImportResult {
  * await vfs.readFile('/file.txt')  // 53ms → 10ms (81% faster)
  * ```
  *
- * @since v5.11.1
  */
 export interface GetOptions {
   /**
@@ -635,7 +634,7 @@ export type AggregateMetric =
 // ============= Configuration =============
 
 /**
- * Integration Hub configuration (v7.4.0)
+ * Integration Hub configuration
  *
  * Enables external tool integrations: Excel, Power BI, Google Sheets, etc.
  * Works in all environments with zero external dependencies.
@@ -722,18 +721,18 @@ export interface BrainyConfig {
   batchWrites?: boolean            // Enable write batching for better performance
   maxConcurrentOperations?: number // Limit concurrent file operations
 
-  // HNSW persistence mode (v6.2.8)
+  // HNSW persistence mode
   // Controls when HNSW graph connections are persisted to storage
   // - 'immediate': Persist on every add (slow but durable, default for filesystem)
   // - 'deferred': Persist only on flush/close (fast, default for cloud storage)
   // Cloud storage (GCS/S3/R2/Azure) should use 'deferred' for 30-50× faster adds
   hnswPersistMode?: 'immediate' | 'deferred'
 
-  // Memory management options (v5.11.0)
+  // Memory management options
   maxQueryLimit?: number           // Override auto-detected query result limit (max: 100000)
   reservedQueryMemory?: number     // Memory reserved for queries in bytes (e.g., 1073741824 = 1GB)
 
-  // Embedding initialization (v7.1.2)
+  // Embedding initialization
   // Controls when the WASM embedding engine is initialized
   // - false (default): Lazy initialization on first embed() call
   // - true: Eager initialization during brain.init()
@@ -745,7 +744,7 @@ export interface BrainyConfig {
   verbose?: boolean         // Enable verbose logging
   silent?: boolean          // Suppress all logging output
 
-  // Integration Hub (v7.4.0)
+  // Integration Hub
   // Enable external tool integrations: Excel, Power BI, Google Sheets, etc.
   // - true: Enable all integrations with default paths
   // - false/undefined: Disable integrations (default)
@@ -789,54 +788,55 @@ export interface NeuralAnomalyParams {
   returnScores?: boolean    // Return anomaly scores
 }
 
-// ============= Content Extraction Types (v7.9.0) =============
+// ============= Content Extraction Types =============
 
 /**
  * Detected content type for smart text extraction
  *
- * @since v7.9.0
  */
 export type ContentType = 'plaintext' | 'richtext-json' | 'html' | 'markdown'
 
 /**
  * Content category for extracted segments
  *
- * Allows UI to apply different styling based on content role:
- * - 'prose': Regular text content (paragraphs, list items)
- * - 'heading': Heading/title text (h1-h6)
- * - 'code': Code blocks or inline code
- * - 'label': Labels, captions, or metadata-like text
+ * Universal categories that work across documents, code, and UI:
+ * - 'title': Names the subject — headings, identifiers, labels, JSON keys
+ * - 'annotation': Human explanation — comments, docstrings, captions, alt text
+ * - 'content': Body substance — paragraphs, list items, flowing text
+ * - 'value': Data literals — strings, numbers, form values, error messages
+ * - 'code': Unparsed code blocks (custom parsers decompose into above)
+ * - 'structural': Boilerplate — keywords, operators, punctuation, formatting
  *
- * @since v7.9.0
+ * Built-in extractors produce: 'title', 'content', 'code'.
+ * All 6 categories are available for custom parsers.
  */
-export type ContentCategory = 'prose' | 'heading' | 'code' | 'label'
+export type ContentCategory = 'title' | 'annotation' | 'content' | 'value' | 'code' | 'structural'
 
 /**
  * A segment of extracted text with its content category
  *
- * @since v7.9.0
  */
 export interface ExtractedSegment {
   /** The extracted text content */
   text: string
-  /** What role this text plays in the document */
+  /** What role this text plays: 'title' | 'annotation' | 'content' | 'value' | 'code' | 'structural' */
   contentCategory: ContentCategory
 }
 
-// ============= Semantic Highlighting Types (v7.8.0) =============
+// ============= Semantic Highlighting Types =============
 
 /**
- * Parameters for hybrid highlighting (v7.8.0, enhanced v7.9.0)
+ * Parameters for hybrid highlighting
  *
  * Zero-config highlighting that returns both text (exact) and semantic (concept) matches.
  * Perfect for UI highlighting at different levels.
  *
- * v7.9.0: Added contentType hint and contentExtractor callback for structured text
+ * Added contentType hint and contentExtractor callback for structured text
  * (rich-text JSON, HTML, Markdown). Auto-detects format when not specified.
  *
  * @example
  * ```typescript
- * // Plain text (unchanged from v7.8.0)
+ * // Plain text
  * const highlights = await brain.highlight({
  *   query: "david the warrior",
  *   text: "David Smith is a brave fighter who battles dragons"
@@ -872,7 +872,6 @@ export interface HighlightParams {
   /**
    * Optional content type hint to skip auto-detection.
    * When omitted, the content type is detected from the text content.
-   * @since v7.9.0
    */
   contentType?: ContentType
 
@@ -880,7 +879,6 @@ export interface HighlightParams {
    * Optional custom content extractor function.
    * When provided, bypasses built-in detection and extraction entirely.
    * Use this to plug in custom parsers (tree-sitter, Monaco, proprietary formats).
-   * @since v7.9.0
    */
   contentExtractor?: (text: string) => ExtractedSegment[]
 }
@@ -906,9 +904,8 @@ export interface Highlight {
   matchType: 'text' | 'semantic'
 
   /**
-   * Content category of the source segment (heading, code, prose, label).
+   * Content category of the source segment: 'title' | 'annotation' | 'content' | 'value' | 'code' | 'structural'.
    * Present when the input text was structured (JSON, HTML, Markdown).
-   * @since v7.9.0
    */
   contentCategory?: ContentCategory
 }

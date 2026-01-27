@@ -88,7 +88,7 @@ import { BrainyInterface } from './types/brainyInterface.js'
 import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
 
 /**
- * Stopwords for semantic highlighting (v7.8.0)
+ * Stopwords for semantic highlighting
  * These common words are skipped when highlighting individual words
  * to focus on meaningful content words.
  */
@@ -149,20 +149,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _tripleIntelligence?: TripleIntelligenceSystem
   private _versions?: VersioningAPI
   private _vfs?: VirtualFileSystem
-  private _vfsInitialized = false  // v7.3.0: Track VFS init completion separately
-  private _hub?: IntegrationHub     // v7.4.0: Integration Hub for external tools
+  private _vfsInitialized = false  // Track VFS init completion separately
+  private _hub?: IntegrationHub     // Integration Hub for external tools
 
   // State
   private initialized = false
   private dimensions?: number
 
-  // Ready Promise state (v7.3.0 - Unified readiness API)
+  // Ready Promise state (Unified readiness API)
   // Allows consumers to await brain.ready for initialization completion
   private _readyPromise: Promise<void> | null = null
   private _readyResolve: (() => void) | null = null
   private _readyReject: ((error: Error) => void) | null = null
 
-  // Lazy rebuild state (v5.7.7 - Production-scale lazy loading)
+  // Lazy rebuild state (Production-scale lazy loading)
   // Prevents race conditions when multiple queries trigger rebuild simultaneously
   private lazyRebuildInProgress = false
   private lazyRebuildCompleted = false
@@ -172,7 +172,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Normalize configuration with defaults
     this.config = this.normalizeConfig(config)
 
-    // Configure memory limits (v5.11.0)
+    // Configure memory limits
     // This must happen early, before any validation occurs
     if (this.config.maxQueryLimit !== undefined || this.config.reservedQueryMemory !== undefined) {
       ValidationConfig.reconfigure({
@@ -192,7 +192,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.setupDistributedComponents()
     }
 
-    // Initialize ready Promise (v7.3.0)
+    // Initialize ready Promise
     // This allows consumers to await brain.ready before using the database
     this._readyPromise = new Promise<void>((resolve, reject) => {
       this._readyResolve = resolve
@@ -260,7 +260,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.storage = await this.setupStorage()
       await this.storage.init()
 
-      // Enable COW immediately after storage init (v5.0.1)
+      // Enable COW immediately after storage init
       // This ensures ALL data is stored in branch-scoped paths from the start
       // Lightweight: just sets cowEnabled=true and currentBranch, no RefManager/BlobStorage yet
       if (typeof (this.storage as any).enableCOWLightweight === 'function') {
@@ -274,7 +274,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.metadataIndex = new MetadataIndexManager(this.storage)
       await this.metadataIndex.init()
 
-      // v6.3.0: Get GraphAdjacencyIndex from storage (SINGLETON pattern)
+      // Get GraphAdjacencyIndex from storage (SINGLETON pattern)
       // Storage owns the single instance, Brainy accesses it via getGraphIndex()
       // This fixes the dual-ownership bug where Brainy and Storage had separate instances
       // causing verbIdSet to be out of sync and VFS tree queries to fail
@@ -314,7 +314,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         Brainy.shutdownHooksRegisteredGlobally = true
       }
 
-      // v5.2.0: Initialize COW (BlobStorage) before VFS
+      // Initialize COW (BlobStorage) before VFS
       // VFS now requires BlobStorage for unified file storage
       if (typeof (this.storage as any).initializeCOW === 'function') {
         await (this.storage as any).initializeCOW({
@@ -323,17 +323,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         })
       }
 
-      // Mark as initialized BEFORE VFS init (v5.0.1)
+      // Mark as initialized BEFORE VFS init
       // VFS.init() needs brain to be marked initialized to call brain methods
       this.initialized = true
 
-      // Initialize VFS (v5.0.1): Ensure VFS is ready when accessed as property
+      // Initialize VFS: Ensure VFS is ready when accessed as property
       // This eliminates need for separate vfs.init() calls - zero additional complexity
       this._vfs = new VirtualFileSystem(this)
       await this._vfs.init()
-      this._vfsInitialized = true  // v7.3.0: Mark VFS as fully initialized
+      this._vfsInitialized = true  // Mark VFS as fully initialized
 
-      // v7.1.2: Eager embedding initialization for cloud deployments
+      // Eager embedding initialization for cloud deployments
       // When eagerEmbeddings is true, initialize the WASM embedding engine now
       // instead of lazily on first embed() call. This moves the 90-140 second
       // WASM compilation to container startup rather than first request.
@@ -344,7 +344,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         console.log('✅ Embedding engine ready')
       }
 
-      // v7.4.0: Integration Hub initialization
+      // Integration Hub initialization
       // Creates the hub when integrations are enabled in config
       // Uses dynamic import for tree-shaking when integrations are disabled
       if (this.config.integrations) {
@@ -360,12 +360,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         })
       }
 
-      // v7.3.0: Resolve ready Promise - consumers awaiting brain.ready will now proceed
+      // Resolve ready Promise - consumers awaiting brain.ready will now proceed
       if (this._readyResolve) {
         this._readyResolve()
       }
     } catch (error) {
-      // v7.3.0: Reject ready Promise - consumers awaiting brain.ready will receive error
+      // Reject ready Promise - consumers awaiting brain.ready will receive error
       if (this._readyReject) {
         this._readyReject(error instanceof Error ? error : new Error(String(error)))
       }
@@ -374,7 +374,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Register shutdown hooks for graceful count flushing (v3.32.3+)
+   * Register shutdown hooks for graceful count flushing
    *
    * Ensures pending count batches are persisted before container shutdown.
    * Critical for Cloud Run, Fargate, Lambda, and other containerized deployments.
@@ -444,7 +444,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * This Promise is created in the constructor and resolves when init() completes.
    * It can be awaited multiple times safely - the result is cached.
    *
-   * **v7.3.0 Feature**: This enables reliable readiness detection for consumers,
+   * This enables reliable readiness detection for consumers,
    * especially in cloud environments where progressive initialization means
    * init() returns quickly but background tasks may still be running.
    *
@@ -522,7 +522,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Wait for all background initialization tasks to complete
    *
-   * For cloud storage adapters with progressive initialization (v7.3.0+),
+   * For cloud storage adapters with progressive initialization,
    * this waits for:
    * - Bucket/container validation
    * - Count synchronization
@@ -572,8 +572,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param params.id - Custom ID (auto-generated if not provided)
    * @param params.vector - Pre-computed embedding vector
    * @param params.service - Service name for multi-tenancy
-   * @param params.confidence - Type classification confidence (0-1) *New in v4.3.0*
-   * @param params.weight - Entity importance/salience (0-1) *New in v4.3.0*
+   * @param params.confidence - Type classification confidence (0-1)
+   * @param params.weight - Entity importance/salience (0-1)
    * @returns Promise that resolves to the entity ID
    *
    * @example Basic entity creation
@@ -586,7 +586,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * console.log(`Created entity: ${id}`)
    * ```
    *
-   * @example Adding with confidence and weight (New in v4.3.0)
+   * @example Adding with confidence and weight
    * ```typescript
    * const id = await brain.add({
    *   data: "Machine learning model for sentiment analysis",
@@ -631,7 +631,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async add(params: AddParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Zero-config validation (v7.3.0: static import for performance)
+    // Zero-config validation (static import for performance)
     validateAddParams(params)
 
     // Generate ID if not provided
@@ -666,7 +666,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.createdBy && { createdBy: params.createdBy })
       }
 
-      // v4.8.0: Build entity structure for indexing (NEW - with top-level fields)
+      // Build entity structure for indexing (NEW - with top-level fields)
       const entityForIndexing = {
         id,
         vector,
@@ -684,10 +684,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         metadata: params.metadata || {}
       }
 
-      // v5.8.0: Execute atomically with transaction system
+      // Execute atomically with transaction system
       // All operations succeed or all rollback - prevents partial failures
       await this.transactionManager.executeTransaction(async (tx) => {
-        // Operation 1: Save metadata FIRST (v5.0.1 - TypeAwareStorage caching)
+        // Operation 1: Save metadata FIRST (TypeAwareStorage caching)
         tx.addOperation(
           new SaveNounMetadataOperation(this.storage, id, storageMetadata)
         )
@@ -702,7 +702,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           })
         )
 
-        // Operation 3: Add to HNSW index (v5.4.0 - after entity saved)
+        // Operation 3: Add to HNSW index (after entity saved)
         if (this.index instanceof TypeAwareHNSWIndex) {
           tx.addOperation(
             new AddToTypeAwareHNSWOperation(
@@ -734,7 +734,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param id - The unique identifier of the entity to retrieve
    * @returns Promise that resolves to the entity if found, null if not found
    *
-   * **Entity includes (v4.3.0):**
+   * **Entity includes:**
    * - `confidence` - Type classification confidence (0-1) if set
    * - `weight` - Entity importance/salience (0-1) if set
    * - All standard fields: id, type, data, metadata, vector, timestamps
@@ -750,7 +750,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * }
    *
    * @example
-   * // Accessing confidence and weight (New in v4.3.0)
+   * // Accessing confidence and weight
    * const entity = await brainy.get('concept-456')
    * if (entity) {
    *   console.log(`Type: ${entity.type}`)
@@ -816,7 +816,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Get an entity by ID
    *
-   * **Performance (v5.11.1)**: Optimized for metadata-only reads by default
+   * **Performance**: Optimized for metadata-only reads by default
    * - **Default (metadata-only)**: 10ms, 300 bytes - 76-81% faster
    * - **Full entity (includeVectors: true)**: 43ms, 6KB - when vectors needed
    *
@@ -856,17 +856,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *
    * @performance
    * - Metadata-only: 76-81% faster, 95% less bandwidth, 87% less memory
-   * - Full entity: Same as v5.11.0 (no regression)
+   * - Full entity: Same (no regression)
    * - VFS operations: 81% faster with zero code changes
    *
-   * @since v1.0.0
-   * @since v5.11.1 - Metadata-only default for 76-81% speedup
    */
   async get(id: string, options?: GetOptions): Promise<Entity<T> | null> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('get', { id, options }, async () => {
-      // v5.11.1: Route to metadata-only or full entity based on options
+      // Route to metadata-only or full entity based on options
       const includeVectors = options?.includeVectors ?? false  // Default: metadata-only (fast)
 
       if (includeVectors) {
@@ -890,7 +888,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Batch get multiple entities by IDs (v5.12.0 - Cloud Storage Optimization)
+   * Batch get multiple entities by IDs (Cloud Storage Optimization)
    *
    * **Performance**: Eliminates N+1 query pattern
    * - Current: N × get() = N × 300ms cloud latency = 3-6 seconds for 10-20 entities
@@ -913,8 +911,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * const childrenMap = await brain.batchGet(childIds)
    * const children = childIds.map(id => childrenMap.get(id)).filter(Boolean)
    * ```
-   *
-   * @since v5.12.0
    */
   async batchGet(ids: string[], options?: GetOptions): Promise<Map<string, Entity<T>>> {
     await this.ensureInitialized()
@@ -925,7 +921,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const includeVectors = options?.includeVectors ?? false
 
     if (includeVectors) {
-      // v6.2.0: FULL PATH optimized with batch vector loading (10x faster on GCS)
+      // FULL PATH optimized with batch vector loading (10x faster on GCS)
       // GCS: 10 entities with vectors = 1×50ms vs 10×50ms = 500ms (10x faster)
       const nounsMap = await this.storage.getNounBatch(ids)
 
@@ -968,24 +964,24 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Convert a noun from storage to an entity (v4.8.0 - SIMPLIFIED!)
+   * Convert a noun from storage to an entity (SIMPLIFIED!)
    *
-   * v4.8.0: Dramatically simplified - standard fields moved to top-level
+   * Dramatically simplified - standard fields moved to top-level
    * - Extracts standard fields from metadata (storage format)
    * - Returns entity with standard fields at top-level (in-memory format)
    * - metadata contains ONLY custom user fields
    */
   private async convertNounToEntity(noun: any): Promise<Entity<T>> {
-    // v4.8.0: Storage adapters ALREADY extract standard fields to top-level!
+    // Storage adapters ALREADY extract standard fields to top-level!
     // Just read from top-level fields of HNSWNounWithMetadata
 
-    // v4.8.0: Clean structure with standard fields at top-level
+    // Clean structure with standard fields at top-level
     const entity: Entity<T> = {
       id: noun.id,
       vector: noun.vector,
       type: noun.type || NounType.Thing,
 
-      // Standard fields at top-level (v4.8.0)
+      // Standard fields at top-level
       confidence: noun.confidence,
       weight: noun.weight,
       createdAt: noun.createdAt || Date.now(),
@@ -994,7 +990,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       data: noun.data,
       createdBy: noun.createdBy,
 
-      // ONLY custom user fields in metadata (v4.8.0: already separated by storage adapter)
+      // ONLY custom user fields in metadata (already separated by storage adapter)
       metadata: noun.metadata as T
     }
 
@@ -1002,7 +998,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Convert metadata-only to entity (v5.11.1 - FAST PATH!)
+   * Convert metadata-only to entity (FAST PATH!)
    *
    * Used when vectors are NOT needed (94% of brain.get() calls):
    * - VFS operations (readFile, stat, readdir)
@@ -1018,13 +1014,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param metadata - Metadata from storage.getNounMetadata()
    * @returns Entity with stub vector (Float32Array(0))
    *
-   * @since v5.11.1
    */
   private async convertMetadataToEntity(id: string, metadata: any): Promise<Entity<T>> {
-    // v5.11.1: Metadata-only entity (no vector loading)
+    // Metadata-only entity (no vector loading)
     // This is 76-81% faster for operations that don't need semantic similarity
 
-    // v4.8.0: Extract standard fields, rest are custom metadata
+    // Extract standard fields, rest are custom metadata
     // Same destructuring as baseStorage.getNoun() to ensure consistency
     const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
@@ -1042,7 +1037,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       data,
       createdBy,
 
-      // Custom user fields (v4.8.0: standard fields removed, only custom remain)
+      // Custom user fields (standard fields removed, only custom remain)
       metadata: customMetadata as T
     }
 
@@ -1055,11 +1050,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async update(params: UpdateParams<T>): Promise<void> {
     await this.ensureInitialized()
 
-    // Zero-config validation (v7.3.0: static import for performance)
+    // Zero-config validation (static import for performance)
     validateUpdateParams(params)
 
     return this.augmentationRegistry.execute('update', params, async () => {
-      // Get existing entity with vectors (v6.7.0: fix for v5.11.1 regression)
+      // Get existing entity with vectors (fix for regression)
       // We need includeVectors: true because:
       // 1. SaveNounOperation requires the vector
       // 2. HNSW reindexing operations need the original vector
@@ -1090,7 +1085,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const updatedMetadata = {
         ...newMetadata,
         ...dataFields,
-        data: params.data !== undefined ? params.data : existing.data, // v4.8.0: Store data field
+        data: params.data !== undefined ? params.data : existing.data, // Store data field
         noun: params.type || existing.type,
         service: existing.service,
         createdAt: existing.createdAt,
@@ -1102,7 +1097,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight })
       }
 
-      // v4.8.0: Build entity structure for metadata index (with top-level fields)
+      // Build entity structure for metadata index (with top-level fields)
       const entityForIndexing = {
         id: params.id,
         vector,
@@ -1120,9 +1115,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         metadata: newMetadata
       }
 
-      // v5.8.0: Execute atomically with transaction system
+      // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
-        // Operation 1: Update metadata FIRST (v5.1.0 - updates type cache)
+        // Operation 1: Update metadata FIRST (updates type cache)
         tx.addOperation(
           new UpdateNounMetadataOperation(this.storage, params.id, updatedMetadata)
         )
@@ -1167,7 +1162,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         }
 
         // Operation 5-6: Update metadata index (remove old, add new)
-        // v7.5.0 FIX: Include ALL indexed fields in removalMetadata (not just type)
+        // FIX: Include ALL indexed fields in removalMetadata (not just type)
         // Previously, only metadata + type was removed, but entityForIndexing includes:
         // confidence, weight, createdAt, updatedAt, service, data, createdBy
         // This asymmetry caused 7 fields to accumulate on EVERY update, eventually
@@ -1177,7 +1172,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // console.log('[UPDATE DEBUG] existing.metadata:', JSON.stringify(existing.metadata))
         // console.log('[UPDATE DEBUG] entityForIndexing keys:', Object.keys(entityForIndexing))
         //
-        // v7.5.0 FIX: removalMetadata must MATCH entityForIndexing structure
+        // FIX: removalMetadata must MATCH entityForIndexing structure
         // entityForIndexing has: { type, confidence, ..., metadata: {...} }
         // So removalMetadata must also have: { type, confidence, ..., metadata: {...} }
         const removalMetadata = {
@@ -1220,7 +1215,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const targetVerbs = await this.storage.getVerbsByTarget(id)
       const allVerbs = [...verbs, ...targetVerbs]
 
-      // v5.8.0: Execute atomically with transaction system
+      // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Remove from vector index
         if (noun && metadata) {
@@ -1376,7 +1371,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async relate(params: RelateParams<T>): Promise<string> {
     await this.ensureInitialized()
 
-    // Zero-config validation (v7.3.0: static import for performance)
+    // Zero-config validation (static import for performance)
     validateRelateParams(params)
 
     // Verify entities exist
@@ -1390,13 +1385,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       throw new Error(`Target entity ${params.to} not found`)
     }
 
-    // CRITICAL FIX (v3.43.2): Check for duplicate relationships
+    // CRITICAL FIX: Check for duplicate relationships
     // This prevents infinite loops where same relationship is created repeatedly
     // Bug #1 showed incrementing verb counts (7→8→9...) indicating duplicates
-    // v5.8.0 OPTIMIZATION: Use GraphAdjacencyIndex for O(log n) lookup instead of O(n) storage scan
+    // OPTIMIZATION: Use GraphAdjacencyIndex for O(log n) lookup instead of O(n) storage scan
     const verbIds = await this.graphIndex.getVerbIdsBySource(params.from)
 
-    // v6.2.0: Batch-load verbs for 5x faster duplicate checking on GCS
+    // Batch-load verbs for 5x faster duplicate checking on GCS
     // GCS: 5 verbs = 1×50ms vs 5×50ms = 250ms (5x faster)
     if (verbIds.length > 0) {
       const verbsMap = await this.graphIndex.getVerbsBatchCached(verbIds)
@@ -1420,8 +1415,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     )
 
     return this.augmentationRegistry.execute('relate', params, async () => {
-      // v4.0.0: Prepare verb metadata
-      // CRITICAL (v4.1.2): Include verb type in metadata for count tracking
+      // Prepare verb metadata
+      // CRITICAL: Include verb type in metadata for count tracking
       const verbMetadata = {
         verb: params.type, // Store verb type for count synchronization
         weight: params.weight ?? 1.0,
@@ -1429,7 +1424,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         createdAt: Date.now()
       }
 
-      // Save to storage (v4.0.0: vector and metadata separately)
+      // Save to storage (vector and metadata separately)
       const verb: GraphVerb = {
         id,
         vector: relationVector,
@@ -1444,7 +1439,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         createdAt: Date.now()
       } as any
 
-      // v5.8.0: Execute atomically with transaction system
+      // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Save verb vector data
         tx.addOperation(
@@ -1518,7 +1513,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Get verb data before deletion for rollback
       const verb = await this.storage.getVerb(id)
 
-      // v5.8.0: Execute atomically with transaction system
+      // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Remove from graph index
         if (verb) {
@@ -1564,8 +1559,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * const page2 = await brain.getRelations({ offset: 100, limit: 100 })
    * ```
    *
-   * @since v4.1.3 - Fixed bug where calling without parameters returned empty array
-   * @since v4.1.3 - Added string ID shorthand syntax: getRelations(id)
    */
   async getRelations(
     paramsOrId?: string | GetRelationsParams
@@ -1607,7 +1600,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       filter.service = params.service
     }
 
-    // v4.7.0: VFS relationships are no longer filtered
+    // VFS relationships are no longer filtered
     // VFS is part of the knowledge graph - users can filter explicitly if needed
 
     // Fetch from storage with pagination at storage layer (efficient!)
@@ -1633,7 +1626,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param query - Natural language string or structured FindParams object
    * @returns Promise that resolves to array of search results with scores
    *
-   * **Result Structure (v4.3.0):**
+   * **Result Structure:**
    * Each result includes flattened entity fields for convenient access:
    * - `metadata`, `type`, `data` - Direct access (flattened from entity)
    * - `confidence`, `weight` - Entity confidence/importance (if set)
@@ -1658,7 +1651,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   }
    * })
    *
-   * // NEW in v4.3.0: Access flattened fields directly
+   * // Access flattened fields directly
    * for (const result of results) {
    *   console.log(`Score: ${result.score}`)
    *   console.log(`Type: ${result.type}`)           // Flattened!
@@ -1781,13 +1774,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * }
    *
    * @example
-   * // VFS Filtering (v4.4.0): Exclude VFS entities by default
+   * // VFS Filtering: Exclude VFS entities by default
    * // Knowledge graph queries stay clean - no VFS files in results
    * const knowledge = await brainy.find({ query: 'AI concepts' })
    * // Returns only knowledge entities, VFS files excluded
    *
    * @example
-   * // v4.7.0: VFS entities included by default
+   * // VFS entities included by default
    * const everything = await brainy.find({
    *   query: 'documentation'
    * })
@@ -1803,13 +1796,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * // Exclude VFS entities (if needed)
    * const concepts = await brainy.find({
    *   query: 'machine learning',
-   *   excludeVFS: true  // v4.7.0: Exclude VFS files
+   *   excludeVFS: true  // Exclude VFS files
    * })
    */
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
 
-    // v5.7.7: Ensure indexes are loaded (lazy loading when disableAutoRebuild: true)
+    // Ensure indexes are loaded (lazy loading when disableAutoRebuild: true)
     // This is a production-safe, concurrency-controlled lazy load
     await this.ensureIndexesLoaded()
 
@@ -1817,7 +1810,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const params: FindParams<T> =
       typeof query === 'string' ? await this.parseNaturalQuery(query) : query
 
-    // Zero-config validation (v7.3.0: static import for performance)
+    // Zero-config validation (static import for performance)
     validateFindParams(params)
 
     const startTime = Date.now()
@@ -1851,7 +1844,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
 
-        // v5.7.13: excludeVFS helper - ONLY exclude VFS infrastructure entities
+        // ExcludeVFS helper - ONLY exclude VFS infrastructure entities
         // Applied AFTER type filter to avoid execution order bugs
         // Excludes entities where:
         //   - vfsType is 'file' or 'directory' (VFS files/folders)
@@ -1865,7 +1858,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           filter.isVFSEntity = { ne: true }
         }
 
-        // v4.5.4: Apply sorting if requested, otherwise just filter
+        // Apply sorting if requested, otherwise just filter
         let filteredIds: string[]
         if (params.orderBy) {
           // Get sorted IDs using production-scale sorted filtering
@@ -1884,7 +1877,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const offset = params.offset || 0
         const pageIds = filteredIds.slice(offset, offset + limit)
 
-        // v6.2.0: Batch-load entities for 10x faster cloud storage performance
+        // Batch-load entities for 10x faster cloud storage performance
         // GCS: 10 entities = 1×50ms vs 10×50ms = 500ms (10x faster)
         const entitiesMap = await this.batchGet(pageIds)
         for (const id of pageIds) {
@@ -1902,7 +1895,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
-        // v5.7.13: excludeVFS helper - exclude VFS infrastructure entities
+        // ExcludeVFS helper - exclude VFS infrastructure entities
         // VFS files/folders have vfsType set, extracted entities do NOT
         let filter: any = {}
         if (params.excludeVFS === true) {
@@ -1915,7 +1908,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
           const pageIds = filteredIds.slice(offset, offset + limit)
 
-          // v6.2.0: Batch-load entities for 10x faster cloud storage performance
+          // Batch-load entities for 10x faster cloud storage performance
           const entitiesMap = await this.batchGet(pageIds)
           for (const id of pageIds) {
             const entity = entitiesMap.get(id)
@@ -1941,7 +1934,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return results
       }
 
-      // v7.7.0: Zero-Config Hybrid Search
+      // Zero-Config Hybrid Search
       // Determine search mode: auto (default) combines text + semantic for query searches
       const searchMode = params.searchMode || 'auto'
       const limit = params.limit || 10
@@ -1965,7 +1958,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // Use user-specified alpha or auto-detect based on query length
         const alpha = params.hybridAlpha ?? this.autoAlpha(params.query)
 
-        // v7.8.0: Tokenize query for match visibility
+        // Tokenize query for match visibility
         const queryWords = this.metadataIndex.tokenize(params.query)
 
         // RRF fusion combines both result sets with match visibility
@@ -2007,7 +2000,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.where) Object.assign(filter, params.where)
         if (params.service) filter.service = params.service
 
-        // v5.7.13: excludeVFS helper - exclude VFS infrastructure entities
+        // ExcludeVFS helper - exclude VFS infrastructure entities
         // VFS files/folders have vfsType set, extracted entities do NOT
         if (params.excludeVFS === true) {
           filter.vfsType = { exists: false }
@@ -2046,7 +2039,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             results.sort((a, b) => b.score - a.score)
             results = results.slice(offset, offset + limit)
 
-            // v6.2.0: Batch-load entities only for the paginated results (10x faster on GCS)
+            // Batch-load entities only for the paginated results (10x faster on GCS)
             const idsToLoad = results.filter(r => !r.entity).map(r => r.id)
             if (idsToLoad.length > 0) {
               const entitiesMap = await this.batchGet(idsToLoad)
@@ -2071,7 +2064,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           const offset = params.offset || 0
           const pageIds = filteredIds.slice(offset, offset + limit)
 
-          // v6.2.0: Batch-load entities for current page - O(page_size) instead of O(total_results)
+          // Batch-load entities for current page - O(page_size) instead of O(total_results)
           // GCS: 10 entities = 1×50ms vs 10×50ms = 500ms (10x faster)
           const entitiesMap = await this.batchGet(pageIds)
           for (const id of pageIds) {
@@ -2083,7 +2076,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
           // Early return for metadata-only queries with pagination applied
           if (!params.query && !params.connected) {
-            // v4.5.4: Apply sorting if requested for metadata-only queries
+            // Apply sorting if requested for metadata-only queries
             if (params.orderBy) {
               const sortedIds = await this.metadataIndex.getSortedIdsForFilter(
                 filter,
@@ -2096,7 +2089,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
               const offset = params.offset || 0
               const pageIds = sortedIds.slice(offset, offset + limit)
 
-              // v6.2.0: Batch-load entities for paginated results (10x faster on GCS)
+              // Batch-load entities for paginated results (10x faster on GCS)
               const sortedResults: Result<T>[] = []
               const entitiesMap = await this.batchGet(pageIds)
               for (const id of pageIds) {
@@ -2125,7 +2118,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       // OPTIMIZED: Sort first, then apply efficient pagination
-      // v4.5.4: Support custom orderBy for vector + metadata queries
+      // Support custom orderBy for vector + metadata queries
       if (params.orderBy && results.length > 0) {
         // For vector + metadata queries, sort by specified field instead of score
         // Load sort field values for all results (small set, already filtered)
@@ -2177,7 +2170,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param params.where - Metadata filters
    * @returns Promise that resolves to array of Result objects with similarity scores (same structure as find())
    *
-   * **Returns (v4.3.0):**
+   * **Returns:**
    * Same Result structure as find() with flattened fields for convenient access
    *
    * @example
@@ -2187,7 +2180,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   limit: 10
    * })
    *
-   * // NEW in v4.3.0: Access flattened fields
+   * // Access flattened fields
    * for (const result of similarDocs) {
    *   console.log(`Similarity: ${result.score}`)
    *   console.log(`Type: ${result.type}`)              // Flattened!
@@ -2293,7 +2286,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     let targetVector: Vector
 
     if (typeof params.to === 'string') {
-      // v5.11.1: Need vector for similarity, so use includeVectors: true
+      // Need vector for similarity, so use includeVectors: true
       const entity = await this.get(params.to, { includeVectors: true })
       if (!entity) {
         throw new Error(`Entity ${params.to} not found`)
@@ -2302,7 +2295,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     } else if (Array.isArray(params.to)) {
       targetVector = params.to as Vector
     } else {
-      // v5.11.1: Entity object passed - check if vectors are loaded
+      // Entity object passed - check if vectors are loaded
       const entityVector = (params.to as Entity<T>).vector
       if (!entityVector || entityVector.length === 0) {
         throw new Error(
@@ -2321,7 +2314,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       type: params.type,
       where: params.where,
       service: params.service,
-      excludeVFS: params.excludeVFS  // v4.7.0: Pass through VFS filtering
+      excludeVFS: params.excludeVFS  // Pass through VFS filtering
     })
   }
 
@@ -2333,7 +2326,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async addMany(params: AddManyParams<T>): Promise<BatchResult<string>> {
     await this.ensureInitialized()
 
-    // Get optimal batch configuration from storage adapter (v4.11.0)
+    // Get optimal batch configuration from storage adapter
     // This automatically adapts to storage characteristics:
     // - GCS: 50 batch size, 100ms delay, sequential
     // - S3/R2: 100 batch size, 50ms delay, parallel
@@ -2441,7 +2434,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     const startTime = Date.now()
 
-    // v6.2.0: Batch deletes into chunks for 10x faster performance with proper error handling
+    // Batch deletes into chunks for 10x faster performance with proper error handling
     // Single transaction per chunk (10 entities) = atomic within chunk, graceful failure across chunks
     const chunkSize = 10
 
@@ -2606,7 +2599,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async relateMany(params: RelateManyParams<T>): Promise<string[]> {
     await this.ensureInitialized()
 
-    // Get optimal batch configuration from storage adapter (v4.11.0)
+    // Get optimal batch configuration from storage adapter
     // Automatically adapts to storage characteristics
     const storageConfig = this.storage.getBatchConfig()
 
@@ -2697,7 +2690,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Clear storage
       await this.storage.clear()
 
-      // v7.4.1: Invalidate GraphAdjacencyIndex to prevent stale in-memory data
+      // Invalidate GraphAdjacencyIndex to prevent stale in-memory data
       // The index has LSMTree data and verbIdSet pointing to deleted entities.
       // Without this, relate()'s duplicate check uses stale data, potentially
       // allowing duplicate relationships or missing valid duplicates.
@@ -2714,7 +2707,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         this.index = this.setupIndex()
       }
 
-      // v5.10.4: Recreate metadata index to clear cached data
+      // Recreate metadata index to clear cached data
       // Bug: Metadata index cache was not being cleared, causing find() with type filters to return stale data
       this.metadataIndex = new MetadataIndexManager(this.storage)
       await this.metadataIndex.init()
@@ -2727,7 +2720,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._nlp = undefined
       this._tripleIntelligence = undefined
 
-      // v7.3.1: Re-initialize COW (BlobStorage) after storage.clear()
+      // Re-initialize COW (BlobStorage) after storage.clear()
       // storage.clear() sets blobStorage=undefined for FileSystem/cloud adapters
       // VFS depends on blobStorage being available (unified blob storage for all files)
       // Must be done BEFORE VFS reinitialization
@@ -2738,7 +2731,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         })
       }
 
-      // v7.3.1: Reset VFS state - root entity was deleted by storage.clear()
+      // Reset VFS state - root entity was deleted by storage.clear()
       // Bug: VFS instance remained in memory pointing to deleted root entity
       // Following checkout() pattern exactly (see lines 2907-2914)
       if (this._vfs) {
@@ -2757,7 +2750,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     })
   }
 
-  // ============= COW (COPY-ON-WRITE) API - v5.0.0 =============
+  // ============= COW (COPY-ON-WRITE) API =============
 
   /**
    * Fork the brain (instant clone via Snowflake-style COW)
@@ -2766,7 +2759,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Fork shares storage and HNSW data structures with parent, copying only
    * when modified (lazy deep copy).
    *
-   * **How It Works (v5.0.0)**:
+   * **How It Works**:
    * 1. HNSW Index: Shallow copy via `enableCOW()` (~10ms for 1M+ nodes)
    * 2. Metadata Index: Fast rebuild from shared storage (<100ms)
    * 3. Graph Index: Fast rebuild from shared storage (<500ms)
@@ -2801,7 +2794,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * console.log((await experiment.find({})).length)  // 2 (Alice + Bob)
    * ```
    *
-   * @since v5.0.0
    */
   async fork(branch?: string, options?: {
     author?: string
@@ -2813,7 +2805,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.augmentationRegistry.execute('fork', { branch, options }, async () => {
       const branchName = branch || `fork-${Date.now()}`
 
-      // v5.0.1: Lazy COW initialization - enable automatically on first fork()
+      // Lazy COW initialization - enable automatically on first fork()
       // This is zero-config and transparent to users
       if (!('refManager' in this.storage) || !(this.storage as any).refManager) {
         // Storage supports COW but isn't initialized yet - initialize now
@@ -2827,7 +2819,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           throw new Error(
             'Fork requires COW-enabled storage. ' +
             'This storage adapter does not support branching. ' +
-            'Please use v5.0.0+ storage adapters.'
+            'Please use compatible storage adapters.'
           )
         }
       }
@@ -2852,7 +2844,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Step 2: Copy storage ref (COW layer - instant!)
       await refManager.copyRef(currentBranch, branchName)
 
-      // CRITICAL FIX (v5.3.6): Verify branch was actually created to prevent silent failures
+      // CRITICAL FIX: Verify branch was actually created to prevent silent failures
       // Without this check, fork() could complete successfully but branch wouldn't exist,
       // causing subsequent checkout() calls to fail (see Workshop bug report).
       const verifyBranch = await refManager.getRef(branchName)
@@ -2892,7 +2884,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       clone.metadataIndex = new MetadataIndexManager(clone.storage)
       await clone.metadataIndex.init()
 
-      // v6.3.0: GraphAdjacencyIndex SINGLETON pattern for fork()
+      // GraphAdjacencyIndex SINGLETON pattern for fork()
       // Object.create() causes prototype inheritance, so clone.storage.graphIndex
       // would point to parent's graphIndex. We must break this inheritance and
       // create a fresh instance for the clone's branch.
@@ -2937,7 +2929,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return this.augmentationRegistry.execute('listBranches', {}, async () => {
       if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage (v5.0.0+)')
+        throw new Error('Branch management requires COW-enabled storage')
       }
 
       const refManager = (this.storage as any).refManager
@@ -2987,7 +2979,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return this.augmentationRegistry.execute('checkout', { branch }, async () => {
       if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage (v5.0.0+)')
+        throw new Error('Branch management requires COW-enabled storage')
       }
 
       // Verify branch exists
@@ -2999,26 +2991,26 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Update storage currentBranch
       (this.storage as any).currentBranch = branch
 
-      // v5.3.5 fix: Reload indexes from new branch WITHOUT recreating storage
+      // Fix: Reload indexes from new branch WITHOUT recreating storage
       // Previous implementation called init() which recreated storage, losing currentBranch
       this.index = this.setupIndex()
       this.metadataIndex = new (MetadataIndexManager as any)(this.storage)
       await this.metadataIndex.init()
 
-      // v6.3.0: GraphAdjacencyIndex SINGLETON pattern for checkout()
+      // GraphAdjacencyIndex SINGLETON pattern for checkout()
       // Invalidate the old graphIndex (it has data from the old branch)
       // and get a fresh instance for the new branch
       ;(this.storage as any).invalidateGraphIndex()
       this.graphIndex = await (this.storage as any).getGraphIndex()
 
-      // v5.7.7: Reset lazy loading state when switching branches
+      // Reset lazy loading state when switching branches
       // Indexes contain data from previous branch, must rebuild for new branch
       this.lazyRebuildCompleted = false
 
       // Rebuild indexes from new branch data (force=true to override disableAutoRebuild)
       await this.rebuildIndexesIfNeeded(true)
 
-      // v6.3.0: Clear VFS caches before recreating VFS for new branch
+      // Clear VFS caches before recreating VFS for new branch
       // UnifiedCache is global, so old branch's VFS path cache entries would persist
       if (this._vfs) {
         // Clear old PathResolver's caches including UnifiedCache entries
@@ -3050,13 +3042,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     message?: string
     author?: string
     metadata?: Record<string, any>
-    captureState?: boolean  // v5.3.7: Capture entity snapshots for time-travel
+    captureState?: boolean  // Capture entity snapshots for time-travel
   }): Promise<string> {
     await this.ensureInitialized()
 
     return this.augmentationRegistry.execute('commit', { options }, async () => {
       if (!('refManager' in this.storage) || !('commitLog' in this.storage) || !('blobStorage' in this.storage)) {
-        throw new Error('Commit requires COW-enabled storage (v5.0.0+)')
+        throw new Error('Commit requires COW-enabled storage')
       }
 
       const refManager = (this.storage as any).refManager
@@ -3070,10 +3062,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const entityCount = await this.getNounCount()
       const relationshipCount = await this.getVerbCount()
 
-      // v5.3.4: Import NULL_HASH constant
+      // Import NULL_HASH constant
       const { NULL_HASH } = await import('./storage/cow/constants.js')
 
-      // v5.3.7: Capture entity state if requested (for time-travel)
+      // Capture entity state if requested (for time-travel)
       let treeHash = NULL_HASH
       if (options?.captureState) {
         treeHash = await this.captureStateToTree()
@@ -3114,7 +3106,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Capture current entity and relationship state to tree object (v5.4.0)
+   * Capture current entity and relationship state to tree object
    * Used by commit({ captureState: true }) for time-travel
    *
    * Serializes ALL entities + relationships to blobs and builds a tree.
@@ -3210,7 +3202,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Create a read-only snapshot of the workspace at a specific commit (v5.4.0)
+   * Create a read-only snapshot of the workspace at a specific commit
    *
    * Time-travel API for historical queries. Returns a new Brainy instance that:
    * - Contains all entities and relationships from that commit
@@ -3252,7 +3244,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }): Promise<Brainy> {
     await this.ensureInitialized()
 
-    // v5.4.0: Lazy-loading historical adapter with bounded memory
+    // Lazy-loading historical adapter with bounded memory
     // No eager loading of entire commit state!
     const { HistoricalStorageAdapter } = await import('./storage/adapters/historicalStorageAdapter.js')
     const { BaseStorage } = await import('./storage/baseStorage.js')
@@ -3305,7 +3297,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return this.augmentationRegistry.execute('deleteBranch', { branch }, async () => {
       if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage (v5.0.0+)')
+        throw new Error('Branch management requires COW-enabled storage')
       }
 
       const currentBranch = await this.getCurrentBranch()
@@ -3346,7 +3338,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     return this.augmentationRegistry.execute('getHistory', { options }, async () => {
       if (!('commitLog' in this.storage) || !('refManager' in this.storage)) {
-        throw new Error('History requires COW-enabled storage (v5.0.0+)')
+        throw new Error('History requires COW-enabled storage')
       }
 
       const commitLog = (this.storage as any).commitLog
@@ -3418,7 +3410,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     await this.ensureInitialized()
 
     if (!('commitLog' in this.storage) || !('refManager' in this.storage)) {
-      throw new Error('History streaming requires COW-enabled storage (v5.0.0+)')
+      throw new Error('History streaming requires COW-enabled storage')
     }
 
     const commitLog = (this.storage as any).commitLog
@@ -3468,7 +3460,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Get memory statistics and limits (v5.11.0)
+   * Get memory statistics and limits
    *
    * Returns detailed memory information including:
    * - Current heap usage
@@ -3593,7 +3585,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Versioning API - Entity version control (v5.3.0)
+   * Versioning API - Entity version control
    *
    * Provides entity-level versioning with:
    * - save() - Create version of entity
@@ -3671,7 +3663,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Extract entities from text (alias for extract())
-   * v5.7.6: Added for API clarity and Workshop team request
+   * Added for API clarity and Workshop team request
    *
    * Uses NeuralEntityExtractor with SmartExtractor ensemble (4-signal architecture):
    * - ExactMatch (40%) - Dictionary lookups
@@ -3770,7 +3762,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   groupBy: 'type',                   // Organize by entity type
    *   preserveSource: true,              // Keep original file
    *
-   *   // Progress tracking (v4.5.0 - STANDARDIZED FOR ALL 7 FORMATS!)
+   *   // Progress tracking (STANDARDIZED FOR ALL 7 FORMATS!)
    *   onProgress: (p) => {
    *     console.log(`[${p.stage}] ${p.message}`)
    *     console.log(`Entities: ${p.entities || 0}, Rels: ${p.relationships || 0}`)
@@ -3780,7 +3772,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * // THIS SAME HANDLER WORKS FOR CSV, PDF, Excel, JSON, Markdown, YAML, DOCX!
    * ```
    *
-   * @example Universal Progress Handler (v4.5.0)
+   * @example Universal Progress Handler
    * ```typescript
    * // ONE handler for ALL 7 formats - no format-specific code needed!
    * const universalProgress = (p) => {
@@ -3815,12 +3807,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *
    * @see {@link https://brainy.dev/docs/api/import API Documentation}
    * @see {@link https://brainy.dev/docs/guides/migrating-to-v4 Migration Guide}
-   * @see {@link https://brainy.dev/docs/guides/standard-import-progress Standard Progress API (v4.5.0)}
+   * @see {@link https://brainy.dev/docs/guides/standard-import-progress Standard Progress API}
    *
    * @remarks
    * **⚠️ Breaking Changes from v3.x:**
    *
-   * The import API was redesigned in v4.0.0 for clarity and better feature control.
+   * The import API was redesigned for clarity and better feature control.
    * Old v3.x option names are **no longer recognized** and will throw errors.
    *
    * **Option Changes:**
@@ -3873,7 +3865,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }) => void
     }
   ) {
-    // Execute through augmentation pipeline (v5.2.0: Enables IntelligentImportAugmentation)
+    // Execute through augmentation pipeline (Enables IntelligentImportAugmentation)
     // If source is an ImportSource object (not a Buffer), spread it so augmentations can access properties
     const params = typeof source === 'object' && !Buffer.isBuffer(source)
       ? { ...source as object, ...options }  // Spread ImportSource: { type, data, filename, ...options }
@@ -3891,7 +3883,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Virtual File System API - Knowledge Operating System (v5.0.1+)
+   * Virtual File System API - Knowledge Operating System
    *
    * Returns a cached VFS instance that is auto-initialized during brain.init().
    * No separate initialization needed!
@@ -3925,15 +3917,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * **Pattern:** The VFS instance is cached, so multiple calls to brain.vfs
    * return the same instance. This ensures import and user code share state.
    *
-   * @since v5.0.1 - Auto-initialization during brain.init()
    */
   get vfs(): VirtualFileSystem {
     if (!this._vfs) {
-      // VFS is initialized during brain.init() (v5.0.1)
+      // VFS is initialized during brain.init()
       // If not initialized yet, create instance but user should call brain.init() first
       this._vfs = new VirtualFileSystem(this)
     }
-    // v7.3.0: Warn if VFS accessed before init() completed
+    // Warn if VFS accessed before init() completed
     if (!this._vfsInitialized && this.initialized) {
       console.warn('[Brainy] VFS accessed before initialization complete. Call await brain.init() first.')
     }
@@ -3973,7 +3964,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * })
    * ```
    *
-   * @since v7.4.0
    * @throws Error if integrations are not enabled in config
    */
   get hub(): IntegrationHub {
@@ -4134,7 +4124,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Flush all indexes and caches to persistent storage
-   * CRITICAL FIX (v3.43.2): Ensures data survives server restarts
+   * CRITICAL FIX: Ensures data survives server restarts
    *
    * Flushes all 4 core indexes:
    * 1. Storage counts (entity/verb counts by type)
@@ -4193,7 +4183,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Get index loading status (v5.7.7 - Diagnostic for lazy loading)
+   * Get index loading status (Diagnostic for lazy loading)
    *
    * Returns detailed information about index population and lazy loading state.
    * Useful for debugging empty query results or performance troubleshooting.
@@ -4482,7 +4472,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       relationships: () => this.graphIndex.getTotalRelationshipCount(),
 
       // O(1) count by type (string-based, backward compatible)
-      // v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+      // Added optional excludeVFS using Roaring bitmap intersection
       byType: async (typeOrOptions?: string | { excludeVFS?: boolean }, options?: { excludeVFS?: boolean }) => {
         // Handle overloaded signature: byType(type), byType({ excludeVFS }), byType(type, { excludeVFS })
         let type: string | undefined
@@ -4569,7 +4559,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       getAllTypeCounts: () => this.metadataIndex.getAllEntityCounts(),
 
       // Get complete statistics
-      // v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+      // Added optional excludeVFS using Roaring bitmap intersection
       getStats: async (options?: { excludeVFS?: boolean }) => {
         if (options?.excludeVFS) {
           const allCounts = this.metadataIndex.getAllEntityCounts()
@@ -4629,7 +4619,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Get complete statistics - convenience method
    * For more granular counting, use brain.counts API
-   * v6.2.1: Added optional excludeVFS using Roaring bitmap intersection
+   * Added optional excludeVFS using Roaring bitmap intersection
    * @param options Optional settings - excludeVFS: filter out VFS entities
    * @returns Complete statistics including entities, relationships, and density
    */
@@ -4637,7 +4627,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.counts.getStats(options)
   }
 
-  // ============= NEW EMBEDDING & ANALYSIS APIs (v7.1.0) =============
+  // ============= NEW EMBEDDING & ANALYSIS APIs =============
 
   /**
    * Batch embed multiple texts at once
@@ -4701,7 +4691,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Zero-config hybrid highlighting (v7.8.0)
+   * Zero-config hybrid highlighting
    *
    * Returns both exact text matches AND semantically similar concepts.
    * Perfect for UI highlighting at different levels:
@@ -4736,7 +4726,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return []
     }
 
-    // v7.9.0: Extract text from structured content (JSON, HTML, Markdown)
+    // Extract text from structured content (JSON, HTML, Markdown)
     // Custom extractor takes priority, then built-in detection
     type ChunkWithCategory = { text: string, position: [number, number], contentCategory?: import('./types/brainy.types.js').ContentCategory }
 
@@ -4767,7 +4757,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return []
     }
 
-    // v7.8.0 Production safety: Limit chunks to prevent memory explosion
+    // Production safety: Limit chunks to prevent memory explosion
     // At 500 words × 384 dimensions × 4 bytes = 768KB temp memory (acceptable)
     const MAX_HIGHLIGHT_CHUNKS = 500
     const chunks = allChunks.slice(0, MAX_HIGHLIGHT_CHUNKS)
@@ -4857,7 +4847,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Split text into chunks for highlighting (v7.8.0)
+   * Split text into chunks for highlighting
    * @internal
    */
   private splitForHighlighting(text: string, granularity: string): Array<{ text: string, position: [number, number] }> {
@@ -4959,11 +4949,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * v7.5.0: Validate metadata index consistency and detect corruption
+   * Validate metadata index consistency and detect corruption
    *
    * Returns health status and recommendations for repair. Corruption typically
    * manifests as high avg entries/entity (expected ~30, corrupted can be 100+)
-   * caused by the update() field asymmetry bug (fixed in v7.5.0).
+   * caused by the update() field asymmetry bug (fixed).
    *
    * @returns Promise resolving to validation results
    *
@@ -4986,7 +4976,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * v7.5.0: Get metadata index statistics
+   * Get metadata index statistics
    *
    * Returns detailed statistics about the metadata index including
    * total entries, IDs indexed, and fields indexed.
@@ -5485,7 +5475,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       ? await this.index.search(vector, limit * 2, params.type as any)
       : await this.index.search(vector, limit * 2)
 
-    // v7.3.0: Batch-load entities for 10-50x faster cloud storage performance
+    // Batch-load entities for 10-50x faster cloud storage performance
     // GCS: 10 results = 1×50ms vs 10×50ms = 500ms (10x faster)
     const ids = searchResults.map(([id]) => id)
     const entitiesMap = await this.batchGet(ids)
@@ -5523,7 +5513,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return score >= threshold
     })
 
-    // v7.3.0: Batch-load entities for 10-50x faster cloud storage performance
+    // Batch-load entities for 10-50x faster cloud storage performance
     const ids = filteredResults.map(([id]) => id)
     const entitiesMap = await this.batchGet(ids)
 
@@ -5565,7 +5555,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return existingResults.filter(r => connectedIdSet.has(r.id))
     }
     
-    // v6.2.0: Batch-load connected entities for 10x faster cloud storage performance
+    // Batch-load connected entities for 10x faster cloud storage performance
     // GCS: 20 entities = 1×50ms vs 20×50ms = 1000ms (20x faster)
     const results: Result<T>[] = []
     const entitiesMap = await this.batchGet(connectedIds)
@@ -5617,7 +5607,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Execute text search using word index (v7.7.0)
+   * Execute text search using word index
    *
    * Performs keyword-based search using the __words__ index in MetadataIndexManager.
    * Returns results ranked by word match count.
@@ -5652,7 +5642,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Auto-detect optimal alpha for hybrid search (v7.7.0)
+   * Auto-detect optimal alpha for hybrid search
    *
    * Short queries (1-2 words) favor text search (lower alpha)
    * Long queries (5+ words) favor semantic search (higher alpha)
@@ -5668,7 +5658,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Reciprocal Rank Fusion (RRF) for combining search results (v7.7.0)
+   * Reciprocal Rank Fusion (RRF) for combining search results
    *
    * RRF is a proven fusion algorithm that:
    * - Doesn't require score normalization
@@ -5677,7 +5667,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *
    * Formula: score(d) = sum(1 / (k + rank(d))) for each list
    *
-   * v7.8.0: Now includes match visibility (textMatches, textScore, semanticScore, matchSource)
+   * Now includes match visibility (textMatches, textScore, semanticScore, matchSource)
    *
    * @param textResults - Results from text search
    * @param semanticResults - Results from semantic search
@@ -5742,7 +5732,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
     }
 
-    // v7.8.0 Performance: Build set of text result IDs for O(1) lookup
+    // Performance: Build set of text result IDs for O(1) lookup
     // This avoids re-extracting text for entities that weren't in text results
     const textResultIds = new Set(textResults.map(r => r.id))
 
@@ -5779,7 +5769,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Find which query words match in an entity's text content (v7.8.0)
+   * Find which query words match in an entity's text content
    *
    * Performance: O(query_words × text_length) - only called when needed
    * At scale: Use textResultIds set for O(1) lookup instead of re-extracting
@@ -5847,7 +5837,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Convert verbs to relations (v4.8.0 - read from top-level)
+   * Convert verbs to relations (read from top-level)
    */
   private verbsToRelations(verbs: GraphVerb[]): Relation<T>[] {
     return verbs.map((v) => ({
@@ -5855,7 +5845,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       from: v.sourceId,
       to: v.targetId,
       type: (v.verb || v.type) as VerbType,
-      weight: v.weight ?? 1.0, // v4.8.0: weight is at top-level
+      weight: v.weight ?? 1.0, // Weight is at top-level
       metadata: v.metadata,
       service: v.service as string,
       createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()
@@ -6039,7 +6029,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Explicitly warm up the embedding engine (v7.1.2)
+   * Explicitly warm up the embedding engine
    *
    * Use this to pre-initialize the Candle WASM embedding engine before
    * processing requests. The WASM module (93MB with embedded model) takes
@@ -6075,7 +6065,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Check if embedding engine is initialized (v7.1.2)
+   * Check if embedding engine is initialized
    *
    * @returns true if embedding engine is ready for immediate use
    */
@@ -6105,7 +6095,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Detect storage type from the storage instance class name
    *
-   * v7.1.1: Fixes storage type detection for HNSW persistence mode.
+   * Fixes storage type detection for HNSW persistence mode.
    * Previously relied on this.config.storage.type which was often not set
    * after storage creation, causing cloud storage to use 'immediate' mode
    * and resulting in 50-100x slower add() operations.
@@ -6135,7 +6125,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * - 10x faster type-specific queries
    * - Automatic type routing
    *
-   * v6.2.8: Smart defaults for HNSW persistence mode
+   * Smart defaults for HNSW persistence mode
    * - Cloud storage (GCS/S3/R2/Azure): 'deferred' for 30-50× faster adds
    * - Local storage (FileSystem/Memory/OPFS): 'immediate' (already fast)
    */
@@ -6145,13 +6135,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       distanceFunction: this.distance
     }
 
-    // v6.2.8: Determine persist mode (user config > smart default)
-    // v7.1.1: Fixed to use getStorageType() for reliable detection
+    // Determine persist mode (user config > smart default)
+    // Fixed to use getStorageType() for reliable detection
     let persistMode: 'immediate' | 'deferred' = this.config.hnswPersistMode || 'immediate'
 
     // Smart default: Use deferred mode for cloud storage adapters
     if (!this.config.hnswPersistMode) {
-      // v7.1.1 FIX: Use instance-based detection as fallback
+      // FIX: Use instance-based detection as fallback
       // Previously this.config.storage.type was often undefined after storage creation,
       // causing cloud storage to incorrectly use 'immediate' mode (50-100x slower)
       const storageType = this.config.storage?.type || this.getStorageType()
@@ -6262,20 +6252,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       disableAutoOptimize: config?.disableAutoOptimize ?? false,
       batchWrites: config?.batchWrites ?? true,
       maxConcurrentOperations: config?.maxConcurrentOperations ?? 10,
-      // Memory management options (v5.11.0)
+      // Memory management options
       maxQueryLimit: config?.maxQueryLimit ?? undefined as any,
       reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any,
-      // HNSW persistence mode (v6.2.8) - undefined = smart default in setupIndex
+      // HNSW persistence mode - undefined = smart default in setupIndex
       hnswPersistMode: config?.hnswPersistMode ?? undefined as any,
-      // Embedding initialization (v7.1.2) - false = lazy init on first embed()
+      // Embedding initialization - false = lazy init on first embed()
       eagerEmbeddings: config?.eagerEmbeddings ?? false,
-      // Integration Hub (v7.4.0) - undefined/false = disabled
+      // Integration Hub - undefined/false = disabled
       integrations: config?.integrations ?? undefined as any
     }
   }
 
   /**
-   * Ensure indexes are loaded (v5.7.7 - Production-scale lazy loading)
+   * Ensure indexes are loaded (Production-scale lazy loading)
    *
    * Called by query methods (find, search, get, etc.) when disableAutoRebuild is true.
    * Handles concurrent queries safely - multiple calls wait for same rebuild.
@@ -6341,13 +6331,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Rebuild indexes from persisted data if needed (v3.35.0+, v5.7.7 LAZY LOADING)
+   * Rebuild indexes from persisted data if needed (LAZY LOADING)
    *
    * FIXES FOR CRITICAL BUGS:
    * - Bug #1: GraphAdjacencyIndex rebuild never called ✅ FIXED
    * - Bug #2: Early return blocks recovery when count=0 ✅ FIXED
    * - Bug #4: HNSW index has no rebuild mechanism ✅ FIXED
-   * - Bug #5: disableAutoRebuild leaves indexes empty forever ✅ FIXED (v5.7.7)
+   * - Bug #5: disableAutoRebuild leaves indexes empty forever ✅ FIXED
    *
    * Production-grade rebuild with:
    * - Handles BILLIONS of entities via streaming pagination
@@ -6362,7 +6352,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private async rebuildIndexesIfNeeded(force = false): Promise<void> {
     try {
-      // v5.7.7: Check if auto-rebuild is explicitly disabled (ONLY during init, not for lazy loading)
+      // Check if auto-rebuild is explicitly disabled (ONLY during init, not for lazy loading)
       // force=true means this is a lazy rebuild triggered by first query
       if (this.config.disableAutoRebuild === true && !force) {
         if (!this.config.silent) {
@@ -6398,7 +6388,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Intelligent decision: Auto-rebuild based on dataset size
       // Production scale: Handles billions via streaming pagination
-      const AUTO_REBUILD_THRESHOLD = 10000 // Auto-rebuild if < 10K items (v5.7.7: increased from 1K)
+      const AUTO_REBUILD_THRESHOLD = 10000 // Auto-rebuild if < 10K items (increased from 1K)
 
       // Check if indexes need rebuilding
       const metadataStats = await this.metadataIndex.getStats()
@@ -6415,7 +6405,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return
       }
 
-      // v5.7.7: Determine rebuild strategy
+      // Determine rebuild strategy
       const isLazyRebuild = force && this.config.disableAutoRebuild === true
       const isSmallDataset = totalCount < AUTO_REBUILD_THRESHOLD
       const shouldRebuild = isLazyRebuild || isSmallDataset || this.config.disableAutoRebuild === false
@@ -6469,11 +6459,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Close and cleanup
    *
-   * v6.2.8: Now flushes HNSW dirty nodes before closing
+   * Now flushes HNSW dirty nodes before closing
    * This ensures deferred persistence mode data is saved
    */
   async close(): Promise<void> {
-    // v6.2.8: Flush HNSW dirty nodes before closing
+    // Flush HNSW dirty nodes before closing
     // In deferred persistence mode, this persists all pending HNSW graph data
     if (this.index && typeof this.index.flush === 'function') {
       await this.index.flush()

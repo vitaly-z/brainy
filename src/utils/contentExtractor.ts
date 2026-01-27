@@ -1,8 +1,8 @@
 /**
- * Content Extractor (v7.9.0)
+ * Content Extractor
  *
  * Detects content type (plaintext, rich-text JSON, HTML, Markdown) and extracts
- * text segments with content categories (prose, heading, code, label).
+ * text segments with content categories (title, content, code, etc.).
  *
  * Supports common rich-text editor formats:
  * - TipTap / ProseMirror: { type: 'doc', content: [...] }
@@ -12,7 +12,7 @@
  * - Quill Delta: { ops: [{ insert }] }
  *
  * Falls back gracefully: structured text that doesn't match known patterns
- * is extracted as plain prose via recursive text collection.
+ * is extracted as plain content via recursive text collection.
  */
 
 import type { ContentType, ContentCategory, ExtractedSegment } from '../types/brainy.types.js'
@@ -65,7 +65,7 @@ export function extractForHighlighting(
       return extractFromMarkdown(text)
     case 'plaintext':
     default:
-      return [{ text, contentCategory: 'prose' }]
+      return [{ text, contentCategory: 'content' }]
   }
 }
 
@@ -81,7 +81,7 @@ function extractFromJson(text: string): ExtractedSegment[] {
     parsed = JSON.parse(text.trim())
   } catch {
     // Invalid JSON — treat as plain text
-    return [{ text, contentCategory: 'prose' }]
+    return [{ text, contentCategory: 'content' }]
   }
 
   const segments = walkRichTextNodes(parsed)
@@ -94,7 +94,7 @@ function extractFromJson(text: string): ExtractedSegment[] {
   // Fallback: collect all string values from the JSON
   const fallbackText = extractTextFromJsonValue(parsed)
   if (fallbackText.trim()) {
-    return [{ text: fallbackText, contentCategory: 'prose' }]
+    return [{ text: fallbackText, contentCategory: 'content' }]
   }
 
   return []
@@ -121,13 +121,13 @@ function walkRichTextNodes(node: any): ExtractedSegment[] {
 
   // Leaf: text content (TipTap/ProseMirror/Lexical/Slate)
   if (typeof node.text === 'string' && node.text.length > 0) {
-    segments.push({ text: node.text, contentCategory: 'prose' })
+    segments.push({ text: node.text, contentCategory: 'content' })
     return segments
   }
 
   // Leaf: Quill Delta insert
   if (typeof node.insert === 'string' && node.insert.length > 0) {
-    segments.push({ text: node.insert, contentCategory: 'prose' })
+    segments.push({ text: node.insert, contentCategory: 'content' })
     return segments
   }
 
@@ -146,8 +146,8 @@ function walkRichTextNodes(node: any): ExtractedSegment[] {
   if (Array.isArray(children)) {
     for (const child of children) {
       const childSegments = walkRichTextNodes(child)
-      // Apply parent's category if it's more specific than 'prose'
-      if (category !== 'prose') {
+      // Apply parent's category if it's more specific than 'content'
+      if (category !== 'content') {
         childSegments.forEach(s => { s.contentCategory = category })
       }
       segments.push(...childSegments)
@@ -166,11 +166,11 @@ function walkRichTextNodes(node: any): ExtractedSegment[] {
  * Categorize a node type string into a ContentCategory
  */
 function categorizeNodeType(type?: string): ContentCategory {
-  if (!type) return 'prose'
+  if (!type) return 'content'
   const t = type.toLowerCase()
-  if (t === 'heading' || /^h[1-6]$/.test(t)) return 'heading'
+  if (t === 'heading' || /^h[1-6]$/.test(t)) return 'title'
   if (t === 'code' || t === 'codeblock' || t === 'code_block') return 'code'
-  return 'prose'
+  return 'content'
 }
 
 /**
@@ -201,7 +201,7 @@ function extractTextFromJsonValue(value: any): string {
 function extractFromHtml(html: string): ExtractedSegment[] {
   const segments: ExtractedSegment[] = []
   let current = ''
-  let currentCategory: ContentCategory = 'prose'
+  let currentCategory: ContentCategory = 'content'
   let i = 0
   let insideTag = false
   let tagName = ''
@@ -304,10 +304,10 @@ function extractFromHtml(html: string): ExtractedSegment[] {
 function getCategoryFromTagStack(stack: string[]): ContentCategory {
   for (let i = stack.length - 1; i >= 0; i--) {
     const tag = stack[i]
-    if (/^h[1-6]$/.test(tag)) return 'heading'
+    if (/^h[1-6]$/.test(tag)) return 'title'
     if (tag === 'code' || tag === 'pre') return 'code'
   }
-  return 'prose'
+  return 'content'
 }
 
 /**
@@ -327,6 +327,41 @@ function decodeHtmlEntity(entity: string): string {
 }
 
 // ============= Markdown Extraction =============
+
+/**
+ * Split a prose line into alternating content/code segments based on
+ * backtick-delimited inline code spans. Lines without backticks return
+ * a single 'content' segment.
+ */
+function splitInlineCode(line: string): ExtractedSegment[] {
+  const segments: ExtractedSegment[] = []
+  const pattern = /`([^`]+)`/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(line)) !== null) {
+    // Text before the backtick span
+    if (match.index > lastIndex) {
+      const before = line.substring(lastIndex, match.index).trim()
+      if (before.length > 0) {
+        segments.push({ text: before, contentCategory: 'content' })
+      }
+    }
+    // The code span (without backticks)
+    segments.push({ text: match[1], contentCategory: 'code' })
+    lastIndex = match.index + match[0].length
+  }
+
+  // Remaining text after last backtick span (or entire line if no backticks)
+  if (lastIndex < line.length) {
+    const remaining = line.substring(lastIndex).trim()
+    if (remaining.length > 0) {
+      segments.push({ text: remaining, contentCategory: 'content' })
+    }
+  }
+
+  return segments
+}
 
 /**
  * Extract text from Markdown with category detection
@@ -381,14 +416,14 @@ function extractFromMarkdown(text: string): ExtractedSegment[] {
     // Heading (# style)
     const headingMatch = line.match(/^#{1,6}\s+(.+)$/)
     if (headingMatch) {
-      segments.push({ text: headingMatch[1].trim(), contentCategory: 'heading' })
+      segments.push({ text: headingMatch[1].trim(), contentCategory: 'title' })
       i++
       continue
     }
 
-    // Regular prose line
+    // Regular content line — split out inline code spans
     if (line.trim().length > 0) {
-      segments.push({ text: line.trim(), contentCategory: 'prose' })
+      segments.push(...splitInlineCode(line.trim()))
     }
 
     i++

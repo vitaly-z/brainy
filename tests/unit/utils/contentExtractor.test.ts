@@ -75,10 +75,10 @@ describe('Content Extractor (v7.9.0)', () => {
       expect(segments.length).toBe(3)
 
       expect(segments[0].text).toBe('My Heading')
-      expect(segments[0].contentCategory).toBe('heading')
+      expect(segments[0].contentCategory).toBe('title')
 
       expect(segments[1].text).toBe('Regular paragraph text')
-      expect(segments[1].contentCategory).toBe('prose')
+      expect(segments[1].contentCategory).toBe('content')
 
       expect(segments[2].text).toBe('const x = 1')
       expect(segments[2].contentCategory).toBe('code')
@@ -124,9 +124,9 @@ describe('Content Extractor (v7.9.0)', () => {
       const segments = extractForHighlighting(doc)
       expect(segments.length).toBe(3)
       expect(segments[0].text).toBe('Slate Heading')
-      expect(segments[0].contentCategory).toBe('heading')
+      expect(segments[0].contentCategory).toBe('title')
       expect(segments[1].text).toBe('First part ')
-      expect(segments[1].contentCategory).toBe('prose')
+      expect(segments[1].contentCategory).toBe('content')
     })
   })
 
@@ -150,9 +150,9 @@ describe('Content Extractor (v7.9.0)', () => {
       const segments = extractForHighlighting(doc)
       expect(segments.length).toBe(2)
       expect(segments[0].text).toBe('Lexical Heading')
-      expect(segments[0].contentCategory).toBe('heading')
+      expect(segments[0].contentCategory).toBe('title')
       expect(segments[1].text).toBe('Lexical body text')
-      expect(segments[1].contentCategory).toBe('prose')
+      expect(segments[1].contentCategory).toBe('content')
     })
   })
 
@@ -223,11 +223,11 @@ describe('Content Extractor (v7.9.0)', () => {
 
       const headingSegment = segments.find(s => s.text === 'Title')
       expect(headingSegment).toBeDefined()
-      expect(headingSegment?.contentCategory).toBe('heading')
+      expect(headingSegment?.contentCategory).toBe('title')
 
       const bodySegment = segments.find(s => s.text === 'Body text here.')
       expect(bodySegment).toBeDefined()
-      expect(bodySegment?.contentCategory).toBe('prose')
+      expect(bodySegment?.contentCategory).toBe('content')
 
       const codeSegment = segments.find(s => s.text === 'let x = 1')
       expect(codeSegment).toBeDefined()
@@ -257,7 +257,7 @@ describe('Content Extractor (v7.9.0)', () => {
       const segments = extractForHighlighting(html)
       const heading = segments.find(s => s.text === 'Nested Heading')
       expect(heading).toBeDefined()
-      expect(heading?.contentCategory).toBe('heading')
+      expect(heading?.contentCategory).toBe('title')
     })
   })
 
@@ -271,11 +271,11 @@ describe('Content Extractor (v7.9.0)', () => {
       const body = segments.find(s => s.text === 'Some body text')
 
       expect(heading1).toBeDefined()
-      expect(heading1?.contentCategory).toBe('heading')
+      expect(heading1?.contentCategory).toBe('title')
       expect(heading2).toBeDefined()
-      expect(heading2?.contentCategory).toBe('heading')
+      expect(heading2?.contentCategory).toBe('title')
       expect(body).toBeDefined()
-      expect(body?.contentCategory).toBe('prose')
+      expect(body?.contentCategory).toBe('content')
     })
 
     it('should extract fenced code blocks', () => {
@@ -296,16 +296,51 @@ describe('Content Extractor (v7.9.0)', () => {
       expect(code).toBeDefined()
       expect(code?.text).toContain('code line 1')
     })
+
+    it('should split inline code spans into separate segments', () => {
+      const md = '# Title\n\nUse the `authenticate()` function to verify users'
+
+      const segments = extractForHighlighting(md)
+      // Should have: title segment, content "Use the", code "authenticate()", content "function to verify users"
+      const codeSegment = segments.find(s => s.text === 'authenticate()' && s.contentCategory === 'code')
+      expect(codeSegment).toBeDefined()
+
+      const beforeCode = segments.find(s => s.text === 'Use the' && s.contentCategory === 'content')
+      expect(beforeCode).toBeDefined()
+
+      const afterCode = segments.find(s => s.text === 'function to verify users' && s.contentCategory === 'content')
+      expect(afterCode).toBeDefined()
+    })
+
+    it('should handle multiple inline code spans in a single line', () => {
+      const md = '# API\n\nCall `foo()` then `bar()` for results'
+
+      const segments = extractForHighlighting(md, 'markdown')
+      const fooSegment = segments.find(s => s.text === 'foo()' && s.contentCategory === 'code')
+      const barSegment = segments.find(s => s.text === 'bar()' && s.contentCategory === 'code')
+      expect(fooSegment).toBeDefined()
+      expect(barSegment).toBeDefined()
+    })
+
+    it('should not split backticks inside fenced code blocks', () => {
+      const md = '# Title\n\n```\nconst x = `template`\n```'
+
+      const segments = extractForHighlighting(md)
+      const code = segments.find(s => s.contentCategory === 'code')
+      expect(code).toBeDefined()
+      // The fenced block content should be intact, not split by backticks
+      expect(code?.text).toContain('const x = `template`')
+    })
   })
 
   describe('extractForHighlighting() — Plaintext', () => {
-    it('should return single prose segment for plain text', () => {
+    it('should return single content segment for plain text', () => {
       const text = 'Just some plain text content'
       const segments = extractForHighlighting(text)
 
       expect(segments.length).toBe(1)
       expect(segments[0].text).toBe(text)
-      expect(segments[0].contentCategory).toBe('prose')
+      expect(segments[0].contentCategory).toBe('content')
     })
 
     it('should respect contentType override', () => {
@@ -315,7 +350,7 @@ describe('Content Extractor (v7.9.0)', () => {
 
       expect(segments.length).toBe(1)
       expect(segments[0].text).toBe(html) // Raw HTML, not extracted
-      expect(segments[0].contentCategory).toBe('prose')
+      expect(segments[0].contentCategory).toBe('content')
     })
   })
 })

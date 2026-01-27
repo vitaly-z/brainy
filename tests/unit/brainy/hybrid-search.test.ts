@@ -769,7 +769,7 @@ describe('Hybrid Search (v7.7.0)', () => {
       expect(warriorMatch).toBeDefined()
       expect(warriorMatch?.matchType).toBe('text')
       // Should annotate heading content
-      expect(warriorMatch?.contentCategory).toBe('heading')
+      expect(warriorMatch?.contentCategory).toBe('title')
     })
 
     it('should extract text from Slate.js JSON', async () => {
@@ -799,7 +799,7 @@ describe('Hybrid Search (v7.7.0)', () => {
       const introMatch = highlights.find(h => h.text === 'Introduction')
       expect(introMatch).toBeDefined()
       expect(introMatch?.matchType).toBe('text')
-      expect(introMatch?.contentCategory).toBe('heading')
+      expect(introMatch?.contentCategory).toBe('title')
     })
 
     it('should extract text from Quill Delta JSON', async () => {
@@ -856,12 +856,12 @@ describe('Hybrid Search (v7.7.0)', () => {
       // Should find "Warrior" from heading
       const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
       expect(warriorMatch).toBeDefined()
-      expect(warriorMatch?.contentCategory).toBe('heading')
+      expect(warriorMatch?.contentCategory).toBe('title')
 
       // Should find "fighter" from paragraph
       const fighterMatch = highlights.find(h => h.text.toLowerCase() === 'fighter')
       expect(fighterMatch).toBeDefined()
-      expect(fighterMatch?.contentCategory).toBe('prose')
+      expect(fighterMatch?.contentCategory).toBe('content')
     })
 
     it('should extract text from Markdown with headings and code', async () => {
@@ -876,8 +876,8 @@ describe('Hybrid Search (v7.7.0)', () => {
 
       expect(highlights.length).toBeGreaterThan(0)
       // Should find text from heading
-      const headingMatch = highlights.find(h => h.text === 'Guide' && h.contentCategory === 'heading')
-        || highlights.find(h => h.text === 'Warrior' && h.contentCategory === 'heading')
+      const headingMatch = highlights.find(h => h.text === 'Guide' && h.contentCategory === 'title')
+        || highlights.find(h => h.text === 'Warrior' && h.contentCategory === 'title')
       expect(headingMatch).toBeDefined()
     })
 
@@ -896,8 +896,8 @@ describe('Hybrid Search (v7.7.0)', () => {
       expect(warriorMatch).toBeDefined()
       expect(warriorMatch?.matchType).toBe('text')
       expect(warriorMatch?.score).toBe(1.0)
-      // Plain text gets 'prose' category
-      expect(warriorMatch?.contentCategory).toBe('prose')
+      // Plain text gets 'content' category
+      expect(warriorMatch?.contentCategory).toBe('content')
     })
 
     it('should use contentType hint to skip auto-detection', async () => {
@@ -920,7 +920,7 @@ describe('Hybrid Search (v7.7.0)', () => {
     it('should use custom contentExtractor when provided', async () => {
       const customExtractor = (text: string) => {
         return [
-          { text: 'custom extracted warrior content', contentCategory: 'prose' as const },
+          { text: 'custom extracted warrior content', contentCategory: 'content' as const },
           { text: 'Code Section', contentCategory: 'code' as const }
         ]
       }
@@ -937,8 +937,9 @@ describe('Hybrid Search (v7.7.0)', () => {
       const warriorMatch = highlights.find(h => h.text.toLowerCase() === 'warrior')
       expect(warriorMatch).toBeDefined()
       expect(warriorMatch?.matchType).toBe('text')
-      expect(warriorMatch?.contentCategory).toBe('prose')
+      expect(warriorMatch?.contentCategory).toBe('content')
     })
+
   })
 
   describe('Timeout Protection (v7.9.0)', () => {
