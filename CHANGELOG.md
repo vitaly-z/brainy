@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.9.1](https://github.com/soulcraftlabs/brainy/compare/v7.9.0...v7.9.1) (2026-01-27)
+
+- fix: exclude __words__ keyword index from corruption detection and getStats() (364360d)
+
+
 ### [7.9.0](https://github.com/soulcraftlabs/brainy/compare/v7.8.0...v7.9.0) (2026-01-27)
 
 - chore: rebuild type embeddings for updated ContentCategory type (3911fa7)
