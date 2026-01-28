@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.9.3](https://github.com/soulcraftlabs/brainy/compare/v7.9.2...v7.9.3) (2026-01-28)
+
+- perf: optimize addMany() with batch embedding for 5-10x speedup (df7d467)
+- fix: cancel abandoned highlight() semantic work and harden WASM engine recovery (f8dd93c)
+
+
 ### [7.9.1](https://github.com/soulcraftlabs/brainy/compare/v7.9.0...v7.9.1) (2026-01-27)
 
 - fix: exclude __words__ keyword index from corruption detection and getStats() (364360d)
