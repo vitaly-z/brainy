@@ -4647,7 +4647,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * // embeddings.length === 3
    * // embeddings[0].length === 384
    */
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], options?: { signal?: AbortSignal }): Promise<number[][]> {
     await this.ensureInitialized()
 
     if (texts.length === 0) {
@@ -4655,7 +4655,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     // Use native WASM batch API: single forward pass instead of N individual calls
-    return await embeddingManager.embedBatch(texts)
+    return await embeddingManager.embedBatch(texts, options)
   }
 
   /**
@@ -4784,20 +4784,25 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     // === PHASE 2: Find semantic matches with timeout fallback ===
+    // AbortController ensures the background semantic work (WASM batch embedding)
+    // is cancelled on timeout or error, preventing event loop saturation and
+    // WASM engine crashes from abandoned promises.
     const SEMANTIC_TIMEOUT_MS = 10_000
+    const abortController = new AbortController()
+
     try {
       const semanticResult = await Promise.race([
-        this.highlightSemanticPhase(query, chunks, threshold, highlightMap),
+        this.highlightSemanticPhase(query, chunks, threshold, highlightMap, abortController.signal),
         new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), SEMANTIC_TIMEOUT_MS))
       ])
 
       if (semanticResult === 'timeout') {
-        // Return Phase 1 text-only results on timeout
+        abortController.abort()
         const textHighlights = Array.from(highlightMap.values())
         return textHighlights.sort((a, b) => b.score - a.score)
       }
     } catch {
-      // On any error in semantic phase, return Phase 1 results
+      abortController.abort()
       const textHighlights = Array.from(highlightMap.values())
       return textHighlights.sort((a, b) => b.score - a.score)
     }
@@ -4815,14 +4820,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     query: string,
     chunks: Array<{ text: string, position: [number, number], contentCategory?: import('./types/brainy.types.js').ContentCategory }>,
     threshold: number,
-    highlightMap: Map<string, import('./types/brainy.types.js').Highlight>
+    highlightMap: Map<string, import('./types/brainy.types.js').Highlight>,
+    signal?: AbortSignal
   ): Promise<void> {
+    if (signal?.aborted) return
+
     // Get query embedding
     const queryVector = await this.embed(query)
+    if (signal?.aborted) return
 
     // Batch embed all chunks using native WASM batch API
     const chunkTexts = chunks.map(c => c.text)
-    const chunkVectors = await this.embedBatch(chunkTexts)
+    const chunkVectors = await this.embedBatch(chunkTexts, { signal })
+    if (signal?.aborted) return
 
     // Calculate semantic similarities
     for (let i = 0; i < chunks.length; i++) {

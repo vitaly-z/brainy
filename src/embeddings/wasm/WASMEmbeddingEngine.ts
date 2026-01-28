@@ -52,8 +52,9 @@ export class WASMEmbeddingEngine {
    * Initialize the engine
    */
   async initialize(): Promise<void> {
-    // Already initialized
-    if (this.initialized) {
+    // Only skip if BOTH this layer and the underlying Candle engine are initialized.
+    // If Candle crashed and reset itself, we must re-initialize even though our flag is true.
+    if (this.initialized && this.candleEngine.isInitialized()) {
       return
     }
 

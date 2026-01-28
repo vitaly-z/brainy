@@ -205,19 +205,27 @@ export class CandleEmbeddingEngine {
       throw new Error('Engine not properly initialized')
     }
 
-    const startTime = Date.now()
+    try {
+      const startTime = Date.now()
 
-    const embedding = this.engine.embed(text)
-    const embeddingArray = Array.from(embedding)
+      const embedding = this.engine.embed(text)
+      const embeddingArray = Array.from(embedding)
 
-    const processingTimeMs = Date.now() - startTime
-    this.embedCount++
-    this.totalProcessingTimeMs += processingTimeMs
+      const processingTimeMs = Date.now() - startTime
+      this.embedCount++
+      this.totalProcessingTimeMs += processingTimeMs
 
-    return {
-      embedding: embeddingArray,
-      tokenCount: 0, // Candle handles tokenization internally
-      processingTimeMs,
+      return {
+        embedding: embeddingArray,
+        tokenCount: 0, // Candle handles tokenization internally
+        processingTimeMs,
+      }
+    } catch (error) {
+      console.error('WASM embed failed, marking engine for re-initialization:', error)
+      this.initialized = false
+      this.engine = null
+      this.wasmModule = null
+      throw error
     }
   }
 
@@ -237,10 +245,18 @@ export class CandleEmbeddingEngine {
       return []
     }
 
-    const embeddings = this.engine.embed_batch(texts)
-    this.embedCount += texts.length
+    try {
+      const embeddings = this.engine.embed_batch(texts)
+      this.embedCount += texts.length
 
-    return embeddings.map((e) => Array.from(e))
+      return embeddings.map((e) => Array.from(e))
+    } catch (error) {
+      console.error('WASM embedBatch failed, marking engine for re-initialization:', error)
+      this.initialized = false
+      this.engine = null
+      this.wasmModule = null
+      throw error
+    }
   }
 
   /**

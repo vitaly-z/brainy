@@ -219,7 +219,7 @@ export class EmbeddingManager {
    * @param texts Array of strings to embed
    * @returns Array of embedding vectors (384 dimensions each)
    */
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], options?: { signal?: AbortSignal }): Promise<number[][]> {
     if (texts.length === 0) return []
 
     const isTestMode =
@@ -248,6 +248,10 @@ export class EmbeddingManager {
     // so other requests (HTTP, timers, I/O) can proceed
     const allResults: number[][] = []
     for (let i = 0; i < texts.length; i += MICRO_BATCH_SIZE) {
+      if (options?.signal?.aborted) {
+        return allResults
+      }
+
       const batch = texts.slice(i, i + MICRO_BATCH_SIZE)
       const batchResults = await this.engine.embedBatch(batch)
       allResults.push(...batchResults)
