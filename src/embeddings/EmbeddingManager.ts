@@ -212,6 +212,10 @@ export class EmbeddingManager {
    * Uses the engine's embedBatch() for a single WASM forward pass
    * instead of N individual embed() calls.
    *
+   * Large batches (>MICRO_BATCH_SIZE) are split into micro-batches
+   * with event loop yielding between each, preventing the synchronous
+   * WASM call from blocking the server for hundreds of milliseconds.
+   *
    * @param texts Array of strings to embed
    * @returns Array of embedding vectors (384 dimensions each)
    */
@@ -230,9 +234,31 @@ export class EmbeddingManager {
     }
 
     await this.init()
-    const results = await this.engine.embedBatch(texts)
-    this.embedCount += texts.length
-    return results
+
+    // Small batches: single WASM call (no overhead)
+    const MICRO_BATCH_SIZE = 20
+    if (texts.length <= MICRO_BATCH_SIZE) {
+      const results = await this.engine.embedBatch(texts)
+      this.embedCount += texts.length
+      return results
+    }
+
+    // Large batches: micro-batch with event loop yielding
+    // Each micro-batch of ~20 texts blocks ~10-30ms, then yields
+    // so other requests (HTTP, timers, I/O) can proceed
+    const allResults: number[][] = []
+    for (let i = 0; i < texts.length; i += MICRO_BATCH_SIZE) {
+      const batch = texts.slice(i, i + MICRO_BATCH_SIZE)
+      const batchResults = await this.engine.embedBatch(batch)
+      allResults.push(...batchResults)
+      this.embedCount += batch.length
+
+      // Yield to event loop between micro-batches
+      if (i + MICRO_BATCH_SIZE < texts.length) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0))
+      }
+    }
+    return allResults
   }
 
   /**
