@@ -602,6 +602,10 @@ export function getGlobalCache(config?: UnifiedCacheConfig): UnifiedCache {
   return globalCache
 }
 
+export function setGlobalCache(cache: UnifiedCache): void {
+  globalCache = cache
+}
+
 export function clearGlobalCache(): void {
   if (globalCache) {
     globalCache.clear()

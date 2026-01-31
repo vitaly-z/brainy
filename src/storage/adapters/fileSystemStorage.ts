@@ -78,7 +78,7 @@ export class FileSystemStorage extends BaseStorage {
   private readonly SHARDING_DEPTH = 1 as const
   private readonly MAX_SHARDS = 256 // Hex range: 00-ff
   private cachedShardingDepth: number = this.SHARDING_DEPTH // Always use fixed depth
-  private rootDir: string
+  protected rootDir: string
   private nounsDir!: string
   private verbsDir!: string
   private metadataDir!: string

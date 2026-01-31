@@ -574,6 +574,14 @@ const stats = brain.getCacheStats()  // Performance insights
 
 **[📖 Capacity Planning Guide →](docs/operations/capacity-planning.md)**
 
+### Native Acceleration (Optional)
+
+Install `@soulcraft/brainy-cortex` for Rust-powered native acceleration: SIMD distance calculations, native metadata/graph indexes, CRoaring bitmaps, and Candle ML embeddings. Auto-detected — zero configuration required.
+
+```bash
+npm install @soulcraft/brainy-cortex
+```
+
 ---
 
 ## Benchmarks
@@ -709,6 +717,8 @@ This comprehensive guide includes:
 ---
 
 ## Requirements
+
+> **Deprecation Notice:** Browser support (OPFS storage, Web Workers, WASM embeddings) is deprecated in v7.10.0 and will be removed in v8.0.0. Brainy v8+ will be server-only (Node.js >= 22, Bun >= 1.3.0). Migrate browser deployments to a server-side API.
 
 **Bun 1.0+** (recommended) or **Node.js 22 LTS**
 

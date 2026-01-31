@@ -480,6 +480,7 @@ export async function createStorage(
         return memStorage
 
       case 'opfs': {
+        console.warn('[brainy] OPFS storage is deprecated and will be removed in v8.0. Migrate to Node.js/Bun with filesystem or mmap-filesystem storage.')
         // Check if OPFS is available
         const opfsStorage = new OPFSStorage()
         if (opfsStorage.isOPFSAvailable()) {
@@ -839,6 +840,7 @@ export async function createStorage(
 
   // Next, try OPFS (browser only)
   if (isBrowser()) {
+    console.warn('[brainy] Browser environment detected. Browser support is deprecated and will be removed in v8.0. Migrate to Node.js/Bun.')
     const opfsStorage = new OPFSStorage()
     if (opfsStorage.isOPFSAvailable()) {
       console.log('Using OPFS storage (auto-detected) + TypeAware wrapper')

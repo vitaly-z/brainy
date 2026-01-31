@@ -4,6 +4,7 @@
 
 /**
  * Check if code is running in a browser environment
+ * @deprecated Browser support is deprecated and will be removed in v8.0. Use Node.js or Bun instead.
  */
 export function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -39,6 +40,7 @@ export function isWebWorker(): boolean {
 
 /**
  * Check if Web Workers are available in the current environment
+ * @deprecated Browser support is deprecated and will be removed in v8.0. Use Node.js Worker Threads instead.
  */
 export function areWebWorkersAvailable(): boolean {
   return isBrowser() && typeof Worker !== 'undefined'

@@ -34,6 +34,8 @@ import { BlobStorage } from './storage/cow/BlobStorage.js'
 import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
+import { setGlobalCache } from './utils/unifiedCache.js'
+import type { UnifiedCache } from './utils/unifiedCache.js'
 import { PluginRegistry } from './plugin.js'
 import type { BrainyPlugin, BrainyPluginContext } from './plugin.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
@@ -262,7 +264,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     try {
-      // Setup and initialize storage
+      // Auto-detect and activate plugins BEFORE storage setup
+      // so plugin-provided storage factories (e.g., mmap-filesystem) are available
+      await this.loadPlugins()
+
+      // Setup and initialize storage (checks plugin storage factories first)
       this.storage = await this.setupStorage()
       await this.storage.init()
 
@@ -273,20 +279,55 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         (this.storage as any).enableCOWLightweight((this.config.storage as any)?.branch || 'main')
       }
 
-      // Auto-detect and activate plugins (e.g., @soulcraft/brainy-cortex)
-      await this.loadPlugins()
+      // Provider: embeddings (reassign embedder if plugin provides one)
+      const embeddingProvider = this.pluginRegistry.getProvider<EmbeddingFunction>('embeddings')
+      if (embeddingProvider) {
+        this.embedder = embeddingProvider
+      }
 
-      // Setup index now that we have storage
-      this.index = this.setupIndex()
+      // Provider: cache (replace global singleton before any consumer uses it)
+      const cacheProvider = this.pluginRegistry.getProvider<UnifiedCache>('cache')
+      if (cacheProvider) {
+        setGlobalCache(cacheProvider)
+      }
 
-      // Initialize metadata index and graph index in parallel
-      // Both only need storage — they are independent of each other
-      this.metadataIndex = new MetadataIndexManager(this.storage)
-      const [, graphIndex] = await Promise.all([
-        this.metadataIndex.init(),
-        (this.storage as any).getGraphIndex()
-      ])
-      this.graphIndex = graphIndex
+      // Provider: distance function (resolve BEFORE setupIndex — index uses this.distance)
+      const nativeDistance = this.pluginRegistry.getProvider<DistanceFunction>('distance')
+      if (nativeDistance) {
+        this.distance = nativeDistance
+      }
+
+      // Provider: HNSW index factory
+      const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
+      if (hnswFactory) {
+        const persistMode = this.resolveHNSWPersistMode()
+        this.index = hnswFactory(
+          { ...this.config.index, distanceFunction: this.distance },
+          this.distance,
+          { storage: this.storage, persistMode }
+        )
+      } else {
+        this.index = this.setupIndex()
+      }
+
+      // Provider: metadata index factory
+      const metadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
+      this.metadataIndex = metadataFactory
+        ? metadataFactory(this.storage)
+        : new MetadataIndexManager(this.storage)
+
+      // Provider: graph index factory
+      const graphFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('graphIndex')
+      if (graphFactory) {
+        this.graphIndex = graphFactory(this.storage)
+        await this.metadataIndex.init()
+      } else {
+        const [, graphIndex] = await Promise.all([
+          this.metadataIndex.init(),
+          (this.storage as any).getGraphIndex()
+        ])
+        this.graphIndex = graphIndex
+      }
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
@@ -6140,9 +6181,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Setup storage
    */
   private async setupStorage(): Promise<BaseStorage> {
-    // Pass the entire storage config object to createStorage
-    // This ensures all storage-specific configs (gcsNativeStorage, s3Storage, etc.) are passed through
-    const storage = await createStorage(this.config.storage as any)
+    const storageConfig = (this.config.storage || {}) as Record<string, unknown>
+    const storageType = (storageConfig.type as string) || 'auto'
+
+    // Check plugin-provided storage factories (e.g., 'mmap-filesystem' from cortex)
+    const pluginFactory = this.pluginRegistry.getStorageFactory(storageType)
+    if (pluginFactory) {
+      const adapter = await pluginFactory.create(storageConfig)
+      return adapter as BaseStorage
+    }
+
+    // Fall through to built-in storage types
+    const storage = await createStorage(storageConfig as any)
     return storage as BaseStorage
   }
 
@@ -6189,23 +6239,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       distanceFunction: this.distance
     }
 
-    // Determine persist mode (user config > smart default)
-    // Fixed to use getStorageType() for reliable detection
-    let persistMode: 'immediate' | 'deferred' = this.config.hnswPersistMode || 'immediate'
+    const persistMode = this.resolveHNSWPersistMode()
 
-    // Smart default: Use deferred mode for cloud storage adapters
-    if (!this.config.hnswPersistMode) {
-      // FIX: Use instance-based detection as fallback
-      // Previously this.config.storage.type was often undefined after storage creation,
-      // causing cloud storage to incorrectly use 'immediate' mode (50-100x slower)
-      const storageType = this.config.storage?.type || this.getStorageType()
-      const cloudStorageTypes = ['gcs', 's3', 'r2', 'azure']
-      if (cloudStorageTypes.includes(storageType)) {
-        persistMode = 'deferred'
-      }
-    }
-
-    // Phase 2: Use TypeAwareHNSWIndex for billion-scale optimization
+    // Use TypeAwareHNSWIndex for non-memory storage (billion-scale optimization)
     const detectedStorageType = this.config.storage?.type || this.getStorageType()
     if (detectedStorageType !== 'memory') {
       return new TypeAwareHNSWIndex(indexConfig, this.distance, {
@@ -6216,6 +6252,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     return new HNSWIndex(indexConfig as any, this.distance, { persistMode })
+  }
+
+  /**
+   * Resolve HNSW persistence mode.
+   * Extracted so both setupIndex() and the HNSW plugin factory path can use it.
+   *
+   * User config > smart default:
+   * - Cloud storage (GCS/S3/R2/Azure): 'deferred' for 30-50x faster adds
+   * - Local storage (FileSystem/Memory/OPFS): 'immediate' (already fast)
+   */
+  private resolveHNSWPersistMode(): 'immediate' | 'deferred' {
+    let persistMode: 'immediate' | 'deferred' = this.config.hnswPersistMode || 'immediate'
+
+    if (!this.config.hnswPersistMode) {
+      const storageType = this.config.storage?.type || this.getStorageType()
+      if (['gcs', 's3', 'r2', 'azure'].includes(storageType)) {
+        persistMode = 'deferred'
+      }
+    }
+
+    return persistMode
   }
 
   /**

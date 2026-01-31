@@ -80,6 +80,7 @@ export class OPFSStorage extends BaseStorage {
 
   constructor() {
     super()
+    console.warn('[brainy] OPFS storage is deprecated and will be removed in v8.0. Use Node.js/Bun with filesystem or mmap-filesystem storage instead.')
     // Check if OPFS is available
     this.isAvailable =
       typeof navigator !== 'undefined' &&

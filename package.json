@@ -51,6 +51,14 @@
     "./neural/SmartRelationshipExtractor": {
       "import": "./dist/neural/SmartRelationshipExtractor.js",
       "types": "./dist/neural/SmartRelationshipExtractor.d.ts"
+    },
+    "./plugin": {
+      "import": "./dist/plugin.js",
+      "types": "./dist/plugin.d.ts"
+    },
+    "./internals": {
+      "import": "./dist/internals.js",
+      "types": "./dist/internals.d.ts"
     }
   },
   "browser": {
