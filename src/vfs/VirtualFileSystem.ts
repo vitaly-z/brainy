@@ -979,7 +979,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
 
     // Invalidate caches (recursive invalidation handles all descendants)
     this.pathResolver.invalidatePath(path, true)
-    this.invalidateCaches(path)
+    this.invalidateCaches(path, true)
 
     // Trigger watchers
     this.triggerWatchers(path, 'rename')
@@ -1424,9 +1424,23 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     return new RegExp(`^${regex}$`).test(name)
   }
 
-  private invalidateCaches(path: string): void {
+  private invalidateCaches(path: string, recursive = false): void {
     this.contentCache.delete(path)
     this.statCache.delete(path)
+
+    if (recursive) {
+      const prefix = path.endsWith('/') ? path : path + '/'
+      for (const cachedPath of this.contentCache.keys()) {
+        if (cachedPath.startsWith(prefix)) {
+          this.contentCache.delete(cachedPath)
+        }
+      }
+      for (const cachedPath of this.statCache.keys()) {
+        if (cachedPath.startsWith(prefix)) {
+          this.statCache.delete(cachedPath)
+        }
+      }
+    }
   }
 
   private triggerWatchers(path: string, event: 'rename' | 'change'): void {
