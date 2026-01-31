@@ -14,8 +14,10 @@ export default defineConfig({
     
     // UNIT TESTS: Fast execution, no memory issues
     // v6.0.0: Increased timeouts for GraphAdjacencyIndex initialization with forks
+    // v8.0.4: hookTimeout 30s→60s — beforeEach init() exceeds 30s under parallel load
     testTimeout: 30000,       // 30 seconds
-    hookTimeout: 30000,       // 30 seconds (increased for init() with forks)
+    hookTimeout: 60000,       // 60 seconds (beforeEach with MetadataIndexManager init under load)
+    teardownTimeout: 60000,   // 60 seconds (vitest worker RPC under parallel load)
     
     // Include only unit tests
     include: [
@@ -32,20 +34,23 @@ export default defineConfig({
       'node_modules/**'
     ],
     
-    // v6.0.0: Use 'threads' with proper setup (fast, ONNX mocked in setup-unit.ts)
-    // Industry standard: mock native modules in unit tests (HuggingFace, Transformers.js)
-    pool: 'threads',
+    // Use 'forks' for process isolation — 'threads' causes vitest internal
+    // "Timeout calling onTaskUpdate" RPC errors under heavy parallel load
+    pool: 'forks',
     poolOptions: {
-      threads: {
-        singleThread: false
+      forks: {
+        maxForks: 8,
+        minForks: 2,
       }
     },
     
     reporters: ['verbose'],
     
-    // Coverage for unit tests
+    // Coverage for unit tests — disabled by default to avoid vitest worker
+    // RPC timeouts during v8 coverage collection (causes false exit code 1).
+    // Run with --coverage flag when needed: npx vitest run --coverage
     coverage: {
-      enabled: true,
+      enabled: false,
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
