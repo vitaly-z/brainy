@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.11.0](https://github.com/soulcraftlabs/brainy/compare/v7.10.0...v7.11.0) (2026-01-31)
+
+- feat: add SQ8 vector quantization, lazy loading, and two-phase rerank to HNSW (0f3a884)
+
+
 ### [7.10.0](https://github.com/soulcraftlabs/brainy/compare/v7.9.3...v7.10.0) (2026-01-31)
 
 - feat: wire plugin system with provider resolution, storage factories, and browser deprecation (1513e29)
