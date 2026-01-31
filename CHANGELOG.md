@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.10.0](https://github.com/soulcraftlabs/brainy/compare/v7.9.3...v7.10.0) (2026-01-31)
+
+- feat: wire plugin system with provider resolution, storage factories, and browser deprecation (1513e29)
+- chore: sync package-lock.json after dependency install (25912b5)
+- feat: add plugin system for cortex and storage adapters (cc50ac3)
+- perf: optimize init() and rebuild performance (35cb674)
+- fix: eliminate flaky test timeouts and add storage adapters guide (cd87529)
+- fix: eliminate cloud storage write amplification and rate limiting (92d9420)
+- fix: distribute metadata index keys across sub-prefixes to avoid cloud rate limits (23e1c56)
+- fix: invalidate VFS caches recursively on rmdir to prevent orphaned reads (66d7aa7)
+
+
 ### [7.9.3](https://github.com/soulcraftlabs/brainy/compare/v7.9.2...v7.9.3) (2026-01-28)
 
 - perf: optimize addMany() with batch embedding for 5-10x speedup (df7d467)
