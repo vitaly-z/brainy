@@ -270,15 +270,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Setup index now that we have storage
       this.index = this.setupIndex()
 
-      // Initialize core metadata index
+      // Initialize metadata index and graph index in parallel
+      // Both only need storage — they are independent of each other
       this.metadataIndex = new MetadataIndexManager(this.storage)
-      await this.metadataIndex.init()
-
-      // Get GraphAdjacencyIndex from storage (SINGLETON pattern)
-      // Storage owns the single instance, Brainy accesses it via getGraphIndex()
-      // This fixes the dual-ownership bug where Brainy and Storage had separate instances
-      // causing verbIdSet to be out of sync and VFS tree queries to fail
-      this.graphIndex = await (this.storage as any).getGraphIndex()
+      const [, graphIndex] = await Promise.all([
+        this.metadataIndex.init(),
+        (this.storage as any).getGraphIndex()
+      ])
+      this.graphIndex = graphIndex
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
@@ -688,18 +687,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // All operations succeed or all rollback - prevents partial failures
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Save metadata FIRST (TypeAwareStorage caching)
+        // isNew=true: skip pre-read for rollback (entity doesn't exist yet)
         tx.addOperation(
-          new SaveNounMetadataOperation(this.storage, id, storageMetadata)
+          new SaveNounMetadataOperation(this.storage, id, storageMetadata, true)
         )
 
         // Operation 2: Save vector data
+        // isNew=true: skip pre-read for rollback (entity doesn't exist yet)
         tx.addOperation(
           new SaveNounOperation(this.storage, {
             id,
             vector,
             connections: new Map(),
             level: 0
-          })
+          }, true)
         )
 
         // Operation 3: Add to HNSW index (after entity saved)
@@ -6498,6 +6499,39 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       console.warn('Warning: Could not rebuild indexes:', error)
       // Don't throw - allow system to start even if rebuild fails
     }
+  }
+
+  /**
+   * Check health of metadata indexes
+   *
+   * Returns validation result indicating whether indexes are healthy
+   * or corrupted (e.g., from the update() field asymmetry bug).
+   *
+   * This check was previously run on every init(), causing significant
+   * overhead on cloud storage (90+ sequential reads for 30-field datasets).
+   * Now available as an on-demand diagnostic method.
+   */
+  async checkHealth(): Promise<{
+    healthy: boolean
+    avgEntriesPerEntity: number
+    entityCount: number
+    indexEntryCount: number
+    recommendation: string | null
+  }> {
+    await this.ensureInitialized()
+    return this.metadataIndex.validateConsistency()
+  }
+
+  /**
+   * Detect and repair corrupted metadata indexes
+   *
+   * Runs corruption detection and auto-rebuilds if corruption is found.
+   * This is the equivalent of the old init()-time corruption check,
+   * now available as an explicit operation.
+   */
+  async repairIndex(): Promise<void> {
+    await this.ensureInitialized()
+    await this.metadataIndex.detectAndRepairCorruption()
   }
 
   /**

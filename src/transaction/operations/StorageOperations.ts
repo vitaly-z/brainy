@@ -27,12 +27,15 @@ export class SaveNounMetadataOperation implements Operation {
   constructor(
     private readonly storage: StorageAdapter,
     private readonly id: string,
-    private readonly metadata: NounMetadata
+    private readonly metadata: NounMetadata,
+    private readonly isNew: boolean = false
   ) {}
 
   async execute(): Promise<RollbackAction> {
-    // Get existing metadata (for rollback)
-    const previousMetadata = await this.storage.getNounMetadata(this.id)
+    // Skip read for new entities — nothing to rollback to (saves 1 storage round-trip)
+    const previousMetadata = this.isNew
+      ? null
+      : await this.storage.getNounMetadata(this.id)
 
     // Save new metadata
     await this.storage.saveNounMetadata(this.id, this.metadata)
@@ -65,12 +68,15 @@ export class SaveNounOperation implements Operation {
 
   constructor(
     private readonly storage: StorageAdapter,
-    private readonly noun: HNSWNoun
+    private readonly noun: HNSWNoun,
+    private readonly isNew: boolean = false
   ) {}
 
   async execute(): Promise<RollbackAction> {
-    // Get existing noun (for rollback)
-    const previousNoun = await this.storage.getNoun(this.noun.id)
+    // Skip read for new entities — nothing to rollback to (saves 1 storage round-trip)
+    const previousNoun = this.isNew
+      ? null
+      : await this.storage.getNoun(this.noun.id)
 
     // Save new noun
     await this.storage.saveNoun(this.noun)

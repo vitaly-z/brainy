@@ -218,30 +218,35 @@ export class MetadataIndexManager {
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
 
-    // Warm the cache with common fields (lazy loading optimization)
-    // This loads the 'noun' sparse index which is needed for type counts
-    await this.warmCache()
+    // Short-circuit: skip warmCache, lazyLoadCounts, syncTypeCountsToFixed for empty workspace
+    // On empty workspace, there are no fields to warm — avoids 4-6 wasted storage reads (404s)
+    const hasFields = this.fieldIndexes.size > 0
 
-    // Load type counts AFTER warmCache (sparse index is now cached)
-    // Previously called in constructor without await and read from wrong source
-    await this.lazyLoadCounts()
+    if (hasFields) {
+      // Warm the cache with common fields (lazy loading optimization)
+      // This loads the 'noun' sparse index which is needed for type counts
+      await this.warmCache()
 
-    // Phase 1b: Sync loaded counts to fixed-size arrays
-    // Now correctly happens AFTER lazyLoadCounts() finishes
-    this.syncTypeCountsToFixed()
+      // Load type counts AFTER warmCache (sparse index is now cached)
+      // Previously called in constructor without await and read from wrong source
+      await this.lazyLoadCounts()
 
-    // Detect index corruption and auto-rebuild if necessary
-    // The update() field asymmetry bug caused indexes to accumulate stale entries
-    // This check runs on startup to detect and repair corrupted indexes automatically
-    await this.detectAndRepairCorruption()
+      // Phase 1b: Sync loaded counts to fixed-size arrays
+      // Now correctly happens AFTER lazyLoadCounts() finishes
+      this.syncTypeCountsToFixed()
+    }
   }
 
   /**
    * Detect index corruption and automatically repair via rebuild
    * This catches the update() field asymmetry bug that causes 7 fields to accumulate per update
    * Corruption threshold: 100 avg metadata entries/entity, excluding __words__ (expected ~30)
+   *
+   * Removed from init() hot path for performance. Call explicitly via:
+   * - brain.checkHealth() — returns health status
+   * - brain.repairIndex() — runs detection + auto-repair
    */
-  private async detectAndRepairCorruption(): Promise<void> {
+  async detectAndRepairCorruption(): Promise<void> {
     const validation = await this.validateConsistency()
 
     if (!validation.healthy) {
@@ -1508,7 +1513,7 @@ export class MetadataIndexManager {
    * @param entityOrMetadata - Either full entity structure or plain metadata (backward compat)
    * @param skipFlush - Skip automatic flush (used during batch operations)
    */
-  async addToIndex(id: string, entityOrMetadata: any, skipFlush: boolean = false): Promise<void> {
+  async addToIndex(id: string, entityOrMetadata: any, skipFlush: boolean = false, deferWrites: boolean = false): Promise<void> {
     const fields = this.extractIndexableFields(entityOrMetadata)
 
     // Sanity check for excessive indexed fields (indicates possible data issue)
@@ -1559,7 +1564,11 @@ export class MetadataIndexManager {
 
     // Flush all dirty chunks and sparse indices accumulated during this add operation
     // This batches writes that were previously sequential per-field into a single concurrent flush
-    await this.flushDirtyMetadata()
+    // During rebuild (deferWrites=true), defer flushes to periodic batch boundaries (every 5000 entities)
+    // to avoid N × flush I/O amplification. The rebuild() method handles periodic + final flushes.
+    if (!deferWrites) {
+      await this.flushDirtyMetadata()
+    }
 
     // Adaptive auto-flush based on usage patterns
     if (!skipFlush) {
@@ -3103,10 +3112,16 @@ export class MetadataIndexManager {
         }
 
         // Process all nouns
+        let localCount = 0
         for (const noun of result.items) {
           const metadata = metadataBatch.get(noun.id)
           if (metadata) {
-            await this.addToIndex(noun.id, metadata, true)
+            await this.addToIndex(noun.id, metadata, true, true)
+            localCount++
+            // Periodic safety flush every 5000 entities to cap memory during rebuild
+            if (localCount % 5000 === 0) {
+              await this.flushDirtyMetadata()
+            }
           }
         }
 
@@ -3192,14 +3207,18 @@ export class MetadataIndexManager {
           const metadata = metadataBatch.get(noun.id)
           if (metadata) {
             // Skip flush during rebuild for performance
-            await this.addToIndex(noun.id, metadata, true)
+            await this.addToIndex(noun.id, metadata, true, true)
           }
         }
-        
+
         // Yield after processing the entire batch
         await this.yieldToEventLoop()
-        
+
         totalNounsProcessed += result.items.length
+        // Periodic safety flush every 5000 entities to cap memory during rebuild
+        if (totalNounsProcessed % 5000 === 0) {
+          await this.flushDirtyMetadata()
+        }
         hasMoreNouns = result.hasMore
         nounOffset += nounLimit
         
@@ -3248,10 +3267,16 @@ export class MetadataIndexManager {
         }
 
         // Process all verbs
+        let verbLocalCount = 0
         for (const verb of result.items) {
           const metadata = verbMetadataBatch.get(verb.id)
           if (metadata) {
-            await this.addToIndex(verb.id, metadata, true)
+            await this.addToIndex(verb.id, metadata, true, true)
+            verbLocalCount++
+            // Periodic safety flush every 5000 entities to cap memory during rebuild
+            if (verbLocalCount % 5000 === 0) {
+              await this.flushDirtyMetadata()
+            }
           }
         }
 
@@ -3332,14 +3357,18 @@ export class MetadataIndexManager {
           const metadata = verbMetadataBatch.get(verb.id)
           if (metadata) {
             // Skip flush during rebuild for performance
-            await this.addToIndex(verb.id, metadata, true)
+            await this.addToIndex(verb.id, metadata, true, true)
           }
         }
-        
+
         // Yield after processing the entire batch
         await this.yieldToEventLoop()
-        
+
         totalVerbsProcessed += result.items.length
+        // Periodic safety flush every 5000 entities to cap memory during rebuild
+        if (totalVerbsProcessed % 5000 === 0) {
+          await this.flushDirtyMetadata()
+        }
         hasMoreVerbs = result.hasMore
         verbOffset += verbLimit
         
@@ -3355,6 +3384,10 @@ export class MetadataIndexManager {
           prodLog.error(`❌ Metadata verb rebuild hit maximum iteration limit (${MAX_ITERATIONS}). This indicates a bug in storage pagination.`)
         }
       }
+
+      // Flush remaining dirty chunks/sparse indices accumulated during rebuild
+      // (deferWrites=true prevented per-entity flushes, so dirty data accumulated)
+      await this.flushDirtyMetadata()
 
       // Flush to storage with final yield
       prodLog.debug('💾 Flushing metadata index to storage...')
