@@ -34,6 +34,7 @@ import {
 import { BrainyError } from '../../errors/brainyError.js'
 import { CacheManager } from '../cacheManager.js'
 import { createModuleLogger, prodLog } from '../../utils/logger.js'
+import { MetadataWriteBuffer } from '../../utils/metadataWriteBuffer.js'
 import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
@@ -240,6 +241,12 @@ export class GcsStorage extends BaseStorage {
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
     // Write buffering always enabled - no env var check needed
+
+    // Initialize metadata write buffer for cloud rate limit protection
+    this.metadataWriteBuffer = new MetadataWriteBuffer(
+      (path, data) => this.writeObjectToPath(path, data),
+      { maxBufferSize: 200, flushIntervalMs: 200, concurrencyLimit: 10 }
+    )
   }
 
   /**
@@ -840,20 +847,45 @@ export class GcsStorage extends BaseStorage {
     // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
-    try {
-      this.logger.trace(`Writing object to path: ${path}`)
+    const MAX_RETRIES = 5
+    let lastError: any
 
-      const file = this.bucket!.file(path)
-      await file.save(JSON.stringify(data, null, 2), {
-        contentType: 'application/json',
-        resumable: false
-      })
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        this.logger.trace(`Writing object to path: ${path}`)
 
-      this.logger.trace(`Object written successfully to ${path}`)
-    } catch (error) {
-      this.logger.error(`Failed to write object to ${path}:`, error)
-      throw new Error(`Failed to write object to ${path}: ${error}`)
+        const file = this.bucket!.file(path)
+        await file.save(JSON.stringify(data, null, 2), {
+          contentType: 'application/json',
+          resumable: false
+        })
+
+        this.logger.trace(`Object written successfully to ${path}`)
+        if (attempt > 0) {
+          this.clearThrottlingState()
+        }
+        return
+      } catch (error: any) {
+        lastError = error
+
+        if (this.isThrottlingError(error) && attempt < MAX_RETRIES) {
+          const baseDelay = Math.min(100 * Math.pow(2, attempt), 5000)
+          const jitter = baseDelay * 0.2 * (Math.random() - 0.5)
+          const delay = Math.round(baseDelay + jitter)
+          this.logger.warn(
+            `Throttled writing ${path} (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delay}ms`
+          )
+          await this.handleThrottling(error)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+
+        break
+      }
     }
+
+    this.logger.error(`Failed to write object to ${path}:`, lastError)
+    throw new Error(`Failed to write object to ${path}: ${lastError}`)
   }
 
   /**

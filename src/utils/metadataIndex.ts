@@ -129,6 +129,12 @@ export class MetadataIndexManager {
   private chunkManager: ChunkManager
   private chunkingStrategy: AdaptiveChunkingStrategy
 
+  // Deferred write tracking: accumulate chunk/sparse index writes during add/remove
+  // operations and flush them in a single concurrent batch at the end.
+  // This eliminates per-field sequential writes that cause cloud storage rate limiting.
+  private dirtyChunks = new Map<string, ChunkData>()         // "field:chunkId" -> ChunkData
+  private dirtySparseIndices = new Map<string, SparseIndex>() // field -> SparseIndex
+
   // Roaring Bitmap Support
   // EntityIdMapper for UUID ↔ integer conversion
   private idMapper: EntityIdMapper
@@ -652,6 +658,118 @@ export class MetadataIndexManager {
   }
 
   /**
+   * Flush all deferred chunk and sparse index writes accumulated during add/remove operations.
+   * Writes are deduplicated (same chunk/field written once even if updated multiple times)
+   * and executed concurrently via Promise.all for maximum throughput.
+   */
+  private async flushDirtyMetadata(): Promise<void> {
+    if (this.dirtyChunks.size === 0 && this.dirtySparseIndices.size === 0) {
+      return
+    }
+
+    const promises: Promise<void>[] = []
+
+    // Save all dirty chunks (deduplicated — same chunk written once even if updated multiple times)
+    for (const [_key, chunk] of this.dirtyChunks) {
+      promises.push(this.chunkManager.saveChunk(chunk))
+    }
+
+    // Save all dirty sparse indices (deduplicated — same field's index written once)
+    for (const [field, sparseIndex] of this.dirtySparseIndices) {
+      promises.push(this.saveSparseIndex(field, sparseIndex))
+    }
+
+    // Execute all writes concurrently
+    await Promise.all(promises)
+
+    this.dirtyChunks.clear()
+    this.dirtySparseIndices.clear()
+  }
+
+  /**
+   * Split a chunk without saving immediately — returns the new chunks for deferred save.
+   * Used by addToChunkedIndex() to keep splits within the deferred write batch.
+   */
+  private async splitChunkDeferred(
+    chunk: ChunkData,
+    sparseIndex: SparseIndex
+  ): Promise<{ chunk1: ChunkData; chunk2: ChunkData }> {
+    const values = Array.from(chunk.entries.keys()).sort()
+    const midpoint = Math.floor(values.length / 2)
+
+    // Create two new chunks with roaring bitmaps
+    const entries1 = new Map<string, RoaringBitmap32>()
+    const entries2 = new Map<string, RoaringBitmap32>()
+
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i]
+      const bitmap = chunk.entries.get(value)!
+
+      if (i < midpoint) {
+        entries1.set(value, new RoaringBitmap32(bitmap.toArray()))
+      } else {
+        entries2.set(value, new RoaringBitmap32(bitmap.toArray()))
+      }
+    }
+
+    // Create chunk objects without saving (just allocate IDs and set up data)
+    const chunkId1 = this.chunkManager['getNextChunkId'](chunk.field)
+    const chunk1: ChunkData = {
+      chunkId: chunkId1,
+      field: chunk.field,
+      entries: entries1,
+      lastUpdated: Date.now()
+    }
+
+    const chunkId2 = this.chunkManager['getNextChunkId'](chunk.field)
+    const chunk2: ChunkData = {
+      chunkId: chunkId2,
+      field: chunk.field,
+      entries: entries2,
+      lastUpdated: Date.now()
+    }
+
+    // Update chunk cache (for read-after-write consistency within this operation)
+    this.chunkManager['chunkCache'].set(`${chunk.field}:${chunkId1}`, chunk1)
+    this.chunkManager['chunkCache'].set(`${chunk.field}:${chunkId2}`, chunk2)
+
+    // Update sparse index
+    sparseIndex.removeChunk(chunk.chunkId)
+
+    const descriptor1: ChunkDescriptor = {
+      chunkId: chunk1.chunkId,
+      field: chunk1.field,
+      valueCount: entries1.size,
+      idCount: Array.from(entries1.values()).reduce((sum, bitmap) => sum + bitmap.size, 0),
+      zoneMap: this.chunkManager.calculateZoneMap(chunk1),
+      lastUpdated: Date.now(),
+      splitThreshold: 80,
+      mergeThreshold: 20
+    }
+
+    const descriptor2: ChunkDescriptor = {
+      chunkId: chunk2.chunkId,
+      field: chunk2.field,
+      valueCount: entries2.size,
+      idCount: Array.from(entries2.values()).reduce((sum, bitmap) => sum + bitmap.size, 0),
+      zoneMap: this.chunkManager.calculateZoneMap(chunk2),
+      lastUpdated: Date.now(),
+      splitThreshold: 80,
+      mergeThreshold: 20
+    }
+
+    sparseIndex.registerChunk(descriptor1, this.chunkManager.createBloomFilter(chunk1))
+    sparseIndex.registerChunk(descriptor2, this.chunkManager.createBloomFilter(chunk2))
+
+    // Delete old chunk from storage (this still writes immediately as it's a deletion)
+    await this.chunkManager.deleteChunk(chunk.field, chunk.chunkId)
+
+    prodLog.debug(`Split chunk ${chunk.field}:${chunk.chunkId} into ${chunk1.chunkId} and ${chunk2.chunkId} (deferred save)`)
+
+    return { chunk1, chunk2 }
+  }
+
+  /**
    * Get IDs for a value using chunked sparse index with roaring bitmaps
    * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
    */
@@ -934,7 +1052,8 @@ export class MetadataIndexManager {
 
     // Add to chunk
     await this.chunkManager.addToChunk(targetChunk, normalizedValue, id)
-    await this.chunkManager.saveChunk(targetChunk)
+    // Defer chunk save — mark dirty instead of writing immediately
+    this.dirtyChunks.set(`${targetChunk.field}:${targetChunk.chunkId}`, targetChunk)
 
     // Update chunk descriptor in sparse index
     const updatedZoneMap = this.chunkManager.calculateZoneMap(targetChunk)
@@ -955,11 +1074,15 @@ export class MetadataIndexManager {
 
     // Check if chunk needs splitting
     if (targetChunk.entries.size > 80) {
-      await this.chunkManager.splitChunk(targetChunk, sparseIndex)
+      const { chunk1, chunk2 } = await this.splitChunkDeferred(targetChunk, sparseIndex)
+      // Mark split result chunks as dirty instead of the original
+      this.dirtyChunks.delete(`${targetChunk.field}:${targetChunk.chunkId}`)
+      this.dirtyChunks.set(`${chunk1.field}:${chunk1.chunkId}`, chunk1)
+      this.dirtyChunks.set(`${chunk2.field}:${chunk2.chunkId}`, chunk2)
     }
 
-    // Save sparse index
-    await this.saveSparseIndex(field, sparseIndex)
+    // Defer sparse index save — mark dirty instead of writing immediately
+    this.dirtySparseIndices.set(field, sparseIndex)
   }
 
   /**
@@ -980,7 +1103,8 @@ export class MetadataIndexManager {
       const chunk = await this.chunkManager.loadChunk(field, chunkId)
       if (chunk && chunk.entries.has(normalizedValue)) {
         await this.chunkManager.removeFromChunk(chunk, normalizedValue, id)
-        await this.chunkManager.saveChunk(chunk)
+        // Defer chunk save — mark dirty instead of writing immediately
+        this.dirtyChunks.set(`${chunk.field}:${chunk.chunkId}`, chunk)
 
         // Update sparse index
         const updatedZoneMap = this.chunkManager.calculateZoneMap(chunk)
@@ -991,7 +1115,8 @@ export class MetadataIndexManager {
           lastUpdated: Date.now()
         })
 
-        await this.saveSparseIndex(field, sparseIndex)
+        // Defer sparse index save — mark dirty instead of writing immediately
+        this.dirtySparseIndices.set(field, sparseIndex)
         break
       }
     }
@@ -1431,7 +1556,11 @@ export class MetadataIndexManager {
         await this.yieldToEventLoop()
       }
     }
-    
+
+    // Flush all dirty chunks and sparse indices accumulated during this add operation
+    // This batches writes that were previously sequential per-field into a single concurrent flush
+    await this.flushDirtyMetadata()
+
     // Adaptive auto-flush based on usage patterns
     if (!skipFlush) {
       const timeSinceLastFlush = Date.now() - this.lastFlushTime
@@ -1518,6 +1647,9 @@ export class MetadataIndexManager {
         // Invalidate cache
         this.metadataCache.invalidatePattern(`field_values_${field}`)
       }
+
+      // Flush all dirty chunks and sparse indices accumulated during remove
+      await this.flushDirtyMetadata()
     } else {
       // Remove from all indexes (slower, requires scanning all field indexes)
       // This should be rare - prefer providing metadata when removing
@@ -1545,6 +1677,9 @@ export class MetadataIndexManager {
           }
         }
       }
+
+      // Flush all dirty chunks and sparse indices accumulated during scan-remove
+      await this.flushDirtyMetadata()
     }
   }
 
@@ -2233,6 +2368,9 @@ export class MetadataIndexManager {
    * NOTE: Sparse indices are flushed immediately in add/remove operations
    */
   async flush(): Promise<void> {
+    // Flush any deferred chunk/sparse writes first
+    await this.flushDirtyMetadata()
+
     // Check if we have anything to flush
     if (this.dirtyFields.size === 0) {
       return // Nothing to flush

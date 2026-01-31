@@ -30,6 +30,7 @@ import { BlobStorage, type COWStorageAdapter } from './cow/BlobStorage.js'
 import { CommitLog } from './cow/CommitLog.js'
 import { unwrapBinaryData, wrapBinaryData } from './cow/binaryDataCodec.js'
 import { prodLog } from '../utils/logger.js'
+import { MetadataWriteBuffer } from '../utils/metadataWriteBuffer.js'
 
 /**
  * Storage key analysis result
@@ -216,6 +217,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
   // Track if type counts have been rebuilt (prevent repeated rebuilds)
   private typeCountsRebuilt = false
+
+  // Write buffer for cloud storage adapters — deduplicates rapid writes to the same path
+  // FileSystem adapter does NOT use this (local writes are already fast)
+  // Initialized by cloud adapters in their init() method
+  protected metadataWriteBuffer: MetadataWriteBuffer | null = null
 
   /**
    * Analyze a storage key to determine its routing and path
@@ -585,8 +591,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // This ensures readWithInheritance() returns data immediately, fixing "Source entity not found" bug
     this.writeCache.set(branchPath, data)
 
-    // Write to storage (async)
-    await this.writeObjectToPath(branchPath, data)
+    // Use write buffer if available (cloud adapters), otherwise write directly (filesystem)
+    if (this.metadataWriteBuffer) {
+      await this.metadataWriteBuffer.write(branchPath, data)
+    } else {
+      await this.writeObjectToPath(branchPath, data)
+    }
 
     // Cache is NOT cleared here anymore - persists until flush()
     // This provides a safety net for immediate queries after batch writes

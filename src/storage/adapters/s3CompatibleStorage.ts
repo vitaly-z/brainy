@@ -35,6 +35,7 @@ import {
 import { BrainyError } from '../../errors/brainyError.js'
 import { CacheManager } from '../cacheManager.js'
 import { createModuleLogger, prodLog } from '../../utils/logger.js'
+import { MetadataWriteBuffer } from '../../utils/metadataWriteBuffer.js'
 import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
@@ -256,6 +257,12 @@ export class S3CompatibleStorage extends BaseStorage {
     // Initialize cache managers
     this.nounCacheManager = new CacheManager<HNSWNode>(options.cacheConfig)
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
+
+    // Initialize metadata write buffer for cloud rate limit protection
+    this.metadataWriteBuffer = new MetadataWriteBuffer(
+      (path, data) => this.writeObjectToPath(path, data),
+      { maxBufferSize: 200, flushIntervalMs: 200, concurrencyLimit: 10 }
+    )
   }
 
   /**
@@ -1801,43 +1808,68 @@ export class S3CompatibleStorage extends BaseStorage {
     // Lazy bucket validation for progressive init
     await this.ensureValidatedForWrite()
 
-    // Apply backpressure before starting operation
-    const requestId = await this.applyBackpressure()
+    const MAX_RETRIES = 5
+    let lastError: any
 
-    try {
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-      const body = JSON.stringify(data, null, 2)
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // Apply backpressure before each attempt
+      const requestId = await this.applyBackpressure()
 
-      this.logger.trace(`Writing object to path: ${path}`)
+      try {
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+        const body = JSON.stringify(data, null, 2)
 
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: path,
-          Body: body,
-          ContentType: 'application/json'
+        this.logger.trace(`Writing object to path: ${path}`)
+
+        await this.s3Client!.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: path,
+            Body: body,
+            ContentType: 'application/json'
+          })
+        )
+
+        this.logger.debug(`Object written successfully to ${path}`)
+
+        // Log the change for efficient synchronization
+        await this.appendToChangeLog({
+          timestamp: Date.now(),
+          operation: 'add',
+          entityType: 'metadata',
+          entityId: path,
+          data: data
         })
-      )
 
-      this.logger.debug(`Object written successfully to ${path}`)
+        // Release backpressure on success
+        this.releaseBackpressure(true, requestId)
+        if (attempt > 0) {
+          this.clearThrottlingState()
+        }
+        return
+      } catch (error: any) {
+        // Release backpressure on error
+        this.releaseBackpressure(false, requestId)
+        lastError = error
 
-      // Log the change for efficient synchronization
-      await this.appendToChangeLog({
-        timestamp: Date.now(),
-        operation: 'add',
-        entityType: 'metadata',
-        entityId: path,
-        data: data
-      })
+        if (this.isThrottlingError(error) && attempt < MAX_RETRIES) {
+          const baseDelay = Math.min(100 * Math.pow(2, attempt), 5000)
+          const jitter = baseDelay * 0.2 * (Math.random() - 0.5)
+          const delay = Math.round(baseDelay + jitter)
+          this.logger.warn(
+            `Throttled writing ${path} (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delay}ms`
+          )
+          await this.handleThrottling(error)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
 
-      // Release backpressure on success
-      this.releaseBackpressure(true, requestId)
-    } catch (error) {
-      // Release backpressure on error
-      this.releaseBackpressure(false, requestId)
-      this.logger.error(`Failed to write object to ${path}:`, error)
-      throw new Error(`Failed to write object to ${path}: ${error}`)
+        break
+      }
     }
+
+    this.logger.error(`Failed to write object to ${path}:`, lastError)
+    throw new Error(`Failed to write object to ${path}: ${lastError}`)
   }
 
   /**

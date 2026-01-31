@@ -37,6 +37,7 @@ import {
 import { BrainyError } from '../../errors/brainyError.js'
 import { CacheManager } from '../cacheManager.js'
 import { createModuleLogger, prodLog } from '../../utils/logger.js'
+import { MetadataWriteBuffer } from '../../utils/metadataWriteBuffer.js'
 import { getGlobalSocketManager } from '../../utils/adaptiveSocketManager.js'
 import { getGlobalBackpressure } from '../../utils/adaptiveBackpressure.js'
 import { getWriteBuffer, WriteBuffer } from '../../utils/writeBuffer.js'
@@ -169,6 +170,12 @@ export class R2Storage extends BaseStorage {
     this.verbCacheManager = new CacheManager<Edge>(options.cacheConfig)
 
     // Write buffering always enabled - no env var check needed
+
+    // Initialize metadata write buffer for cloud rate limit protection
+    this.metadataWriteBuffer = new MetadataWriteBuffer(
+      (path, data) => this.writeObjectToPath(path, data),
+      { maxBufferSize: 200, flushIntervalMs: 200, concurrencyLimit: 10 }
+    )
   }
 
   /**
@@ -611,24 +618,49 @@ export class R2Storage extends BaseStorage {
   protected async writeObjectToPath(path: string, data: any): Promise<void> {
     await this.ensureInitialized()
 
-    try {
-      this.logger.trace(`Writing object to path: ${path}`)
+    const MAX_RETRIES = 5
+    let lastError: any
 
-      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
-      await this.s3Client!.send(
-        new PutObjectCommand({
-          Bucket: this.bucketName,
-          Key: path,
-          Body: JSON.stringify(data, null, 2),
-          ContentType: 'application/json'
-        })
-      )
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        this.logger.trace(`Writing object to path: ${path}`)
 
-      this.logger.trace(`Object written successfully to ${path}`)
-    } catch (error) {
-      this.logger.error(`Failed to write object to ${path}:`, error)
-      throw new Error(`Failed to write object to ${path}: ${error}`)
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+        await this.s3Client!.send(
+          new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: path,
+            Body: JSON.stringify(data, null, 2),
+            ContentType: 'application/json'
+          })
+        )
+
+        this.logger.trace(`Object written successfully to ${path}`)
+        if (attempt > 0) {
+          this.clearThrottlingState()
+        }
+        return
+      } catch (error: any) {
+        lastError = error
+
+        if (this.isThrottlingError(error) && attempt < MAX_RETRIES) {
+          const baseDelay = Math.min(100 * Math.pow(2, attempt), 5000)
+          const jitter = baseDelay * 0.2 * (Math.random() - 0.5)
+          const delay = Math.round(baseDelay + jitter)
+          this.logger.warn(
+            `Throttled writing ${path} (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delay}ms`
+          )
+          await this.handleThrottling(error)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+
+        break
+      }
     }
+
+    this.logger.error(`Failed to write object to ${path}:`, lastError)
+    throw new Error(`Failed to write object to ${path}: ${lastError}`)
   }
 
   /**

@@ -1,6 +1,8 @@
 # Google Cloud Storage Cost Optimization Guide for Brainy
 > **Cost Impact**: Reduce storage costs from $138k/year to $8.3k/year at 500TB scale (**94% savings**)
 
+> **Disclaimer**: Cost savings percentages are PROJECTED based on published cloud provider pricing at 500TB scale. Actual savings depend on access patterns, data lifecycle, and workload characteristics. These are not measured benchmarks.
+
 ## Overview
 
 Brainy provides enterprise-grade cost optimization features for Google Cloud Storage, including lifecycle policies and Autoclass for automatic tier management.
@@ -413,6 +415,49 @@ export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
 - Before: $2,860,000/year
 - After: $740,000/year
 - **Savings: $2,120,000/year (74%)**
+
+## Strategy 5: HNS Buckets for Write-Heavy Workloads
+
+### When to Use HNS (Hierarchical Namespace)
+
+If you experience HTTP 429 rate limit errors during `brain.add()` operations (especially with many metadata fields), GCS Hierarchical Namespace buckets provide significantly higher write throughput with zero code changes.
+
+### Why It Helps
+
+Standard GCS buckets enforce ~1 write/sec per object path. Brainy's metadata index writes multiple chunk and sparse index files per `brain.add()` call, which can exceed these limits during burst writes.
+
+HNS buckets provide:
+- **8x higher initial QPS** (8,000 writes/sec vs 1,000 for standard buckets)
+- **Better handling of hierarchical key patterns** (which brainy uses for sharded storage)
+- **No code changes required** — create a new HNS-enabled bucket and point brainy at it
+
+### Setup
+
+```bash
+# Create HNS-enabled bucket
+gcloud storage buckets create gs://my-brainy-hns \
+  --location=us-central1 \
+  --uniform-bucket-level-access \
+  --enable-hierarchical-namespace
+```
+
+Then configure brainy to use the new bucket:
+
+```typescript
+const storage = new GcsStorage({
+  bucketName: 'my-brainy-hns'
+})
+```
+
+### Trade-offs
+
+- HNS buckets do not support object versioning (irrelevant for brainy — uses its own COW versioning)
+- HNS is available in most GCS regions
+- Pricing is the same as standard buckets
+
+### Alternative: Cloud Run with Filestore/NFS
+
+For the highest write throughput with zero rate limiting, see the [Cloud Run Filestore Guide](cloud-run-filestore-guide.md) — mount a Filestore NFS volume and use brainy's FileSystem adapter instead of GCS.
 
 ---
 

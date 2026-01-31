@@ -6530,6 +6530,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this.originalConsole = undefined
     }
 
+    // Drain the metadata write buffer if the storage adapter has one
+    if (this.storage && 'metadataWriteBuffer' in this.storage) {
+      const buffer = (this.storage as any).metadataWriteBuffer
+      if (buffer && typeof buffer.destroy === 'function') {
+        await buffer.destroy()
+      }
+    }
+
     // Storage doesn't have close in current interface
     // We'll just mark as not initialized
     this.initialized = false
