@@ -109,6 +109,10 @@ export {
 // Export version utilities
 export { getBrainyVersion } from './utils/version.js'
 
+// Export plugin system
+export type { BrainyPlugin, BrainyPluginContext, StorageAdapterFactory } from './plugin.js'
+export { PluginRegistry } from './plugin.js'
+
 // Export embedding functionality
 import {
   UniversalSentenceEncoder,

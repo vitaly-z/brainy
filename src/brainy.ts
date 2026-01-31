@@ -13,7 +13,8 @@ import { BaseStorage } from './storage/baseStorage.js'
 import { StorageAdapter, Vector, DistanceFunction, EmbeddingFunction, GraphVerb } from './coreTypes.js'
 import {
   defaultEmbeddingFunction,
-  cosineDistance
+  cosineDistance,
+  getBrainyVersion
 } from './utils/index.js'
 import { embeddingManager } from './embeddings/EmbeddingManager.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
@@ -33,6 +34,8 @@ import { BlobStorage } from './storage/cow/BlobStorage.js'
 import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
+import { PluginRegistry } from './plugin.js'
+import type { BrainyPlugin, BrainyPluginContext } from './plugin.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
 import {
   ValidationConfig,
@@ -141,6 +144,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     warn: typeof console.warn
     error: typeof console.error
   }
+
+  // Plugin system
+  private pluginRegistry = new PluginRegistry()
 
   // Sub-APIs (lazy-loaded)
   private _neural?: ImprovedNeuralAPI
@@ -266,6 +272,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if (typeof (this.storage as any).enableCOWLightweight === 'function') {
         (this.storage as any).enableCOWLightweight((this.config.storage as any)?.branch || 'main')
       }
+
+      // Auto-detect and activate plugins (e.g., @soulcraft/brainy-cortex)
+      await this.loadPlugins()
 
       // Setup index now that we have storage
       this.index = this.setupIndex()
@@ -6535,6 +6544,51 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Register a plugin manually.
+   *
+   * Must be called BEFORE init(). Plugins registered after init()
+   * will not be activated.
+   */
+  use(plugin: BrainyPlugin): this {
+    this.pluginRegistry.register(plugin)
+    return this
+  }
+
+  /**
+   * Get list of active plugin names.
+   */
+  getActivePlugins(): string[] {
+    return this.pluginRegistry.getActivePlugins()
+  }
+
+  /**
+   * Auto-detect and activate plugins.
+   * Called internally during init().
+   */
+  private async loadPlugins(): Promise<void> {
+    // Auto-detect installed plugins (e.g., @soulcraft/brainy-cortex)
+    const pluginPackages = (this.config as any).plugins as string[] | undefined
+    await this.pluginRegistry.autoDetect(pluginPackages || [])
+
+    // Create plugin context
+    const context: BrainyPluginContext = {
+      registerProvider: (key, impl) => this.pluginRegistry.registerProvider(key, impl),
+      version: getBrainyVersion()
+    }
+
+    // Activate all registered plugins
+    const activated = await this.pluginRegistry.activateAll(context)
+    if (activated.length > 0) {
+      // Only log if not in silent mode
+      if (!this.config.silent) {
+        for (const name of activated) {
+          console.log(`[brainy] Plugin activated: ${name}`)
+        }
+      }
+    }
+  }
+
+  /**
    * Close and cleanup
    *
    * Now flushes HNSW dirty nodes before closing
@@ -6546,6 +6600,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (this.index && typeof this.index.flush === 'function') {
       await this.index.flush()
     }
+
+    // Deactivate plugins
+    await this.pluginRegistry.deactivateAll()
 
     // Shutdown augmentations
     const augs = this.augmentationRegistry.getAll()
