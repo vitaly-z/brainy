@@ -256,21 +256,22 @@ export class TypeAwareHNSWIndex {
     queryVector: Vector,
     k: number = 10,
     type?: NounType | NounType[],
-    filter?: (id: string) => Promise<boolean>
+    filter?: (id: string) => Promise<boolean>,
+    options?: { rerank?: { multiplier: number } }
   ): Promise<Array<[string, number]>> {
     // Single-type search (fast path)
     if (type && typeof type === 'string') {
       const index = this.getIndexForType(type)
-      return await index.search(queryVector, k, filter)
+      return await index.search(queryVector, k, filter, options)
     }
 
     // Multi-type search (handle empty array edge case)
     if (type && Array.isArray(type) && type.length > 0) {
-      return await this.searchMultipleTypes(queryVector, k, type, filter)
+      return await this.searchMultipleTypes(queryVector, k, type, filter, options)
     }
 
     // All-types search (slowest path + empty array fallback)
-    return await this.searchAllTypes(queryVector, k, filter)
+    return await this.searchAllTypes(queryVector, k, filter, options)
   }
 
   /**
@@ -286,7 +287,8 @@ export class TypeAwareHNSWIndex {
     queryVector: Vector,
     k: number,
     types: NounType[],
-    filter?: (id: string) => Promise<boolean>
+    filter?: (id: string) => Promise<boolean>,
+    options?: { rerank?: { multiplier: number } }
   ): Promise<Array<[string, number]>> {
     const allResults: Array<[string, number]> = []
 
@@ -294,7 +296,7 @@ export class TypeAwareHNSWIndex {
     for (const type of types) {
       if (this.indexes.has(type)) {
         const index = this.indexes.get(type)!
-        const results = await index.search(queryVector, k, filter)
+        const results = await index.search(queryVector, k, filter, options)
         allResults.push(...results)
       }
     }
@@ -320,13 +322,14 @@ export class TypeAwareHNSWIndex {
   private async searchAllTypes(
     queryVector: Vector,
     k: number,
-    filter?: (id: string) => Promise<boolean>
+    filter?: (id: string) => Promise<boolean>,
+    options?: { rerank?: { multiplier: number } }
   ): Promise<Array<[string, number]>> {
     const allResults: Array<[string, number]> = []
 
     // Search each type's graph
     for (const [type, index] of this.indexes.entries()) {
-      const results = await index.search(queryVector, k, filter)
+      const results = await index.search(queryVector, k, filter, options)
       allResults.push(...results)
     }
 

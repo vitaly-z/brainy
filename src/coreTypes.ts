@@ -96,6 +96,10 @@ export interface HNSWNoun {
   vector: Vector
   connections: Map<number, Set<string>> // level -> set of connected noun ids
   level: number // The highest layer this noun appears in
+  // SQ8 quantized vector for approximate distance computation (B1 optimization)
+  quantizedVector?: Uint8Array  // 4x smaller than float32 vector
+  codebookMin?: number          // quantization codebook minimum
+  codebookMax?: number          // quantization codebook maximum
   // ✅ NO metadata field - stored separately for optimization
 }
 
@@ -309,6 +313,14 @@ export interface HNSWConfig {
   ml: number // Maximum level
   useDiskBasedIndex?: boolean // Whether to use disk-based index
   maxConcurrentNeighborWrites?: number // Maximum concurrent neighbor updates during insert. Default: unlimited (full concurrency)
+  // SQ8 vector quantization (4x memory reduction, ~0.4% accuracy loss)
+  quantization?: {
+    enabled: boolean        // default: false — preserves current behavior exactly
+    bits?: 8 | 4            // default: 8 (SQ8). SQ4 requires brainy-cortex native.
+    rerankMultiplier?: number // default: 3 — over-retrieve 3x, rerank with float32
+  }
+  // Vector storage mode
+  vectorStorage?: 'memory' | 'lazy'  // default: 'memory' — 'lazy' evicts vectors after insert
 }
 
 /**

@@ -15,6 +15,8 @@ import { executeInThread } from '../utils/workerUtils.js'
 import type { BaseStorage } from '../storage/baseStorage.js'
 import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
 import { prodLog } from '../utils/logger.js'
+import { quantizeSQ8, distanceSQ8 } from '../utils/vectorQuantization.js'
+import type { SQ8QuantizedVector } from '../utils/vectorQuantization.js'
 
 // Default HNSW parameters
 const DEFAULT_CONFIG: HNSWConfig = {
@@ -53,6 +55,12 @@ export class HNSWIndex {
   private dirtyNodes: Set<string> = new Set() // Nodes with unpersisted HNSW data
   private dirtySystem: boolean = false // Whether system data (entryPoint, maxLevel) needs persist
 
+  // SQ8 quantization support (B1 optimization)
+  private quantizationEnabled: boolean = false
+  private rerankMultiplier: number = 3
+  // Lazy vector storage (B2 optimization)
+  private vectorStorageMode: 'memory' | 'lazy' = 'memory'
+
   constructor(
     config: Partial<HNSWConfig> = {},
     distanceFunction: DistanceFunction = euclideanDistance,
@@ -66,6 +74,15 @@ export class HNSWIndex {
         : true
     this.storage = options.storage || null
     this.persistMode = options.persistMode || 'immediate'
+
+    // SQ8 quantization config (default: disabled, preserves current behavior)
+    if (config.quantization?.enabled) {
+      this.quantizationEnabled = true
+      this.rerankMultiplier = config.quantization.rerankMultiplier ?? 3
+    }
+
+    // Vector storage mode (default: 'memory', preserves current behavior)
+    this.vectorStorageMode = config.vectorStorage || 'memory'
 
     // Use SAME UnifiedCache as Graph and Metadata for fair memory competition
     this.unifiedCache = getGlobalCache()
@@ -257,7 +274,11 @@ export class HNSWIndex {
       id: original.id,
       vector: [...original.vector], // Deep copy vector array
       connections: connectionsCopy,
-      level: original.level
+      level: original.level,
+      // Copy SQ8 quantized data if present
+      quantizedVector: original.quantizedVector ? new Uint8Array(original.quantizedVector) : undefined,
+      codebookMin: original.codebookMin,
+      codebookMax: original.codebookMax
     }
 
     this.nouns.set(nodeId, nodeCopy)
@@ -343,12 +364,20 @@ export class HNSWIndex {
     // Generate random level for this noun
     const nounLevel = this.getRandomLevel()
 
-    // Create new noun
+    // Create new noun with optional SQ8 quantization
     const noun: HNSWNoun = {
       id,
       vector,
       connections: new Map(),
       level: nounLevel
+    }
+
+    // Quantize vector if enabled (B1: 4x storage reduction)
+    if (this.quantizationEnabled) {
+      const sq8 = quantizeSQ8(vector)
+      noun.quantizedVector = sq8.quantized
+      noun.codebookMin = sq8.min
+      noun.codebookMax = sq8.max
     }
 
     // Initialize empty connection sets for each level
@@ -574,6 +603,13 @@ export class HNSWIndex {
       this.highLevelNodes.get(nounLevel)!.add(id)
     }
 
+    // Lazy vector eviction (B2: graph-only memory after insert)
+    // After graph construction completes, evict the full vector from memory.
+    // Future searches will load vectors on-demand via getVectorSafe() + UnifiedCache.
+    if (this.vectorStorageMode === 'lazy' && this.storage) {
+      noun.vector = [] // Release float32 vector from memory
+    }
+
     // Persist HNSW graph data to storage
     // Respect persistMode setting
     if (this.storage && this.persistMode === 'immediate') {
@@ -631,11 +667,21 @@ export class HNSWIndex {
 
   /**
    * Search for nearest neighbors
+   *
+   * When SQ8 quantization is enabled and reranking is active:
+   * - Phase 1: Over-retrieve k*rerankMultiplier candidates using SQ8 approximate distances
+   * - Phase 2: Load full float32 vectors for candidates, compute exact distances, return top k
+   *
+   * @param queryVector Query vector
+   * @param k Number of results to return
+   * @param filter Optional filter function
+   * @param options Additional search options
    */
   public async search(
     queryVector: Vector,
     k: number = 10,
-    filter?: (id: string) => Promise<boolean>
+    filter?: (id: string) => Promise<boolean>,
+    options?: { rerank?: { multiplier: number } }
   ): Promise<Array<[string, number]>> {
     if (this.nouns.size === 0) {
       return []
@@ -686,6 +732,11 @@ export class HNSWIndex {
     }
 
     let currObj = entryPoint
+
+    // SQ8: Pre-quantize query vector for fast approximate distances during traversal
+    if (this.quantizationEnabled) {
+      this._querySQ8 = quantizeSQ8(queryVector)
+    }
 
     // OPTIMIZATION: Preload entry point vector
     await this.preloadVectors([entryPoint.id])
@@ -754,9 +805,14 @@ export class HNSWIndex {
       }
     }
 
-    // Search at level 0 with ef = k
+    // Determine effective rerank multiplier
+    const rerankActive = this.quantizationEnabled && (options?.rerank || this.rerankMultiplier > 1)
+    const multiplier = options?.rerank?.multiplier ?? this.rerankMultiplier
+    const effectiveK = rerankActive ? k * multiplier : k
+
+    // Search at level 0 with ef = effectiveK
     // If we have a filter, increase ef to compensate for filtered results
-    const ef = filter ? Math.max(this.config.efSearch * 3, k * 3) : Math.max(this.config.efSearch, k)
+    const ef = filter ? Math.max(this.config.efSearch * 3, effectiveK * 3) : Math.max(this.config.efSearch, effectiveK)
     const nearestNouns = await this.searchLayer(
       queryVector,
       currObj,
@@ -764,6 +820,35 @@ export class HNSWIndex {
       0,
       filter
     )
+
+    // Phase 2: Rerank with exact float32 distances if quantization is active (B3)
+    if (rerankActive && nearestNouns.size > 0) {
+      // Clear SQ8 cache before reranking (we need exact distances now)
+      this._querySQ8 = null
+
+      const candidates = [...nearestNouns].slice(0, effectiveK)
+
+      // Load full float32 vectors for the candidate set
+      const candidateIds = candidates.map(([id]) => id)
+      await this.preloadVectors(candidateIds)
+
+      // Recompute exact distances
+      const reranked: Array<[string, number]> = []
+      for (const [id] of candidates) {
+        const noun = this.nouns.get(id)
+        if (!noun) continue
+        const exactVector = await this.getVectorSafe(noun)
+        const exactDist = this.distanceFunction(queryVector, exactVector)
+        reranked.push([id, exactDist])
+      }
+
+      // Sort by exact distance and return top k
+      reranked.sort((a, b) => a[1] - b[1])
+      return reranked.slice(0, k)
+    }
+
+    // Clear SQ8 cache
+    this._querySQ8 = null
 
     // Convert to array and sort by distance
     return [...nearestNouns].slice(0, k)
@@ -1074,6 +1159,19 @@ export class HNSWIndex {
    * @returns number | Promise<number> - sync when cached, async when needs load
    */
   private distanceSafe(queryVector: Vector, noun: HNSWNoun): number | Promise<number> {
+    // SQ8 fast path: use quantized distance when available (B1 optimization)
+    // This avoids loading full float32 vectors during graph traversal
+    if (this.quantizationEnabled &&
+        noun.quantizedVector &&
+        noun.codebookMin !== undefined &&
+        noun.codebookMax !== undefined &&
+        this._querySQ8) {
+      return distanceSQ8(
+        this._querySQ8.quantized, this._querySQ8.min, this._querySQ8.max,
+        noun.quantizedVector, noun.codebookMin, noun.codebookMax
+      )
+    }
+
     // Try sync fast path
     const nounVector = this.getVectorSync(noun)
 
@@ -1087,6 +1185,9 @@ export class HNSWIndex {
       this.distanceFunction(queryVector, loadedVector)
     )
   }
+
+  // Cached SQ8 quantization of the current query vector for distanceSafe fast path
+  private _querySQ8: SQ8QuantizedVector | null = null
 
   /**
    * Get all nodes at a specific level for clustering
@@ -1207,12 +1308,23 @@ export class HNSWIndex {
               continue
             }
 
+            // Determine if vector should be kept in memory
+            const keepVector = shouldPreload && this.vectorStorageMode !== 'lazy'
+
             // Create noun object with restored connections
             const noun: HNSWNoun = {
               id: nounData.id,
-              vector: shouldPreload ? nounData.vector : [],  // Preload if dataset is small
+              vector: keepVector ? nounData.vector : [],  // Preload if dataset is small and not lazy
               connections: new Map(),
               level: hnswData.level
+            }
+
+            // Restore SQ8 quantized data if quantization is enabled
+            if (this.quantizationEnabled && nounData.vector.length > 0) {
+              const sq8 = quantizeSQ8(nounData.vector)
+              noun.quantizedVector = sq8.quantized
+              noun.codebookMin = sq8.min
+              noun.codebookMax = sq8.max
             }
 
             // Restore connections from persisted data
@@ -1281,12 +1393,23 @@ export class HNSWIndex {
                 continue
               }
 
+              // Determine if vector should be kept in memory
+              const keepVector = shouldPreload && this.vectorStorageMode !== 'lazy'
+
               // Create noun object with restored connections
               const noun: HNSWNoun = {
                 id: nounData.id,
-                vector: shouldPreload ? nounData.vector : [],  // Preload if dataset is small
+                vector: keepVector ? nounData.vector : [],  // Preload if dataset is small and not lazy
                 connections: new Map(),
                 level: hnswData.level
+              }
+
+              // Restore SQ8 quantized data if quantization is enabled
+              if (this.quantizationEnabled && nounData.vector.length > 0) {
+                const sq8 = quantizeSQ8(nounData.vector)
+                noun.quantizedVector = sq8.quantized
+                noun.codebookMin = sq8.min
+                noun.codebookMax = sq8.max
               }
 
               // Restore connections from persisted data

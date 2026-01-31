@@ -728,6 +728,16 @@ export interface BrainyConfig {
   // Cloud storage (GCS/S3/R2/Azure) should use 'deferred' for 30-50× faster adds
   hnswPersistMode?: 'immediate' | 'deferred'
 
+  // HNSW optimization options (v7.11.0)
+  hnsw?: {
+    quantization?: {
+      enabled?: boolean        // default: false — current behavior exactly
+      bits?: 8 | 4             // default: 8 (SQ8). SQ4 requires brainy-cortex native.
+      rerankMultiplier?: number // default: 3 — over-retrieve 3x, rerank with float32
+    }
+    vectorStorage?: 'memory' | 'lazy'  // default: 'memory' — 'lazy' evicts vectors after insert
+  }
+
   // Memory management options
   maxQueryLimit?: number           // Override auto-detected query result limit (max: 100000)
   reservedQueryMemory?: number     // Memory reserved for queries in bytes (e.g., 1073741824 = 1GB)

@@ -6236,7 +6236,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private setupIndex(): HNSWIndex | TypeAwareHNSWIndex {
     const indexConfig = {
       ...this.config.index,
-      distanceFunction: this.distance
+      distanceFunction: this.distance,
+      // Wire HNSW optimization config (v7.11.0)
+      quantization: this.config.hnsw?.quantization ? {
+        enabled: this.config.hnsw.quantization.enabled ?? false,
+        bits: this.config.hnsw.quantization.bits ?? 8,
+        rerankMultiplier: this.config.hnsw.quantization.rerankMultiplier ?? 3
+      } : undefined,
+      vectorStorage: this.config.hnsw?.vectorStorage
     }
 
     const persistMode = this.resolveHNSWPersistMode()
@@ -6368,6 +6375,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       reservedQueryMemory: config?.reservedQueryMemory ?? undefined as any,
       // HNSW persistence mode - undefined = smart default in setupIndex
       hnswPersistMode: config?.hnswPersistMode ?? undefined as any,
+      // HNSW optimization options (v7.11.0)
+      hnsw: config?.hnsw ?? undefined as any,
       // Embedding initialization - false = lazy init on first embed()
       eagerEmbeddings: config?.eagerEmbeddings ?? false,
       // Integration Hub - undefined/false = disabled
