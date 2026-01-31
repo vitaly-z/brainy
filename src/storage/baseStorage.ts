@@ -79,6 +79,39 @@ export const VERBS_METADATA_DIR = 'entities/verbs/metadata'
 export const SYSTEM_DIR = '_system'
 export const STATISTICS_KEY = 'statistics'
 
+/**
+ * FNV-1a hash returning a 2-char hex bucket (00-ff).
+ * Distributes system keys across 256 sub-prefixes to avoid
+ * cloud storage per-prefix rate limits.
+ */
+function systemKeyBucket(key: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i)
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)
+  }
+  return ((hash >>> 0) & 0xff).toString(16).padStart(2, '0')
+}
+
+const SINGLETON_SYSTEM_KEYS = new Set([
+  '__metadata_field_registry__',
+  'brainy:entityIdMapper',
+  'statistics',
+  'counts',
+  'hnsw-system',
+  'type-statistics',
+])
+
+const SINGLETON_SYSTEM_PREFIXES = [
+  'statistics_',
+  'distributed_',
+]
+
+function isSingletonSystemKey(key: string): boolean {
+  if (SINGLETON_SYSTEM_KEYS.has(key)) return true
+  return SINGLETON_SYSTEM_PREFIXES.some(p => key.startsWith(p))
+}
+
 // DEPRECATED: Temporary stubs for adapters not yet migrated
 // TODO: Remove after migrating remaining adapters
 export const NOUNS_DIR = 'entities/nouns/hnsw'
@@ -208,12 +241,22 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       id.startsWith('__sparse_index__')  // Metadata sparse indices (zone maps + bloom filters)
 
     if (isSystemKey) {
+      if (isSingletonSystemKey(id)) {
+        return {
+          original: id,
+          isEntity: false,
+          shardId: null,
+          directory: SYSTEM_DIR,
+          fullPath: `${SYSTEM_DIR}/${id}.json`
+        }
+      }
+      const bucket = systemKeyBucket(id)
       return {
         original: id,
         isEntity: false,
-        shardId: null,
-        directory: SYSTEM_DIR,
-        fullPath: `${SYSTEM_DIR}/${id}.json`
+        shardId: bucket,
+        directory: `${SYSTEM_DIR}/idx/${bucket}`,
+        fullPath: `${SYSTEM_DIR}/idx/${bucket}/${id}.json`
       }
     }
 
@@ -221,12 +264,22 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(id)) {
       prodLog.warn(`[Storage] Unknown key format: ${id} - treating as system resource`)
+      if (isSingletonSystemKey(id)) {
+        return {
+          original: id,
+          isEntity: false,
+          shardId: null,
+          directory: SYSTEM_DIR,
+          fullPath: `${SYSTEM_DIR}/${id}.json`
+        }
+      }
+      const bucket = systemKeyBucket(id)
       return {
         original: id,
         isEntity: false,
-        shardId: null,
-        directory: SYSTEM_DIR,
-        fullPath: `${SYSTEM_DIR}/${id}.json`
+        shardId: bucket,
+        directory: `${SYSTEM_DIR}/idx/${bucket}`,
+        fullPath: `${SYSTEM_DIR}/idx/${bucket}/${id}.json`
       }
     }
 
@@ -1965,7 +2018,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async getMetadata(id: string): Promise<NounMetadata | null> {
     await this.ensureInitialized()
     const keyInfo = this.analyzeKey(id, 'system')
-    return this.readWithInheritance(keyInfo.fullPath)
+
+    // Try new distributed path first
+    const data = await this.readWithInheritance(keyInfo.fullPath)
+    if (data !== null) return data
+
+    // Backward compat: if key was distributed, fall back to legacy flat path
+    if (keyInfo.shardId !== null) {
+      const legacyPath = `${SYSTEM_DIR}/${id}.json`
+      return this.readWithInheritance(legacyPath)
+    }
+
+    return null
   }
 
   /**
