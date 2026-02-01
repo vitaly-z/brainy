@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.13.0](https://github.com/soulcraftlabs/brainy/compare/v7.12.0...v7.13.0) (2026-02-01)
+
+- refactor: remove augmentation system and semantic type matching (d1db351)
+
+
 ### [7.12.0](https://github.com/soulcraftlabs/brainy/compare/v7.11.0...v7.12.0) (2026-02-01)
 
 - feat: update plugin references from @soulcraft/brainy-cortex to @soulcraft/cortex (7f9d2a7)
