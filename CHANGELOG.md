@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.12.0](https://github.com/soulcraftlabs/brainy/compare/v7.11.0...v7.12.0) (2026-02-01)
+
+- feat: update plugin references from @soulcraft/brainy-cortex to @soulcraft/cortex (7f9d2a7)
+- refactor: remove deprecated Cortex class (replaced by brain.augmentations API) (490a14a)
+
+
 ### [7.11.0](https://github.com/soulcraftlabs/brainy/compare/v7.10.0...v7.11.0) (2026-01-31)
 
 - feat: add SQ8 vector quantization, lazy loading, and two-phase rerank to HNSW (0f3a884)
