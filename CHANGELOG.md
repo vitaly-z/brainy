@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.15.0](https://github.com/soulcraftlabs/brainy/compare/v7.14.0...v7.15.0) (2026-02-01)
+
+- feat: harden plugin system wiring and add developer diagnostics (401e300)
+
+
 ## [7.14.0](https://github.com/soulcraftlabs/brainy/compare/v7.13.0...v7.14.0) (2026-02-01)
 
 
