@@ -4,7 +4,7 @@
  */
 
 import { IAugmentation, AugmentationType } from './types/augmentations.js'
-import { augmentationPipeline } from './augmentationPipeline.js'
+import { augmentationPipeline } from './pipeline.js'
 
 export interface AugmentationInfo {
   name: string

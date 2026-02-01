@@ -15,7 +15,7 @@ import {
 import { AugmentationType } from '../types/augmentations.js'
 
 // Import the augmentation pipeline
-import { augmentationPipeline } from '../augmentationPipeline.js'
+import { augmentationPipeline } from '../pipeline.js'
 
 export class MCPAugmentationToolset {
   /**

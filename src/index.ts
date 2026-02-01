@@ -54,11 +54,20 @@ export {
   getPresetDescription
 } from './config/index.js'
 
-// Export Cortex (the orchestrator)
-export { 
-  Cortex, 
-  cortex
-} from './cortex.js'
+// Export augmentation types
+export type {
+  BrainyAugmentations,
+  IAugmentation,
+  ISenseAugmentation,
+  IConduitAugmentation,
+  ICognitionAugmentation,
+  IMemoryAugmentation,
+  IPerceptionAugmentation,
+  IDialogAugmentation,
+  IActivationAugmentation,
+  IWebSocketSupport,
+  AugmentationType
+} from './types/augmentations.js'
 
 // Export Neural Import (AI data understanding)
 export { NeuralImport } from './cortex/neuralImport.js'
