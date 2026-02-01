@@ -15,8 +15,8 @@ import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtracto
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
 import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
-import { PDFHandler } from '../augmentations/intelligentImport/handlers/pdfHandler.js'
-import type { FormatHandlerOptions } from '../augmentations/intelligentImport/types.js'
+import { PDFHandler } from './handlers/pdfHandler.js'
+import type { FormatHandlerOptions } from './handlers/types.js'
 
 export interface SmartPDFOptions extends FormatHandlerOptions {
   /** Enable neural entity extraction */

@@ -22,7 +22,7 @@ async function runV2Benchmark() {
   const brain = new Brainy({
     storage: { type: 'memory' },
     embeddingFunction: mockEmbedder,
-    augmentations: false // Disable for raw performance
+    // Raw performance test
   })
   
   await brain.init()
@@ -111,7 +111,6 @@ async function runV3Benchmark() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {}, // Minimal augmentations
     embedder: mockEmbedder
   })
   
@@ -216,7 +215,6 @@ async function runScaleTest() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {},
     embedder: mockEmbedder
   })
   

@@ -69,10 +69,6 @@ async function quickVerify() {
     console.log(`❌ Verb storage: Expected 1 verb, got ${stats.totalVerbs}`)
   }
   
-  // Check augmentations
-  const augTypes = brain.augmentations.getAugmentationTypes()
-  console.log(`✅ Active augmentations: ${augTypes.join(', ')}`)
-  
   // Close
   await brain.close()
   console.log('\n✅ All tests passed - implementations are REAL!')

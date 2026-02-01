@@ -5,8 +5,8 @@
  * Uses MimeTypeDetector for comprehensive file type detection (2000+ types)
  */
 
-import { FormatHandler, FormatHandlerOptions, ProcessedData } from '../types.js'
-import { mimeDetector } from '../../../vfs/MimeTypeDetector.js'
+import { FormatHandler, FormatHandlerOptions, ProcessedData } from './types.js'
+import { mimeDetector } from '../../vfs/MimeTypeDetector.js'
 
 export abstract class BaseFormatHandler implements FormatHandler {
   abstract readonly format: string

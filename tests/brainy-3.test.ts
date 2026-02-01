@@ -11,13 +11,7 @@ describe('Brainy 3.0 API', () => {
   
   beforeEach(async () => {
     brain = new Brainy({
-      storage: { type: 'memory' },
-      augmentations: {
-        cache: false,
-        metrics: false,
-        display: false,
-        monitoring: false
-      }
+      storage: { type: 'memory' }
     })
     await brain.init()
   })
@@ -426,7 +420,6 @@ describe('Brainy 3.0 Neural API', () => {
   beforeEach(async () => {
     brain = new Brainy({
       storage: { type: 'memory' },
-      augmentations: { metrics: false, display: false }
     })
     await brain.init()
   })
@@ -440,9 +433,4 @@ describe('Brainy 3.0 Neural API', () => {
     expect(typeof brain.neural).toBe('object')
   })
 
-  it('should provide augmentations API access', () => {
-    expect(brain.augmentations).toBeDefined()
-    expect(brain.augmentations.list).toBeDefined()
-    expect(typeof brain.augmentations.list).toBe('function')
-  })
 })

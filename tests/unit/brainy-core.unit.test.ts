@@ -15,13 +15,7 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
   beforeEach(async () => {
     // Create instance with real embeddings for production-ready tests
     brain = new Brainy({
-      storage: { type: 'memory' },
-      augmentations: {
-        cache: false,
-        metrics: false,
-        display: false,
-        monitoring: false
-      }
+      storage: { type: 'memory' }
     })
     
     await brain.init()
@@ -196,7 +190,7 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
   })
 
   describe('Statistics and Metadata', () => {
-    it('should track statistics through augmentations', async () => {
+    it('should track statistics', async () => {
       await brain.add({
         data: { name: 'Test1' },
         type: NounType.Concept

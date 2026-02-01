@@ -15,7 +15,6 @@
 
 import { IntegrationBase, HTTPIntegration } from '../core/IntegrationBase.js'
 import { IntegrationConfig } from '../core/types.js'
-import { AugmentationManifest } from '../../augmentations/manifest.js'
 import { Entity, FindParams } from '../../types/brainy.types.js'
 import { NounType, VerbType } from '../../types/graphTypes.js'
 
@@ -92,10 +91,11 @@ interface SheetsResponse {
  *
  * @example
  * ```typescript
- * brain.augmentations.register(new GoogleSheetsIntegration({
+ * const sheets = new GoogleSheetsIntegration({
  *   basePath: '/sheets',
  *   maxResults: 1000
- * }))
+ * })
+ * await sheets.initialize()
  * ```
  */
 export class GoogleSheetsIntegration
@@ -283,7 +283,7 @@ export class GoogleSheetsIntegration
   /**
    * Get manifest
    */
-  getManifest(): AugmentationManifest {
+  getManifest(): Record<string, any> {
     return {
       id: 'sheets',
       name: 'Google Sheets Integration',

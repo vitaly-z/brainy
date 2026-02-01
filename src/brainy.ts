@@ -18,8 +18,6 @@ import {
 } from './utils/index.js'
 import { embeddingManager } from './embeddings/EmbeddingManager.js'
 import { matchesMetadataFilter } from './utils/metadataFilter.js'
-import { AugmentationRegistry, AugmentationContext } from './augmentations/brainyAugmentation.js'
-import { createDefaultAugmentations } from './augmentations/defaultAugmentations.js'
 import { ImprovedNeuralAPI } from './neural/improvedNeuralAPI.js'
 import { NaturalLanguageProcessor } from './neural/naturalLanguageProcessor.js'
 import { NeuralEntityExtractor, ExtractedEntity } from './neural/entityExtractor.js'
@@ -130,7 +128,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private transactionManager: TransactionManager
   private embedder: EmbeddingFunction
   private distance: DistanceFunction
-  private augmentationRegistry: AugmentationRegistry
   private config: Required<BrainyConfig>
 
   // Distributed components (optional)
@@ -192,7 +189,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Setup core components
     this.distance = cosineDistance
     this.embedder = this.setupEmbedder()
-    this.augmentationRegistry = this.setupAugmentations()
     this.transactionManager = new TransactionManager()
 
     // Setup distributed components if enabled
@@ -230,7 +226,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...configOverrides,
         storage: { ...this.config.storage, ...configOverrides.storage },
         index: { ...this.config.index, ...configOverrides.index },
-        augmentations: { ...this.config.augmentations, ...configOverrides.augmentations },
         verbose: configOverrides.verbose ?? this.config.verbose,
         silent: configOverrides.silent ?? this.config.silent
       }
@@ -331,23 +326,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
-
-      // Initialize augmentations
-      await this.augmentationRegistry.initializeAll({
-        brain: this,
-        storage: this.storage,
-        config: this.config,
-        log: (message: string, level = 'info') => {
-          // Simple logging for now
-          if (level === 'error') {
-            console.error(message)
-          } else if (level === 'warn') {
-            console.warn(message)
-          } else {
-            console.log(message)
-          }
-        }
-      })
 
       // Connect distributed components to storage
       await this.connectDistributedStorage()
@@ -698,9 +676,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       )
     }
 
-    // Execute through augmentation pipeline
-    return this.augmentationRegistry.execute('add', params, async () => {
-      // Prepare metadata for storage (backward compat format - unchanged)
+    // Prepare metadata for storage (backward compat format - unchanged)
       const storageMetadata = {
         ...(typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data) ? params.data : {}),
         ...params.metadata,
@@ -776,7 +752,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       })
 
       return id
-    })
   }
 
   /**
@@ -914,28 +889,26 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async get(id: string, options?: GetOptions): Promise<Entity<T> | null> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('get', { id, options }, async () => {
-      // Route to metadata-only or full entity based on options
-      const includeVectors = options?.includeVectors ?? false  // Default: metadata-only (fast)
+    // Route to metadata-only or full entity based on options
+    const includeVectors = options?.includeVectors ?? false  // Default: metadata-only (fast)
 
-      if (includeVectors) {
-        // FULL PATH: Load vector + metadata (6KB, 43ms)
-        // Used when: Computing similarity on this entity, manual vector operations
-        const noun = await this.storage.getNoun(id)
-        if (!noun) {
-          return null
-        }
-        return this.convertNounToEntity(noun)
-      } else {
-        // FAST PATH: Metadata-only (300 bytes, 10ms) - DEFAULT
-        // Used when: VFS operations, existence checks, metadata inspection (94% of calls)
-        const metadata = await this.storage.getNounMetadata(id)
-        if (!metadata) {
-          return null
-        }
-        return this.convertMetadataToEntity(id, metadata)
+    if (includeVectors) {
+      // FULL PATH: Load vector + metadata (6KB, 43ms)
+      // Used when: Computing similarity on this entity, manual vector operations
+      const noun = await this.storage.getNoun(id)
+      if (!noun) {
+        return null
       }
-    })
+      return this.convertNounToEntity(noun)
+    } else {
+      // FAST PATH: Metadata-only (300 bytes, 10ms) - DEFAULT
+      // Used when: VFS operations, existence checks, metadata inspection (94% of calls)
+      const metadata = await this.storage.getNounMetadata(id)
+      if (!metadata) {
+        return null
+      }
+      return this.convertMetadataToEntity(id, metadata)
+    }
   }
 
   /**
@@ -1104,8 +1077,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateUpdateParams(params)
 
-    return this.augmentationRegistry.execute('update', params, async () => {
-      // Get existing entity with vectors (fix for regression)
+    // Get existing entity with vectors (fix for regression)
       // We need includeVectors: true because:
       // 1. SaveNounOperation requires the vector
       // 2. HNSW reindexing operations need the original vector
@@ -1244,7 +1216,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           new AddToMetadataIndexOperation(this.metadataIndex, params.id, entityForIndexing)
         )
       })
-    })
   }
 
   /**
@@ -1258,8 +1229,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('delete', { id }, async () => {
-      // Get entity metadata and related verbs before deletion
+    // Get entity metadata and related verbs before deletion
       const metadata = await this.storage.getNounMetadata(id)
       const noun = await this.storage.getNoun(id)
       const verbs = await this.storage.getVerbsBySource(id)
@@ -1310,7 +1280,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           )
         }
       })
-    })
   }
 
   // ============= RELATIONSHIP OPERATIONS =============
@@ -1465,8 +1434,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       (v, i) => (v + toEntity.vector[i]) / 2
     )
 
-    return this.augmentationRegistry.execute('relate', params, async () => {
-      // Prepare verb metadata
+    // Prepare verb metadata
       // CRITICAL: Include verb type in metadata for count tracking
       const verbMetadata = {
         verb: params.type, // Store verb type for count synchronization
@@ -1551,7 +1519,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       })
 
       return id
-    })
   }
 
   /**
@@ -1560,8 +1527,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async unrelate(id: string): Promise<void> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('unrelate', { id }, async () => {
-      // Get verb data before deletion for rollback
+    // Get verb data before deletion for rollback
       const verb = await this.storage.getVerb(id)
 
       // Execute atomically with transaction system
@@ -1578,7 +1544,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           new DeleteVerbMetadataOperation(this.storage, id)
         )
       })
-    })
   }
 
   /**
@@ -1865,7 +1830,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     validateFindParams(params)
 
     const startTime = Date.now()
-    const result = await this.augmentationRegistry.execute('find', params, async () => {
+    const result = await (async () => {
       let results: Result<T>[] = []
 
       // Distinguish between search criteria (need vector search) and filter criteria (metadata only)
@@ -2201,8 +2166,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Efficient pagination - only slice what we need (limit already defined above)
       return results.slice(finalOffset, finalOffset + limit)
-    })
-    
+    })()
+
     // Record performance for auto-tuning
     const duration = Date.now() - startTime
     recordQueryPerformance(duration, result.length)
@@ -2771,8 +2736,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async clear(): Promise<void> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('clear', {}, async () => {
-      // Clear storage
+    // Clear storage
       await this.storage.clear()
 
       // Invalidate GraphAdjacencyIndex to prevent stale in-memory data
@@ -2832,7 +2796,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // VFS was never used, reset flag for clean state
         this._vfsInitialized = false
       }
-    })
   }
 
   // ============= COW (COPY-ON-WRITE) API =============
@@ -2887,8 +2850,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }): Promise<Brainy<T>> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('fork', { branch, options }, async () => {
-      const branchName = branch || `fork-${Date.now()}`
+    const branchName = branch || `fork-${Date.now()}`
 
       // Lazy COW initialization - enable automatically on first fork()
       // This is zero-config and transparent to users
@@ -2978,25 +2940,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       clone.graphIndex = await (clone.storage as any).getGraphIndex()
       // getGraphIndex() will rebuild automatically if data exists (via _initializeGraphIndex)
 
-      // Setup augmentations
-      clone.augmentationRegistry = this.setupAugmentations()
-      await clone.augmentationRegistry.initializeAll({
-        brain: clone,
-        storage: clone.storage,
-        config: clone.config,
-        log: (message: string, level?: 'info' | 'warn' | 'error') => {
-          if (!clone.config.silent) {
-            console[level || 'info'](message)
-          }
-        }
-      })
-
       // Mark as initialized
       clone.initialized = true
       clone.dimensions = this.dimensions
 
       return clone
-    })
   }
 
   /**
@@ -3012,19 +2960,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async listBranches(): Promise<string[]> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('listBranches', {}, async () => {
-      if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage')
-      }
+    if (!('refManager' in this.storage)) {
+      throw new Error('Branch management requires COW-enabled storage')
+    }
 
-      const refManager = (this.storage as any).refManager
-      const refs = await refManager.listRefs()
+    const refManager = (this.storage as any).refManager
+    const refs = await refManager.listRefs()
 
-      // Filter to branches only (exclude tags)
-      return refs
-        .filter((ref: any) => ref.name.startsWith('refs/heads/'))
-        .map((ref: any) => ref.name.replace('refs/heads/', ''))
-    })
+    // Filter to branches only (exclude tags)
+    return refs
+      .filter((ref: any) => ref.name.startsWith('refs/heads/'))
+      .map((ref: any) => ref.name.replace('refs/heads/', ''))
   }
 
   /**
@@ -3040,13 +2986,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async getCurrentBranch(): Promise<string> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('getCurrentBranch', {}, async () => {
-      if (!('currentBranch' in this.storage)) {
-        return 'main' // Default branch
-      }
+    if (!('currentBranch' in this.storage)) {
+      return 'main' // Default branch
+    }
 
-      return (this.storage as any).currentBranch || 'main'
-    })
+    return (this.storage as any).currentBranch || 'main'
   }
 
   /**
@@ -3062,10 +3006,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async checkout(branch: string): Promise<void> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('checkout', { branch }, async () => {
-      if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage')
-      }
+    if (!('refManager' in this.storage)) {
+      throw new Error('Branch management requires COW-enabled storage')
+    }
 
       // Verify branch exists
       const branches = await this.listBranches()
@@ -3106,7 +3049,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         this._vfs = new VirtualFileSystem(this)
         await this._vfs.init()
       }
-    })
   }
 
   /**
@@ -3131,8 +3073,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }): Promise<string> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('commit', { options }, async () => {
-      if (!('refManager' in this.storage) || !('commitLog' in this.storage) || !('blobStorage' in this.storage)) {
+    if (!('refManager' in this.storage) || !('commitLog' in this.storage) || !('blobStorage' in this.storage)) {
         throw new Error('Commit requires COW-enabled storage')
       }
 
@@ -3187,7 +3128,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       })
 
       return commitHash
-    })
   }
 
   /**
@@ -3380,19 +3320,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async deleteBranch(branch: string): Promise<void> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('deleteBranch', { branch }, async () => {
-      if (!('refManager' in this.storage)) {
-        throw new Error('Branch management requires COW-enabled storage')
-      }
+    if (!('refManager' in this.storage)) {
+      throw new Error('Branch management requires COW-enabled storage')
+    }
 
-      const currentBranch = await this.getCurrentBranch()
-      if (branch === currentBranch) {
-        throw new Error('Cannot delete current branch')
-      }
+    const currentBranch = await this.getCurrentBranch()
+    if (branch === currentBranch) {
+      throw new Error('Cannot delete current branch')
+    }
 
-      const refManager = (this.storage as any).refManager
-      await refManager.deleteRef(branch)
-    })
+    const refManager = (this.storage as any).refManager
+    await refManager.deleteRef(branch)
   }
 
   /**
@@ -3421,30 +3359,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }>> {
     await this.ensureInitialized()
 
-    return this.augmentationRegistry.execute('getHistory', { options }, async () => {
-      if (!('commitLog' in this.storage) || !('refManager' in this.storage)) {
-        throw new Error('History requires COW-enabled storage')
-      }
+    if (!('commitLog' in this.storage) || !('refManager' in this.storage)) {
+      throw new Error('History requires COW-enabled storage')
+    }
 
-      const commitLog = (this.storage as any).commitLog
-      const currentBranch = await this.getCurrentBranch()
+    const commitLog = (this.storage as any).commitLog
+    const currentBranch = await this.getCurrentBranch()
 
-      // Get commit history for current branch
-      const commits = await commitLog.getHistory(currentBranch, {
-        maxCount: options?.limit || 10
-      })
-
-      // Map to expected format (compute hash for each commit)
-      return commits.map((commit: any) => ({
-        hash: (this.storage as any).blobStorage.constructor.hash(
-          Buffer.from(JSON.stringify(commit))
-        ),
-        message: commit.message,
-        author: commit.author,
-        timestamp: commit.timestamp,
-        metadata: commit.metadata
-      }))
+    // Get commit history for current branch
+    const commits = await commitLog.getHistory(currentBranch, {
+      maxCount: options?.limit || 10
     })
+
+    // Map to expected format (compute hash for each commit)
+    return commits.map((commit: any) => ({
+      hash: (this.storage as any).blobStorage.constructor.hash(
+        Buffer.from(JSON.stringify(commit))
+      ),
+      message: commit.message,
+      author: commit.author,
+      timestamp: commit.timestamp,
+      metadata: commit.metadata
+    }))
   }
 
   /**
@@ -3950,21 +3886,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }) => void
     }
   ) {
-    // Execute through augmentation pipeline (Enables IntelligentImportAugmentation)
-    // If source is an ImportSource object (not a Buffer), spread it so augmentations can access properties
-    const params = typeof source === 'object' && !Buffer.isBuffer(source)
-      ? { ...source as object, ...options }  // Spread ImportSource: { type, data, filename, ...options }
-      : { source, ...options }               // Wrap Buffer/string: { source, ...options }
+    // Lazy load ImportCoordinator
+    const { ImportCoordinator } = await import('./import/ImportCoordinator.js')
+    const coordinator = new ImportCoordinator(this)
+    await coordinator.init()
 
-    return this.augmentationRegistry.execute('import', params, async () => {
-      // Lazy load ImportCoordinator
-      const { ImportCoordinator } = await import('./import/ImportCoordinator.js')
-      const coordinator = new ImportCoordinator(this)
-      await coordinator.init()
-
-      // Pass augmentation-modified params (contains _intelligentImport, _extractedData, etc)
-      return await coordinator.import(source, { ...options, ...params })
-    })
+    return await coordinator.import(source, options)
   }
 
   /**
@@ -4687,17 +4614,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           density: entityStats.total > 0 ? relationshipStats.totalRelationships / entityStats.total : 0
         }
       }
-    }
-  }
-
-  /**
-   * Augmentations API - Clean and simple
-   */
-  get augmentations() {
-    return {
-      list: () => this.augmentationRegistry.getAll().map(a => a.name),
-      get: (name: string) => this.augmentationRegistry.getAll().find(a => a.name === name),
-      has: (name: string) => this.augmentationRegistry.getAll().some(a => a.name === name)
     }
   }
 
@@ -6283,32 +6199,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Setup augmentations
-   */
-  private setupAugmentations(): AugmentationRegistry {
-    const registry = new AugmentationRegistry()
-
-    // Register default augmentations with silent mode support
-    const augmentationConfig = {
-      ...this.config.augmentations,
-      // Pass silent mode to all augmentations
-      ...(this.config.silent && {
-        cache: this.config.augmentations?.cache !== false ? { ...this.config.augmentations?.cache, silent: true } : false,
-        metrics: this.config.augmentations?.metrics !== false ? { ...this.config.augmentations?.metrics, silent: true } : false,
-        display: this.config.augmentations?.display !== false ? { ...this.config.augmentations?.display, silent: true } : false,
-        monitoring: this.config.augmentations?.monitoring !== false ? { ...this.config.augmentations?.monitoring, silent: true } : false
-      })
-    }
-
-    const defaults = createDefaultAugmentations(augmentationConfig)
-    for (const aug of defaults) {
-      registry.register(aug)
-    }
-
-    return registry
-  }
-
-  /**
    * Normalize and validate configuration
    */
   private normalizeConfig(config?: BrainyConfig): Required<BrainyConfig> {
@@ -6356,7 +6246,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       storage: config?.storage || { type: 'auto' },
       index: config?.index || {},
       cache: config?.cache ?? true,
-      augmentations: config?.augmentations || {},
       distributed: distributedConfig as any, // Type will be fixed when used
       warmup: config?.warmup ?? false,
       realtime: config?.realtime ?? false,
@@ -6669,14 +6558,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Deactivate plugins
     await this.pluginRegistry.deactivateAll()
-
-    // Shutdown augmentations
-    const augs = this.augmentationRegistry.getAll()
-    for (const aug of augs) {
-      if ('shutdown' in aug && typeof aug.shutdown === 'function') {
-        await aug.shutdown()
-      }
-    }
 
     // Restore console methods if silent mode was enabled
     if (this.config.silent && this.originalConsole) {

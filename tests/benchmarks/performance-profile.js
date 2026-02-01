@@ -77,30 +77,21 @@ async function profilePerformance() {
   // Initialize Brainy with different configurations
   console.log('Initializing Brainy configurations...')
   
-  // 1. Minimal config (no augmentations)
+  // 1. Minimal config
   const minimalBrain = new Brainy({
-    storage: new MemoryStorage(),
-    augmentations: false  // Disable all augmentations
+    storage: new MemoryStorage()
   })
   await minimalBrain.init()
-  
-  // 2. Default config (with augmentations)
+
+  // 2. Default config
   const defaultBrain = new Brainy({
     storage: new MemoryStorage()
   })
   await defaultBrain.init()
-  
-  // 3. Full augmentations config
+
+  // 3. Full config
   const fullBrain = new Brainy({
-    storage: new MemoryStorage(),
-    augmentations: {
-      batchProcessing: { enabled: true, maxBatchSize: 1000 },
-      connectionPool: { enabled: true },
-      cache: { enabled: true },
-      index: { enabled: true },
-      entityRegistry: { enabled: true },
-      monitoring: { enabled: true }
-    }
+    storage: new MemoryStorage()
   })
   await fullBrain.init()
   
@@ -188,11 +179,7 @@ async function profilePerformance() {
     verbCounter++
   }, 100)
   
-  console.log('\n🔧 Testing Augmentation Overhead\n')
-  
-  // Test individual augmentations
-  const augmentations = defaultBrain.augmentations.getAugmentationTypes()
-  console.log(`Active augmentations: ${augmentations.join(', ')}\n`)
+  console.log('\n🔧 Testing Operation Overhead\n')
   
   // Measure raw storage performance
   const storage = new MemoryStorage()
@@ -261,8 +248,8 @@ async function profilePerformance() {
   
   console.log('Overhead breakdown:')
   console.log(`  Base operation: ${minimalPerf.perOpMs.toFixed(2)}ms`)
-  console.log(`  Default augmentations: +${(defaultPerf.perOpMs - minimalPerf.perOpMs).toFixed(2)}ms`)
-  console.log(`  Full augmentations: +${(fullPerf.perOpMs - defaultPerf.perOpMs).toFixed(2)}ms`)
+  console.log(`  Default config: +${(defaultPerf.perOpMs - minimalPerf.perOpMs).toFixed(2)}ms`)
+  console.log(`  Full config: +${(fullPerf.perOpMs - defaultPerf.perOpMs).toFixed(2)}ms`)
   console.log(`  Embedding generation: ${embedPerf.perOpMs.toFixed(2)}ms`)
   console.log(`  Without embeddings: ${vectorPerf.perOpMs.toFixed(2)}ms`)
   
@@ -290,7 +277,7 @@ async function profilePerformance() {
     console.log('   1. Fake/stub operations that returned immediately')
     console.log('   2. No actual embedding generation')
     console.log('   3. No real storage operations')
-    console.log('   4. No augmentation processing')
+    console.log('   4. Direct operation calls')
     console.log('\n   With real implementations:')
     console.log(`   - Raw storage: ${profiler.results['Raw storage.saveNoun']?.opsPerSec || 'N/A'} ops/sec`)
     console.log(`   - With embeddings: ${defaultPerf.opsPerSec} ops/sec`)

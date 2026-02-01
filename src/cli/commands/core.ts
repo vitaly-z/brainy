@@ -148,21 +148,9 @@ export const coreCommands = {
         }
         nounType = options.type as NounType
       } else {
-        // Use AI to suggest type
-        spinner.text = 'Detecting type with AI...'
-        const suggestion = await BrainyTypes.suggestNoun(
-          typeof text === 'string' ? { content: text, ...metadata } : text
-        )
-        
-        if (suggestion.confidence < 0.6) {
-          spinner.fail('Could not determine type with confidence')
-          console.log(chalk.yellow(`Suggestion: ${suggestion.type} (${(suggestion.confidence * 100).toFixed(1)}%)`))
-          console.log(chalk.dim('Use --type flag to specify explicitly'))
-          process.exit(1)
-        }
-        
-        nounType = suggestion.type as NounType
-        spinner.text = `Using detected type: ${nounType}`
+        // Default to Thing when no type specified
+        nounType = NounType.Thing
+        spinner.text = `No type specified, using default: ${nounType}`
       }
       
       // Add with explicit type

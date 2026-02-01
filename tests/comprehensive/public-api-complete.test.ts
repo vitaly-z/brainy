@@ -701,7 +701,6 @@ describe('Brainy Public API - Complete Coverage', () => {
         expect(health.status).toBe('healthy')
         expect(health.storage).toBeDefined()
         expect(health.storage.status).toBe('connected')
-        expect(health.augmentations).toBeDefined()
         expect(health.memory).toBeDefined()
       })
 

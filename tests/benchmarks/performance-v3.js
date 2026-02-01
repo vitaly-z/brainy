@@ -17,7 +17,6 @@ async function benchmarkV2() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: false,
     embeddingFunction: async () => new Array(384).fill(0).map(() => Math.random())
   })
   await brain.init()
@@ -92,7 +91,6 @@ async function benchmarkV3() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {},
     warmup: false,
     embedder: async () => new Array(384).fill(0).map(() => Math.random())
   })

@@ -49,11 +49,8 @@ try {
   test('Memory storage configured', brain.storage && brain.storage.storageType === 'memory')
   
   console.log('\n📊 API Architecture Validation:')
-  
-  // Test 5: Augmentation system structure
-  test('Augmentations system exists', brain.augmentations !== undefined)
-  
-  // Test 6: Core properties exist  
+
+  // Test 5: Core properties exist
   test('Index system exists', brain.index !== undefined)
   test('Storage system exists', brain.storage !== undefined)
   

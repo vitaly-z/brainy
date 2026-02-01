@@ -1,8 +1,7 @@
 /**
- * Pipeline - Augmentation execution pipeline
+ * Pipeline - Execution pipeline
  *
  * Provides Pipeline class, execution modes, and factory functions.
- * All augmentation management should use brain.augmentations API.
  */
 
 /**
@@ -28,7 +27,6 @@ export interface PipelineOptions {
 
 /**
  * Minimal Pipeline class for backward compatibility.
- * All augmentation management should use brain.augmentations API.
  */
 export class Pipeline {
   private static instance?: Pipeline

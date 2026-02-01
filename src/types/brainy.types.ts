@@ -693,9 +693,6 @@ export interface BrainyConfig {
     ttl?: number
   }
   
-  // Augmentations
-  augmentations?: Record<string, any>
-
   // Distributed configuration
   distributed?: {
     enabled: boolean

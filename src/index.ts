@@ -5,7 +5,7 @@
  * Core Components:
  * - Brainy: The unified database with Triple Intelligence
  * - Triple Intelligence: Seamless fusion of vector + graph + field search
- * - Augmentations: Extensible plugin system
+ * - Plugins: Extensible plugin system (cortex, storage adapters)
  * - Neural API: AI-powered clustering and analysis
  */
 
@@ -54,21 +54,6 @@ export {
   getPresetDescription
 } from './config/index.js'
 
-// Export augmentation types
-export type {
-  BrainyAugmentations,
-  IAugmentation,
-  ISenseAugmentation,
-  IConduitAugmentation,
-  ICognitionAugmentation,
-  IMemoryAugmentation,
-  IPerceptionAugmentation,
-  IDialogAugmentation,
-  IActivationAugmentation,
-  IWebSocketSupport,
-  AugmentationType
-} from './types/augmentations.js'
-
 // Export Neural Import (AI data understanding)
 export { NeuralImport } from './cortex/neuralImport.js'
 export type {
@@ -95,10 +80,6 @@ export type {
   RelationshipExtractionResult,
   SmartRelationshipExtractorOptions
 } from './neural/SmartRelationshipExtractor.js'
-
-// Import Manager removed - use brain.import() instead (available on all Brainy instances)
-
-// Augmentation types are already exported later in the file
 
 // Export distance functions for convenience
 import {
@@ -234,7 +215,6 @@ export {
 export { FileSystemStorage } from './storage/adapters/fileSystemStorage.js'
 
 // Export COW (Copy-on-Write) infrastructure
-// Enables premium augmentations to implement temporal features
 import { CommitLog } from './storage/cow/CommitLog.js'
 import { CommitObject, CommitBuilder } from './storage/cow/CommitObject.js'
 import { BlobStorage } from './storage/cow/BlobStorage.js'
@@ -255,7 +235,6 @@ export {
 import {
   Pipeline,
   pipeline,
-  augmentationPipeline,
   ExecutionMode,
   PipelineOptions,
   PipelineResult,
@@ -266,84 +245,20 @@ import {
   StreamlinedPipelineResult
 } from './pipeline.js'
 
-// Sequential pipeline removed - use unified pipeline instead
-
-// REMOVED: Old augmentation factory for 2.0 clean architecture
-
 export {
-  // Unified pipeline exports
   Pipeline,
   pipeline,
-  augmentationPipeline,
   ExecutionMode,
-
-  // Factory functions
   createPipeline,
   createStreamingPipeline,
-  StreamlinedExecutionMode,
-
-  // Augmentation factory exports (REMOVED in 2.0 - Use BrainyAugmentation interface)
-  // createSenseAugmentation,     // → Use BaseAugmentation class
-  // addWebSocketSupport,         // → Use APIServerAugmentation  
-  // executeAugmentation,         // → Use brain.augmentations.execute()
-  // loadAugmentationModule       // → Use dynamic imports
+  StreamlinedExecutionMode
 }
 export type {
   PipelineOptions,
   PipelineResult,
   StreamlinedPipelineOptions,
   StreamlinedPipelineResult
-  // AugmentationOptions - REMOVED in 2.0 (use BaseAugmentation config)
 }
-
-// Augmentation registry removed - use Brainy's built-in augmentation system
-
-
-
-// Export augmentation implementations
-import {
-  StorageAugmentation,
-  DynamicStorageAugmentation,
-  createStorageAugmentationFromConfig
-} from './augmentations/storageAugmentation.js'
-import {
-  MemoryStorageAugmentation,
-  FileSystemStorageAugmentation,
-  OPFSStorageAugmentation,
-  S3StorageAugmentation,
-  R2StorageAugmentation,
-  GCSStorageAugmentation,
-  createAutoStorageAugmentation
-} from './augmentations/storageAugmentations.js'
-import {
-  WebSocketConduitAugmentation
-} from './augmentations/conduitAugmentations.js'
-
-// Storage augmentation exports
-export {
-  // Base classes
-  StorageAugmentation,
-  DynamicStorageAugmentation,
-  // Concrete implementations
-  MemoryStorageAugmentation,
-  FileSystemStorageAugmentation,
-  OPFSStorageAugmentation,
-  S3StorageAugmentation,
-  R2StorageAugmentation,
-  GCSStorageAugmentation,
-  // Factory functions
-  createAutoStorageAugmentation,
-  createStorageAugmentationFromConfig
-}
-
-// Other augmentation exports
-export {
-  WebSocketConduitAugmentation
-}
-
-// LLM augmentations are optional and not imported by default
-// They can be imported directly from their module if needed:
-// import { LLMCognitionAugmentation, LLMActivationAugmentation, createLLMAugmentations } from './augmentations/llmAugmentations.js'
 
 // Export types
 import type {
@@ -375,25 +290,6 @@ export type {
   HNSWVerb,
   HNSWConfig,
   StorageAdapter
-}
-
-// Export augmentation types
-import type {
-  AugmentationResponse,
-  BrainyAugmentation,
-  BaseAugmentation,
-  AugmentationContext
-} from './types/augmentations.js'
-
-// Export augmentation manager for type-safe augmentation management
-export { AugmentationManager, type AugmentationInfo } from './augmentationManager.js'
-
-// Export only the clean augmentation types for 2.0
-export type { 
-  AugmentationResponse,
-  BrainyAugmentation,
-  BaseAugmentation,
-  AugmentationContext
 }
 
 // Export graph types
@@ -496,8 +392,8 @@ export type {
 // Export type utility functions
 import { getNounTypes, getVerbTypes, getNounTypeMap, getVerbTypeMap } from './utils/typeUtils.js'
 
-// Export BrainyTypes for complete type management
-import { BrainyTypes, TypeSuggestion, suggestType } from './utils/brainyTypes.js'
+// Export BrainyTypes for type validation and lookup
+import { BrainyTypes } from './utils/brainyTypes.js'
 
 export {
   NounType,
@@ -506,13 +402,8 @@ export {
   getVerbTypes,
   getNounTypeMap,
   getVerbTypeMap,
-  // BrainyTypes - complete type management
-  BrainyTypes,
-  suggestType
-}
-
-export type {
-  TypeSuggestion
+  // BrainyTypes - type validation and lookup
+  BrainyTypes
 }
 
 // Export MCP (Model Control Protocol) components

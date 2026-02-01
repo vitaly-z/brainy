@@ -14,15 +14,8 @@ async function runBenchmark() {
   console.log('🧠 Brainy v3 Performance Benchmark')
   console.log('═'.repeat(60))
   
-  // Disable all augmentations for raw performance
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {
-      cache: false,
-      metrics: false,
-      display: false,
-      index: false
-    },
     embedder: mockEmbedder,
     warmup: false
   })

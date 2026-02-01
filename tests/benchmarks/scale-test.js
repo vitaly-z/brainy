@@ -33,34 +33,14 @@ console.log(`🔧 Mode: ${CURRENT_SCALE}\n`)
 async function runScaleTest() {
   const startTime = Date.now()
   
-  // Initialize Brainy with real augmentations
+  // Initialize Brainy
   const brain = new Brainy({
-    storage: new MemoryStorage(),
-    augmentations: {
-      // These should all be REAL implementations now
-      batchProcessing: {
-        enabled: true,
-        maxBatchSize: BATCH_SIZE,
-        adaptiveBatching: true
-      },
-      connectionPool: {
-        enabled: true,
-        maxConnections: 50,
-        minConnections: 5
-      },
-      cache: {
-        enabled: true,
-        maxSize: 10000
-      },
-      index: {
-        enabled: true
-      }
-    }
+    storage: new MemoryStorage()
   })
-  
+
   await brain.init()
-  
-  console.log('✅ Brainy initialized with real augmentations\n')
+
+  console.log('✅ Brainy initialized\n')
   
   // Test 1: Batch Insert Performance
   console.log('📝 Test 1: Batch Insert Performance')
@@ -159,35 +139,6 @@ async function runScaleTest() {
   const verbRate = Math.round(verbCount / (verbTime / 1000))
   console.log(`✅ Created ${verbCount.toLocaleString()} relationships in ${verbTime}ms`)
   console.log(`📈 Rate: ${verbRate.toLocaleString()} relationships/second\n`)
-  
-  // Test 4: Verify Augmentations Are Real
-  console.log('🔧 Test 4: Verify Real Implementations')
-  
-  // Check BatchProcessing stats
-  const batchAug = brain.augmentations.getAugmentation('BatchProcessing')
-  if (batchAug && typeof batchAug.getStats === 'function') {
-    const stats = batchAug.getStats()
-    console.log(`  BatchProcessing: ${stats.batchesProcessed} batches processed`)
-    console.log(`  Average batch size: ${Math.round(stats.averageBatchSize)}`)
-    console.log(`  Throughput: ${stats.throughputPerSecond} ops/sec`)
-  }
-  
-  // Check ConnectionPool stats
-  const poolAug = brain.augmentations.getAugmentation('ConnectionPool')
-  if (poolAug && typeof poolAug.getStats === 'function') {
-    const stats = poolAug.getStats()
-    console.log(`  ConnectionPool: ${stats.totalConnections} connections`)
-    console.log(`  Pool utilization: ${stats.poolUtilization}`)
-    console.log(`  Total requests: ${stats.totalRequests}`)
-  }
-  
-  // Check Cache stats
-  const cacheAug = brain.augmentations.getAugmentation('cache')
-  if (cacheAug && typeof cacheAug.getStats === 'function') {
-    const stats = cacheAug.getStats()
-    console.log(`  Cache: ${stats.hits} hits, ${stats.misses} misses`)
-    console.log(`  Hit rate: ${Math.round((stats.hits / (stats.hits + stats.misses)) * 100)}%`)
-  }
   
   // Final Statistics
   const totalTime = Date.now() - startTime

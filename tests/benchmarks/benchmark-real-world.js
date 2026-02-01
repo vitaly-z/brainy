@@ -60,8 +60,7 @@ async function runBrainyBenchmark() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {},
-    model: { 
+    model: {
       type: 'fast',  // Using real transformer model
       precision: 'Q8'  // Quantized for speed
     }

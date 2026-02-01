@@ -9,7 +9,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { BaseFormatHandler } from './base.js'
-import { FormatHandlerOptions, ProcessedData } from '../types.js'
+import { FormatHandlerOptions, ProcessedData } from './types.js'
 
 // Use built-in worker for Node.js environments
 // In production, this can be customized via options

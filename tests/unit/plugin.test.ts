@@ -214,7 +214,6 @@ describe('Brainy plugin integration', () => {
     const brain = new Brainy({
       storage: { type: 'memory' },
       silent: true,
-      augmentations: { cache: false, metrics: false, display: false, monitoring: false }
     })
     brain.use(mockPlugin)
     await brain.init()
@@ -244,7 +243,6 @@ describe('Brainy plugin integration', () => {
     const brain = new Brainy({
       storage: { type: 'memory' },
       silent: true,
-      augmentations: { cache: false, metrics: false, display: false, monitoring: false }
     })
     brain.use(mockPlugin)
     await brain.init()
@@ -263,7 +261,6 @@ describe('Brainy plugin integration', () => {
     const brain = new Brainy({
       storage: { type: 'memory' },
       silent: true,
-      augmentations: { cache: false, metrics: false, display: false, monitoring: false }
     })
     brain.use(mockPlugin)
     await brain.init()
@@ -293,7 +290,6 @@ describe('Brainy plugin integration', () => {
     const brain = new Brainy({
       storage: { type: 'memory' },
       silent: true,
-      augmentations: { cache: false, metrics: false, display: false, monitoring: false }
     })
     brain.use(mockPlugin)
 

@@ -10,7 +10,7 @@
 import { parse } from 'csv-parse/sync'
 import { detect as detectEncoding } from 'chardet'
 import { BaseFormatHandler } from './base.js'
-import { FormatHandlerOptions, ProcessedData } from '../types.js'
+import { FormatHandlerOptions, ProcessedData } from './types.js'
 
 export class CSVHandler extends BaseFormatHandler {
   readonly format = 'csv'

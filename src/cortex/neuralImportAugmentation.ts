@@ -1,17 +1,12 @@
 /**
- * Neural Import Augmentation - AI-Powered Data Understanding
- * 
- * 🧠 Built-in AI augmentation for intelligent data processing
- * ⚛️ Always free, always included, always enabled
- * 
- * Now using the unified BrainyAugmentation interface!
+ * Neural Import - AI-Powered Data Understanding
+ *
+ * Standalone implementation for intelligent data processing.
  */
 
-import { BaseAugmentation, AugmentationContext } from './brainyAugmentation.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 import * as fs from '../universal/fs.js'
 import * as path from '../universal/path.js'
-import { BrainyTypes, getBrainyTypes } from './typeMatching/brainyTypes.js'
 import { prodLog } from '../utils/logger.js'
 
 // Neural Import Analysis Types
@@ -62,22 +57,15 @@ export interface NeuralImportConfig {
  * Neural Import Augmentation - Unified Implementation
  * Processes data with AI before storage operations
  */
-export class NeuralImportAugmentation extends BaseAugmentation {
+export class NeuralImportAugmentation {
   readonly name = 'neural-import'
-  readonly timing = 'before' as const  // Process data before storage
-  readonly metadata = {
-    reads: '*' as '*',  // Needs to read data for analysis
-    writes: ['_neuralProcessed', '_neuralConfidence', '_detectedEntities', '_detectedRelationships', '_neuralInsights', 'nounType', 'verbType'] as string[]
-  }  // Enriches metadata with neural analysis
-  operations = ['add', 'addNoun', 'addVerb', 'all'] as ('add' | 'addNoun' | 'addVerb' | 'all')[]  // Use 'all' to catch batch operations
-  readonly priority = 80  // High priority for data processing
-  
+  private operations = ['add', 'addNoun', 'addVerb', 'all']
+
   protected config: NeuralImportConfig
   private analysisCache = new Map<string, NeuralAnalysisResult>()
-  private typeMatcher: BrainyTypes | null = null
+  private context?: { brain: any }
 
   constructor(config: Partial<NeuralImportConfig> = {}) {
-    super()
     this.config = {
       confidenceThreshold: 0.7,
       enableWeights: true,
@@ -87,18 +75,12 @@ export class NeuralImportAugmentation extends BaseAugmentation {
     }
   }
 
-  protected async onInitialize(): Promise<void> {
-    try {
-      this.typeMatcher = await getBrainyTypes()
-      this.log('🧠 Neural Import augmentation initialized with intelligent type matching')
-    } catch (error) {
-      this.log('⚠️ Failed to initialize type matcher, falling back to heuristics', 'warn')
-    }
+  async init(): Promise<void> {
+    // No external dependencies to initialize
   }
 
-  protected async onShutdown(): Promise<void> {
-    this.analysisCache.clear()
-    this.log('🧠 Neural Import augmentation shut down')
+  private log(message: string, _level?: string): void {
+    // Silent by default
   }
 
   /**
@@ -455,22 +437,29 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Infer noun type from object structure using intelligent type matching
+   * Infer noun type from object structure using field heuristics
    */
   private async inferNounType(obj: any): Promise<string> {
-    if (!this.typeMatcher) {
-      // Initialize type matcher if not available
-      this.typeMatcher = await getBrainyTypes()
+    if (typeof obj !== 'object' || obj === null) return NounType.Thing
+
+    // Check for explicit type field
+    if (obj.type && typeof obj.type === 'string') {
+      const normalized = obj.type.charAt(0).toUpperCase() + obj.type.slice(1)
+      if (Object.values(NounType).includes(normalized as NounType)) {
+        return normalized as NounType
+      }
     }
-    
-    const result = await this.typeMatcher.matchNounType(obj)
-    
-    // Log if confidence is low for debugging
-    if (result.confidence < 0.5) {
-      this.log(`Low confidence (${result.confidence.toFixed(2)}) for noun type: ${result.type}`, 'warn')
-    }
-    
-    return result.type
+
+    if (obj.email || obj.firstName || obj.lastName || obj.username) return NounType.Person
+    if (obj.companyName || obj.organizationId || obj.employees) return NounType.Organization
+    if (obj.latitude || obj.longitude || obj.address || obj.city) return NounType.Location
+    if ((obj.content && (obj.title || obj.author)) || obj.pages) return NounType.Document
+    if (obj.startTime || obj.endTime || obj.date || obj.attendees) return NounType.Event
+    if (obj.price || obj.sku || obj.productId) return NounType.Product
+    if ((obj.status && obj.assignee) || obj.priority) return NounType.Task
+    if (Array.isArray(obj.data) || obj.rows || obj.columns) return NounType.Dataset
+
+    return NounType.Thing
   }
 
   /**
@@ -511,22 +500,28 @@ export class NeuralImportAugmentation extends BaseAugmentation {
   }
 
   /**
-   * Infer verb type from field name using intelligent type matching
+   * Infer verb type from field name using common patterns
    */
-  private async inferVerbType(fieldName: string, sourceObj?: any, targetObj?: any): Promise<string> {
-    if (!this.typeMatcher) {
-      // Initialize type matcher if not available
-      this.typeMatcher = await getBrainyTypes()
+  private async inferVerbType(fieldName: string, _sourceObj?: any, _targetObj?: any): Promise<string> {
+    const field = fieldName.toLowerCase()
+
+    if (field.includes('parent') || field.includes('child') || field.includes('contain')) {
+      return VerbType.Contains
     }
-    
-    const result = await this.typeMatcher.matchVerbType(sourceObj, targetObj, fieldName)
-    
-    // Log if confidence is low for debugging
-    if (result.confidence < 0.5) {
-      this.log(`Low confidence (${result.confidence.toFixed(2)}) for verb type: ${result.type}`, 'warn')
+    if (field.includes('owner') || field.includes('created') || field.includes('author')) {
+      return VerbType.Creates
     }
-    
-    return result.type
+    if (field.includes('member') || field.includes('belong')) {
+      return VerbType.MemberOf
+    }
+    if (field.includes('depend') || field.includes('require')) {
+      return VerbType.DependsOn
+    }
+    if (field.includes('ref') || field.includes('link') || field.includes('source')) {
+      return VerbType.References
+    }
+
+    return VerbType.RelatedTo
   }
 
   /**

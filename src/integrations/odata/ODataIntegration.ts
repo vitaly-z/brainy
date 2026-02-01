@@ -15,7 +15,6 @@ import {
   HTTPIntegration
 } from '../core/IntegrationBase.js'
 import { IntegrationConfig, ODataQueryOptions } from '../core/types.js'
-import { AugmentationManifest } from '../../augmentations/manifest.js'
 import { Entity, Relation, FindParams } from '../../types/brainy.types.js'
 import { NounType } from '../../types/graphTypes.js'
 import {
@@ -94,11 +93,11 @@ interface ODataResponse {
  *
  * @example
  * ```typescript
- * // Register with Brainy
- * brain.augmentations.register(new ODataIntegration({
+ * const odata = new ODataIntegration({
  *   basePath: '/odata',
  *   maxPageSize: 1000
- * }))
+ * })
+ * await odata.initialize()
  *
  * // Connect from Excel Power Query:
  * // Data → Get Data → From OData Feed → http://localhost:3000/odata
@@ -249,7 +248,7 @@ export class ODataIntegration extends IntegrationBase implements HTTPIntegration
   /**
    * Get augmentation manifest
    */
-  getManifest(): AugmentationManifest {
+  getManifest(): Record<string, any> {
     return {
       id: 'odata',
       name: 'OData Integration',

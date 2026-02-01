@@ -12,10 +12,6 @@ import {
   MCPTool,
   MCP_VERSION
 } from '../types/mcpTypes.js'
-import { AugmentationType } from '../types/augmentations.js'
-
-// Import the augmentation pipeline
-import { augmentationPipeline } from '../pipeline.js'
 
 export class MCPAugmentationToolset {
   /**
@@ -146,9 +142,8 @@ export class MCPAugmentationToolset {
     
     const { args = [], options = {} } = parameters
     
-    // Note: This MCP toolset needs to be updated to use the new brain.augmentations API
-    // For now, return a placeholder response to fix compilation
-    throw new Error(`MCP toolset requires update to use brain.augmentations API. Method '${method}' not available.`)
+    // Augmentation pipeline has been removed — operations are called directly on brain
+    throw new Error(`MCP augmentation toolset is deprecated. Method '${method}' not available. Use brain API directly.`)
   }
 
   /**
@@ -157,7 +152,7 @@ export class MCPAugmentationToolset {
    * @returns Whether the augmentation type is valid
    */
   private isValidAugmentationType(type: string): boolean {
-    return Object.values(AugmentationType).includes(type as AugmentationType)
+    return false
   }
 
   /**

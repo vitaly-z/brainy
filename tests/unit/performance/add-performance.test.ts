@@ -18,13 +18,7 @@ describe('add() Performance Regression Tests', () => {
   beforeEach(async () => {
     brain = new Brainy({
       storage: { type: 'memory' },
-      silent: true,
-      augmentations: {
-        cache: false,
-        metrics: false,
-        display: false,
-        monitoring: false
-      }
+      silent: true
     })
     await brain.init()
   })

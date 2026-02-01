@@ -37,7 +37,7 @@ async function quickPerf() {
   const brain = new Brainy({
     storage: new MemoryStorage(),
     embeddingFunction: mockEmbed,
-    augmentations: false  // Disable augmentations
+    // Minimal config
   })
   await brain.init()
   
@@ -55,12 +55,11 @@ async function quickPerf() {
   const brainyOps = Math.round(1000 / ((end2 - start2) / 1000))
   console.log(`   ✅ Brainy: ${brainyOps.toLocaleString()} ops/sec\n`)
   
-  // Test 3: With augmentations
-  console.log('3️⃣ Brainy with Augmentations')
+  // Test 3: Default config
+  console.log('3️⃣ Brainy with Default Config')
   const brain2 = new Brainy({
     storage: new MemoryStorage(),
     embeddingFunction: mockEmbed
-    // Default augmentations enabled
   })
   await brain2.init()
   
@@ -74,13 +73,12 @@ async function quickPerf() {
   }
   const end3 = performance.now()
   const augOps = Math.round(1000 / ((end3 - start3) / 1000))
-  console.log(`   ✅ With Augmentations: ${augOps.toLocaleString()} ops/sec\n`)
+  console.log(`   ✅ Default Config: ${augOps.toLocaleString()} ops/sec\n`)
   
   // Test 4: Real embeddings (the killer)
   console.log('4️⃣ With Real Embeddings (10 samples)')
   const brain3 = new Brainy({
     storage: new MemoryStorage(),
-    augmentations: false
     // Uses real embedding function
   })
   await brain3.init()
@@ -119,15 +117,10 @@ async function quickPerf() {
     console.log('   ❌ Embeddings are the primary bottleneck')
     console.log('      Each embedding takes ~' + Math.round((end4 - start4) / 10) + 'ms')
   }
-  if (augOverhead > 50) {
-    console.log('   ⚠️ Augmentations add significant overhead')
-  }
-  
   console.log('\n🎯 The 500,000 ops/sec claim was achievable with:')
   console.log('   1. Pre-computed vectors (no embedding)')
-  console.log('   2. Minimal augmentations')
-  console.log('   3. In-memory storage')
-  console.log('   4. Batch operations')
+  console.log('   2. In-memory storage')
+  console.log('   3. Batch operations')
   
   await brain.close()
   await brain2.close()

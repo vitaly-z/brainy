@@ -16,7 +16,6 @@ async function benchmark() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {},
     embedder: mockEmbedder
   })
   

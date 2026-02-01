@@ -28,10 +28,6 @@
       "import": "./dist/types/graphTypes.js",
       "types": "./dist/types/graphTypes.d.ts"
     },
-    "./types/augmentations": {
-      "import": "./dist/types/augmentations.js",
-      "types": "./dist/types/augmentations.d.ts"
-    },
     "./utils/textEncoding": {
       "import": "./dist/utils/textEncoding.js",
       "types": "./dist/utils/textEncoding.d.ts"

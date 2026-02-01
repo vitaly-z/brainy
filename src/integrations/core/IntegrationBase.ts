@@ -5,11 +5,6 @@
  * for event subscriptions, tabular export, and lifecycle management.
  */
 
-import {
-  BaseAugmentation,
-  AugmentationContext
-} from '../../augmentations/brainyAugmentation.js'
-import { AugmentationManifest } from '../../augmentations/manifest.js'
 import { EventBus } from './EventBus.js'
 import { TabularExporter } from './TabularExporter.js'
 import {
@@ -48,17 +43,12 @@ import { Entity, Relation, FindParams } from '../../types/brainy.types.js'
  * }
  * ```
  */
-export abstract class IntegrationBase extends BaseAugmentation {
-  // Augmentation interface implementation
-  readonly timing = 'after' as const
-  readonly metadata = 'readonly' as const
-  readonly operations: ('all')[] = ['all']
-  readonly priority = 5 // Low priority - runs after main operations
-  category: 'internal' | 'core' | 'premium' | 'community' | 'external' = 'core'
-
+export abstract class IntegrationBase {
   // Shared infrastructure
   protected eventBus: EventBus
   protected exporter: TabularExporter
+  protected config: IntegrationConfig
+  protected context?: { brain: any; storage: any; config: any; log: (message: string, level?: string) => void }
 
   // Integration state
   protected isRunning = false
@@ -80,9 +70,33 @@ export abstract class IntegrationBase extends BaseAugmentation {
     config?: IntegrationConfig,
     exporterConfig?: TabularExporterConfig
   ) {
-    super(config)
+    this.config = config || {}
     this.eventBus = new EventBus()
     this.exporter = new TabularExporter(exporterConfig)
+  }
+
+  /**
+   * Log a message
+   */
+  protected log(message: string, level: string = 'info'): void {
+    if (this.context?.log) {
+      this.context.log(message, level)
+    }
+  }
+
+  /**
+   * Initialize the integration with context
+   */
+  async initialize(ctx: { brain: any; storage: any; config: any; log: (message: string, level?: string) => void }): Promise<void> {
+    this.context = ctx
+    await this.onInitialize()
+  }
+
+  /**
+   * Shutdown the integration
+   */
+  async shutdown(): Promise<void> {
+    await this.onShutdown()
   }
 
   /**
@@ -311,7 +325,7 @@ export abstract class IntegrationBase extends BaseAugmentation {
    * Get manifest for this integration
    * Subclasses should override this
    */
-  getManifest(): AugmentationManifest {
+  getManifest(): Record<string, any> {
     return {
       id: this.name,
       name: this.name,

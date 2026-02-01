@@ -9,7 +9,7 @@
 
 import * as XLSX from 'xlsx'
 import { BaseFormatHandler } from './base.js'
-import { FormatHandlerOptions, ProcessedData } from '../types.js'
+import { FormatHandlerOptions, ProcessedData } from './types.js'
 
 export class ExcelHandler extends BaseFormatHandler {
   readonly format = 'excel'

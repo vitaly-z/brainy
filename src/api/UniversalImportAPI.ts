@@ -16,8 +16,7 @@ import { NounType, VerbType } from '../types/graphTypes.js'
 import { Vector } from '../coreTypes.js'
 import type { Brainy } from '../brainy.js'
 import type { Entity, Relation } from '../types/brainy.types.js'
-import { BrainyTypes, getBrainyTypes } from '../augmentations/typeMatching/brainyTypes.js'
-import { NeuralImportAugmentation } from '../augmentations/neuralImport.js'
+import { NeuralImportAugmentation } from '../cortex/neuralImportAugmentation.js'
 import { mimeDetector } from '../vfs/MimeTypeDetector.js'
 
 export interface ImportSource {
@@ -65,7 +64,6 @@ export interface NeuralImportProgress {
 
 export class UniversalImportAPI {
   private brain: Brainy<any>
-  private typeMatcher!: BrainyTypes
   private neuralImport: NeuralImportAugmentation
   private embedCache = new Map<string, Vector>()
   
@@ -82,7 +80,6 @@ export class UniversalImportAPI {
    * Initialize the neural import system
    */
   async init(): Promise<void> {
-    this.typeMatcher = await getBrainyTypes()
     // Neural import initializes itself
   }
   
@@ -369,22 +366,19 @@ export class UniversalImportAPI {
     for (const item of data) {
       // Generate embedding for the item
       const embedding = await this.generateEmbedding(item)
-      
-      // Neural type matching - MANDATORY
-      const nounMatch = await this.typeMatcher.matchNounType(item)
-      
-      // Never reject based on confidence - we ALWAYS accept the best match
+
+      // Determine noun type from data
+      const nounType = this.inferNounType(item)
       const entityId = this.generateId(item)
-      
+
       entities.set(entityId, {
         id: entityId,
-        type: nounMatch.type as NounType,  // Always use the neural match
+        type: nounType,
         data: item,
         vector: embedding,
-        confidence: nounMatch.confidence,
+        confidence: 1.0,
         metadata: {
           ...item,
-          _neuralMatch: nounMatch,
           _importedAt: Date.now()
         }
       })
@@ -465,56 +459,42 @@ export class UniversalImportAPI {
     for (const [key, value] of Object.entries(item)) {
       // Check if this looks like a reference
       if (this.looksLikeReference(key, value)) {
-        // Find or predict target entity
         const targetId = String(value)
-        
-        // Neural verb type matching
-        const verbMatch = await this.typeMatcher.matchVerbType(
-          item,  // source object
-          { id: targetId },  // target (we may not have full data)
-          key  // field name as context
-        )
-        
-        // Always create relationship with neural match
-        const relationId = `${sourceId}_${verbMatch.type}_${targetId}`
+        const verbType = this.inferVerbType(key)
+
+        const relationId = `${sourceId}_${verbType}_${targetId}`
         relationships.set(relationId, {
           id: relationId,
           from: sourceId,
           to: targetId,
-          type: verbMatch.type as VerbType,
-          weight: verbMatch.confidence,  // Use confidence as weight
-          confidence: verbMatch.confidence,
+          type: verbType,
+          weight: 1.0,
+          confidence: 1.0,
           metadata: {
             field: key,
-            _neuralMatch: verbMatch,
             _importedAt: Date.now()
           }
         })
       }
-      
+
       // Handle arrays of references
       if (Array.isArray(value)) {
-        for (const item of value) {
-          if (this.looksLikeReference(key, item)) {
-            const targetId = String(item)
-            const verbMatch = await this.typeMatcher.matchVerbType(
-              item,
-              { id: targetId },
-              key
-            )
-            
-            const relationId = `${sourceId}_${verbMatch.type}_${targetId}`
+        for (const arrayItem of value) {
+          if (this.looksLikeReference(key, arrayItem)) {
+            const targetId = String(arrayItem)
+            const verbType = this.inferVerbType(key)
+
+            const relationId = `${sourceId}_${verbType}_${targetId}`
             relationships.set(relationId, {
               id: relationId,
               from: sourceId,
               to: targetId,
-              type: verbMatch.type as VerbType,
-              weight: verbMatch.confidence,
-              confidence: verbMatch.confidence,
+              type: verbType,
+              weight: 1.0,
+              confidence: 1.0,
               metadata: {
                 field: key,
                 array: true,
-                _neuralMatch: verbMatch,
                 _importedAt: Date.now()
               }
             })
@@ -552,7 +532,82 @@ export class UniversalImportAPI {
     
     return fieldLooksLikeRef && valueLooksLikeId
   }
-  
+
+  /**
+   * Infer noun type from object structure using field heuristics
+   */
+  private inferNounType(obj: any): NounType {
+    if (typeof obj !== 'object' || obj === null) return NounType.Thing
+
+    // Check for explicit type field
+    if (obj.type && typeof obj.type === 'string') {
+      const normalized = obj.type.charAt(0).toUpperCase() + obj.type.slice(1)
+      if (Object.values(NounType).includes(normalized as NounType)) {
+        return normalized as NounType
+      }
+    }
+
+    // Person heuristics
+    if (obj.email || obj.firstName || obj.lastName || obj.username || obj.age) {
+      return NounType.Person
+    }
+    // Organization heuristics
+    if (obj.companyName || obj.organizationId || obj.employees || obj.industry) {
+      return NounType.Organization
+    }
+    // Location heuristics
+    if (obj.latitude || obj.longitude || obj.address || obj.city || obj.country) {
+      return NounType.Location
+    }
+    // Document heuristics
+    if ((obj.content && (obj.title || obj.author)) || obj.documentType || obj.pages) {
+      return NounType.Document
+    }
+    // Event heuristics
+    if (obj.startTime || obj.endTime || obj.date || obj.eventType || obj.attendees) {
+      return NounType.Event
+    }
+    // Product heuristics
+    if (obj.price || obj.sku || obj.inventory || obj.productId) {
+      return NounType.Product
+    }
+    // Task heuristics
+    if ((obj.status && (obj.assignee || obj.dueDate)) || obj.priority || obj.completed !== undefined) {
+      return NounType.Task
+    }
+    // Dataset heuristics
+    if (Array.isArray(obj.data) || obj.rows || obj.columns || obj.schema) {
+      return NounType.Dataset
+    }
+
+    return NounType.Thing
+  }
+
+  /**
+   * Infer verb type from field name using common patterns
+   */
+  private inferVerbType(fieldName: string): VerbType {
+    const field = fieldName.toLowerCase()
+
+    if (field.includes('parent') || field.includes('child') || field.includes('contain')) {
+      return VerbType.Contains
+    }
+    if (field.includes('owner') || field.includes('created') || field.includes('author')) {
+      return VerbType.Creates
+    }
+    if (field.includes('member') || field.includes('belong')) {
+      return VerbType.MemberOf
+    }
+    if (field.includes('depend') || field.includes('require')) {
+      return VerbType.DependsOn
+    }
+    if (field.includes('ref') || field.includes('link') || field.includes('source')) {
+      return VerbType.References
+    }
+
+    return VerbType.RelatedTo
+  }
+
   /**
    * Store processed data in brain
    */

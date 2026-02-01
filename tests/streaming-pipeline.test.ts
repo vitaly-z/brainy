@@ -14,7 +14,6 @@ describe('Streaming Pipeline', () => {
   beforeEach(async () => {
     brain = new Brainy({
       storage: { type: 'memory' },
-      augmentations: {},
       warmup: false
     })
     await brain.init()

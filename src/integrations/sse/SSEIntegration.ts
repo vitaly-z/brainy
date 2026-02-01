@@ -15,7 +15,6 @@ import {
   EventFilter,
   BrainyEvent
 } from '../core/types.js'
-import { AugmentationManifest } from '../../augmentations/manifest.js'
 
 /**
  * SSE integration configuration
@@ -63,10 +62,11 @@ interface SSEClient {
  *
  * @example
  * ```typescript
- * brain.augmentations.register(new SSEIntegration({
+ * const sse = new SSEIntegration({
  *   basePath: '/events',
  *   heartbeatInterval: 30000
- * }))
+ * })
+ * await sse.initialize()
  *
  * // Client-side:
  * const source = new EventSource('/events?types=noun&operations=create,update')
@@ -292,7 +292,7 @@ export class SSEIntegration
   /**
    * Get manifest
    */
-  getManifest(): AugmentationManifest {
+  getManifest(): Record<string, any> {
     return {
       id: 'sse',
       name: 'SSE Streaming',

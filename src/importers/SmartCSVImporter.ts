@@ -16,8 +16,8 @@ import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtracto
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
 import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
-import { CSVHandler } from '../augmentations/intelligentImport/handlers/csvHandler.js'
-import type { FormatHandlerOptions } from '../augmentations/intelligentImport/types.js'
+import { CSVHandler } from './handlers/csvHandler.js'
+import type { FormatHandlerOptions } from './handlers/types.js'
 
 export interface SmartCSVOptions extends FormatHandlerOptions {
   /** Enable neural entity extraction */

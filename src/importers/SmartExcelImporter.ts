@@ -14,8 +14,8 @@ import { NeuralEntityExtractor, ExtractedEntity } from '../neural/entityExtracto
 import { NaturalLanguageProcessor } from '../neural/naturalLanguageProcessor.js'
 import { SmartRelationshipExtractor } from '../neural/SmartRelationshipExtractor.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
-import { ExcelHandler } from '../augmentations/intelligentImport/handlers/excelHandler.js'
-import type { FormatHandlerOptions } from '../augmentations/intelligentImport/types.js'
+import { ExcelHandler } from './handlers/excelHandler.js'
+import type { FormatHandlerOptions } from './handlers/types.js'
 
 export interface SmartExcelOptions extends FormatHandlerOptions {
   /** Enable neural entity extraction */

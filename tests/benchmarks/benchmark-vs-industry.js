@@ -158,12 +158,6 @@ async function runBrainyBenchmark() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {
-      cache: false,
-      metrics: false,
-      display: false,
-      index: false
-    },
     embedder: mockEmbedder,
     warmup: false
   })

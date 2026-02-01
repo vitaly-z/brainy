@@ -13,7 +13,6 @@ async function testV3() {
   
   const brain = new Brainy({
     storage: { type: 'memory' },
-    augmentations: {},
     warmup: false,
     embedder: async () => new Array(384).fill(0).map(() => Math.random())
   })

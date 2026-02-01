@@ -15,7 +15,6 @@ import {
   WebhookDeliveryResult,
   BrainyEvent
 } from '../core/types.js'
-import { AugmentationManifest } from '../../augmentations/manifest.js'
 
 /**
  * Webhook integration configuration
@@ -69,7 +68,7 @@ interface PendingDelivery {
  * @example
  * ```typescript
  * const webhooks = new WebhookIntegration()
- * brain.augmentations.register(webhooks)
+ * await webhooks.initialize()
  *
  * // Register a webhook
  * await webhooks.register({
@@ -263,7 +262,7 @@ export class WebhookIntegration extends IntegrationBase {
   /**
    * Get manifest
    */
-  getManifest(): AugmentationManifest {
+  getManifest(): Record<string, any> {
     return {
       id: 'webhooks',
       name: 'Webhooks',

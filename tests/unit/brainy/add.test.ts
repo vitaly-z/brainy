@@ -482,24 +482,6 @@ describe('Brainy.add()', () => {
     })
   })
   
-  describe('augmentations', () => {
-    it('should apply augmentations during add', async () => {
-      // This would test augmentation pipeline if configured
-      // For now, just verify the entity is added correctly
-      const params = createAddParams({
-        data: 'Augmentation test',
-        type: 'thing',
-        metadata: { augment: true }
-      })
-      
-      const id = await brain.add(params)
-      const entity = await brain.get(id)
-      
-      expect(entity).not.toBeNull()
-      expect(entity!.metadata.augment).toBe(true)
-    })
-  })
-  
   describe('caching behavior', () => {
     it('should retrieve consistent entities', async () => {
       // Arrange (v5.1.0: use valid UUID format)
