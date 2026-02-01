@@ -6632,7 +6632,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Called internally during init().
    */
   private async loadPlugins(): Promise<void> {
-    // Auto-detect installed plugins (e.g., @soulcraft/brainy-cortex)
+    // Auto-detect installed plugins (e.g., @soulcraft/cortex)
     const pluginPackages = (this.config as any).plugins as string[] | undefined
     await this.pluginRegistry.autoDetect(pluginPackages || [])
 

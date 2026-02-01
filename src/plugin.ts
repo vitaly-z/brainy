@@ -2,7 +2,7 @@
  * Brainy Plugin System
  *
  * Simple plugin architecture for two use cases:
- * 1. Native acceleration (@soulcraft/brainy-cortex)
+ * 1. Native acceleration (@soulcraft/cortex)
  * 2. Custom storage adapters (e.g., Redis, DynamoDB, custom backends)
  *
  * Plugins are auto-detected by package name or registered manually.
@@ -89,7 +89,8 @@ export class PluginRegistry {
    */
   async autoDetect(additionalPackages: string[] = []): Promise<void> {
     const packages = [
-      '@soulcraft/brainy-cortex',
+      '@soulcraft/cortex',
+      '@soulcraft/brainy-cortex',  // deprecated — backward compat
       ...additionalPackages
     ]
 

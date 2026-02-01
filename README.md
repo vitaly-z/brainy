@@ -576,10 +576,10 @@ const stats = brain.getCacheStats()  // Performance insights
 
 ### Native Acceleration (Optional)
 
-Install `@soulcraft/brainy-cortex` for Rust-powered native acceleration: SIMD distance calculations, native metadata/graph indexes, CRoaring bitmaps, and Candle ML embeddings. Auto-detected — zero configuration required.
+Install `@soulcraft/cortex` for Rust-powered native acceleration: SIMD distance calculations, native metadata/graph indexes, CRoaring bitmaps, and Candle ML embeddings. Auto-detected — zero configuration required.
 
 ```bash
-npm install @soulcraft/brainy-cortex
+npm install @soulcraft/cortex
 ```
 
 ---

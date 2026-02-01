@@ -732,7 +732,7 @@ export interface BrainyConfig {
   hnsw?: {
     quantization?: {
       enabled?: boolean        // default: false — current behavior exactly
-      bits?: 8 | 4             // default: 8 (SQ8). SQ4 requires brainy-cortex native.
+      bits?: 8 | 4             // default: 8 (SQ8). SQ4 requires cortex native.
       rerankMultiplier?: number // default: 3 — over-retrieve 3x, rerank with float32
     }
     vectorStorage?: 'memory' | 'lazy'  // default: 'memory' — 'lazy' evicts vectors after insert

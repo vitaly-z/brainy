@@ -117,7 +117,7 @@ export class EmbeddingManager {
 
     try {
       if (isBrowser()) {
-        console.warn('[brainy] Browser WASM embedding engine is deprecated and will be removed in v8.0. Use Node.js/Bun with native embeddings (@soulcraft/brainy-cortex) instead.')
+        console.warn('[brainy] Browser WASM embedding engine is deprecated and will be removed in v8.0. Use Node.js/Bun with native embeddings (@soulcraft/cortex) instead.')
       }
       // Initialize WASM engine (handles all model loading)
       await this.engine.initialize()
