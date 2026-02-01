@@ -60,12 +60,7 @@
   "browser": {
     "./dist/distributed": false,
     "./dist/cli": false,
-    "./dist/scripts": false,
-    "./dist/cortex": false,
-    "./dist/cortex/neuralImport.js": false,
-    "./dist/cortex/performanceMonitor.js": false,
-    "./dist/cortex/healthCheck.js": false,
-    "./dist/cortex/backupRestore.js": false
+    "./dist/scripts": false
   },
   "engines": {
     "node": "22.x",

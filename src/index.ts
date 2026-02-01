@@ -55,14 +55,14 @@ export {
 } from './config/index.js'
 
 // Export Neural Import (AI data understanding)
-export { NeuralImport } from './cortex/neuralImport.js'
+export { NeuralImport } from './neural/neuralImport.js'
 export type {
   NeuralAnalysisResult,
   DetectedEntity,
   DetectedRelationship,
   NeuralInsight,
   NeuralImportOptions
-} from './cortex/neuralImport.js'
+} from './neural/neuralImport.js'
 
 // Export Neural Entity Extraction
 export { NeuralEntityExtractor } from './neural/entityExtractor.js'
@@ -126,8 +126,6 @@ import {
 
 // Chat system removed - was returning fake responses
 
-// Export Cortex CLI functionality - commented out for core MIT build
-// export { Cortex } from './cortex/cortex.js'
 
 // Export performance and optimization utilities
 import {

@@ -204,10 +204,10 @@ const brain = new Brainy({
 ```javascript
 const brain = new Brainy({
   storage: { type: 's3', s3Storage: { bucketName: 'my-kb', region: 'us-east-1' } },
-  hnsw: { typeAware: true }  // 87% memory reduction
+  hnsw: { typeAware: true }
 })
 ```
-**Scale:** Millions of entities • **Performance:** <10ms queries, 12GB @ 10M entities
+**Scale:** Millions of entities • **Performance:** <10ms queries (measured at 1M scale)
 
 ### 🌍 Enterprise → Billion+ Scale
 ```javascript
@@ -216,7 +216,7 @@ const brain = new Brainy({
   hnsw: { typeAware: true, M: 32, efConstruction: 400 }
 })
 ```
-**Scale:** Billions (tested @ 1B+) • **Performance:** 18ms queries, 50GB memory
+**Scale:** PROJECTED billion+ (extrapolated from 10M tests, not tested at 1B)
 **Cost:** $138k/year → $6k/year with intelligent tiering (96% savings)
 
 **→ [Capacity Planning Guide](docs/operations/capacity-planning.md)** | **[Cost Optimization](docs/operations/)**
@@ -586,15 +586,15 @@ npm install @soulcraft/cortex
 
 ## Benchmarks
 
-| Operation | Performance | Memory |
-|-----------|-------------|--------|
-| Initialize | 450ms | 24MB |
-| Add entity | 12ms | +0.1MB |
-| Vector search (1K) | 3ms | - |
-| Metadata filter (10K) | 0.8ms | - |
-| Bulk import (1K) | 2.3s | +8MB |
-| **10M entities** | **5.8ms** | **12GB** |
-| **1B entities** | **18ms** | **50GB** |
+| Operation | Performance | Memory | Notes |
+|-----------|-------------|--------|-------|
+| Initialize | 450ms | 24MB | Measured |
+| Add entity | 12ms | +0.1MB | Measured |
+| Vector search (1K) | 3ms | - | Measured |
+| Metadata filter (10K) | 0.8ms | - | Measured |
+| Bulk import (1K) | 2.3s | +8MB | Measured |
+| **10M entities** | **5.8ms** | **12GB** | Measured |
+| **1B entities** | **~18ms** | **~50GB** | PROJECTED (extrapolated from 10M) |
 
 ---
 

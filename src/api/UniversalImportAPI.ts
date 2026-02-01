@@ -16,7 +16,7 @@ import { NounType, VerbType } from '../types/graphTypes.js'
 import { Vector } from '../coreTypes.js'
 import type { Brainy } from '../brainy.js'
 import type { Entity, Relation } from '../types/brainy.types.js'
-import { NeuralImportAugmentation } from '../cortex/neuralImportAugmentation.js'
+import { NeuralImportAugmentation } from '../neural/neuralImportAugmentation.js'
 import { mimeDetector } from '../vfs/MimeTypeDetector.js'
 
 export interface ImportSource {
