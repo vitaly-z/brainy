@@ -14,6 +14,9 @@ import { Brainy } from './brainy.js'
 
 export { Brainy }
 
+// Export diagnostics result type
+export type { DiagnosticsResult } from './brainy.js'
+
 // Export Brainy configuration and types
 export type {
   BrainyConfig,

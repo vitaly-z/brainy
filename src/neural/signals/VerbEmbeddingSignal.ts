@@ -64,6 +64,7 @@ interface HistoricalEntry {
  */
 export class VerbEmbeddingSignal {
   private brain: Brainy
+  private distanceFn: (a: Vector, b: Vector) => number
   private options: Required<VerbEmbeddingSignalOptions>
 
   // Pre-computed verb type embeddings (loaded once at startup)
@@ -88,6 +89,7 @@ export class VerbEmbeddingSignal {
 
   constructor(brain: Brainy, options?: VerbEmbeddingSignalOptions) {
     this.brain = brain
+    this.distanceFn = (brain as any).distance || cosineDistance
     this.options = {
       minConfidence: options?.minConfidence ?? 0.60,
       minSimilarity: options?.minSimilarity ?? 0.55,
@@ -142,7 +144,7 @@ export class VerbEmbeddingSignal {
       const similarities: Array<{ type: VerbType; similarity: number }> = []
 
       for (const [verbType, typeEmbedding] of this.verbTypeEmbeddings) {
-        const distance = cosineDistance(embedding, typeEmbedding)
+        const distance = this.distanceFn(embedding, typeEmbedding)
         const similarity = 1 - distance  // Convert distance to similarity
         similarities.push({ type: verbType, similarity })
       }

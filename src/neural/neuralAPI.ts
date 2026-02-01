@@ -132,12 +132,14 @@ export interface LODConfig {
  */
 export class NeuralAPI {
   private brain: any // Brainy instance
+  private distanceFn: (a: Vector, b: Vector) => number
   private similarityCache: Map<string, number> = new Map()
   private clusterCache: Map<string, any> = new Map() // Enhanced for enterprise
   private hierarchyCache: Map<string, SemanticHierarchy> = new Map()
-  
+
   constructor(brain: any) {
     this.brain = brain
+    this.distanceFn = brain.distance || cosineDistance
   }
   
   // ===== SMART USER-FRIENDLY API =====
@@ -471,7 +473,7 @@ export class NeuralAPI {
     }
     
     // Calculate similarity
-    const score = cosineDistance(itemA.vector, itemB.vector)
+    const score = this.distanceFn(itemA.vector, itemB.vector)
     
     this.similarityCache.set(cacheKey, score)
     
@@ -498,7 +500,7 @@ export class NeuralAPI {
   }
   
   private async similarityByVector(vectorA: Vector, vectorB: Vector, options?: SimilarityOptions): Promise<number | SimilarityResult> {
-    const score = cosineDistance(vectorA, vectorB)
+    const score = this.distanceFn(vectorA, vectorB)
     
     if (options?.explain) {
       return {
@@ -610,7 +612,7 @@ export class NeuralAPI {
         // Find minimum distance to existing sample
         let minDistance = Infinity
         for (const selected of sample) {
-          const distance = cosineDistance(candidate.vector, selected.vector)
+          const distance = this.distanceFn(candidate.vector, selected.vector)
           minDistance = Math.min(minDistance, distance)
         }
         
@@ -652,7 +654,7 @@ export class NeuralAPI {
         let bestDistance = Infinity
         
         for (let c = 0; c < k; c++) {
-          const distance = cosineDistance(item.vector, centroids[c])
+          const distance = this.distanceFn(item.vector, centroids[c])
           if (distance < bestDistance) {
             bestDistance = distance
             bestCluster = c
@@ -679,7 +681,7 @@ export class NeuralAPI {
         let bestDistance = Infinity
         
         for (let cc = 0; cc < k; cc++) {
-          const distance = cosineDistance(item.vector, centroids[cc])
+          const distance = this.distanceFn(item.vector, centroids[cc])
           if (distance < bestDistance) {
             bestDistance = distance
             bestCluster = cc
@@ -750,7 +752,7 @@ export class NeuralAPI {
       let merged = false
       
       for (let i = 0; i < result.length; i++) {
-        const similarity = cosineDistance(result[i].centroid, batchCluster.centroid)
+        const similarity = this.distanceFn(result[i].centroid, batchCluster.centroid)
         
         if (similarity > 0.8) {
           // Merge clusters

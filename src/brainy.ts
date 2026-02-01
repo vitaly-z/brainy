@@ -110,6 +110,20 @@ const STOPWORDS = new Set([
 ])
 
 /**
+ * Result type for brain.diagnostics()
+ */
+export interface DiagnosticsResult {
+  version: string
+  plugins: { active: string[], count: number }
+  providers: Record<string, { source: 'plugin' | 'default' }>
+  indexes: {
+    hnsw: { size: number, type: string }
+    metadata: { type: string, initialized: boolean }
+    graph: { type: string, initialized: boolean, wiredToStorage: boolean }
+  }
+}
+
+/**
  * The main Brainy class - Clean, Beautiful, Powerful
  * REAL IMPLEMENTATION - No stubs, no mocks
  *
@@ -122,6 +136,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   // Core components
   private index!: HNSWIndex | TypeAwareHNSWIndex
+  private indexIsTypeAware = false  // true when index supports addItem(item, type) / search(v, k, type)
   private storage!: BaseStorage
   private metadataIndex!: MetadataIndexManager
   private graphIndex!: GraphAdjacencyIndex
@@ -292,18 +307,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         this.distance = nativeDistance
       }
 
-      // Provider: HNSW index factory
-      const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
-      if (hnswFactory) {
-        const persistMode = this.resolveHNSWPersistMode()
-        this.index = hnswFactory(
-          { ...this.config.index, distanceFunction: this.distance },
-          this.distance,
-          { storage: this.storage, persistMode }
-        )
-      } else {
-        this.index = this.setupIndex()
-      }
+      // Provider: HNSW index factory (plugin or JS fallback)
+      this.index = this.createIndex()
+      this.indexIsTypeAware = this.index instanceof TypeAwareHNSWIndex
+        || typeof (this.index as any).getIndexForType === 'function'
 
       // Provider: metadata index factory
       const metadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
@@ -315,6 +322,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const graphFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('graphIndex')
       if (graphFactory) {
         this.graphIndex = graphFactory(this.storage)
+        this.storage.setGraphIndex(this.graphIndex)
         await this.metadataIndex.init()
       } else {
         const [, graphIndex] = await Promise.all([
@@ -350,6 +358,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         })
       }
 
+      // Log provider summary after all wiring is complete
+      // Shows developers exactly what's native vs falling back to JS
+      if (this.pluginRegistry.hasActivePlugins() && !this.config.silent) {
+        const wellKnownKeys = [
+          'metadataIndex', 'graphIndex', 'entityIdMapper', 'cache',
+          'hnsw', 'roaring', 'embeddings', 'embedBatch', 'distance', 'msgpack'
+        ]
+        const native = wellKnownKeys.filter(k => this.pluginRegistry.hasProvider(k))
+        const fallback = wellKnownKeys.filter(k => !this.pluginRegistry.hasProvider(k))
+        const plugins = this.pluginRegistry.getActivePlugins().join(', ')
+        if (fallback.length === 0) {
+          console.log(`[brainy] Providers: ${native.length}/${wellKnownKeys.length} native (${plugins})`)
+        } else {
+          console.log(`[brainy] Providers: ${native.length}/${wellKnownKeys.length} native (${plugins}) | default: ${fallback.join(', ')}`)
+        }
+      }
+
       // Mark as initialized BEFORE VFS init
       // VFS.init() needs brain to be marked initialized to call brain methods
       this.initialized = true
@@ -365,10 +390,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // instead of lazily on first embed() call. This moves the 90-140 second
       // WASM compilation to container startup rather than first request.
       // Recommended for: Cloud Run, Lambda, Fargate, Kubernetes
-      if (this.config.eagerEmbeddings) {
-        console.log('🚀 Eager embedding initialization enabled...')
+      if (this.config.eagerEmbeddings && !this.pluginRegistry.hasProvider('embeddings')) {
+        console.log('Eager embedding initialization enabled...')
         await embeddingManager.init()
-        console.log('✅ Embedding engine ready')
+        console.log('Embedding engine ready')
       }
 
       // Integration Hub initialization
@@ -730,10 +755,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         )
 
         // Operation 3: Add to HNSW index (after entity saved)
-        if (this.index instanceof TypeAwareHNSWIndex) {
+        if (this.indexIsTypeAware) {
           tx.addOperation(
             new AddToTypeAwareHNSWOperation(
-              this.index,
+              this.index as any,
               id,
               vector,
               params.type as any
@@ -741,7 +766,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           )
         } else {
           tx.addOperation(
-            new AddToHNSWOperation(this.index, id, vector)
+            new AddToHNSWOperation(this.index as any, id, vector)
           )
         }
 
@@ -1157,10 +1182,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
         // Operation 3-4: Update HNSW index (remove and re-add if reindexing needed)
         if (needsReindexing) {
-          if (this.index instanceof TypeAwareHNSWIndex) {
+          if (this.indexIsTypeAware) {
             tx.addOperation(
               new RemoveFromTypeAwareHNSWOperation(
-                this.index,
+                this.index as any,
                 params.id,
                 existing.vector,
                 existing.type as any
@@ -1168,7 +1193,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             )
             tx.addOperation(
               new AddToTypeAwareHNSWOperation(
-                this.index,
+                this.index as any,
                 params.id,
                 vector,
                 newType as any
@@ -1176,10 +1201,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             )
           } else {
             tx.addOperation(
-              new RemoveFromHNSWOperation(this.index, params.id, existing.vector)
+              new RemoveFromHNSWOperation(this.index as any, params.id, existing.vector)
             )
             tx.addOperation(
-              new AddToHNSWOperation(this.index, params.id, vector)
+              new AddToHNSWOperation(this.index as any, params.id, vector)
             )
           }
         }
@@ -1240,18 +1265,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Remove from vector index
         if (noun && metadata) {
-          if (this.index instanceof TypeAwareHNSWIndex && metadata.noun) {
+          if (this.indexIsTypeAware && metadata.noun) {
             tx.addOperation(
               new RemoveFromTypeAwareHNSWOperation(
-                this.index,
+                this.index as any,
                 id,
                 noun.vector,
                 metadata.noun as any
               )
             )
-          } else if (this.index instanceof HNSWIndex) {
+          } else {
             tx.addOperation(
-              new RemoveFromHNSWOperation(this.index, id, noun.vector)
+              new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
             )
           }
         }
@@ -2505,18 +2530,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
               // Add delete operations to transaction
               if (noun && metadata) {
-                if (this.index instanceof TypeAwareHNSWIndex && metadata.noun) {
+                if (this.indexIsTypeAware && metadata.noun) {
                   tx.addOperation(
                     new RemoveFromTypeAwareHNSWOperation(
-                      this.index,
+                      this.index as any,
                       id,
                       noun.vector,
                       metadata.noun as any
                     )
                   )
-                } else if (this.index instanceof HNSWIndex) {
+                } else {
                   tx.addOperation(
-                    new RemoveFromHNSWOperation(this.index, id, noun.vector)
+                    new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
                   )
                 }
               }
@@ -2752,13 +2777,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if ('clear' in this.index && typeof this.index.clear === 'function') {
         await this.index.clear()
       } else {
-        // Recreate index if no clear method
-        this.index = this.setupIndex()
+        // Recreate index using plugin factory when available
+        this.index = this.createIndex()
       }
 
       // Recreate metadata index to clear cached data
-      // Bug: Metadata index cache was not being cleared, causing find() with type filters to return stale data
-      this.metadataIndex = new MetadataIndexManager(this.storage)
+      const clearMetadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
+      this.metadataIndex = clearMetadataFactory
+        ? clearMetadataFactory(this.storage)
+        : new MetadataIndexManager(this.storage)
       await this.metadataIndex.init()
 
       // Reset dimensions
@@ -2919,8 +2946,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       clone.storage.currentBranch = branchName
       // isInitialized inherited from prototype
 
-      // Shallow copy HNSW index (INSTANT - just copies Map references)
-      clone.index = this.setupIndex()
+      // Create HNSW index (uses plugin factory when available)
+      clone.index = this.createIndex()
+      clone.indexIsTypeAware = this.indexIsTypeAware
 
       // Enable COW (handle both HNSWIndex and TypeAwareHNSWIndex)
       if ('enableCOW' in clone.index && typeof clone.index.enableCOW === 'function') {
@@ -2928,7 +2956,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       // Fast rebuild for small indexes from COW storage (Metadata/Graph are fast)
-      clone.metadataIndex = new MetadataIndexManager(clone.storage)
+      const cloneMetadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
+      clone.metadataIndex = cloneMetadataFactory
+        ? cloneMetadataFactory(clone.storage)
+        : new MetadataIndexManager(clone.storage)
       await clone.metadataIndex.init()
 
       // GraphAdjacencyIndex SINGLETON pattern for fork()
@@ -2937,7 +2968,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // create a fresh instance for the clone's branch.
       ;(clone.storage as any).graphIndex = undefined
       ;(clone.storage as any).graphIndexPromise = undefined
-      clone.graphIndex = await (clone.storage as any).getGraphIndex()
+      const cloneGraphFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('graphIndex')
+      if (cloneGraphFactory) {
+        clone.graphIndex = cloneGraphFactory(clone.storage)
+        clone.storage.setGraphIndex(clone.graphIndex)
+      } else {
+        clone.graphIndex = await (clone.storage as any).getGraphIndex()
+      }
       // getGraphIndex() will rebuild automatically if data exists (via _initializeGraphIndex)
 
       // Mark as initialized
@@ -3021,15 +3058,24 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Fix: Reload indexes from new branch WITHOUT recreating storage
       // Previous implementation called init() which recreated storage, losing currentBranch
-      this.index = this.setupIndex()
-      this.metadataIndex = new (MetadataIndexManager as any)(this.storage)
+      this.index = this.createIndex()
+      const checkoutMetadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
+      this.metadataIndex = checkoutMetadataFactory
+        ? checkoutMetadataFactory(this.storage)
+        : new MetadataIndexManager(this.storage)
       await this.metadataIndex.init()
 
       // GraphAdjacencyIndex SINGLETON pattern for checkout()
       // Invalidate the old graphIndex (it has data from the old branch)
       // and get a fresh instance for the new branch
       ;(this.storage as any).invalidateGraphIndex()
-      this.graphIndex = await (this.storage as any).getGraphIndex()
+      const checkoutGraphFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('graphIndex')
+      if (checkoutGraphFactory) {
+        this.graphIndex = checkoutGraphFactory(this.storage)
+        this.storage.setGraphIndex(this.graphIndex)
+      } else {
+        this.graphIndex = await (this.storage as any).getGraphIndex()
+      }
 
       // Reset lazy loading state when switching branches
       // Indexes contain data from previous branch, must rebuild for new branch
@@ -4265,6 +4311,94 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Plugin and provider diagnostics — shows what's active and how subsystems are wired.
+   *
+   * @example
+   * ```typescript
+   * const diag = brain.diagnostics()
+   * console.log(diag.providers) // { hnsw: { source: 'plugin' }, ... }
+   * console.log(diag.indexes.graph.wiredToStorage) // true
+   * ```
+   */
+  diagnostics(): DiagnosticsResult {
+    const wellKnownKeys = [
+      'metadataIndex', 'graphIndex', 'entityIdMapper', 'cache',
+      'hnsw', 'roaring', 'embeddings', 'embedBatch', 'distance', 'msgpack'
+    ] as const
+
+    const providers: Record<string, { source: 'plugin' | 'default' }> = {}
+    for (const key of wellKnownKeys) {
+      providers[key] = {
+        source: this.pluginRegistry.hasProvider(key) ? 'plugin' : 'default'
+      }
+    }
+
+    const hnswSize = this.index.size()
+    const metadataInitialized = !!this.metadataIndex
+    const graphInitialized = !!this.graphIndex
+    const storageGraphIndex = (this.storage as any).graphIndex
+
+    return {
+      version: getBrainyVersion(),
+      plugins: {
+        active: this.pluginRegistry.getActivePlugins(),
+        count: this.pluginRegistry.getActivePlugins().length
+      },
+      providers,
+      indexes: {
+        hnsw: {
+          size: hnswSize,
+          type: this.index.constructor.name
+        },
+        metadata: {
+          type: this.metadataIndex?.constructor.name || 'none',
+          initialized: metadataInitialized
+        },
+        graph: {
+          type: this.graphIndex?.constructor.name || 'none',
+          initialized: graphInitialized,
+          wiredToStorage: graphInitialized && storageGraphIndex === this.graphIndex
+        }
+      }
+    }
+  }
+
+  /**
+   * Assert that specific providers are supplied by a plugin (not using JS fallback).
+   *
+   * Call after init() in production to fail fast if a paid plugin (e.g. cortex)
+   * isn't providing the expected acceleration. Throws if any listed key is using
+   * the default JavaScript implementation.
+   *
+   * @param keys - Provider keys that MUST come from a plugin
+   * @throws Error listing which providers are falling back to defaults
+   *
+   * @example
+   * ```typescript
+   * const brain = new Brainy()
+   * await brain.init()
+   *
+   * // Fail fast if cortex isn't providing these
+   * brain.requireProviders(['distance', 'embeddings', 'metadataIndex', 'graphIndex'])
+   * ```
+   */
+  requireProviders(keys: string[]): void {
+    const missing = keys.filter(k => !this.pluginRegistry.hasProvider(k))
+    if (missing.length > 0) {
+      const active = this.pluginRegistry.getActivePlugins()
+      const pluginInfo = active.length > 0
+        ? `Active plugins: ${active.join(', ')}`
+        : 'No plugins active'
+      throw new Error(
+        `[brainy] Required providers using JS fallback: ${missing.join(', ')}. ` +
+        `${pluginInfo}. ` +
+        `These providers must be supplied by a plugin for this deployment. ` +
+        `Check plugin installation, license, and native module availability.`
+      )
+    }
+  }
+
+  /**
    * Efficient Pagination API - Production-scale pagination using index-first approach
    * Automatically optimizes based on query type and applies pagination at the index level
    */
@@ -4655,7 +4789,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return []
     }
 
-    // Use native WASM batch API: single forward pass instead of N individual calls
+    // Plugin provides native batch embedding — single forward pass for all texts
+    const batchProvider = this.pluginRegistry.getProvider<(texts: string[]) => Promise<number[][]>>('embedBatch')
+    if (batchProvider) {
+      return batchProvider(texts)
+    }
+    // Plugin provides single-text embedding engine — map through it
+    if (this.pluginRegistry.hasProvider('embeddings')) {
+      return Promise.all(texts.map(t => this.embedder(t)))
+    }
+    // Default: WASM batch API (single forward pass, more efficient than N calls)
     return await embeddingManager.embedBatch(texts, options)
   }
 
@@ -5481,9 +5624,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const vector = params.vector || (await this.embed(params.query!))
     const limit = params.limit || 10
 
-    // Phase 2: Pass type for TypeAwareHNSWIndex (10x faster for type-specific queries)
-    const searchResults = this.index instanceof TypeAwareHNSWIndex
-      ? await this.index.search(vector, limit * 2, params.type as any)
+    // Pass type for type-aware indexes (10x faster for type-specific queries)
+    const searchResults: [string, number][] = this.indexIsTypeAware && params.type
+      ? await (this.index as any).search(vector, limit * 2, params.type as any)
       : await this.index.search(vector, limit * 2)
 
     // Batch-load entities for 10-50x faster cloud storage performance
@@ -5512,9 +5655,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const nearEntity = await this.get(params.near.id)
     if (!nearEntity) return []
 
-    // Phase 2: Pass type for TypeAwareHNSWIndex
-    const nearResults = this.index instanceof TypeAwareHNSWIndex
-      ? await this.index.search(nearEntity.vector, params.limit || 10, params.type as any)
+    // Pass type for type-aware indexes
+    const nearResults: [string, number][] = this.indexIsTypeAware && params.type
+      ? await (this.index as any).search(nearEntity.vector, params.limit || 10, params.type as any)
       : await this.index.search(nearEntity.vector, params.limit || 10)
 
     // Filter by threshold first to minimize batch fetch
@@ -6068,11 +6211,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       throw new Error('Brain must be initialized before warming up embeddings. Call init() first.')
     }
 
-    console.log('🚀 Warming up embedding engine...')
+    // Plugin-provided embeddings are already ready (native, no WASM warmup needed)
+    if (this.pluginRegistry.hasProvider('embeddings')) {
+      return
+    }
+
+    console.log('Warming up embedding engine...')
     const start = Date.now()
     await embeddingManager.init()
     const elapsed = Date.now() - start
-    console.log(`✅ Embedding engine ready in ${elapsed}ms`)
+    console.log(`Embedding engine ready in ${elapsed}ms`)
   }
 
   /**
@@ -6081,6 +6229,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @returns true if embedding engine is ready for immediate use
    */
   isEmbeddingReady(): boolean {
+    // Plugin-provided embeddings are always ready (native, no WASM init required)
+    if (this.pluginRegistry.hasProvider('embeddings')) {
+      return true
+    }
     return embeddingManager.isInitialized()
   }
 
@@ -6175,6 +6327,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
 
     return new HNSWIndex(indexConfig as any, this.distance, { persistMode })
+  }
+
+  /**
+   * Create an HNSW index, using plugin factory when available.
+   * Shared by init(), fork(), checkout(), and clear() to avoid duplication.
+   */
+  private createIndex(): HNSWIndex | TypeAwareHNSWIndex {
+    const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
+    if (hnswFactory) {
+      const persistMode = this.resolveHNSWPersistMode()
+      return hnswFactory(
+        { ...this.config.index, distanceFunction: this.distance },
+        this.distance,
+        { storage: this.storage, persistMode }
+      )
+    }
+    return this.setupIndex()
   }
 
   /**

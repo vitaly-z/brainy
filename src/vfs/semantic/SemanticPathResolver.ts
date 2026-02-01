@@ -17,7 +17,7 @@ import { PathResolver } from '../PathResolver.js'
 import { VFSEntity, VFSError, VFSErrorCode } from '../types.js'
 import { SemanticPathParser, ParsedSemanticPath } from './SemanticPathParser.js'
 import { ProjectionRegistry } from './ProjectionRegistry.js'
-import { UnifiedCache } from '../../utils/unifiedCache.js'
+import { getGlobalCache, UnifiedCache } from '../../utils/unifiedCache.js'
 
 /**
  * Semantic Path Resolver
@@ -44,12 +44,8 @@ export class SemanticPathResolver {
     this.registry = registry
     this.parser = new SemanticPathParser()
 
-    // Use Brainy's UnifiedCache for semantic path caching
-    // Zero-config: Uses 2GB default from UnifiedCache
-    this.cache = new UnifiedCache({
-      enableRequestCoalescing: true,
-      enableFairnessCheck: true
-    })
+    // Use global UnifiedCache (picks up plugin-provided cache when available)
+    this.cache = getGlobalCache()
 
     // Create traditional path resolver (uses its own optimized cache with defaults)
     this.pathResolver = new PathResolver(brain, rootEntityId)

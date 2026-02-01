@@ -174,6 +174,14 @@ program
   .option('-f, --format <format>', 'Output format (json|csv|jsonl)', 'json')
   .action(coreCommands.export)
 
+program
+  .command('diagnostics')
+  .alias('diag')
+  .description('Show plugin and provider diagnostics')
+  .option('--json', 'Output as JSON')
+  .option('--pretty', 'Pretty print JSON')
+  .action(coreCommands.diagnostics)
+
 // ===== Neural Commands =====
 
 program

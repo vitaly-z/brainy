@@ -92,18 +92,20 @@ interface ItemWithMetadata {
 export class ImprovedNeuralAPI {
   private brain: any // Brainy instance
   private config: NeuralAPIConfig
-  
+  private distanceFn: (a: Vector, b: Vector) => number
+
   // Caching for performance
   private similarityCache = new Map<string, number | SimilarityResult>()
   private clusterCache = new Map<string, ClusteringResult>()
   private hierarchyCache = new Map<string, SemanticHierarchy>()
   private neighborsCache = new Map<string, NeighborsResult>()
-  
+
   // Performance tracking
   private performanceMetrics = new Map<string, PerformanceMetrics[]>()
-  
+
   constructor(brain: any, config: NeuralAPIConfig = {}) {
     this.brain = brain
+    this.distanceFn = brain.distance || cosineDistance
     this.config = {
       cacheSize: 1000,
       defaultAlgorithm: 'auto',
@@ -114,7 +116,7 @@ export class ImprovedNeuralAPI {
       streamingBatchSize: 100,
       ...config
     }
-    
+
     this._initializeCleanupTimer()
   }
 
@@ -1458,7 +1460,7 @@ export class ImprovedNeuralAPI {
 
     switch (metric) {
       case 'cosine':
-        score = 1 - cosineDistance(v1, v2)
+        score = 1 - this.distanceFn(v1, v2)
         break
       case 'euclidean':
         score = 1 / (1 + euclideanDistance(v1, v2))
@@ -1467,7 +1469,7 @@ export class ImprovedNeuralAPI {
         score = 1 / (1 + this._manhattanDistance(v1, v2))
         break
       default:
-        score = 1 - cosineDistance(v1, v2)
+        score = 1 - this.distanceFn(v1, v2)
     }
 
     if (options.detailed) {
@@ -3047,7 +3049,7 @@ export class ImprovedNeuralAPI {
                   continue
                 }
 
-                const similarity = 1 - cosineDistance(
+                const similarity = 1 - this.distanceFn(
                   Array.from(c1.centroid) as number[],
                   Array.from(c2.centroid) as number[]
                 )

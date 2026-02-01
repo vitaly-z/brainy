@@ -201,9 +201,8 @@ export class PathResolver {
    * Falls back to graph traversal if MetadataIndex unavailable
    */
   private async resolveWithMetadataIndex(path: string): Promise<string> {
-    // Access MetadataIndexManager from brain's storage
-    const storage = (this.brain as any).storage
-    const metadataIndex = storage?.metadataIndex
+    // Access MetadataIndexManager from brain instance (not storage — metadataIndex lives on Brainy)
+    const metadataIndex = (this.brain as any).metadataIndex
 
     if (!metadataIndex) {
       // MetadataIndex not available, use graph traversal

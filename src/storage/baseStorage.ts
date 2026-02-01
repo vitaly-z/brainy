@@ -380,6 +380,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Set the graph index instance (used by Brainy to wire plugin-provided graph indexes).
+   * This ensures getVerbsBySource() uses the fast GraphAdjacencyIndex path
+   * instead of falling back to O(n) shard iteration.
+   */
+  public setGraphIndex(index: GraphAdjacencyIndex): void {
+    this.graphIndex = index
+    this.graphIndexPromise = Promise.resolve(index)
+  }
+
+  /**
    * Ensure the storage adapter is initialized
    */
   protected async ensureInitialized(): Promise<void> {

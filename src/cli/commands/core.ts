@@ -918,5 +918,55 @@ export const coreCommands = {
       console.error(chalk.red(error.message))
       process.exit(1)
     }
+  },
+
+  /**
+   * Show plugin and provider diagnostics
+   */
+  async diagnostics(options: CoreOptions) {
+    try {
+      const brain = getBrainy()
+      await brain.init()
+
+      const diag = brain.diagnostics()
+
+      if (options.json) {
+        formatOutput(diag, options)
+        return
+      }
+
+      console.log(chalk.bold('\nBrainy Diagnostics'))
+      console.log(chalk.dim(`Version: ${diag.version}`))
+      console.log()
+
+      // Plugins
+      console.log(chalk.bold('Plugins:'))
+      if (diag.plugins.count === 0) {
+        console.log(chalk.dim('  (none active)'))
+      } else {
+        for (const name of diag.plugins.active) {
+          console.log(chalk.green(`  ✓ ${name}`))
+        }
+      }
+      console.log()
+
+      // Providers
+      console.log(chalk.bold('Providers:'))
+      for (const [key, info] of Object.entries(diag.providers)) {
+        const icon = info.source === 'plugin' ? chalk.green('✓ plugin') : chalk.dim('default')
+        console.log(`  ${key.padEnd(16)} ${icon}`)
+      }
+      console.log()
+
+      // Indexes
+      console.log(chalk.bold('Indexes:'))
+      console.log(`  HNSW:      ${diag.indexes.hnsw.type} (${diag.indexes.hnsw.size} vectors)`)
+      console.log(`  Metadata:  ${diag.indexes.metadata.type} (initialized: ${diag.indexes.metadata.initialized})`)
+      console.log(`  Graph:     ${diag.indexes.graph.type} (initialized: ${diag.indexes.graph.initialized}, wired: ${diag.indexes.graph.wiredToStorage})`)
+      console.log()
+    } catch (error: any) {
+      console.error(chalk.red('Diagnostics failed: ' + error.message))
+      process.exit(1)
+    }
   }
 }

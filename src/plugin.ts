@@ -43,7 +43,8 @@ export interface BrainyPluginContext {
    * - 'cache'              — UnifiedCache replacement
    * - 'hnsw'               — HNSWIndex replacement
    * - 'roaring'            — RoaringBitmap32 replacement
-   * - 'embeddings'         — Embedding engine replacement
+   * - 'embeddings'         — Embedding engine replacement (single text)
+   * - 'embedBatch'         — Batch embedding engine (texts[] → vectors[])
    * - 'distance'           — Distance function overrides
    * - 'msgpack'            — Msgpack encode/decode
    *
