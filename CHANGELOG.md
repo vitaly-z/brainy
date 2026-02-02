@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.15.2](https://github.com/soulcraftlabs/brainy/compare/v7.15.1...v7.15.2) (2026-02-01)
+
+- fix: flush graph LSM-trees on close to prevent data loss across restarts (ab2493a)
+
+
 ### [7.15.0](https://github.com/soulcraftlabs/brainy/compare/v7.14.0...v7.15.0) (2026-02-01)
 
 - feat: harden plugin system wiring and add developer diagnostics (401e300)
