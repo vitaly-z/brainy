@@ -296,17 +296,20 @@ export class LSMTree {
   async get(sourceId: string): Promise<string[] | null> {
     const startTime = performance.now()
 
-    // Check MemTable first (hot data)
+    // Merge results from MemTable AND SSTables
+    // Data can span both after a flush (old data in SSTables, new in MemTable)
+    const allTargets = new Set<string>()
+
+    // Check MemTable (hot data)
     const memResult = this.memTable.get(sourceId)
     if (memResult !== null) {
-      return memResult
+      for (const target of memResult) {
+        allTargets.add(target)
+      }
     }
 
     // Check SSTables from newest to oldest
-    // Newer levels (L0, L1, L2) checked first for better cache locality
     const maxLevel = Math.max(...Array.from(this.sstablesByLevel.keys()), 0)
-
-    const allTargets = new Set<string>()
 
     for (let level = 0; level <= maxLevel; level++) {
       const sstables = this.sstablesByLevel.get(level) || []
@@ -608,16 +611,20 @@ export class LSMTree {
   }
 
   /**
-   * Flush MemTable and stop compaction
-   * Called during shutdown
+   * Flush MemTable to SSTables without closing
+   * Called by GraphAdjacencyIndex.flush() and brain.close()
    */
+  async flush(): Promise<void> {
+    if (!this.memTable.isEmpty()) {
+      await this.flushMemTable()
+    }
+  }
+
   async close(): Promise<void> {
     this.stopCompactionTimer()
 
     // Final MemTable flush
-    if (!this.memTable.isEmpty()) {
-      await this.flushMemTable()
-    }
+    await this.flush()
 
     prodLog.info('LSMTree: Closed successfully')
   }

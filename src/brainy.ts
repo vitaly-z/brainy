@@ -461,7 +461,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         let flushedCount = 0
         for (const instance of Brainy.instances) {
           if (instance.initialized) {
-            // Full flush: counts + metadata index + graph index + HNSW dirty nodes
+            // Flush all buffered data, then close to release resources (timers, handles)
             await Promise.all([
               (async () => {
                 if (instance.storage && typeof (instance.storage as any).flushCounts === 'function') {
@@ -483,6 +483,24 @@ export class Brainy<T = any> implements BrainyInterface<T> {
                   await (instance.index as any).flush()
                 }
               })()
+            ])
+            // Close components to stop timers that would prevent clean process exit
+            await Promise.all([
+              (async () => {
+                if (instance.graphIndex && typeof instance.graphIndex.close === 'function') {
+                  await instance.graphIndex.close()
+                }
+              })(),
+              (async () => {
+                if (instance.index && typeof (instance.index as any).close === 'function') {
+                  await (instance.index as any).close()
+                }
+              })(),
+              (async () => {
+                if (instance.metadataIndex && typeof (instance.metadataIndex as any).close === 'function') {
+                  await (instance.metadataIndex as any).close()
+                }
+              })(),
             ])
             flushedCount++
           }
@@ -6702,7 +6720,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * This ensures deferred persistence mode data is saved
    */
   async close(): Promise<void> {
-    // Flush ALL components before closing to prevent data loss
+    // Phase 1: Flush ALL components in parallel to persist buffered data
     // This is critical when cortex native providers buffer data in Rust memory
     await Promise.all([
       // Flush HNSW dirty nodes (deferred persistence mode)
@@ -6731,7 +6749,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       })()
     ])
 
-    // Deactivate plugins (safe — all data flushed above)
+    // Phase 2: Close components to release resources (timers, file handles)
+    // Data is already safe on disk from Phase 1
+    await Promise.all([
+      (async () => {
+        if (this.graphIndex && typeof this.graphIndex.close === 'function') {
+          await this.graphIndex.close()
+        }
+      })(),
+      (async () => {
+        if (this.index && typeof (this.index as any).close === 'function') {
+          await (this.index as any).close()
+        }
+      })(),
+      (async () => {
+        if (this.metadataIndex && typeof (this.metadataIndex as any).close === 'function') {
+          await (this.metadataIndex as any).close()
+        }
+      })(),
+    ])
+
+    // Deactivate plugins (safe — all data flushed and resources released above)
     await this.pluginRegistry.deactivateAll()
 
     // Restore console methods if silent mode was enabled
@@ -6751,8 +6789,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
     }
 
-    // Storage doesn't have close in current interface
-    // We'll just mark as not initialized
     this.initialized = false
   }
 

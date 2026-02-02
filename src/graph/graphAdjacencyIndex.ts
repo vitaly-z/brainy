@@ -800,10 +800,21 @@ export class GraphAdjacencyIndex {
 
     const startTime = Date.now()
 
-    // Flush both LSM-trees
-    // Note: LSMTree.close() will handle flushing MemTable
-    // For now, we don't have an explicit flush method in LSMTree
-    // The MemTable will be flushed automatically when threshold is reached
+    // Flush all 4 LSM-trees in parallel (MemTables → SSTables on disk)
+    await Promise.all([
+      this.lsmTreeSource.flush().then(() => {
+        prodLog.debug(`GraphAdjacencyIndex: Flushed source tree`)
+      }),
+      this.lsmTreeTarget.flush().then(() => {
+        prodLog.debug(`GraphAdjacencyIndex: Flushed target tree`)
+      }),
+      this.lsmTreeVerbsBySource.flush().then(() => {
+        prodLog.debug(`GraphAdjacencyIndex: Flushed verbs-by-source tree`)
+      }),
+      this.lsmTreeVerbsByTarget.flush().then(() => {
+        prodLog.debug(`GraphAdjacencyIndex: Flushed verbs-by-target tree`)
+      }),
+    ])
 
     const elapsed = Date.now() - startTime
 
@@ -819,10 +830,14 @@ export class GraphAdjacencyIndex {
       this.flushTimer = undefined
     }
 
-    // Close LSM-trees (will flush MemTables)
+    // Close all 4 LSM-trees (will flush MemTables to SSTables)
     if (this.initialized) {
-      await this.lsmTreeSource.close()
-      await this.lsmTreeTarget.close()
+      await Promise.all([
+        this.lsmTreeSource.close(),
+        this.lsmTreeTarget.close(),
+        this.lsmTreeVerbsBySource.close(),
+        this.lsmTreeVerbsByTarget.close(),
+      ])
     }
 
     prodLog.info('GraphAdjacencyIndex: Shutdown complete')
