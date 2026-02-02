@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.15.4](https://github.com/soulcraftlabs/brainy/compare/v7.15.3...v7.15.4) (2026-02-02)
+
+- fix: set verb.source/target to entity UUID instead of NounType (932fb95)
+
+
 ### [7.15.3](https://github.com/soulcraftlabs/brainy/compare/v7.15.2...v7.15.3) (2026-02-02)
 
 - feat: add explicit plugins config to control plugin auto-detection (6625385)
