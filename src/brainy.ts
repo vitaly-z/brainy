@@ -6438,6 +6438,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       hnsw: config?.hnsw ?? undefined as any,
       // Embedding initialization - false = lazy init on first embed()
       eagerEmbeddings: config?.eagerEmbeddings ?? false,
+      // Plugin configuration - undefined = auto-detect
+      plugins: config?.plugins ?? undefined as any,
       // Integration Hub - undefined/false = disabled
       integrations: config?.integrations ?? undefined as any
     }
@@ -6691,9 +6693,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Called internally during init().
    */
   private async loadPlugins(): Promise<void> {
-    // Auto-detect installed plugins (e.g., @soulcraft/cortex)
-    const pluginPackages = (this.config as any).plugins as string[] | undefined
-    await this.pluginRegistry.autoDetect(pluginPackages || [])
+    // plugins config:
+    //   undefined (default) → auto-detect installed plugins
+    //   false               → no plugins, skip auto-detection
+    //   []                  → no plugins, skip auto-detection
+    //   ['@soulcraft/cortex'] → load only these, no auto-detection
+    const pluginConfig = this.config.plugins
+    if (pluginConfig === false) {
+      // Explicitly disabled — no plugins
+    } else if (Array.isArray(pluginConfig)) {
+      // Explicit list: only register the specified packages, no auto-detection
+      for (const pkg of pluginConfig) {
+        try {
+          const mod = await import(pkg)
+          const plugin: BrainyPlugin = mod.default || mod
+          if (plugin && typeof plugin.activate === 'function' && plugin.name) {
+            this.pluginRegistry.register(plugin)
+          }
+        } catch {
+          // Package not found — skip
+        }
+      }
+    } else {
+      // Default: auto-detect known plugins
+      await this.pluginRegistry.autoDetect()
+    }
 
     // Create plugin context
     const context: BrainyPluginContext = {

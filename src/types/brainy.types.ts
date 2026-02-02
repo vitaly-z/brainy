@@ -747,6 +747,14 @@ export interface BrainyConfig {
   // WASM compilation to happen during container startup, not on first request
   eagerEmbeddings?: boolean
 
+  // Plugin configuration
+  // Controls which plugins are loaded during init()
+  // - undefined (default): Auto-detect installed plugins (@soulcraft/cortex, etc.)
+  // - false: No plugins — skip auto-detection entirely
+  // - []: No plugins — skip auto-detection entirely
+  // - ['@soulcraft/cortex']: Load only specified plugins, no auto-detection
+  plugins?: string[] | false
+
   // Logging configuration
   verbose?: boolean         // Enable verbose logging
   silent?: boolean          // Suppress all logging output
