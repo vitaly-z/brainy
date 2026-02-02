@@ -14,7 +14,6 @@
  */
 
 import { HNSWIndex } from '../hnsw/hnswIndex.js'
-import { TypeAwareHNSWIndex } from '../hnsw/typeAwareHNSWIndex.js'
 import { MetadataIndexManager } from '../utils/metadataIndex.js'
 import { Vector } from '../coreTypes.js'
 import { NounType } from '../types/graphTypes.js'
@@ -231,7 +230,7 @@ class QueryPlanner {
  */
 export class TripleIntelligenceSystem {
   private metadataIndex: MetadataIndexManager
-  private hnswIndex: HNSWIndex | TypeAwareHNSWIndex
+  private hnswIndex: HNSWIndex
   private graphIndex: GraphAdjacencyIndex
   private metrics: PerformanceMetrics
   private planner: QueryPlanner
@@ -240,7 +239,7 @@ export class TripleIntelligenceSystem {
 
   constructor(
     metadataIndex: MetadataIndexManager,
-    hnswIndex: HNSWIndex | TypeAwareHNSWIndex,
+    hnswIndex: HNSWIndex,
     graphIndex: GraphAdjacencyIndex,
     embedder: (text: string) => Promise<Vector>,
     storage: any
@@ -318,10 +317,8 @@ export class TripleIntelligenceSystem {
       ? await this.embedder(query)
       : query
 
-    // Phase 3: Pass types to TypeAwareHNSWIndex for optimized search
-    const searchResults = this.hnswIndex instanceof TypeAwareHNSWIndex
-      ? await this.hnswIndex.search(vector, limit, types)
-      : await this.hnswIndex.search(vector, limit)
+    // Single unified HNSW search (type filtering handled by metadata-first optimization)
+    const searchResults = await this.hnswIndex.search(vector, limit)
     
     // Convert to result format
     const results: TripleResult[] = []

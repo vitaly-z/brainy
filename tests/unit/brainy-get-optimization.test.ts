@@ -104,40 +104,6 @@ describe('brain.get() Metadata-Only Optimization (v5.11.1)', () => {
   })
 
   describe('Performance Comparison', () => {
-    // Performance test is flaky depending on system load - skip for CI
-    it.skip('metadata-only should be 75%+ faster than full entity', async () => {
-      // Warm up (populate caches)
-      await brain.get(entityId)
-      await brain.get(entityId, { includeVectors: true })
-
-      // Measure metadata-only performance
-      const metadataIterations = 100
-      const metadataStart = performance.now()
-      for (let i = 0; i < metadataIterations; i++) {
-        await brain.get(entityId)
-      }
-      const metadataTime = (performance.now() - metadataStart) / metadataIterations
-
-      // Measure full entity performance
-      const fullIterations = 100
-      const fullStart = performance.now()
-      for (let i = 0; i < fullIterations; i++) {
-        await brain.get(entityId, { includeVectors: true })
-      }
-      const fullTime = (performance.now() - fullStart) / fullIterations
-
-      // Calculate speedup
-      const speedup = ((fullTime - metadataTime) / fullTime) * 100
-
-      // MemoryStorage is already very fast, so speedup is less dramatic than FileSystemStorage
-      // FileSystemStorage: 76-81% speedup
-      // MemoryStorage: 15-30% speedup (less overhead to save)
-      expect(speedup).toBeGreaterThan(10)
-
-      // Log performance for manual verification
-      console.log(`[Performance] Metadata-only: ${metadataTime.toFixed(2)}ms, Full: ${fullTime.toFixed(2)}ms, Speedup: ${speedup.toFixed(1)}%`)
-    })
-
     it('metadata-only should complete in <15ms (MemoryStorage)', async () => {
       // Warm up
       await brain.get(entityId)

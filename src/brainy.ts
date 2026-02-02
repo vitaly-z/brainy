@@ -7,7 +7,8 @@
 
 import { v4 as uuidv4 } from './universal/uuid.js'
 import { HNSWIndex } from './hnsw/hnswIndex.js'
-import { TypeAwareHNSWIndex } from './hnsw/typeAwareHNSWIndex.js'
+// TypeAwareHNSWIndex removed from default path — single unified HNSWIndex is faster
+// for the 99% of queries that don't filter by type (avoids searching 42 separate graphs)
 import { createStorage } from './storage/storageFactory.js'
 import { BaseStorage } from './storage/baseStorage.js'
 import { StorageAdapter, Vector, DistanceFunction, EmbeddingFunction, GraphVerb } from './coreTypes.js'
@@ -48,14 +49,12 @@ import {
 import {
   SaveNounMetadataOperation,
   SaveNounOperation,
-  AddToTypeAwareHNSWOperation,
   AddToHNSWOperation,
   AddToMetadataIndexOperation,
   SaveVerbMetadataOperation,
   SaveVerbOperation,
   AddToGraphIndexOperation,
   RemoveFromHNSWOperation,
-  RemoveFromTypeAwareHNSWOperation,
   RemoveFromMetadataIndexOperation,
   RemoveFromGraphIndexOperation,
   UpdateNounMetadataOperation,
@@ -135,8 +134,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private static instances: Brainy[] = []
 
   // Core components
-  private index!: HNSWIndex | TypeAwareHNSWIndex
-  private indexIsTypeAware = false  // true when index supports addItem(item, type) / search(v, k, type)
+  private index!: HNSWIndex
   private storage!: BaseStorage
   private metadataIndex!: MetadataIndexManager
   private graphIndex!: GraphAdjacencyIndex
@@ -275,7 +273,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     try {
       // Auto-detect and activate plugins BEFORE storage setup
-      // so plugin-provided storage factories (e.g., mmap-filesystem) are available
+      // so plugin-provided storage factories (e.g., filesystem override from cortex) are available
       await this.loadPlugins()
 
       // Setup and initialize storage (checks plugin storage factories first)
@@ -301,6 +299,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         setGlobalCache(cacheProvider)
       }
 
+      // Provider: roaring bitmaps (native CRoaring replacement for WASM)
+      const roaringProvider = this.pluginRegistry.getProvider<any>('roaring')
+      if (roaringProvider) {
+        const { setRoaringImplementation } = await import('./utils/roaring/index.js')
+        setRoaringImplementation(roaringProvider)
+      }
+
+      // Provider: msgpack (native replacement for JS @msgpack/msgpack)
+      const msgpackProvider = this.pluginRegistry.getProvider<any>('msgpack')
+      if (msgpackProvider) {
+        const { setMsgpackImplementation } = await import('./graph/lsm/SSTable.js')
+        setMsgpackImplementation(msgpackProvider)
+      }
+
       // Provider: distance function (resolve BEFORE setupIndex — index uses this.distance)
       const nativeDistance = this.pluginRegistry.getProvider<DistanceFunction>('distance')
       if (nativeDistance) {
@@ -309,14 +321,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Provider: HNSW index factory (plugin or JS fallback)
       this.index = this.createIndex()
-      this.indexIsTypeAware = this.index instanceof TypeAwareHNSWIndex
-        || typeof (this.index as any).getIndexForType === 'function'
 
       // Provider: metadata index factory
       const metadataFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('metadataIndex')
-      this.metadataIndex = metadataFactory
-        ? metadataFactory(this.storage)
-        : new MetadataIndexManager(this.storage)
+      if (metadataFactory) {
+        this.metadataIndex = metadataFactory(this.storage)
+      } else {
+        // JS fallback — inject native EntityIdMapper if cortex provides one
+        const entityIdMapperFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('entityIdMapper')
+        this.metadataIndex = new MetadataIndexManager(this.storage, {}, {
+          entityIdMapper: entityIdMapperFactory ? entityIdMapperFactory(this.storage) : undefined,
+        })
+      }
 
       // Provider: graph index factory
       const graphFactory = this.pluginRegistry.getProvider<(storage: StorageAdapter) => any>('graphIndex')
@@ -440,21 +456,42 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private registerShutdownHooks(): void {
     const flushOnShutdown = async () => {
-      console.log('⚠️  Shutdown signal received - flushing pending counts...')
+      console.log('Shutdown signal received - flushing pending data...')
       try {
-        // Flush counts for all Brainy instances
         let flushedCount = 0
         for (const instance of Brainy.instances) {
-          if (instance.storage && typeof (instance.storage as any).flushCounts === 'function') {
-            await (instance.storage as any).flushCounts()
+          if (instance.initialized) {
+            // Full flush: counts + metadata index + graph index + HNSW dirty nodes
+            await Promise.all([
+              (async () => {
+                if (instance.storage && typeof (instance.storage as any).flushCounts === 'function') {
+                  await (instance.storage as any).flushCounts()
+                }
+              })(),
+              (async () => {
+                if (instance.metadataIndex && typeof instance.metadataIndex.flush === 'function') {
+                  await instance.metadataIndex.flush()
+                }
+              })(),
+              (async () => {
+                if (instance.graphIndex && typeof instance.graphIndex.flush === 'function') {
+                  await instance.graphIndex.flush()
+                }
+              })(),
+              (async () => {
+                if (instance.index && typeof (instance.index as any).flush === 'function') {
+                  await (instance.index as any).flush()
+                }
+              })()
+            ])
             flushedCount++
           }
         }
         if (flushedCount > 0) {
-          console.log(`✅ Counts flushed successfully (${flushedCount} instance${flushedCount > 1 ? 's' : ''})`)
+          console.log(`Flushed successfully (${flushedCount} instance${flushedCount > 1 ? 's' : ''})`)
         }
       } catch (error) {
-        console.error('❌ Failed to flush counts on shutdown:', error)
+        console.error('Failed to flush on shutdown:', error)
       }
     }
 
@@ -755,20 +792,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         )
 
         // Operation 3: Add to HNSW index (after entity saved)
-        if (this.indexIsTypeAware) {
-          tx.addOperation(
-            new AddToTypeAwareHNSWOperation(
-              this.index as any,
-              id,
-              vector,
-              params.type as any
-            )
-          )
-        } else {
-          tx.addOperation(
-            new AddToHNSWOperation(this.index as any, id, vector)
-          )
-        }
+        tx.addOperation(
+          new AddToHNSWOperation(this.index as any, id, vector)
+        )
 
         // Operation 4: Add to metadata index
         tx.addOperation(
@@ -1182,31 +1208,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
         // Operation 3-4: Update HNSW index (remove and re-add if reindexing needed)
         if (needsReindexing) {
-          if (this.indexIsTypeAware) {
-            tx.addOperation(
-              new RemoveFromTypeAwareHNSWOperation(
-                this.index as any,
-                params.id,
-                existing.vector,
-                existing.type as any
-              )
-            )
-            tx.addOperation(
-              new AddToTypeAwareHNSWOperation(
-                this.index as any,
-                params.id,
-                vector,
-                newType as any
-              )
-            )
-          } else {
-            tx.addOperation(
-              new RemoveFromHNSWOperation(this.index as any, params.id, existing.vector)
-            )
-            tx.addOperation(
-              new AddToHNSWOperation(this.index as any, params.id, vector)
-            )
-          }
+          tx.addOperation(
+            new RemoveFromHNSWOperation(this.index as any, params.id, existing.vector)
+          )
+          tx.addOperation(
+            new AddToHNSWOperation(this.index as any, params.id, vector)
+          )
         }
 
         // Operation 5-6: Update metadata index (remove old, add new)
@@ -1264,21 +1271,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
         // Operation 1: Remove from vector index
-        if (noun && metadata) {
-          if (this.indexIsTypeAware && metadata.noun) {
-            tx.addOperation(
-              new RemoveFromTypeAwareHNSWOperation(
-                this.index as any,
-                id,
-                noun.vector,
-                metadata.noun as any
-              )
-            )
-          } else {
-            tx.addOperation(
-              new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
-            )
-          }
+        if (noun) {
+          tx.addOperation(
+            new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
+          )
         }
 
         // Operation 2: Remove from metadata index
@@ -1975,6 +1971,42 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return results
       }
 
+      // Metadata-first optimization: pre-resolve filter IDs before vector search.
+      // This enables HNSW to search only within matching candidates instead of
+      // doing expensive post-filtering. Native HNSW uses searchWithCandidates (Rust
+      // bitmap), JS HNSW converts to a Set-based filter function.
+      let preResolvedMetadataIds: string[] | null = null
+      let preResolvedFilter: any = null
+
+      if (params.where || params.type || params.service || params.excludeVFS) {
+        preResolvedFilter = {}
+        if (params.where) Object.assign(preResolvedFilter, params.where)
+        if (params.service) preResolvedFilter.service = params.service
+        if (params.excludeVFS === true) {
+          preResolvedFilter.vfsType = { exists: false }
+          preResolvedFilter.isVFSEntity = { ne: true }
+        }
+        if (params.type) {
+          const types = Array.isArray(params.type) ? params.type : [params.type]
+          if (types.length === 1) {
+            preResolvedFilter.noun = types[0]
+          } else {
+            preResolvedFilter = {
+              anyOf: types.map(type => ({
+                noun: type,
+                ...preResolvedFilter
+              }))
+            }
+          }
+        }
+        preResolvedMetadataIds = await this.metadataIndex.getIdsForFilter(preResolvedFilter)
+
+        // Short-circuit: if metadata filter matches nothing, skip expensive vector search
+        if (preResolvedMetadataIds.length === 0) {
+          return []
+        }
+      }
+
       // Zero-Config Hybrid Search
       // Determine search mode: auto (default) combines text + semantic for query searches
       const searchMode = params.searchMode || 'auto'
@@ -1986,14 +2018,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
       // Handle semantic-only query (user explicitly wants vector search)
       else if ((searchMode === 'semantic' || searchMode === 'vector') && (params.query || params.vector)) {
-        results = await this.executeVectorSearch(params)
+        results = await this.executeVectorSearch(params, preResolvedMetadataIds ?? undefined)
       }
       // Handle explicit hybrid or auto mode with query
       else if ((searchMode === 'auto' || searchMode === 'hybrid') && params.query && params.query.trim() !== '' && !params.vector) {
         // Zero-config hybrid: combine text + semantic search with RRF fusion
         const [textResults, semanticResults] = await Promise.all([
           this.executeTextSearch(params.query, limit * 2),
-          this.executeVectorSearch(params)
+          this.executeVectorSearch(params, preResolvedMetadataIds ?? undefined)
         ])
 
         // Use user-specified alpha or auto-detect based on query length
@@ -2007,7 +2039,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
       // Handle direct vector search (no query text) - no hybrid needed
       else if (params.vector && !params.query) {
-        results = await this.executeVectorSearch(params)
+        results = await this.executeVectorSearch(params, preResolvedMetadataIds ?? undefined)
       }
       // Handle proximity search
       else if (params.near) {
@@ -2032,42 +2064,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         results = Array.from(uniqueResults.values())
       }
 
-      // Apply O(log n) metadata filtering using core MetadataIndexManager
-      if (params.where || params.type || params.service || params.excludeVFS) {
-        // Build filter object for metadata index
-        let filter: any = {}
+      // Apply metadata filtering using pre-resolved IDs (metadata-first optimization).
+      // When vector search was performed, HNSW already filtered by candidateIds —
+      // this block handles pagination, entity loading, and metadata-only queries.
+      if (preResolvedMetadataIds && preResolvedFilter) {
+        const filteredIds = preResolvedMetadataIds
 
-        // Base filter from where and service
-        if (params.where) Object.assign(filter, params.where)
-        if (params.service) filter.service = params.service
-
-        // ExcludeVFS helper - exclude VFS infrastructure entities
-        // VFS files/folders have vfsType set, extracted entities do NOT
-        if (params.excludeVFS === true) {
-          filter.vfsType = { exists: false }
-          filter.isVFSEntity = { ne: true }
-        }
-
-        if (params.type) {
-          const types = Array.isArray(params.type) ? params.type : [params.type]
-          if (types.length === 1) {
-            filter.noun = types[0]
-          } else {
-            // For multiple types, create separate filter for each type with all conditions
-            filter = {
-              anyOf: types.map(type => ({
-                noun: type,
-                ...filter
-              }))
-            }
-          }
-        }
-
-        const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
-        
-        // CRITICAL FIX: Handle both cases properly
         if (results.length > 0) {
-          // OPTIMIZED: Filter existing results (from vector search) efficiently
+          // Filter results by pre-resolved metadata IDs.
+          // With metadata-first HNSW, most results already match — this is a safety net
+          // for text search results and proximity results that weren't pre-filtered.
           const filteredIdSet = new Set(filteredIds)
           results = results.filter((r) => filteredIdSet.has(r.id))
 
@@ -2120,7 +2126,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             // Apply sorting if requested for metadata-only queries
             if (params.orderBy) {
               const sortedIds = await this.metadataIndex.getSortedIdsForFilter(
-                filter,
+                preResolvedFilter,
                 params.orderBy,
                 params.order || 'asc'
               )
@@ -2529,21 +2535,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
               const allVerbs = [...verbs, ...targetVerbs]
 
               // Add delete operations to transaction
-              if (noun && metadata) {
-                if (this.indexIsTypeAware && metadata.noun) {
-                  tx.addOperation(
-                    new RemoveFromTypeAwareHNSWOperation(
-                      this.index as any,
-                      id,
-                      noun.vector,
-                      metadata.noun as any
-                    )
-                  )
-                } else {
-                  tx.addOperation(
-                    new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
-                  )
-                }
+              if (noun) {
+                tx.addOperation(
+                  new RemoveFromHNSWOperation(this.index as any, id, noun.vector)
+                )
               }
 
               if (metadata) {
@@ -2948,9 +2943,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Create HNSW index (uses plugin factory when available)
       clone.index = this.createIndex()
-      clone.indexIsTypeAware = this.indexIsTypeAware
 
-      // Enable COW (handle both HNSWIndex and TypeAwareHNSWIndex)
+      // Enable COW
       if ('enableCOW' in clone.index && typeof clone.index.enableCOW === 'function') {
         (clone.index as any).enableCOW(this.index)
       }
@@ -4188,7 +4182,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * 1. Storage counts (entity/verb counts by type)
    * 2. Metadata index (field indexes + EntityIdMapper)
    * 3. Graph adjacency index (relationship cache)
-   * 4. HNSW vector index (no flush needed - saves directly)
+   * 4. HNSW vector index (deferred dirty nodes)
    *
    * @example
    * // Flush after bulk operations
@@ -4204,7 +4198,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async flush(): Promise<void> {
     await this.ensureInitialized()
 
-    console.log('🔄 Flushing Brainy indexes and caches to disk...')
+    console.log('Flushing Brainy indexes and caches to disk...')
 
     const startTime = Date.now()
 
@@ -4220,24 +4214,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // 2. Flush metadata index (field indexes + EntityIdMapper)
       this.metadataIndex.flush(),
 
-      // 3. Flush graph adjacency index (relationship cache)
-      // Note: Graph structure is already persisted via storage.saveVerb() calls
-      // This just flushes the in-memory cache for performance
-      this.graphIndex.flush()
+      // 3. Flush graph adjacency index (relationship cache + LSM trees)
+      this.graphIndex.flush(),
 
-      // Note: Write-through cache (storage.writeCache) is NOT cleared here
-      // Cache persists indefinitely for read-after-write consistency
-      // Provides safety net for:
-      // - Cloud storage eventual consistency (S3, GCS, Azure, R2)
-      // - Filesystem buffer cache timing
-      // - Type cache warming period (nounTypeCache population)
-      // Cache entries are removed only when explicitly deleted (deleteObjectFromBranch)
-      // Memory footprint is negligible for typical workloads (<10MB for 100k entities)
+      // 4. Flush HNSW dirty nodes (deferred persistence mode)
+      (async () => {
+        if (this.index && typeof (this.index as any).flush === 'function') {
+          await (this.index as any).flush()
+        }
+      })()
     ])
 
     const elapsed = Date.now() - startTime
 
-    console.log(`✅ All indexes flushed to disk in ${elapsed}ms`)
+    console.log(`All indexes flushed to disk in ${elapsed}ms`)
   }
 
   /**
@@ -5619,15 +5609,22 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Execute vector search component
+   *
+   * @param params Find parameters
+   * @param candidateIds Optional pre-resolved metadata filter IDs for metadata-first search.
+   *   When provided, HNSW search is restricted to these candidates:
+   *   - NativeHNSWWrapper: uses native searchWithCandidates (Rust bitmap filtering)
+   *   - JS HNSWIndex: converts to filter function with O(1) Set lookups
    */
-  private async executeVectorSearch(params: FindParams<T>): Promise<Result<T>[]> {
+  private async executeVectorSearch(params: FindParams<T>, candidateIds?: string[]): Promise<Result<T>[]> {
     const vector = params.vector || (await this.embed(params.query!))
     const limit = params.limit || 10
 
-    // Pass type for type-aware indexes (10x faster for type-specific queries)
-    const searchResults: [string, number][] = this.indexIsTypeAware && params.type
-      ? await (this.index as any).search(vector, limit * 2, params.type as any)
-      : await this.index.search(vector, limit * 2)
+    // Build search options for metadata-first candidate filtering
+    const searchOptions = candidateIds ? { candidateIds } : undefined
+
+    // HNSW search with optional metadata-first candidate filtering
+    const searchResults: [string, number][] = await this.index.search(vector, limit * 2, undefined, searchOptions)
 
     // Batch-load entities for 10-50x faster cloud storage performance
     // GCS: 10 results = 1×50ms vs 10×50ms = 500ms (10x faster)
@@ -5655,10 +5652,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const nearEntity = await this.get(params.near.id)
     if (!nearEntity) return []
 
-    // Pass type for type-aware indexes
-    const nearResults: [string, number][] = this.indexIsTypeAware && params.type
-      ? await (this.index as any).search(nearEntity.vector, params.limit || 10, params.type as any)
-      : await this.index.search(nearEntity.vector, params.limit || 10)
+    const nearResults: [string, number][] = await this.index.search(nearEntity.vector, params.limit || 10)
 
     // Filter by threshold first to minimize batch fetch
     const threshold = params.near.threshold || 0.7
@@ -6252,7 +6246,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const storageConfig = (this.config.storage || {}) as Record<string, unknown>
     const storageType = (storageConfig.type as string) || 'auto'
 
-    // Check plugin-provided storage factories (e.g., 'mmap-filesystem' from cortex)
+    // Check plugin-provided storage factories (e.g., 'filesystem' override from cortex)
     const pluginFactory = this.pluginRegistry.getStorageFactory(storageType)
     if (pluginFactory) {
       const adapter = await pluginFactory.create(storageConfig)
@@ -6290,18 +6284,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Setup index
+   * Setup index — single unified HNSW graph.
    *
-   * Phase 2: Uses TypeAwareHNSWIndex for billion-scale optimization
-   * - 87% memory reduction through separate graphs per entity type
-   * - 10x faster type-specific queries
-   * - Automatic type routing
-   *
-   * Smart defaults for HNSW persistence mode
-   * - Cloud storage (GCS/S3/R2/Azure): 'deferred' for 30-50× faster adds
+   * Smart defaults for HNSW persistence mode:
+   * - Cloud storage (GCS/S3/R2/Azure): 'deferred' for 30-50x faster adds
    * - Local storage (FileSystem/Memory/OPFS): 'immediate' (already fast)
    */
-  private setupIndex(): HNSWIndex | TypeAwareHNSWIndex {
+  private setupIndex(): HNSWIndex {
     const indexConfig = {
       ...this.config.index,
       distanceFunction: this.distance,
@@ -6316,24 +6305,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     const persistMode = this.resolveHNSWPersistMode()
 
-    // Use TypeAwareHNSWIndex for non-memory storage (billion-scale optimization)
-    const detectedStorageType = this.config.storage?.type || this.getStorageType()
-    if (detectedStorageType !== 'memory') {
-      return new TypeAwareHNSWIndex(indexConfig, this.distance, {
-        storage: this.storage,
-        useParallelization: true,
-        persistMode
-      })
-    }
-
-    return new HNSWIndex(indexConfig as any, this.distance, { persistMode })
+    return new HNSWIndex(indexConfig as any, this.distance, {
+      storage: this.storage,
+      useParallelization: true,
+      persistMode
+    })
   }
 
   /**
    * Create an HNSW index, using plugin factory when available.
    * Shared by init(), fork(), checkout(), and clear() to avoid duplication.
    */
-  private createIndex(): HNSWIndex | TypeAwareHNSWIndex {
+  private createIndex(): HNSWIndex {
     const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
     if (hnswFactory) {
       const persistMode = this.resolveHNSWPersistMode()
@@ -6719,13 +6702,36 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * This ensures deferred persistence mode data is saved
    */
   async close(): Promise<void> {
-    // Flush HNSW dirty nodes before closing
-    // In deferred persistence mode, this persists all pending HNSW graph data
-    if (this.index && typeof this.index.flush === 'function') {
-      await this.index.flush()
-    }
+    // Flush ALL components before closing to prevent data loss
+    // This is critical when cortex native providers buffer data in Rust memory
+    await Promise.all([
+      // Flush HNSW dirty nodes (deferred persistence mode)
+      (async () => {
+        if (this.index && typeof (this.index as any).flush === 'function') {
+          await (this.index as any).flush()
+        }
+      })(),
+      // Flush metadata index (field indexes + EntityIdMapper)
+      (async () => {
+        if (this.metadataIndex && typeof this.metadataIndex.flush === 'function') {
+          await this.metadataIndex.flush()
+        }
+      })(),
+      // Flush graph adjacency index (LSM trees)
+      (async () => {
+        if (this.graphIndex && typeof this.graphIndex.flush === 'function') {
+          await this.graphIndex.flush()
+        }
+      })(),
+      // Flush storage adapter counts
+      (async () => {
+        if (this.storage && typeof (this.storage as any).flushCounts === 'function') {
+          await (this.storage as any).flushCounts()
+        }
+      })()
+    ])
 
-    // Deactivate plugins
+    // Deactivate plugins (safe — all data flushed above)
     await this.pluginRegistry.deactivateAll()
 
     // Restore console methods if silent mode was enabled

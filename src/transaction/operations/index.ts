@@ -22,9 +22,7 @@ export {
 // Index Operations
 export {
   AddToHNSWOperation,
-  AddToTypeAwareHNSWOperation,
   RemoveFromHNSWOperation,
-  RemoveFromTypeAwareHNSWOperation,
   AddToMetadataIndexOperation,
   RemoveFromMetadataIndexOperation,
   AddToGraphIndexOperation,

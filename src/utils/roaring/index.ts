@@ -12,7 +12,7 @@
  */
 
 import {
-  RoaringBitmap32,
+  RoaringBitmap32 as WasmRoaringBitmap32,
   RoaringBitmap32Iterator,
   roaringLibraryInitialize,
   roaringLibraryIsReady,
@@ -24,9 +24,35 @@ import {
 // This ensures RoaringBitmap32 is ready to use immediately after import
 await roaringLibraryInitialize()
 
-// Re-export all types and values
+// Swappable implementation — defaults to WASM, can be replaced with native CRoaring
+// Uses a wrapper class that delegates to the active implementation so that the exported
+// RoaringBitmap32 remains a class (usable as both value and type).
+let _impl: typeof WasmRoaringBitmap32 = WasmRoaringBitmap32
+
+/**
+ * Replace the RoaringBitmap32 implementation at runtime.
+ * Called by brainy.ts when a cortex 'roaring' provider is registered.
+ */
+export function setRoaringImplementation(impl: typeof WasmRoaringBitmap32) {
+  _impl = impl
+}
+
+/**
+ * Get the current RoaringBitmap32 implementation (WASM or native).
+ * Use this instead of direct `new RoaringBitmap32()` when constructing bitmaps
+ * in hot paths that should benefit from native replacement.
+ */
+export function getRoaringBitmap32(): typeof WasmRoaringBitmap32 {
+  return _impl
+}
+
+// Re-export the original WASM class as RoaringBitmap32 for type compatibility
+// Consumers use this as both a type (Map<string, RoaringBitmap32>) and value (new RoaringBitmap32())
+// The WASM and native implementations are API-compatible
+export { WasmRoaringBitmap32 as RoaringBitmap32 }
+
+// Re-export remaining types and values
 export {
-  RoaringBitmap32,
   RoaringBitmap32Iterator,
   roaringLibraryInitialize,
   roaringLibraryIsReady,

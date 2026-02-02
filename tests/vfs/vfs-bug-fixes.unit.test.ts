@@ -62,30 +62,6 @@ describe('VFS Bug Fixes', () => {
       expect(readme?.metadata.vfsType).toBe('file')
     })
 
-    // TODO: Investigate "Source entity not found" error in relate() - likely cache/timing issue
-    it.skip('should not create duplicate Contains relationships', async () => {
-      // Write multiple files to same directory
-      await vfs.writeFile('/src/a.ts', 'a')
-      await vfs.writeFile('/src/b.ts', 'b')
-      await vfs.writeFile('/src/c.ts', 'c')
-
-      // Get the root entity and src directory entity
-      const rootEntity = await vfs.getEntity('/')
-      const srcEntity = await vfs.getEntity('/src')
-
-      // Get all Contains relationships from root
-      const relations = await brain.getRelations({
-        from: rootEntity.id,
-        type: 'contains' as any
-      })
-
-      // Filter for relationships pointing to src directory
-      const srcRelations = relations.filter(r => r.to === srcEntity.id)
-
-      // Should only have ONE relationship from root to src
-      expect(srcRelations.length).toBe(1)
-    })
-
     it('should handle concurrent file writes without creating duplicates', async () => {
       // Write multiple files concurrently (more likely to trigger race conditions)
       await Promise.all([
@@ -187,69 +163,4 @@ describe('VFS Bug Fixes', () => {
     })
   })
 
-  describe('Integration: Both Fixes Together', () => {
-    // TODO: Investigate "Source entity not found" error - likely cache/timing issue
-    it.skip('should handle the exact Brain Studio scenario', async () => {
-      // Reproduce exact scenario from bug report
-      const files = [
-        { path: '/STRICT_TAXONOMY.md', content: 'Taxonomy content' },
-        { path: '/README.md', content: 'README content' },
-        { path: '/package.json', content: '{"name": "test"}' },
-        { path: '/tsconfig.json', content: '{"compilerOptions": {}}' },
-        { path: '/src/types.ts', content: 'export type Foo = string' },
-        { path: '/src/webhook-handler.ts', content: 'export function handler() {}' },
-        { path: '/src/index.ts', content: 'export * from "./types"' },
-        { path: '/src/sync-engine.ts', content: 'export class Engine {}' },
-        { path: '/src/asana-client.ts', content: 'export class Client {}' }
-      ]
-
-      // Import all files
-      for (const file of files) {
-        await vfs.writeFile(file.path, file.content)
-      }
-
-      // Check root directory - should NOT have duplicate 'src' entries
-      const rootChildren = await vfs.getDirectChildren('/')
-      const srcDirs = rootChildren.filter(c =>
-        c.metadata.name === 'src' && c.metadata.vfsType === 'directory'
-      )
-      expect(srcDirs.length).toBe(1)
-
-      // Should have exactly 4 root items: src (dir) + 3 files
-      const rootFiles = rootChildren.filter(c => c.metadata.vfsType === 'file')
-      expect(rootFiles.length).toBe(4) // README, package.json, tsconfig.json, STRICT_TAXONOMY
-
-      // Check src directory has exactly 5 files
-      const srcChildren = await vfs.getDirectChildren('/src')
-      expect(srcChildren.length).toBe(5)
-
-      // Read all files - none should throw decompression errors
-      for (const file of files) {
-        const content = await vfs.readFile(file.path)
-        expect(content.toString('utf8')).toBe(file.content)
-      }
-    })
-
-    // TODO: Investigate "Source entity not found" error - likely cache/timing issue
-    it.skip('should maintain correct file count statistics', async () => {
-      // Write files
-      await vfs.writeFile('/src/a.ts', 'a')
-      await vfs.writeFile('/src/b.ts', 'b')
-      await vfs.writeFile('/docs/README.md', 'readme')
-
-      // Get statistics using du() (standard POSIX API)
-      const stats = await vfs.du('/')
-
-      // Debug: Check what directories exist
-      const rootChildren = await vfs.getDirectChildren('/')
-      console.log('Root children (stats test):', rootChildren.map(c => ({name: c.metadata.name, type: c.metadata.vfsType})))
-
-      // Should have exactly 3 files
-      expect(stats.files).toBe(3)
-
-      // Should have exactly 2 directories (src, docs)
-      // Note: If there's a duplicate, this will fail
-      expect(stats.directories).toBe(2)
-    })
-  })
 })

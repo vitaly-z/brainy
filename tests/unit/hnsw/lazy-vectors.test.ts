@@ -88,7 +88,7 @@ describe('Lazy Vector Loading (B2)', () => {
     })
 
     it('should return correct top-k results in lazy mode', async () => {
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 50; i++) {
         const id = uuidv4()
         const v = randomVector(dim)
         await saveVector(storage, id, v)

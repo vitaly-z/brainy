@@ -681,10 +681,16 @@ export class HNSWIndex {
     queryVector: Vector,
     k: number = 10,
     filter?: (id: string) => Promise<boolean>,
-    options?: { rerank?: { multiplier: number } }
+    options?: { rerank?: { multiplier: number }; candidateIds?: string[] }
   ): Promise<Array<[string, number]>> {
     if (this.nouns.size === 0) {
       return []
+    }
+
+    // Metadata-first: convert candidateIds to filter function if no explicit filter
+    if (!filter && options?.candidateIds && options.candidateIds.length > 0) {
+      const candidateSet = new Set(options.candidateIds)
+      filter = async (id: string) => candidateSet.has(id)
     }
 
     // Check if query vector is defined

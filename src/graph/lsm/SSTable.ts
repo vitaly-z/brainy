@@ -14,8 +14,22 @@
  * - Footer: checksum, stats
  */
 
-import { encode, decode } from '@msgpack/msgpack'
+import { encode as defaultEncode, decode as defaultDecode } from '@msgpack/msgpack'
 import { BloomFilter, SerializedBloomFilter } from './BloomFilter.js'
+
+// Swappable msgpack implementation — defaults to @msgpack/msgpack JS,
+// can be replaced with native msgpack (e.g., cortex's Rust-backed encoder)
+let _encode: (data: unknown) => Uint8Array = defaultEncode as (data: unknown) => Uint8Array
+let _decode: (data: Uint8Array) => unknown = defaultDecode as (data: Uint8Array) => unknown
+
+/**
+ * Replace the msgpack encode/decode implementation at runtime.
+ * Called by brainy.ts when a cortex 'msgpack' provider is registered.
+ */
+export function setMsgpackImplementation(impl: { encode: (data: unknown) => Uint8Array, decode: (data: Uint8Array) => unknown }) {
+  _encode = impl.encode
+  _decode = impl.decode
+}
 
 /**
  * Entry in the SSTable
@@ -299,7 +313,7 @@ export class SSTable {
       checksum: this.calculateChecksum(this.entries)
     }
 
-    const serialized = encode(data)
+    const serialized = _encode(data)
 
     // Update size in metadata
     this.metadata.sizeBytes = serialized.length
@@ -331,7 +345,7 @@ export class SSTable {
    * @returns SSTable instance
    */
   static deserialize(data: Uint8Array): SSTable {
-    const decoded = decode(data) as SerializedSSTable
+    const decoded = _decode(data) as SerializedSSTable
 
     // Verify checksum
     const sstable = new SSTable(

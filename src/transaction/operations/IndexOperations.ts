@@ -2,8 +2,7 @@
  * Index Operations with Rollback Support
  *
  * Provides transactional operations for all indexes:
- * - TypeAwareHNSWIndex (per-type vector indexes)
- * - HNSWIndex (legacy/fallback vector index)
+ * - HNSWIndex (unified vector index)
  * - MetadataIndexManager (roaring bitmap filtering)
  * - GraphAdjacencyIndex (LSM-tree graph storage)
  *
@@ -11,10 +10,8 @@
  */
 
 import type { HNSWIndex } from '../../hnsw/hnswIndex.js'
-import type { TypeAwareHNSWIndex } from '../../hnsw/typeAwareHNSWIndex.js'
 import type { MetadataIndexManager } from '../../utils/metadataIndex.js'
 import type { GraphAdjacencyIndex } from '../../graph/graphAdjacencyIndex.js'
-import type { NounType } from '../../types/graphTypes.js'
 import type { GraphVerb } from '../../coreTypes.js'
 import type { Operation, RollbackAction } from '../types.js'
 
@@ -68,55 +65,6 @@ export class AddToHNSWOperation implements Operation {
 }
 
 /**
- * Add to TypeAwareHNSW index with rollback support
- *
- * Rollback strategy:
- * - Remove item from type-specific index
- */
-export class AddToTypeAwareHNSWOperation implements Operation {
-  readonly name = 'AddToTypeAwareHNSW'
-
-  constructor(
-    private readonly index: TypeAwareHNSWIndex,
-    private readonly id: string,
-    private readonly vector: number[],
-    private readonly nounType: NounType
-  ) {}
-
-  async execute(): Promise<RollbackAction> {
-    // Check if item already exists
-    const existed = await this.itemExists(this.id, this.nounType)
-
-    // Add to type-specific index
-    await this.index.addItem({ id: this.id, vector: this.vector }, this.nounType)
-
-    // Return rollback action
-    return async () => {
-      if (!existed) {
-        // Remove newly added item from type-specific index
-        await this.index.removeItem(this.id, this.nounType)
-      }
-    }
-  }
-
-  /**
-   * Check if item exists in type-specific index
-   */
-  private async itemExists(id: string, type: NounType): Promise<boolean> {
-    try {
-      const index = (this.index as any).getIndexForType?.(type)
-      if (index) {
-        await index.getItem?.(id)
-        return true
-      }
-      return false
-    } catch {
-      return false
-    }
-  }
-}
-
-/**
  * Remove from HNSW index with rollback support
  *
  * Rollback strategy:
@@ -141,34 +89,6 @@ export class RemoveFromHNSWOperation implements Operation {
     return async () => {
       // Re-add item with original vector
       await this.index.addItem({ id: this.id, vector: this.vector })
-    }
-  }
-}
-
-/**
- * Remove from TypeAwareHNSW index with rollback support
- *
- * Rollback strategy:
- * - Re-add item to type-specific index with original vector
- */
-export class RemoveFromTypeAwareHNSWOperation implements Operation {
-  readonly name = 'RemoveFromTypeAwareHNSW'
-
-  constructor(
-    private readonly index: TypeAwareHNSWIndex,
-    private readonly id: string,
-    private readonly vector: number[], // Required for rollback
-    private readonly nounType: NounType
-  ) {}
-
-  async execute(): Promise<RollbackAction> {
-    // Remove from type-specific index
-    await this.index.removeItem(this.id, this.nounType)
-
-    // Return rollback action
-    return async () => {
-      // Re-add item with original vector to type-specific index
-      await this.index.addItem({ id: this.id, vector: this.vector }, this.nounType)
     }
   }
 }

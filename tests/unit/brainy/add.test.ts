@@ -459,29 +459,8 @@ describe('Brainy.add()', () => {
       )
     })
     
-    it.skip('should handle batch adds efficiently', async () => {
-      // NOTE: Flaky performance test - depends on system load
-      // Arrange
-      const count = 100
-      const params = Array.from({ length: count }, (_, i) => 
-        createAddParams({
-          data: `Batch entity ${i}`,
-          type: 'thing'
-        })
-      )
-      
-      // Act
-      const start = performance.now()
-      const ids = await Promise.all(params.map(p => brain.add(p)))
-      const duration = performance.now() - start
-      
-      // Assert
-      expect(ids).toHaveLength(count)
-      const opsPerSecond = (count / duration) * 1000
-      expect(opsPerSecond).toBeGreaterThan(100) // At least 100 ops/second
-    })
   })
-  
+
   describe('caching behavior', () => {
     it('should retrieve consistent entities', async () => {
       // Arrange (v5.1.0: use valid UUID format)

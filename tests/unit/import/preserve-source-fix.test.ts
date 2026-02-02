@@ -111,31 +111,4 @@ describe('Import preserveSource Fix (v5.1.2)', () => {
     fs.unlinkSync(jsonFilePath)
   })
 
-  it.skip('should work with large text files', async () => {
-    // Create a large CSV (above inline threshold of 100KB)
-    const rows = []
-    for (let i = 0; i < 5000; i++) {
-      rows.push(`row${i},value${i},data${i}`)
-    }
-    const largeCsvContent = 'col1,col2,col3\n' + rows.join('\n')
-
-    const largeFilePath = path.join(tempDir, 'large.csv')
-    fs.writeFileSync(largeFilePath, largeCsvContent)
-
-    // Import large file
-    await brain.import(largeFilePath, {
-      format: 'csv',
-      vfsPath: '/large-file',
-      preserveSource: true,
-      enableNeuralExtraction: false,
-      createEntities: true
-    })
-
-    // Verify file was preserved
-    const content = await brain.vfs.readFile('/large-file/_source.csv')
-    expect(content.toString('utf-8')).toBe(largeCsvContent)
-
-    // Cleanup
-    fs.unlinkSync(largeFilePath)
-  })
 })

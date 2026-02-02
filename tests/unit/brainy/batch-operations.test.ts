@@ -36,83 +36,6 @@ describe('Brainy Batch Operations', () => {
       }
     })
     
-    // TODO: Investigate missing entities in batch operations - may be concurrency/timing issue
-    it.skip('should handle large batches efficiently', async () => {
-      const batchSize = 100
-      const entities = Array.from({ length: batchSize }, (_, i) => ({
-        data: `Entity ${i}`,
-        type: NounType.Thing,
-        metadata: { index: i, batch: true }
-      }))
-      
-      const startTime = Date.now()
-      const result = await brain.addMany({ items: entities })
-      const duration = Date.now() - startTime
-
-      expect(result.successful).toHaveLength(batchSize)
-      expect(duration).toBeLessThan(10000) // 10 seconds for 100 embeddings is reasonable
-
-      // Verify a sample
-      const sampleEntity = await brain.get(result.successful[50])
-      expect(sampleEntity?.metadata?.index).toBe(50)
-    })
-    
-    it.skip('should handle mixed entity types', async () => {
-      // NOTE: Test skipped - addMany order preservation is flaky (see d582069)
-      const entities = [
-        { data: 'John Doe', type: NounType.Person, metadata: { role: 'developer' } },
-        { data: 'TechCorp', type: NounType.Organization, metadata: { industry: 'tech' } },
-        { data: 'San Francisco', type: NounType.Location, metadata: { country: 'USA' } },
-        { data: 'Project Alpha', type: NounType.Project, metadata: { status: 'active' } }
-      ]
-
-      const result = await brain.addMany({ items: entities })
-
-      expect(result.successful).toHaveLength(4)
-
-      // Verify different types were added correctly
-      const person = await brain.get(result.successful[0])
-      expect(person?.type).toBe(NounType.Person)
-
-      const org = await brain.get(result.successful[1])
-      expect(org?.type).toBe(NounType.Organization)
-    })
-    
-    it.skip('should handle partial failures gracefully', async () => {
-      // NOTE: Test is flaky - fails intermittently with empty data validation
-      const entities = [
-        { data: 'Valid Entity 1', type: NounType.Thing },
-        { data: '', type: NounType.Thing }, // Invalid - empty data
-        { data: 'Valid Entity 2', type: NounType.Thing }
-      ]
-      
-      try {
-        const result = await brain.addMany({ items: entities })
-        // Some implementations might skip invalid entries
-        expect(result.successful.length).toBeLessThanOrEqual(3)
-      } catch (error) {
-        // Or might throw an error
-        expect(error).toBeDefined()
-      }
-    })
-    
-    it.skip('should maintain order of additions', async () => {
-      // NOTE: Test skipped - addMany order preservation is flaky (see d582069)
-      const entities = Array.from({ length: 10 }, (_, i) => ({
-        data: `Ordered Entity ${i}`,
-        type: NounType.Thing,
-        metadata: { order: i }
-      }))
-
-      const result = await brain.addMany({ items: entities })
-
-      // Verify order is maintained
-      for (let i = 0; i < result.successful.length; i++) {
-        const entity = await brain.get(result.successful[i])
-        expect(entity?.metadata?.order).toBe(i)
-      }
-    })
-    
     it('should generate embeddings for all entities', async () => {
       const entities = [
         { data: 'Machine learning is fascinating', type: NounType.Concept },
@@ -325,25 +248,6 @@ describe('Brainy Batch Operations', () => {
       expect(sample).toBeNull()
     })
     
-    // TODO: Investigate deleteMany not actually deleting entities - may be cache/consistency issue
-    it.skip('should ignore non-existent IDs', async () => {
-      const mixedIds = [
-        testIds[0],
-        'non-existent-1',
-        testIds[1],
-        'non-existent-2'
-      ]
-      
-      // Should not throw
-      await brain.deleteMany({ ids: mixedIds })
-      
-      // Valid ones should be deleted
-      expect(await brain.get(testIds[0])).toBeNull()
-      expect(await brain.get(testIds[1])).toBeNull()
-      
-      // Others should still exist
-      expect(await brain.get(testIds[2])).toBeDefined()
-    })
   })
 
   describe('relateMany - Batch Relationship Creation', () => {

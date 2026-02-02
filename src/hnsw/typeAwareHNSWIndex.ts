@@ -257,7 +257,7 @@ export class TypeAwareHNSWIndex {
     k: number = 10,
     type?: NounType | NounType[],
     filter?: (id: string) => Promise<boolean>,
-    options?: { rerank?: { multiplier: number } }
+    options?: { rerank?: { multiplier: number }; candidateIds?: string[] }
   ): Promise<Array<[string, number]>> {
     // Single-type search (fast path)
     if (type && typeof type === 'string') {
@@ -288,7 +288,7 @@ export class TypeAwareHNSWIndex {
     k: number,
     types: NounType[],
     filter?: (id: string) => Promise<boolean>,
-    options?: { rerank?: { multiplier: number } }
+    options?: { rerank?: { multiplier: number }; candidateIds?: string[] }
   ): Promise<Array<[string, number]>> {
     const allResults: Array<[string, number]> = []
 
@@ -323,7 +323,7 @@ export class TypeAwareHNSWIndex {
     queryVector: Vector,
     k: number,
     filter?: (id: string) => Promise<boolean>,
-    options?: { rerank?: { multiplier: number } }
+    options?: { rerank?: { multiplier: number }; candidateIds?: string[] }
   ): Promise<Array<[string, number]>> {
     const allResults: Array<[string, number]> = []
 

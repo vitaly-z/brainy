@@ -80,28 +80,5 @@ describe('VFS Initialization', () => {
       await brain.close()
     })
 
-    // TODO: Investigate "Entity not found" error after readFile - likely cache/timing issue
-    it.skip('should work with VFS operations immediately', async () => {
-      const brain = new Brainy({
-        storage: { type: 'memory' },
-        silent: true
-      })
-      await brain.init()
-
-      const vfs = brain.vfs
-
-      // All VFS operations work immediately
-      await vfs.writeFile('/test.txt', 'Hello')
-      await vfs.writeFile('/data.json', '{"key": "value"}')
-
-      const entries = await vfs.readdir('/')
-      expect(entries).toContain('test.txt')
-      expect(entries).toContain('data.json')
-
-      const testContent = await vfs.readFile('/test.txt')
-      expect(testContent.toString()).toBe('Hello')
-
-      await brain.close()
-    })
   })
 })

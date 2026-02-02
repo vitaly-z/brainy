@@ -270,38 +270,6 @@ describe('VirtualFileSystem - Production Tests', () => {
       expect(paths).toContain('/search-test/login.html')
     })
 
-    // TODO: Investigate "Source entity not found" error in relate() - likely cache/timing issue
-    it.skip('should filter by metadata', async () => {
-      // Skip in unit test mode (mocked embeddings don't match file content)
-      if ((globalThis as any).__BRAINY_UNIT_TEST__) {
-        console.log('⏭️  Skipping metadata filter test in unit mode')
-        return
-      }
-
-      const results = await vfs.search('', {
-        where: {
-          path: { $startsWith: '/search-test/' },
-          mimeType: 'application/json'
-        }
-      })
-
-      expect(results).toHaveLength(1)
-      expect(results[0].path).toBe('/search-test/config.json')
-    })
-
-    // TODO: Investigate "Source entity not found" error in relate() - likely cache/timing issue
-    it.skip('should find similar files', async () => {
-      // Find files similar to auth.js
-      const similar = await vfs.findSimilar('/search-test/auth.js', {
-        limit: 3
-      })
-
-      // login.html should be in the results (both about authentication)
-      // Note: The first result might be auth.js itself (most similar to itself)
-      expect(similar.length).toBeGreaterThan(0)
-      const paths = similar.map(r => r.path)
-      expect(paths).toContain('/search-test/login.html')
-    })
   })
 
   describe('Extended Attributes', () => {

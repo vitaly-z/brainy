@@ -151,6 +151,15 @@ export class EntityIdMapper {
   }
 
   /**
+   * Get all mapped integer IDs without storage reads.
+   * Used for bitmap negation operations (ne, exists:false, missing:true)
+   * to avoid full-table getAllIds() scans.
+   */
+  getAllIntIds(): number[] {
+    return Array.from(this.intToUuid.keys())
+  }
+
+  /**
    * Convert array of UUIDs to array of integers
    */
   uuidsToInts(uuids: string[]): number[] {

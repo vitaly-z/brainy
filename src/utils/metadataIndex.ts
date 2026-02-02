@@ -56,6 +56,10 @@ export interface MetadataIndexConfig {
   excludeFields?: string[] // Never index these fields
 }
 
+export interface MetadataIndexOptions {
+  entityIdMapper?: EntityIdMapper // Optional pre-configured EntityIdMapper (e.g., native from cortex)
+}
+
 /**
  * Manages metadata indexes for fast filtering
  * Maintains inverted indexes: field+value -> list of IDs
@@ -143,7 +147,7 @@ export class MetadataIndexManager {
   // Replaces unreliable pattern matching with DuckDB-inspired value analysis
   private fieldTypeInference: FieldTypeInference
 
-  constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}) {
+  constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}, options: MetadataIndexOptions = {}) {
     this.storage = storage
     this.config = {
       maxIndexSize: config.maxIndexSize ?? 10000,
@@ -185,8 +189,8 @@ export class MetadataIndexManager {
     // Get global unified cache for coordinated memory management
     this.unifiedCache = getGlobalCache()
 
-    // Initialize EntityIdMapper for roaring bitmap UUID ↔ integer mapping
-    this.idMapper = new EntityIdMapper({
+    // Use injected EntityIdMapper (e.g., native from cortex) or create JS fallback
+    this.idMapper = options.entityIdMapper ?? new EntityIdMapper({
       storage,
       storageKey: 'brainy:entityIdMapper'
     })
@@ -1868,11 +1872,15 @@ export class MetadataIndexManager {
       
       if (allIds.length === 0) return []
       if (allIds.length === 1) return allIds[0]
-      
-      // Intersection of all sets
-      return allIds.reduce((intersection, currentSet) =>
-        intersection.filter(id => currentSet.includes(id))
-      )
+
+      // Set-based intersection O(n) — start with smallest set for optimal perf
+      const sorted = allIds.sort((a, b) => a.length - b.length)
+      let result = new Set(sorted[0])
+      for (let i = 1; i < sorted.length; i++) {
+        const current = new Set(sorted[i])
+        result = new Set([...result].filter(id => current.has(id)))
+      }
+      return Array.from(result)
     }
 
     if (filter.anyOf && Array.isArray(filter.anyOf)) {
@@ -1930,21 +1938,22 @@ export class MetadataIndexManager {
             // Canonical: 'ne' | Alias: 'notEquals' | Deprecated: 'isNot'
             case 'isNot':  // DEPRECATED: Use 'ne' instead
             case 'notEquals':  // Alias for 'ne'
-            case 'ne':
+            case 'ne': {
               // For notEquals, we need all IDs EXCEPT those matching the value
               // This is especially important for soft delete: deleted !== true
               // should include items without a deleted field
 
-              // First, get all IDs in the database
-              const allItemIds = await this.getAllIds()
+              // Use EntityIdMapper universe (in-memory) instead of getAllIds() storage scan
+              const allKnownIds = this.idMapper.intsIterableToUuids(this.idMapper.getAllIntIds())
 
               // Then get IDs that match the value we want to exclude
               const excludeIds = await this.getIds(field, operand)
               const excludeSet = new Set(excludeIds)
 
               // Return all IDs except those to exclude
-              fieldResults = allItemIds.filter(id => !excludeSet.has(id))
+              fieldResults = allKnownIds.filter(id => !excludeSet.has(id))
               break
+            }
 
             // ===== MULTI-VALUE OPERATORS =====
             // Canonical: 'in' | Alias: 'oneOf'
@@ -2034,8 +2043,7 @@ export class MetadataIndexManager {
                 fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
               } else {
                 // exists: false - Get all IDs that DON'T have this field
-                // Fixed excludeVFS bug (was returning empty array)
-                const allItemIds = await this.getAllIds()
+                // Uses EntityIdMapper universe (in-memory) instead of getAllIds() storage scan
                 const existsIntIds = new Set<number>()
 
                 // Get IDs that HAVE this field
@@ -2053,10 +2061,11 @@ export class MetadataIndexManager {
                   }
                 }
 
-                // Convert to UUIDs and subtract from all IDs
+                // Use EntityIdMapper universe and subtract IDs that have this field
+                const allKnownIds = this.idMapper.intsIterableToUuids(this.idMapper.getAllIntIds())
                 const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
                 const existsSet = new Set(existsUuids)
-                fieldResults = allItemIds.filter(id => !existsSet.has(id))
+                fieldResults = allKnownIds.filter(id => !existsSet.has(id))
               }
               break
 
@@ -2068,7 +2077,7 @@ export class MetadataIndexManager {
               // Added for API consistency with in-memory metadataFilter
               if (operand) {
                 // missing: true - field does NOT exist (same as exists: false)
-                const allItemIds = await this.getAllIds()
+                // Uses EntityIdMapper universe (in-memory) instead of getAllIds() storage scan
                 const existsIntIds = new Set<number>()
 
                 const sparseIndex = await this.loadSparseIndex(field)
@@ -2085,9 +2094,11 @@ export class MetadataIndexManager {
                   }
                 }
 
+                // Use EntityIdMapper universe and subtract IDs that have this field
+                const allKnownIds = this.idMapper.intsIterableToUuids(this.idMapper.getAllIntIds())
                 const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
                 const existsSet = new Set(existsUuids)
-                fieldResults = allItemIds.filter(id => !existsSet.has(id))
+                fieldResults = allKnownIds.filter(id => !existsSet.has(id))
               } else {
                 // missing: false - field DOES exist (same as exists: true)
                 const allIntIds = new Set<number>()
@@ -2126,11 +2137,15 @@ export class MetadataIndexManager {
     
     if (idSets.length === 0) return []
     if (idSets.length === 1) return idSets[0]
-    
-    // Intersection of all field criteria (implicit AND)
-    return idSets.reduce((intersection, currentSet) =>
-      intersection.filter(id => currentSet.includes(id))
-    )
+
+    // Set-based intersection O(n) — start with smallest set for optimal perf
+    const sortedSets = idSets.sort((a, b) => a.length - b.length)
+    let resultSet = new Set(sortedSets[0])
+    for (let i = 1; i < sortedSets.length; i++) {
+      const current = new Set(sortedSets[i])
+      resultSet = new Set([...resultSet].filter(id => current.has(id)))
+    }
+    return Array.from(resultSet)
   }
 
   /**
