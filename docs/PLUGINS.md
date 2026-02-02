@@ -6,10 +6,27 @@ Brainy has a plugin system that allows third-party packages to replace internal 
 
 Brainy's plugin system uses **named providers** — string keys mapped to implementations. During `init()`, brainy:
 
-1. Auto-detects installed plugin packages via dynamic `import()`
+1. Imports each package listed in the `plugins` config array
 2. Activates each plugin, passing a `BrainyPluginContext`
 3. The plugin calls `context.registerProvider(key, implementation)` for each subsystem it provides
 4. Brainy checks each provider key and wires the implementation into its internal pipeline
+
+Plugins are **opt-in** — brainy never auto-imports packages. You must explicitly list plugins in the config:
+
+```typescript
+const brain = new Brainy({
+  plugins: ['@soulcraft/cortex']  // explicitly load cortex
+})
+```
+
+| `plugins` value | Behavior |
+|---|---|
+| `undefined` (default) | No plugins loaded |
+| `false` | No plugins loaded |
+| `[]` | No plugins loaded |
+| `['@soulcraft/cortex']` | Load only the listed packages |
+
+Plugins registered programmatically via `brain.use(plugin)` are always activated regardless of the `plugins` config.
 
 If no plugin provides a given key, brainy uses its built-in JavaScript implementation. This means brainy works perfectly standalone — plugins only enhance performance or add capabilities.
 
@@ -50,7 +67,7 @@ export { default } from './plugin.js'
 
 ### 3. Registration
 
-**Auto-detection:** Brainy auto-detects plugins by package name. Pass your package name in the brainy config:
+**Config-based:** List your package name in the brainy config:
 
 ```typescript
 const brain = new Brainy({
@@ -59,14 +76,14 @@ const brain = new Brainy({
 await brain.init()
 ```
 
-**Manual registration:** For plugins not installed as npm packages:
+**Programmatic registration:** For plugins not installed as npm packages, use `brain.use()`:
 
 ```typescript
 import { Brainy } from '@soulcraft/brainy'
 import myPlugin from './my-plugin.js'
 
 const brain = new Brainy()
-brain.pluginRegistry.register(myPlugin)
+brain.use(myPlugin)
 await brain.init()
 ```
 
