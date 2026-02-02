@@ -291,15 +291,15 @@ export interface GraphVerb {
   service?: string // Multi-tenancy support - which service created this verb
 
   // Additional properties used in the codebase
-  source?: string // Alias for sourceId
-  target?: string // Alias for targetId
+  source?: string // Entity UUID (same as sourceId, for graphTypes compatibility)
+  target?: string // Entity UUID (same as targetId, for graphTypes compatibility)
   verb?: string // Alias for type
   data?: Record<string, any> // Additional flexible data storage
   embedding?: Vector // Alias for vector
 
   // Timestamp and creator properties
-  createdAt?: { seconds: number; nanoseconds: number } // When the verb was created
-  updatedAt?: { seconds: number; nanoseconds: number } // When the verb was last updated
+  createdAt?: number | { seconds: number; nanoseconds: number } // When the verb was created
+  updatedAt?: number | { seconds: number; nanoseconds: number } // When the verb was last updated
   createdBy?: { augmentation: string; version: string } // Information about what created this verb
 }
 

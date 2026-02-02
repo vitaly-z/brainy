@@ -33,12 +33,16 @@ describe('VFS restart persistence', () => {
       entityId = await brain.vfs.resolvePathToId('/chapter-1.txt')
       expect(entityId).toBeTruthy()
 
-      // Verify within same session
+      // Verify within same session — entity, readdir, and relations
       const entity1 = await brain.get(entityId!)
       expect(entity1).not.toBeNull()
 
       const entries1 = await brain.vfs.readdir('/')
       expect(entries1.length).toBeGreaterThan(0)
+
+      // In-session getRelations: root should have Contains relationship to the file
+      const relations1 = await brain.getRelations({ from: rootId, type: VerbType.Contains })
+      expect(relations1.length).toBeGreaterThan(0)
 
       await brain.close()
 
@@ -99,6 +103,10 @@ describe('VFS restart persistence', () => {
 
       const docEntries1 = await brain.vfs.readdir('/docs')
       expect(docEntries1.length).toBe(2) // guide.txt + api.txt
+
+      // In-session getRelations: root should have Contains relationships
+      const rootRelations1 = await brain.getRelations({ from: rootId, type: VerbType.Contains })
+      expect(rootRelations1.length).toBeGreaterThan(0)
 
       await brain.close()
 

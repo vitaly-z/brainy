@@ -1488,14 +1488,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         vector: relationVector,
         sourceId: params.from,
         targetId: params.to,
-        source: fromEntity.type,
-        target: toEntity.type,
+        source: params.from,
+        target: params.to,
         verb: params.type,
         type: params.type,
         weight: params.weight ?? 1.0,
-        metadata: params.metadata as any,
+        metadata: params.metadata,
         createdAt: Date.now()
-      } as any
+      }
 
       // Execute atomically with transaction system
       await this.transactionManager.executeTransaction(async (tx) => {
@@ -6694,15 +6694,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private async loadPlugins(): Promise<void> {
     // plugins config:
-    //   undefined (default) → auto-detect installed plugins
-    //   false               → no plugins, skip auto-detection
-    //   []                  → no plugins, skip auto-detection
-    //   ['@soulcraft/cortex'] → load only these, no auto-detection
+    //   undefined (default) → no auto-detection (safe default)
+    //   false               → no auto-detection
+    //   []                  → no auto-detection
+    //   ['@soulcraft/cortex'] → load only these explicitly listed packages
+    // Note: plugins registered via brain.use() are always activated regardless of config
     const pluginConfig = this.config.plugins
-    if (pluginConfig === false) {
-      // Explicitly disabled — no plugins
-    } else if (Array.isArray(pluginConfig)) {
-      // Explicit list: only register the specified packages, no auto-detection
+    if (Array.isArray(pluginConfig) && pluginConfig.length > 0) {
+      // Explicit list: import and register the specified packages
       for (const pkg of pluginConfig) {
         try {
           const mod = await import(pkg)
@@ -6714,9 +6713,6 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           // Package not found — skip
         }
       }
-    } else {
-      // Default: auto-detect known plugins
-      await this.pluginRegistry.autoDetect()
     }
 
     // Create plugin context

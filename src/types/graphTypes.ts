@@ -369,12 +369,14 @@ export interface GraphNoun {
  */
 export interface GraphVerb {
   id: string // Unique identifier for the verb
-  source: string // ID of the source noun
-  target: string // ID of the target noun
+  source: string // Entity UUID of the source noun
+  target: string // Entity UUID of the target noun
+  sourceId?: string // Alias for source (coreTypes compatibility)
+  targetId?: string // Alias for target (coreTypes compatibility)
   label?: string // Optional descriptive label
   verb: VerbType // Type of relationship
-  createdAt: Timestamp // When the verb was created
-  updatedAt: Timestamp // When the verb was last updated
+  createdAt: Timestamp | number // When the verb was created
+  updatedAt: Timestamp | number // When the verb was last updated
   createdBy: CreatorMetadata // Information about what created this verb
   service?: string // Multi-tenancy support - which service created this verb
   data?: Record<string, any> // Additional flexible data storage

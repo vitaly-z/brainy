@@ -214,7 +214,7 @@ export class PathResolver {
     try {
       // Direct O(log n) query to roaring bitmap index
       // This queries the 'path' field in VFS entity metadata
-      const ids = await metadataIndex.getIdsFromChunks('path', path)
+      const ids = await metadataIndex.getIds('path', path)
 
       if (ids.length === 0) {
         this.metadataIndexMisses++

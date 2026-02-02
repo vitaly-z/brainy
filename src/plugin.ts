@@ -84,29 +84,6 @@ export class PluginRegistry {
     this.plugins.set(plugin.name, plugin)
   }
 
-  /**
-   * Auto-detect known plugins by attempting dynamic import.
-   * Additional package names can be passed for third-party plugins.
-   */
-  async autoDetect(additionalPackages: string[] = []): Promise<void> {
-    const packages = [
-      '@soulcraft/cortex',
-      '@soulcraft/brainy-cortex',  // deprecated — backward compat
-      ...additionalPackages
-    ]
-
-    for (const pkg of packages) {
-      try {
-        const mod = await import(pkg)
-        const plugin: BrainyPlugin = mod.default || mod
-        if (plugin && typeof plugin.activate === 'function' && plugin.name) {
-          this.plugins.set(plugin.name, plugin)
-        }
-      } catch {
-        // Package not installed — skip silently
-      }
-    }
-  }
 
   /**
    * Activate all registered plugins.
