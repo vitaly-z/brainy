@@ -672,12 +672,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Add an entity to the database
    *
+   * **Data vs Metadata:**
+   * - `data`: Content used for vector embeddings. Searchable via **semantic similarity**
+   *   (HNSW vector index). NOT queryable via `where` filters. Pass a string for text
+   *   embedding, or any value for opaque storage.
+   * - `metadata`: Structured fields indexed by MetadataIndex. Queryable via `where`
+   *   filters in `find()`. Put anything you want to filter/query on here (tags,
+   *   categories, dates, flags, etc.).
+   *
    * @param params - Parameters for adding the entity
-   * @param params.data - Content to embed and store (required)
+   * @param params.data - Content to embed and store (required). Strings are auto-embedded.
    * @param params.type - NounType classification (required)
-   * @param params.metadata - Custom metadata object
-   * @param params.id - Custom ID (auto-generated if not provided)
-   * @param params.vector - Pre-computed embedding vector
+   * @param params.metadata - Custom queryable metadata (indexed, used in where filters)
+   * @param params.id - Custom ID (auto-generated UUID if not provided)
+   * @param params.vector - Pre-computed embedding vector (skips auto-embedding)
    * @param params.service - Service name for multi-tenancy
    * @param params.confidence - Type classification confidence (0-1)
    * @param params.weight - Entity importance/salience (0-1)
@@ -756,16 +764,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       )
     }
 
-    // Prepare metadata for storage (backward compat format - unchanged)
+    // Prepare metadata for storage
+      // data is stored opaquely in the 'data' field - NOT spread into top-level metadata.
+      // Only metadata fields are queryable via find({ where }).
       const storageMetadata = {
-        ...(typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data) ? params.data : {}),
         ...params.metadata,
-        data: params.data, // Store the raw data in metadata
+        data: params.data,
         noun: params.type,
         service: params.service,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        // Preserve confidence and weight if provided
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
         ...(params.createdBy && { createdBy: params.createdBy })
@@ -1138,7 +1146,54 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Update an entity
+   * Update an existing entity
+   *
+   * Merges metadata by default — new fields are added, existing fields are overwritten,
+   * and omitted fields are preserved. Set `merge: false` to replace metadata entirely.
+   * If `data` is provided, the entity is re-embedded and re-indexed in HNSW.
+   *
+   * **Data vs Metadata:**
+   * - `data`: Content used for vector embeddings (searchable via semantic similarity / HNSW).
+   *   NOT queryable via `where` filters. Pass a string for text search, or any value for storage.
+   * - `metadata`: Structured fields indexed by MetadataIndex. Queryable via `where` filters
+   *   in `find()`. Put anything you want to filter/query on here.
+   *
+   * @param params - Update parameters
+   * @param params.id - UUID of the entity to update (required)
+   * @param params.data - New content to re-embed (triggers HNSW re-indexing)
+   * @param params.type - Change entity type classification
+   * @param params.metadata - Metadata fields to merge (or replace if merge=false)
+   * @param params.merge - If true (default), merges metadata; if false, replaces it entirely
+   * @param params.vector - Pre-computed vector (skips embedding)
+   * @param params.confidence - Update type classification confidence (0-1)
+   * @param params.weight - Update entity importance/salience (0-1)
+   *
+   * @example Update metadata (merge by default)
+   * ```typescript
+   * await brain.update({
+   *   id: entityId,
+   *   metadata: { status: 'reviewed', rating: 4.5 }
+   *   // Existing metadata fields preserved, only status and rating changed
+   * })
+   * ```
+   *
+   * @example Update data (re-embeds and re-indexes)
+   * ```typescript
+   * await brain.update({
+   *   id: entityId,
+   *   data: 'Updated description of the concept'
+   *   // Vector is recomputed, HNSW index updated
+   * })
+   * ```
+   *
+   * @example Replace metadata entirely
+   * ```typescript
+   * await brain.update({
+   *   id: entityId,
+   *   metadata: { onlyThisField: true },
+   *   merge: false  // All previous metadata removed
+   * })
+   * ```
    */
   async update(params: UpdateParams<T>): Promise<void> {
     await this.ensureInitialized()
@@ -1168,16 +1223,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ? { ...existing.metadata, ...params.metadata }
         : params.metadata || existing.metadata
 
-      // Merge data objects if both old and new are objects
-      const dataFields = typeof params.data === 'object' && params.data !== null && !Array.isArray(params.data)
-        ? params.data
-        : {}
-
-      // Prepare updated metadata object with data field
+      // Prepare updated metadata object
+      // data is stored opaquely in the 'data' field - NOT spread into top-level metadata.
       const updatedMetadata = {
         ...newMetadata,
-        ...dataFields,
-        data: params.data !== undefined ? params.data : existing.data, // Store data field
+        data: params.data !== undefined ? params.data : existing.data,
         noun: params.type || existing.type,
         service: existing.service,
         createdAt: existing.createdAt,
@@ -1269,7 +1319,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Delete an entity
+   * Delete an entity and all its relationships
+   *
+   * Removes the entity from all indexes (HNSW vector index, MetadataIndex,
+   * GraphAdjacencyIndex) and deletes all relationships where this entity
+   * is the source or target. All operations are executed atomically.
+   *
+   * @param id - UUID of the entity to delete. Silently returns for invalid/null IDs.
+   *
+   * @example
+   * ```typescript
+   * await brain.delete(entityId)
+   * const entity = await brain.get(entityId) // null
+   * ```
    */
   async delete(id: string): Promise<void> {
     // Handle invalid IDs gracefully
@@ -1324,9 +1386,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   // ============= RELATIONSHIP OPERATIONS =============
 
   /**
-   * Create a relationship between entities
+   * Create a relationship (verb) between two entities
+   *
+   * Relationships connect entities with typed edges. Duplicate relationships
+   * (same from, to, and type) are detected and return the existing ID.
+   *
+   * **Data vs Metadata (on relationships):**
+   * - `data`: Opaque content stored on the relationship (e.g., a description or
+   *   context for the edge). Overrides the auto-computed vector for this verb.
+   * - `metadata`: Structured queryable fields on the edge (e.g., role, startDate).
    *
    * @param params - Parameters for creating the relationship
+   * @param params.from - Source entity ID (required)
+   * @param params.to - Target entity ID (required)
+   * @param params.type - VerbType classification (required)
+   * @param params.weight - Connection strength 0-1 (default: 1.0)
+   * @param params.data - Content for the relationship (optional, overrides auto-computed vector)
+   * @param params.metadata - Structured queryable fields on the edge
+   * @param params.bidirectional - Create reverse edge too (default: false)
+   * @param params.service - Multi-tenancy service name
+   * @param params.confidence - Relationship certainty 0-1
+   * @param params.evidence - Why this relationship exists
    * @returns Promise that resolves to the relationship ID
    *
    * @example
@@ -1474,12 +1554,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     )
 
     // Prepare verb metadata
-      // CRITICAL: Include verb type in metadata for count tracking
+      // User metadata spread FIRST, then system fields ALWAYS win (prevents collision)
       const verbMetadata = {
-        verb: params.type, // Store verb type for count synchronization
-        weight: params.weight ?? 1.0,
         ...(params.metadata || {}),
-        createdAt: Date.now()
+        verb: params.type,
+        weight: params.weight ?? 1.0,
+        createdAt: Date.now(),
+        ...((params as any).data !== undefined && { data: (params as any).data })
       }
 
       // Save to storage (vector and metadata separately)
@@ -1494,6 +1575,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         type: params.type,
         weight: params.weight ?? 1.0,
         metadata: params.metadata,
+        data: (params as any).data,
         createdAt: Date.now()
       }
 
@@ -1529,9 +1611,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             id: reverseId,
             sourceId: params.to,
             targetId: params.from,
-            source: toEntity.type,
-            target: fromEntity.type
-          } as any
+            source: params.to,
+            target: params.from
+          }
 
           // Operation 4: Save reverse verb vector data
           tx.addOperation(
@@ -1561,7 +1643,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Delete a relationship
+   * Delete a relationship (verb) by its ID
+   *
+   * Removes the relationship from the GraphAdjacencyIndex and deletes
+   * the verb metadata from storage. Executed atomically.
+   *
+   * @param id - UUID of the relationship to delete
+   *
+   * @example
+   * ```typescript
+   * const relId = await brain.relate({
+   *   from: personId, to: projectId, type: VerbType.WorksOn
+   * })
+   * await brain.unrelate(relId) // Relationship removed
+   * ```
    */
   async unrelate(id: string): Promise<void> {
     await this.ensureInitialized()
@@ -1677,6 +1772,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   /**
    * Unified find method - supports natural language and structured queries
    * Implements Triple Intelligence with parallel search optimization
+   *
+   * Combines three search dimensions in one query:
+   * - **Vector (semantic):** `query` string is embedded and matched via HNSW similarity
+   * - **Metadata:** `where` filters query the MetadataIndex (exact/range/set operators)
+   * - **Graph:** `connected` traverses relationships via GraphAdjacencyIndex
+   *
+   * `data` is searchable via semantic/hybrid vector search (the `query` parameter).
+   * `metadata` is searchable via structured `where` filters.
+   * `type` in FindParams is an alias for filtering by `where.noun` (entity type).
    *
    * @param query - Natural language string or structured FindParams object
    * @returns Promise that resolves to array of search results with scores
@@ -1882,7 +1986,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if (!hasVectorSearchCriteria && !hasGraphCriteria && hasFilterCriteria) {
         // Build filter for metadata index
         let filter: any = {}
-        if (params.where) Object.assign(filter, params.where)
+        if (params.where) {
+          Object.assign(filter, params.where)
+          // Alias: where.type → where.noun (storage field name for entity type)
+          if ('type' in filter && !('noun' in filter)) {
+            filter.noun = filter.type
+            delete filter.type
+          }
+        }
         if (params.service) filter.service = params.service
 
         if (params.type) {
@@ -1998,7 +2109,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       if (params.where || params.type || params.service || params.excludeVFS) {
         preResolvedFilter = {}
-        if (params.where) Object.assign(preResolvedFilter, params.where)
+        if (params.where) {
+          Object.assign(preResolvedFilter, params.where)
+          // Alias: where.type → where.noun (storage field name for entity type)
+          if ('type' in preResolvedFilter && !('noun' in preResolvedFilter)) {
+            preResolvedFilter.noun = preResolvedFilter.type
+            delete preResolvedFilter.type
+          }
+        }
         if (params.service) preResolvedFilter.service = params.service
         if (params.excludeVFS === true) {
           preResolvedFilter.vfsType = { exists: false }
@@ -2386,11 +2504,32 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   // ============= BATCH OPERATIONS =============
 
   /**
-   * Add multiple entities
+   * Add multiple entities in a single batch operation
    *
-   * Performance optimization: Uses batch embedding (embedBatch) to pre-compute
-   * all vectors in a single WASM forward pass instead of N individual embed() calls.
-   * This provides 5-10x speedup on bulk inserts.
+   * Uses batch embedding (embedBatch) to pre-compute all vectors in a single
+   * WASM forward pass instead of N individual embed() calls, providing 5-10x
+   * speedup on bulk inserts. Automatically adapts batch size and parallelism
+   * to the storage adapter (e.g., smaller batches for cloud storage).
+   *
+   * @param params - Batch add parameters
+   * @param params.items - Array of AddParams (same shape as brain.add())
+   * @param params.parallel - Process in parallel (default: true, auto-adapts per storage)
+   * @param params.chunkSize - Batch size per storage round-trip (default: auto from storage)
+   * @param params.onProgress - Callback: (completed, total) => void
+   * @param params.continueOnError - If true, skip failed items instead of aborting
+   * @returns BatchResult with successful (string[] of IDs), failed, total, duration
+   *
+   * @example
+   * ```typescript
+   * const result = await brain.addMany({
+   *   items: [
+   *     { data: 'First entity', type: NounType.Document, metadata: { priority: 1 } },
+   *     { data: 'Second entity', type: NounType.Concept }
+   *   ],
+   *   onProgress: (done, total) => console.log(`${done}/${total}`)
+   * })
+   * console.log(`Added ${result.successful.length}, failed ${result.failed.length}`)
+   * ```
    */
   async addMany(params: AddManyParams<T>): Promise<BatchResult<string>> {
     await this.ensureInitialized()
@@ -2682,7 +2821,28 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Create multiple relationships with batch processing
+   * Create multiple relationships in a single batch operation
+   *
+   * Automatically adapts batch size and parallelism to the storage adapter.
+   * Duplicate relationships are detected and deduplicated per relate().
+   *
+   * @param params - Batch relate parameters
+   * @param params.items - Array of RelateParams (same shape as brain.relate())
+   * @param params.parallel - Process in parallel (default: true, auto-adapts per storage)
+   * @param params.chunkSize - Batch size per storage round-trip (default: auto from storage)
+   * @param params.onProgress - Callback: (completed, total) => void
+   * @param params.continueOnError - If true, skip failed items instead of aborting
+   * @returns Array of relationship IDs (string[])
+   *
+   * @example
+   * ```typescript
+   * const ids = await brain.relateMany({
+   *   items: [
+   *     { from: id1, to: id2, type: VerbType.RelatedTo },
+   *     { from: id1, to: id3, type: VerbType.Contains, data: 'section content' }
+   *   ]
+   * })
+   * ```
    */
   async relateMany(params: RelateManyParams<T>): Promise<string[]> {
     await this.ensureInitialized()
@@ -4436,7 +4596,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // For complex queries, use metadata index for efficient counting
         if (params.where || params.service) {
           let filter: any = {}
-          if (params.where) Object.assign(filter, params.where)
+          if (params.where) {
+            Object.assign(filter, params.where)
+            // Alias: where.type → where.noun (storage field name for entity type)
+            if ('type' in filter && !('noun' in filter)) {
+              filter.noun = filter.type
+              delete filter.type
+            }
+          }
           if (params.service) filter.service = params.service
           if (params.type) {
             const types = Array.isArray(params.type) ? params.type : [params.type]
@@ -4494,7 +4661,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (filter?.type || filter?.where || filter?.service) {
           // Use MetadataIndexManager for efficient filtered streaming
           let filterObj: any = {}
-          if (filter.where) Object.assign(filterObj, filter.where)
+          if (filter.where) {
+            Object.assign(filterObj, filter.where)
+            // Alias: where.type → where.noun (storage field name for entity type)
+            if ('type' in filterObj && !('noun' in filterObj)) {
+              filterObj.noun = filterObj.type
+              delete filterObj.type
+            }
+          }
           if (filter.service) filterObj.service = filter.service
           if (filter.type) {
             const types = Array.isArray(filter.type) ? filter.type : [filter.type]
@@ -6011,7 +6185,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       from: v.sourceId,
       to: v.targetId,
       type: (v.verb || v.type) as VerbType,
-      weight: v.weight ?? 1.0, // Weight is at top-level
+      weight: v.weight ?? 1.0,
+      data: v.data,
       metadata: v.metadata,
       service: v.service as string,
       createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()

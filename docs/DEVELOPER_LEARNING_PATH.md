@@ -1220,7 +1220,7 @@ const brain = new Brainy({ verbose: true })
 
 #### Resources
 
-- 📚 [API Reference](../API_REFERENCE.md) - Complete API documentation
+- 📚 [API Reference](../api/README.md) - Complete API documentation
 - 📁 [VFS Guide](../vfs/VFS_API_GUIDE.md) - Virtual Filesystem deep dive
 - 🤖 [Neural API](../guides/neural-api.md) - Advanced neural operations
 - 🌐 [Distributed Guide](../guides/distributed-system.md) - Planet-scale architecture

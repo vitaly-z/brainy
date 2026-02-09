@@ -10,39 +10,72 @@ import { NounType, VerbType } from './graphTypes.js'
 // ============= Core Types =============
 
 /**
- * Entity representation (replaces GraphNoun)
+ * Entity (Noun) — the fundamental data unit in Brainy
+ *
+ * **Data vs Metadata:**
+ * - `data`: Content used for vector embeddings. Searchable via **semantic similarity**
+ *   (HNSW index) and hybrid text+semantic search. NOT queryable via `where` filters.
+ * - `metadata`: Structured fields indexed by MetadataIndex. Queryable via `where`
+ *   filters in `find()`. Standard system fields (noun, createdAt, etc.) are stored
+ *   alongside user metadata but extracted to top-level Entity fields on read.
  */
 export interface Entity<T = any> {
+  /** Unique identifier (UUID v4) */
   id: string
+  /** Embedding vector (384-dim by default). Empty array when loaded without includeVectors. */
   vector: Vector
+  /** Entity type classification (NounType enum) */
   type: NounType
+  /** Opaque content — used for embeddings and semantic search. Not indexed by MetadataIndex. */
   data?: any
+  /** User-defined structured fields — indexed and queryable via `where` filters. */
   metadata?: T
+  /** Multi-tenancy service identifier */
   service?: string
+  /** Creation timestamp (ms since epoch) */
   createdAt: number
+  /** Last update timestamp (ms since epoch) */
   updatedAt?: number
+  /** Source that created this entity (e.g., augmentation info) */
   createdBy?: string
-  confidence?: number  // Type classification confidence (0-1)
-  weight?: number      // Entity importance/salience (0-1)
+  /** Type classification confidence (0-1) */
+  confidence?: number
+  /** Entity importance/salience (0-1) */
+  weight?: number
 }
 
 /**
- * Relation representation (replaces GraphVerb)
- * Enhanced with confidence scoring and evidence tracking
+ * Relation (Verb) — a typed edge connecting two entities
+ *
+ * **Data vs Metadata (on relationships):**
+ * - `data`: Opaque content stored on the relationship. If provided during relate(),
+ *   overrides the auto-computed vector (default: average of source+target vectors).
+ * - `metadata`: Structured queryable fields on the edge (e.g., role, startDate).
  */
 export interface Relation<T = any> {
+  /** Unique identifier (UUID v4) */
   id: string
+  /** Source entity ID */
   from: string
+  /** Target entity ID */
   to: string
+  /** Relationship type classification (VerbType enum) */
   type: VerbType
+  /** Connection strength (0-1, default: 1.0) */
   weight?: number
+  /** Opaque content for the relationship (overrides auto-computed vector if provided) */
+  data?: any
+  /** User-defined structured fields on the edge */
   metadata?: T
+  /** Multi-tenancy service identifier */
   service?: string
+  /** Creation timestamp (ms since epoch) */
   createdAt: number
+  /** Last update timestamp (ms since epoch) */
   updatedAt?: number
-
-  // NEW: Confidence and evidence (optional for backward compatibility)
-  confidence?: number  // 0-1 score indicating relationship certainty
+  /** Relationship certainty (0-1) */
+  confidence?: number
+  /** Evidence for why this relationship was detected */
   evidence?: RelationEvidence
 }
 
@@ -106,17 +139,31 @@ export interface ScoreExplanation {
 
 /**
  * Parameters for adding entities
+ *
+ * **Data vs Metadata:**
+ * - `data` is embedded into a vector and searchable via semantic similarity (HNSW).
+ *   It is NOT indexed by MetadataIndex and NOT queryable via `where` filters.
+ * - `metadata` is indexed by MetadataIndex and queryable via `where` filters in `find()`.
  */
 export interface AddParams<T = any> {
-  data: any | Vector           // Content to embed or pre-computed vector
-  type: NounType               // Entity type from enum
-  metadata?: T                 // Optional metadata
-  id?: string                  // Optional custom ID
-  vector?: Vector              // Pre-computed vector (skip embedding)
-  service?: string             // Multi-tenancy support
-  confidence?: number          // Type classification confidence (0-1)
-  weight?: number              // Entity importance/salience (0-1)
-  createdBy?: { augmentation: string; version: string }  // Track entity source
+  /** Content to embed and store. Strings are auto-embedded; objects are JSON-stringified for embedding. */
+  data: any | Vector
+  /** Entity type classification (required) */
+  type: NounType
+  /** Structured queryable fields — indexed by MetadataIndex, used in `where` filters */
+  metadata?: T
+  /** Custom entity ID (auto-generated UUID v4 if not provided) */
+  id?: string
+  /** Pre-computed embedding vector (skips auto-embedding when provided) */
+  vector?: Vector
+  /** Multi-tenancy service identifier */
+  service?: string
+  /** Type classification confidence (0-1) */
+  confidence?: number
+  /** Entity importance/salience (0-1) */
+  weight?: number
+  /** Track which augmentation created this entity */
+  createdBy?: { augmentation: string; version: string }
 }
 
 /**
@@ -135,20 +182,33 @@ export interface UpdateParams<T = any> {
 
 /**
  * Parameters for creating relationships
- * Enhanced with confidence scoring and evidence tracking
+ *
+ * **Data vs Metadata (on relationships):**
+ * - `data`: Opaque content for the edge. If provided, overrides the auto-computed
+ *   vector (default: average of source+target entity vectors).
+ * - `metadata`: Structured queryable fields on the edge.
  */
 export interface RelateParams<T = any> {
-  from: string                // Source entity ID
-  to: string                  // Target entity ID
-  type: VerbType             // Relationship type from enum
-  weight?: number            // Connection strength (0-1, default: 1)
-  metadata?: T               // Edge metadata
-  bidirectional?: boolean    // Create reverse edge too
-  service?: string           // Multi-tenancy
-
-  // NEW: Confidence and evidence (optional)
-  confidence?: number        // Relationship certainty (0-1)
-  evidence?: RelationEvidence  // Why this relationship exists
+  /** Source entity ID (required — must exist) */
+  from: string
+  /** Target entity ID (required — must exist) */
+  to: string
+  /** Relationship type classification (required) */
+  type: VerbType
+  /** Connection strength (0-1, default: 1.0) */
+  weight?: number
+  /** Content for the relationship (optional — overrides auto-computed vector) */
+  data?: any
+  /** Structured queryable fields on the edge */
+  metadata?: T
+  /** Create reverse edge too (default: false) */
+  bidirectional?: boolean
+  /** Multi-tenancy service identifier */
+  service?: string
+  /** Relationship certainty (0-1) */
+  confidence?: number
+  /** Evidence for why this relationship exists */
+  evidence?: RelationEvidence
 }
 
 /**
@@ -157,6 +217,7 @@ export interface RelateParams<T = any> {
 export interface UpdateRelationParams<T = any> {
   id: string                 // Relation to update
   weight?: number            // New weight
+  data?: any                 // New content
   metadata?: Partial<T>      // Metadata to update
   merge?: boolean            // Merge or replace metadata
 }
@@ -164,16 +225,27 @@ export interface UpdateRelationParams<T = any> {
 // ============= Query Parameters =============
 
 /**
- * Unified find parameters - Triple Intelligence
+ * Unified find parameters — Triple Intelligence search
+ *
+ * Combines three search dimensions in one query:
+ * - **Vector:** `query` or `vector` for semantic/hybrid similarity search (searches `data`)
+ * - **Metadata:** `where` for structured field filters (queries `metadata` via MetadataIndex)
+ * - **Graph:** `connected` for relationship traversal (via GraphAdjacencyIndex)
+ *
+ * See also: [Query Operators](../../docs/QUERY_OPERATORS.md) for all `where` operators.
  */
 export interface FindParams<T = any> {
   // Vector Intelligence
-  query?: string             // Natural language or semantic search
-  vector?: Vector            // Direct vector search
-  
+  /** Natural language or semantic search query (embedded and matched via HNSW + text index) */
+  query?: string
+  /** Direct vector search (pre-computed embedding) */
+  vector?: Vector
+
   // Metadata Intelligence
-  type?: NounType | NounType[]  // Filter by entity type(s)
-  where?: Partial<T>         // Metadata filters
+  /** Filter by entity type(s). Alias for `where.noun`. */
+  type?: NounType | NounType[]
+  /** Metadata filters using BFO operators (e.g., `{ year: { greaterThan: 2020 } }`) */
+  where?: Partial<T>
   
   // Graph Intelligence
   connected?: GraphConstraints

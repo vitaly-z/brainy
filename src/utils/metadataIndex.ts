@@ -21,7 +21,8 @@ import {
   AdaptiveChunkingStrategy,
   ChunkData,
   ChunkDescriptor,
-  ZoneMap
+  ZoneMap,
+  compareNormalizedValues
 } from './metadataIndexChunking.js'
 import { EntityIdMapper } from './entityIdMapper.js'
 import { RoaringBitmap32, roaringLibraryInitialize } from './roaring/index.js'
@@ -852,15 +853,18 @@ export class MetadataIndexManager {
       const chunk = await this.chunkManager.loadChunk(field, chunkId)
       if (chunk) {
         for (const [value, bitmap] of chunk.entries) {
-          // Check if value is in range (both value and normalized bounds are now bucketed)
+          // Check if value is in range using numeric-aware comparison
+          // (normalizeValue converts numbers to strings, so we must compare numerically)
           let inRange = true
 
           if (normalizedMin !== undefined) {
-            inRange = inRange && (includeMin ? value >= normalizedMin : value > normalizedMin)
+            const cmp = compareNormalizedValues(value, normalizedMin)
+            inRange = inRange && (includeMin ? cmp >= 0 : cmp > 0)
           }
 
           if (normalizedMax !== undefined) {
-            inRange = inRange && (includeMax ? value <= normalizedMax : value < normalizedMax)
+            const cmp = compareNormalizedValues(value, normalizedMax)
+            inRange = inRange && (includeMax ? cmp <= 0 : cmp < 0)
           }
 
           if (inRange) {

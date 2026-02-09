@@ -26,6 +26,31 @@ import { RoaringBitmap32 } from './roaring/index.js'
 import type { EntityIdMapper } from './entityIdMapper.js'
 
 // ============================================================================
+// Numeric-Aware Comparison
+// ============================================================================
+
+/**
+ * Compare two normalized string values with numeric awareness.
+ * Since normalizeValue() converts numbers to strings (e.g., 50 → "50"),
+ * plain string comparison breaks numeric ordering ("50" > "100" is true
+ * lexicographically but wrong numerically). This function detects when
+ * both values are numeric strings and compares them as numbers.
+ *
+ * @returns negative if a < b, 0 if equal, positive if a > b
+ */
+export function compareNormalizedValues(a: string, b: string): number {
+  const numA = Number(a)
+  const numB = Number(b)
+  if (!isNaN(numA) && !isNaN(numB) && a !== '' && b !== '') {
+    return numA - numB
+  }
+  // Fall back to string comparison for non-numeric values
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
+// ============================================================================
 // Core Data Structures
 // ============================================================================
 
@@ -350,15 +375,10 @@ export class SparseIndex {
       return zoneMap.hasNulls
     }
 
-    // Handle different types
-    if (typeof value === 'number') {
-      return value >= zoneMap.min && value <= zoneMap.max
-    } else if (typeof value === 'string') {
-      return value >= zoneMap.min && value <= zoneMap.max
-    } else {
-      // For other types, conservatively check
-      return true
-    }
+    const strValue = String(value)
+    const strMin = String(zoneMap.min)
+    const strMax = String(zoneMap.max)
+    return compareNormalizedValues(strValue, strMin) >= 0 && compareNormalizedValues(strValue, strMax) <= 0
   }
 
   /**
@@ -375,16 +395,19 @@ export class SparseIndex {
       return true
     }
 
-    // Check overlap
+    // Check overlap using numeric-aware comparison
+    const strZoneMin = String(zoneMap.min)
+    const strZoneMax = String(zoneMap.max)
+
     if (min !== undefined && max !== undefined) {
       // Range: [min, max] overlaps with [zoneMin, zoneMax]
-      return !(max < zoneMap.min || min > zoneMap.max)
+      return !(compareNormalizedValues(String(max), strZoneMin) < 0 || compareNormalizedValues(String(min), strZoneMax) > 0)
     } else if (min !== undefined) {
       // >= min
-      return zoneMap.max >= min
+      return compareNormalizedValues(strZoneMax, String(min)) >= 0
     } else if (max !== undefined) {
       // <= max
-      return zoneMap.min <= max
+      return compareNormalizedValues(strZoneMin, String(max)) <= 0
     }
 
     return true
@@ -454,13 +477,7 @@ export class SparseIndex {
    */
   private sortChunks(): void {
     this.data.chunks.sort((a, b) => {
-      // Handle different types
-      if (typeof a.zoneMap.min === 'number' && typeof b.zoneMap.min === 'number') {
-        return a.zoneMap.min - b.zoneMap.min
-      } else if (typeof a.zoneMap.min === 'string' && typeof b.zoneMap.min === 'string') {
-        return a.zoneMap.min.localeCompare(b.zoneMap.min)
-      }
-      return 0
+      return compareNormalizedValues(String(a.zoneMap.min), String(b.zoneMap.min))
     })
   }
 
@@ -716,8 +733,8 @@ export class ChunkManager {
       if (value === '__NULL__' || value === null || value === undefined) {
         hasNulls = true
       } else {
-        if (value < min) min = value
-        if (value > max) max = value
+        if (compareNormalizedValues(value, min) < 0) min = value
+        if (compareNormalizedValues(value, max) > 0) max = value
       }
 
       // Get count from roaring bitmap

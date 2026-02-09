@@ -49,7 +49,13 @@ await brain.versions.save(id, { tag: 'v2.0' })
 Semantic vectors with metadata and relationships - the fundamental data unit in Brainy.
 
 ### 🔗 Relationships (Verbs)
-Typed connections between entities - building knowledge graphs.
+Typed connections between entities with optional `data` and `metadata` - building knowledge graphs.
+
+### 📊 Data vs Metadata
+- **`data`**: Content embedded into vectors. Searchable via **semantic similarity** (HNSW) and **hybrid text+semantic** search. NOT queryable via `where` filters.
+- **`metadata`**: Structured fields indexed by MetadataIndex. Queryable via `where` filters in `find()`.
+
+See **[Data Model](../DATA_MODEL.md)** for the full explanation.
 
 ### 🧠 Triple Intelligence
 Vector search + Graph traversal + Metadata filtering in one unified query.
@@ -99,9 +105,15 @@ const id = await brain.add({
 ```
 
 **Parameters:**
-- `data`: `string | number[]` - Text (auto-embeds) or vector
+- `data`: `string | number[]` - Content to embed (text auto-embeds) or pre-computed vector
 - `type`: `NounType` - Entity type (required)
-- `metadata?`: `object` - Additional metadata
+- `metadata?`: `object` - Structured queryable fields (indexed by MetadataIndex, used in `where` filters)
+- `id?`: `string` - Custom ID (auto-generated UUID if not provided)
+- `vector?`: `number[]` - Pre-computed vector (skips auto-embedding)
+- `confidence?`: `number` - Type classification confidence (0-1)
+- `weight?`: `number` - Entity importance/salience (0-1)
+
+> **`data`** is embedded into vectors for semantic search. **`metadata`** is indexed for `where` filters. See [Data Model](../DATA_MODEL.md).
 
 **Returns:** `Promise<string>` - Entity ID
 
@@ -193,21 +205,27 @@ const results = await brain.find({
  - **Advanced:** Object with vector + graph + metadata filters
 
 **FindParams:**
-- `query?`: `string` - Text for vector similarity
-- `where?`: `object` - Metadata filters (see [Query Operators](#query-operators))
+- `query?`: `string` - Text for semantic + hybrid search (searches `data` via HNSW + text index)
+- `type?`: `NounType | NounType[]` - Filter by entity type(s). Alias for `where.noun`.
+- `where?`: `object` - Metadata filters. See **[Query Operators](../QUERY_OPERATORS.md)** for all operators.
 - `connected?`: `object` - Graph traversal options
  - `to?`: `string` - Target entity ID
  - `from?`: `string` - Source entity ID
- - `type?`: `VerbType` - Relationship type
- - `depth?`: `number` - Traversal depth
+ - `via?`: `VerbType | VerbType[]` - Relationship type(s) to traverse
+ - `type?`: `VerbType | VerbType[]` - Alias for `via`
+ - `depth?`: `number` - Traversal depth (default: 1)
+ - `direction?`: `'in' | 'out' | 'both'` - Traversal direction (default: 'both')
 - `limit?`: `number` - Max results (default: 10)
 - `offset?`: `number` - Skip results
+- `orderBy?`: `string` - Field to sort by (e.g., 'createdAt', 'metadata.priority')
+- `order?`: `'asc' | 'desc'` - Sort direction (default: 'asc')
 - `searchMode?`: `'auto' | 'text' | 'semantic' | 'hybrid'` - Search strategy:
  - `'auto'` (default): Zero-config hybrid combining text + semantic search
  - `'text'`: Pure keyword/text matching
- - `'semantic'`: Pure vector similarity
+ - `'semantic'`/`'vector'`: Pure vector similarity
  - `'hybrid'`: Explicit hybrid mode
 - `hybridAlpha?`: `number` - Balance between text (0.0) and semantic (1.0) search. Auto-detected by query length if not specified.
+- `excludeVFS?`: `boolean` - Exclude VFS entities from results (default: false)
 
 **Returns:** `Promise<Result[]>` - Matching entities with scores
 
@@ -358,22 +376,28 @@ highlights.forEach(h => {
 
 ### Query Operators
 
-Brainy uses clean, readable operators:
+Brainy uses clean, readable operators (BFO — Brainy Field Operators):
 
 | Operator | Description | Example |
 |----------|-------------|---------|
-| `equals` | Exact match | `{age: {equals: 25}}` |
-| `greaterThan` | Greater than | `{age: {greaterThan: 18}}` |
-| `lessThan` | Less than | `{price: {lessThan: 100}}` |
-| `greaterEqual` | Greater or equal | `{score: {greaterEqual: 90}}` |
-| `lessEqual` | Less or equal | `{rating: {lessEqual: 3}}` |
-| `oneOf` | In array | `{color: {oneOf: ['red', 'blue']}}` |
-| `notOneOf` | Not in array | `{status: {notOneOf: ['deleted']}}` |
-| `contains` | Contains value | `{tags: {contains: 'ai'}}` |
+| `equals` / `eq` | Exact match | `{age: {equals: 25}}` |
+| `notEquals` / `ne` | Not equal | `{status: {notEquals: 'deleted'}}` |
+| `greaterThan` / `gt` | Greater than | `{age: {greaterThan: 18}}` |
+| `greaterEqual` / `gte` | Greater or equal | `{score: {greaterEqual: 90}}` |
+| `lessThan` / `lt` | Less than | `{price: {lessThan: 100}}` |
+| `lessEqual` / `lte` | Less or equal | `{rating: {lessEqual: 3}}` |
+| `between` | Inclusive range | `{year: {between: [2020, 2025]}}` |
+| `oneOf` / `in` | In array | `{color: {oneOf: ['red', 'blue']}}` |
+| `noneOf` | Not in array | `{status: {noneOf: ['deleted']}}` |
+| `contains` | Array contains value | `{tags: {contains: 'ai'}}` |
+| `exists` / `missing` | Field existence | `{email: {exists: true}}` |
 | `startsWith` | String prefix | `{name: {startsWith: 'John'}}` |
 | `endsWith` | String suffix | `{email: {endsWith: '@gmail.com'}}` |
 | `matches` | Pattern match | `{text: {matches: /^[A-Z]/}}` |
-| `between` | Range | `{year: {between: [2020, 2024]}}` |
+| `allOf` | AND combinator | `{allOf: [{active: true}, {role: 'admin'}]}` |
+| `anyOf` | OR combinator | `{anyOf: [{role: 'admin'}, {role: 'owner'}]}` |
+
+**[Complete Operator Reference →](../QUERY_OPERATORS.md)** — all operators, aliases, indexed vs in-memory support matrix, and practical examples.
 
 ---
 
@@ -388,18 +412,23 @@ const relId = await brain.relate({
  from: sourceId,
  to: targetId,
  type: VerbType.RelatedTo,
- metadata: { // Optional
- strength: 0.9,
- confidence: 0.85
+ data: 'Collaborated on the research paper',  // Optional: content for this edge
+ metadata: {    // Optional: structured edge fields
+  strength: 0.9,
+  role: 'primary author'
  }
 })
 ```
 
 **Parameters:**
-- `from`: `string` - Source entity ID
-- `to`: `string` - Target entity ID
+- `from`: `string` - Source entity ID (must exist)
+- `to`: `string` - Target entity ID (must exist)
 - `type`: `VerbType` - Relationship type
-- `metadata?`: `object` - Optional metadata
+- `data?`: `any` - Content for the relationship (overrides auto-computed vector)
+- `metadata?`: `object` - Structured edge fields
+- `weight?`: `number` - Connection strength (0-1, default: 1.0)
+- `bidirectional?`: `boolean` - Create reverse edge too (default: false)
+- `confidence?`: `number` - Relationship certainty (0-1)
 
 **Returns:** `Promise<string>` - Relationship ID
 
@@ -2153,7 +2182,10 @@ For the full taxonomy with all 169 types and their descriptions, see:
 
 ## See Also
 
+- **[Data Model](../DATA_MODEL.md)** - Entity structure, data vs metadata, storage fields
+- **[Query Operators](../QUERY_OPERATORS.md)** - All BFO operators with examples and indexed vs in-memory matrix
 - **[Triple Intelligence Architecture](../architecture/triple-intelligence.md)** - How vector + graph + document work together
+- **[Find System](../FIND_SYSTEM.md)** - Natural language find() details
 - **[VFS Quick Start](../vfs/QUICK_START.md)** - Complete VFS documentation
 - **[Import Anything Guide](../guides/import-anything.md)** - CSV, Excel, PDF, URL imports
 - **[Cloud Deployment](../deployment/CLOUD_DEPLOYMENT_GUIDE.md)** - Production deployment

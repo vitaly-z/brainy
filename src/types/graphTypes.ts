@@ -4,7 +4,7 @@
  * This module defines a comprehensive, standardized set of noun and verb types
  * that can be used to model any kind of graph, semantic network, or data model.
  *
- * **Stage 3 Coverage**: 95% domain coverage with 40 noun types and 88 verb types
+ * **Stage 3 Coverage**: 95% domain coverage with 42 noun types and 127 verb types
  *
  * ## Purpose and Design Philosophy
  *
@@ -15,7 +15,7 @@
  * - **Semantic**: Types carry meaning that can be used for reasoning and inference
  * - **Complete**: Covers foundational ontological primitives to advanced relationships
  *
- * ## Noun Types (40 Entities)
+ * ## Noun Types (42 Entities)
  *
  * Noun types represent entities in the graph and are organized into categories:
  *
@@ -91,7 +91,7 @@
  * ### Meta-Level (1)
  * - **Relationship**: Relationships as first-class entities for meta-level reasoning
  *
- * ## Verb Types (88 Relationships)
+ * ## Verb Types (127 Relationships)
  *
  * Verb types represent relationships between entities and are organized into categories:
  *
@@ -322,7 +322,7 @@
  * succeeds (use inverse of precedes), belongsTo (use inverse of owns),
  * createdBy (use inverse of creates), supervises (use inverse of reportsTo)
  *
- * **Net Change**: +9 nouns (31 → 40), +48 verbs (40 → 88) = +57 types total
+ * **Net Change**: +11 nouns (31 → 42), +87 verbs (40 → 127) = +98 types total
  * **Coverage**: 60% → 95% (Stage 3)
  */
 
@@ -369,10 +369,12 @@ export interface GraphNoun {
  */
 export interface GraphVerb {
   id: string // Unique identifier for the verb
+  /** @deprecated Use `from` (public API) or `sourceId` (storage). Will be removed in next major. */
   source: string // Entity UUID of the source noun
+  /** @deprecated Use `to` (public API) or `targetId` (storage). Will be removed in next major. */
   target: string // Entity UUID of the target noun
-  sourceId?: string // Alias for source (coreTypes compatibility)
-  targetId?: string // Alias for target (coreTypes compatibility)
+  sourceId?: string // Entity UUID of the source noun (storage convention)
+  targetId?: string // Entity UUID of the target noun (storage convention)
   label?: string // Optional descriptive label
   verb: VerbType // Type of relationship
   createdAt: Timestamp | number // When the verb was created
@@ -562,7 +564,7 @@ export interface Relationship extends GraphNoun {
 }
 
 /**
- * Defines valid noun types for graph entities (Stage 3: 40 types)
+ * Defines valid noun types for graph entities (Stage 3: 42 types)
  * Used for categorizing different types of nodes
  */
 export const NounType = {
@@ -647,7 +649,7 @@ export const NounType = {
 export type NounType = (typeof NounType)[keyof typeof NounType]
 
 /**
- * Defines valid verb types for relationships (Stage 3: 88 types)
+ * Defines valid verb types for relationships (Stage 3: 127 types)
  * Used for categorizing different types of connections
  */
 export const VerbType = {

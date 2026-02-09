@@ -290,9 +290,11 @@ export interface GraphVerb {
   metadata?: any // Optional metadata for the verb
   service?: string // Multi-tenancy support - which service created this verb
 
-  // Additional properties used in the codebase
-  source?: string // Entity UUID (same as sourceId, for graphTypes compatibility)
-  target?: string // Entity UUID (same as targetId, for graphTypes compatibility)
+  // Legacy field names (use from/to in public API, sourceId/targetId in storage)
+  /** @deprecated Use `from` (public API) or `sourceId` (storage). Will be removed in next major. */
+  source?: string // Entity UUID (same as sourceId)
+  /** @deprecated Use `to` (public API) or `targetId` (storage). Will be removed in next major. */
+  target?: string // Entity UUID (same as targetId)
   verb?: string // Alias for type
   data?: Record<string, any> // Additional flexible data storage
   embedding?: Vector // Alias for vector

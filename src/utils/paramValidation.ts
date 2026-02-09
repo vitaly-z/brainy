@@ -350,7 +350,7 @@ export function validateAddParams(params: AddParams): void {
     throw new Error(
       `Invalid NounType: '${params.type}'\n` +
       `\nValid types: ${Object.values(NounType).join(', ')}\n` +
-      `\nExample: await brain.add({ data: 'text', type: NounType.Note })`
+      `\nExample: await brain.add({ data: 'text', type: NounType.Document })`
     )
   }
   

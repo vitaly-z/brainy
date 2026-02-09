@@ -221,7 +221,7 @@ if (entity.vector.length > 0) {
 If you encounter migration issues:
 
 1. Check the [VFS Performance Guide](../vfs/VFS_PERFORMANCE.md)
-2. Review [API Reference](../API_REFERENCE.md)
+2. Review [API Reference](../api/README.md)
 3. See [Performance Documentation](../PERFORMANCE.md)
 4. File an issue: https://github.com/soulcraft/brainy/issues
 

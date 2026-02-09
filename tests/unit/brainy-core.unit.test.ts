@@ -35,35 +35,35 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
 
     it('should retrieve items with get', async () => {
       const id = await brain.add({
-        data: { name: 'Python', type: 'language', year: 1991 },
+        data: 'Python is a programming language created in 1991',
         type: NounType.Concept,
-        metadata: { category: 'programming' }
+        metadata: { name: 'Python', category: 'programming', year: 1991 }
       })
-      
+
       const retrieved = await brain.get(id)
-      
+
       expect(retrieved).toBeTruthy()
       expect(retrieved?.metadata?.name).toBe('Python')
-      expect(retrieved?.metadata?.type).toBe('language')
+      expect(retrieved?.metadata?.category).toBe('programming')
       expect(retrieved?.metadata?.year).toBe(1991)
     })
 
     it('should update items with update', async () => {
       const id = await brain.add({
-        data: { name: 'TypeScript', version: '4.0' },
+        data: 'TypeScript is a typed JavaScript superset',
         type: NounType.Concept,
-        metadata: { category: 'programming' }
+        metadata: { name: 'TypeScript', version: '4.0', category: 'programming' }
       })
-      
+
       await brain.update({
         id,
-        data: { version: '5.0', popularity: 'high' }
+        metadata: { version: '5.0', popularity: 'high' }
       })
-      
+
       const updated = await brain.get(id)
       expect(updated?.metadata?.version).toBe('5.0')
       expect(updated?.metadata?.popularity).toBe('high')
-      expect(updated?.metadata?.name).toBe('TypeScript') // Original data preserved
+      expect(updated?.metadata?.name).toBe('TypeScript') // Original metadata preserved
     })
 
     it('should delete items with delete', async () => {
@@ -245,13 +245,11 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
 
     it('should handle special characters in data', async () => {
       const id = await brain.add({
-        data: { 
-          name: 'Test with special chars: !@#$%^&*()',
-          description: 'Has "quotes" and \'apostrophes\''
-        },
-        type: NounType.Concept
+        data: 'Test with special chars: !@#$%^&*()',
+        type: NounType.Concept,
+        metadata: { name: 'Test !@#$%^&*()', description: 'Has "quotes" and \'apostrophes\'' }
       })
-      
+
       const retrieved = await brain.get(id)
       expect(retrieved?.metadata?.name).toContain('!@#$%^&*()')
     })
@@ -259,12 +257,12 @@ describe('Brainy 3.0 Core (Unit Tests)', () => {
     it('should handle very long text', async () => {
       const longText = 'x'.repeat(10000)
       const id = await brain.add({
-        data: { content: longText },
+        data: longText,
         type: NounType.Document
       })
-      
+
       const retrieved = await brain.get(id)
-      expect(retrieved?.metadata?.content).toHaveLength(10000)
+      expect(retrieved?.data).toHaveLength(10000)
     })
   })
 })
