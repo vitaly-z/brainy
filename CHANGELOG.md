@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.17.0](https://github.com/soulcraftlabs/brainy/compare/v7.16.0...v7.17.0) (2026-02-09)
+
+- feat: add migration system with error handling, validation, and enterprise hardening (39b099c)
+
+
 ### [7.16.0](https://github.com/soulcraftlabs/brainy/compare/v7.15.5...v7.16.0) (2026-02-09)
 
 - feat: enforce data/metadata separation, numeric range queries, improved docs (0ddc05a)
