@@ -52,14 +52,12 @@ temp/
 
 # Planning and instruction files
 plan.md
-CLAUDE.md
 
 # Package files
 *.tgz
 
 # Private/confidential files
 PLAN.md
-CLAUDE.md
 INTERNAL_NOTES.md
 TODO_PRIVATE.md
 *.tar.gz
@@ -81,7 +79,6 @@ models-cache/
 
 # Development planning files (not for commit)
 PLAN.md
-CLAUDE.md
 
 # Backup folders
 backup-*
