@@ -837,6 +837,11 @@ export interface BrainyConfig {
   // - false/undefined: Disable integrations (default)
   // - IntegrationsConfig: Custom configuration
   integrations?: boolean | IntegrationsConfig
+
+  // Migration configuration
+  // - false/undefined (default): Log warning if pending migrations exist, but don't auto-run
+  // - true: Automatically run pending migrations during init() for small datasets (<10K entities)
+  autoMigrate?: boolean
 }
 
 // ============= Neural API Types =============

@@ -434,6 +434,22 @@ export class RefManager {
   }
 
   /**
+   * Update metadata on an existing ref (merge semantics).
+   *
+   * @param name - Reference name
+   * @param metadata - Metadata fields to merge into the ref
+   */
+  async updateRefMetadata(name: string, metadata: Record<string, unknown>): Promise<void> {
+    const fullName = this.normalizeRefName(name)
+    const ref = await this.getRef(fullName)
+    if (!ref) throw new Error(`Ref not found: ${fullName}`)
+    ref.metadata = { ...ref.metadata, ...metadata }
+    ref.updatedAt = Date.now()
+    await this.adapter.put(`ref:${fullName}`, Buffer.from(JSON.stringify(ref)))
+    this.cache.set(fullName, ref)
+  }
+
+  /**
    * Get commit hash for reference
    *
    * @param name - Reference name

@@ -31,6 +31,9 @@ coverage/
 # Test results
 tests/results/
 
+# Filesystem test artifacts (created by integration tests)
+test-*/
+
 # IDE files
 .vscode/
 .idea/

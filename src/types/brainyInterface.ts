@@ -10,6 +10,7 @@
 import { Vector } from '../coreTypes.js'
 import { AddParams, RelateParams, Result, Entity, FindParams, SimilarParams } from './brainy.types.js'
 import { NounType, VerbType } from './graphTypes.js'
+import type { MigrationPreview, MigrationResult, MigrateOptions } from '../migration/types.js'
 
 export interface BrainyInterface<T = unknown> {
   /**
@@ -159,4 +160,23 @@ export interface BrainyInterface<T = unknown> {
     entities: Entity<any>[]
     centroid?: number[]
   }>>
+
+  /**
+   * Run pending data migrations, or preview what would change.
+   *
+   * @param options - Pass { dryRun: true } to preview without writing
+   * @returns Migration result or preview depending on options
+   *
+   * @example
+   * ```typescript
+   * // Preview
+   * const preview = await brain.migrate({ dryRun: true })
+   * console.log(preview.affectedEntities)
+   *
+   * // Apply
+   * const result = await brain.migrate()
+   * console.log(result.backupBranch) // 'pre-migration-7.17.0'
+   * ```
+   */
+  migrate(options?: MigrateOptions): Promise<MigrationResult | MigrationPreview>
 }

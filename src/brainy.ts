@@ -88,6 +88,8 @@ import {
 import { NounType, VerbType } from './types/graphTypes.js'
 import { BrainyInterface } from './types/brainyInterface.js'
 import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
+import { MigrationRunner } from './migration/MigrationRunner.js'
+import type { MigrationPreview, MigrationResult, MigrateOptions } from './migration/types.js'
 
 /**
  * Stopwords for semantic highlighting
@@ -169,6 +171,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _vfs?: VirtualFileSystem
   private _vfsInitialized = false  // Track VFS init completion separately
   private _hub?: IntegrationHub     // Integration Hub for external tools
+  private _pendingMigrationRunner?: MigrationRunner  // Deferred migration runner for large datasets
 
   // State
   private initialized = false
@@ -350,6 +353,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
+
+      // Check for pending data migrations
+      await this.checkMigrations()
 
       // Connect distributed components to storage
       await this.connectDistributedStorage()
@@ -3551,6 +3557,217 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     await refManager.deleteRef(branch)
   }
 
+  // ─── Migration API ───────────────────────────────────────────────
+
+  /**
+   * Run pending data migrations, or preview what would change.
+   *
+   * @param options - Pass { dryRun: true } to preview without writing
+   * @returns Migration result (or preview if dryRun)
+   *
+   * @example
+   * ```typescript
+   * // Preview what would change
+   * const preview = await brain.migrate({ dryRun: true })
+   * console.log(preview.affectedEntities)
+   *
+   * // Apply migrations (auto-forks a backup branch first)
+   * const result = await brain.migrate()
+   * console.log(result.backupBranch) // 'pre-migration-7.17.0'
+   *
+   * // Rollback if needed
+   * await brain.checkout('pre-migration-7.17.0')
+   * ```
+   */
+  async migrate(options?: MigrateOptions): Promise<MigrationResult | MigrationPreview> {
+    await this.ensureInitialized()
+    const runner = this._pendingMigrationRunner || new MigrationRunner(this.storage)
+
+    if (options?.dryRun) {
+      return runner.preview()
+    }
+
+    return this.migrateInternal(runner, options)
+  }
+
+  /**
+   * Check for pending migrations during init().
+   * Runs inline for small datasets if autoMigrate is enabled,
+   * otherwise logs a warning.
+   */
+  private async checkMigrations(): Promise<void> {
+    const runner = new MigrationRunner(this.storage)
+
+    if (!(await runner.hasPendingMigrations())) {
+      return
+    }
+
+    const count = await runner.pendingCount()
+
+    if (this.config.autoMigrate) {
+      // Quick entity count check to decide inline vs deferred
+      const probe = await this.storage.getNouns({ pagination: { limit: 1 } })
+      const totalEstimate = probe.totalCount ?? (probe.hasMore ? 10001 : probe.items.length)
+
+      if (totalEstimate < 10000) {
+        // Small dataset — migrate inline during init
+        await this.migrateInternal(runner)
+      } else {
+        // Large dataset — defer to explicit brain.migrate() call
+        this._pendingMigrationRunner = runner
+        if (!this.config.silent) {
+          console.log(`[brainy] ${count} pending migration(s) detected. Call brain.migrate() to apply (dataset too large for inline migration).`)
+        }
+      }
+    } else {
+      if (!this.config.silent) {
+        console.log(`[brainy] ${count} pending migration(s) available. Set autoMigrate: true or call brain.migrate() to apply.`)
+      }
+    }
+  }
+
+  /**
+   * Internal: fork backup, run migrations on current branch + all other branches.
+   *
+   * Branch strategy:
+   * - getNouns() uses listObjectsInBranch() which only returns branch-local entities
+   * - So migrating main only transforms main's entities; branch-local entities are untouched
+   * - After main, we iterate all other user branches and run the same transforms
+   * - Lightweight: just switches storage.currentBranch (no full checkout/index rebuild)
+   * - Transforms are idempotent (return null when already applied), so this is safe
+   */
+  private async migrateInternal(runner: MigrationRunner, options?: MigrateOptions): Promise<MigrationResult> {
+    // 0. Clean up old migration backup branches (by metadata tag, not name)
+    await runner.cleanupOldBackups()
+
+    // 1. Fork backup branch (uses existing COW — instant)
+    const version = runner.nextMigrationVersion()
+    const backupName = `pre-migration-${version}`
+    let backupCreated = false
+
+    try {
+      await this.fork(backupName)
+      backupCreated = true
+
+      // Tag the backup branch with metadata so we can identify it later
+      if (this.storage.refManager) {
+        await this.storage.refManager.updateRefMetadata(backupName, {
+          type: 'system:backup',
+          migrationVersion: version,
+          author: 'brainy-migration'
+        })
+      }
+    } catch {
+      // Fork may fail if COW not initialized (e.g., memory storage with no commits)
+      // Continue without backup — migrations are still safe (user can re-import)
+    }
+
+    // 2. Run migrations on current branch
+    const runResult = await runner.run({ onProgress: options?.onProgress, maxErrors: options?.maxErrors })
+
+    // 3. Migrate all other user branches (branch-local entities only)
+    //    getNouns() uses listObjectsInBranch() which only lists branch-overlay files,
+    //    so each branch iteration only touches entities written directly to that branch.
+    const branchResult = await this.migrateOtherBranches(
+      runResult.migrationsApplied,
+      backupCreated ? backupName : null,
+      options
+    )
+
+    // 4. Rebuild MetadataIndex if any entities were modified (on the current branch)
+    const totalModified = runResult.entitiesModified + branchResult.entitiesModified
+    if (totalModified > 0) {
+      await this.metadataIndex.rebuild()
+    }
+
+    // 5. Clear deferred runner
+    this._pendingMigrationRunner = undefined
+
+    return {
+      backupBranch: backupCreated ? backupName : null,
+      migrationsApplied: runResult.migrationsApplied,
+      entitiesProcessed: runResult.entitiesProcessed + branchResult.entitiesProcessed,
+      entitiesModified: totalModified,
+      errors: [...(runResult.errors || []), ...branchResult.errors]
+    }
+  }
+
+  /**
+   * Migrate branch-local entities on all non-current branches.
+   *
+   * Why this is needed: getNouns() lists entities from the branch overlay only
+   * (via listObjectsInBranch), not inherited entities. So migrating main doesn't
+   * touch entities written directly to feature branches. We iterate each branch
+   * and run the same transforms — they're idempotent, so already-migrated
+   * inherited entities return null and are skipped.
+   *
+   * Lightweight: switches storage.currentBranch directly instead of full checkout()
+   * (no index rebuild needed — migration uses storage-level methods only).
+   */
+  private async migrateOtherBranches(
+    migrationIds: string[],
+    skipBranch: string | null,
+    options?: MigrateOptions
+  ): Promise<{ entitiesProcessed: number; entitiesModified: number; errors: import('./migration/types.js').MigrationError[] }> {
+    const empty = { entitiesProcessed: 0, entitiesModified: 0, errors: [] as import('./migration/types.js').MigrationError[] }
+    if (migrationIds.length === 0) return empty
+
+    // Only if COW branching is available
+    const refManager = this.storage.refManager
+    if (!refManager) return empty
+
+    const currentBranch = this.storage.currentBranch || 'main'
+    let totalProcessed = 0
+    let totalModified = 0
+    const allErrors: import('./migration/types.js').MigrationError[] = []
+
+    try {
+      const { MIGRATIONS } = await import('./migration/migrations.js')
+      const migrationsToRun = MIGRATIONS.filter(m => migrationIds.includes(m.id))
+      if (migrationsToRun.length === 0) return empty
+
+      const refs = await refManager.listRefs()
+      const branches = refs
+        .filter(ref => ref.name.startsWith('refs/heads/'))
+        .map(ref => ({
+          name: ref.name.replace('refs/heads/', ''),
+          metadata: ref.metadata
+        }))
+
+      for (const branch of branches) {
+        // Skip current branch (already migrated above)
+        if (branch.name === currentBranch) continue
+        // Skip the backup branch we just created
+        if (branch.name === skipBranch) continue
+        // Skip system backup branches
+        if (branch.metadata?.type === 'system:backup') continue
+
+        // Switch storage to this branch (lightweight — no index rebuild)
+        this.storage.currentBranch = branch.name
+
+        // Run transforms — idempotent, so inherited entities return null and are skipped.
+        // Uses runMigrations() which bypasses the state check (state on main says "completed"
+        // but branch-local entities haven't been touched yet).
+        const branchRunner = new MigrationRunner(this.storage)
+        const result = await branchRunner.runMigrations(migrationsToRun, {
+          onProgress: options?.onProgress,
+          maxErrors: options?.maxErrors
+        })
+
+        totalProcessed += result.entitiesProcessed
+        totalModified += result.entitiesModified
+        if (result.errors.length > 0) {
+          allErrors.push(...result.errors)
+        }
+      }
+    } finally {
+      // Always restore original branch
+      this.storage.currentBranch = currentBranch
+    }
+
+    return { entitiesProcessed: totalProcessed, entitiesModified: totalModified, errors: allErrors }
+  }
+
   /**
    * Get commit history for current branch
    * @param options - History options (limit, offset, author)
@@ -6616,7 +6833,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Plugin configuration - undefined = auto-detect
       plugins: config?.plugins ?? undefined as any,
       // Integration Hub - undefined/false = disabled
-      integrations: config?.integrations ?? undefined as any
+      integrations: config?.integrations ?? undefined as any,
+      // Migration — disabled by default, opt-in for automatic migration
+      autoMigrate: config?.autoMigrate ?? false
     }
   }
 
