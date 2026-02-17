@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.18.0](https://github.com/soulcraftlabs/brainy/compare/v7.17.0...v7.18.0) (2026-02-16)
+
+- feat: add aggregation engine with incremental SUM/COUNT/AVG/MIN/MAX, GROUP BY, and time windows (f024e56)
+- docs: add Claude Code project guide and verified architecture reference (089a4d4)
+
+
 ### [7.17.0](https://github.com/soulcraftlabs/brainy/compare/v7.16.0...v7.17.0) (2026-02-09)
 
 - feat: add migration system with error handling, validation, and enterprise hardening (39b099c)
