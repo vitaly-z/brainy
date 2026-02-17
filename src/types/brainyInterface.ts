@@ -8,7 +8,7 @@
  */
 
 import { Vector } from '../coreTypes.js'
-import { AddParams, RelateParams, Result, Entity, FindParams, SimilarParams } from './brainy.types.js'
+import { AddParams, RelateParams, Result, Entity, FindParams, SimilarParams, AggregateDefinition } from './brainy.types.js'
 import { NounType, VerbType } from './graphTypes.js'
 import type { MigrationPreview, MigrationResult, MigrateOptions } from '../migration/types.js'
 
@@ -179,4 +179,18 @@ export interface BrainyInterface<T = unknown> {
    * ```
    */
   migrate(options?: MigrateOptions): Promise<MigrationResult | MigrationPreview>
+
+  /**
+   * Define a named aggregate for incremental computation
+   *
+   * @param def - Aggregate definition (name, source filter, groupBy, metrics)
+   */
+  defineAggregate(def: AggregateDefinition): void
+
+  /**
+   * Remove a named aggregate and clean up its state
+   *
+   * @param name - Name of the aggregate to remove
+   */
+  removeAggregate(name: string): void
 }

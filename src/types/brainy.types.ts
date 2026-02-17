@@ -288,6 +288,10 @@ export interface FindParams<T = any> {
   
   // Performance options
   writeOnly?: boolean        // Skip validation for high-speed ingestion
+
+  // Aggregation
+  /** Query a named aggregate definition. String shorthand or full query params. */
+  aggregate?: string | AggregateQueryParams
 }
 
 /**
@@ -679,29 +683,152 @@ export interface TraverseParams {
   limit?: number            // Max nodes to visit
 }
 
+// ============= Aggregation Engine Types =============
+
 /**
- * Aggregation parameters
+ * Supported aggregation operations
  */
-export interface AggregateParams<T = any> {
-  query?: FindParams<T>      // Base query to aggregate
-  groupBy: string | string[]  // Fields to group by
-  metrics: AggregateMetric[]  // Metrics to calculate
-  having?: any               // Post-aggregation filters
-  orderBy?: string           // Sort results
-  limit?: number             // Max groups
+export type AggregationOp = 'sum' | 'count' | 'avg' | 'min' | 'max'
+
+/**
+ * Time window granularity for GROUP BY time dimensions
+ */
+export type TimeWindowGranularity =
+  | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+  | { seconds: number }
+
+/**
+ * A GROUP BY dimension — either a plain metadata field or a time-windowed field
+ */
+export type GroupByDimension = string | { field: string; window: TimeWindowGranularity }
+
+/**
+ * Source filter for which entities feed into an aggregate
+ */
+export interface AggregateSource {
+  /** Filter by entity type(s) */
+  type?: NounType | NounType[]
+  /** Metadata filter (same syntax as find({ where })) */
+  where?: Record<string, unknown>
+  /** Multi-tenancy service filter */
+  service?: string
 }
 
 /**
- * Aggregate metrics
+ * Full aggregate definition — registered via brain.defineAggregate()
  */
-export type AggregateMetric = 
-  | 'count'
-  | 'sum'
-  | 'avg'
-  | 'min'
-  | 'max'
-  | 'stddev'
-  | { custom: string; field: string }
+export interface AggregateDefinition {
+  /** Unique name for this aggregate (used in queries) */
+  name: string
+  /** Which entities contribute to this aggregate */
+  source: AggregateSource
+  /** Dimensions to group by */
+  groupBy: GroupByDimension[]
+  /** Named metrics to compute */
+  metrics: Record<string, AggregateMetricDef>
+  /** Control materialization of results as NounType.Measurement entities */
+  materialize?: boolean | { debounceMs?: number; trackSources?: boolean }
+}
+
+/**
+ * Single metric definition within an aggregate
+ */
+export interface AggregateMetricDef {
+  /** Aggregation operation */
+  op: AggregationOp
+  /** Metadata field to aggregate (required for sum/avg/min/max; optional for count) */
+  field?: string
+}
+
+/**
+ * Internal running state for a single metric.
+ * Tracks enough to compute all operations incrementally.
+ */
+export interface MetricState {
+  sum: number
+  count: number
+  min: number
+  max: number
+}
+
+/**
+ * Internal state for one aggregate group (one combination of group key values)
+ */
+export interface AggregateGroupState {
+  /** The group key values (e.g., { category: 'food', period: '2024-01' }) */
+  groupKey: Record<string, string | number>
+  /** Running metric states keyed by metric name */
+  metrics: Record<string, MetricState>
+  /** Entity ID of the materialized Measurement entity (if materialized) */
+  materializedEntityId?: string
+  /** Timestamp of last update */
+  lastUpdated: number
+}
+
+/**
+ * Query parameters for reading aggregate results
+ */
+export interface AggregateQueryParams {
+  /** Name of the aggregate to query */
+  name: string
+  /** Filter aggregate groups by their key values */
+  where?: Record<string, unknown>
+  /** Sort by metric name or group key field */
+  orderBy?: string
+  /** Sort direction */
+  order?: 'asc' | 'desc'
+  /** Max results */
+  limit?: number
+  /** Skip N results */
+  offset?: number
+}
+
+/**
+ * A single aggregate result row
+ */
+export interface AggregateResult {
+  /** Group key values for this row */
+  groupKey: Record<string, string | number>
+  /** Computed metric values (derived from MetricState based on op) */
+  metrics: Record<string, number>
+  /** Total entity count in this group */
+  count: number
+  /** Entity ID of materialized Measurement (if materialized) */
+  entityId?: string
+}
+
+/**
+ * Provider interface for Cortex-accelerated aggregation.
+ * When registered as 'aggregation' provider, Brainy delegates to this.
+ */
+export interface AggregationProvider {
+  /** Incrementally update aggregation state when an entity changes */
+  incrementalUpdate(
+    name: string,
+    def: AggregateDefinition,
+    entity: Record<string, unknown>,
+    op: 'add' | 'update' | 'delete',
+    prev?: Record<string, unknown>
+  ): AggregateGroupState[]
+
+  /** Compute the group key for a given entity */
+  computeGroupKey(
+    entity: Record<string, unknown>,
+    groupBy: GroupByDimension[]
+  ): Record<string, string | number>
+
+  /** Rebuild an entire aggregate from scratch */
+  rebuildAggregate(
+    def: AggregateDefinition,
+    entities: Array<Record<string, unknown>>
+  ): Map<string, AggregateGroupState>
+
+  /** Query aggregate state with filtering/sorting/pagination */
+  queryAggregate(
+    state: Map<string, AggregateGroupState>,
+    params: AggregateQueryParams
+  ): AggregateResult[]
+}
 
 // ============= Configuration =============
 

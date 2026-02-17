@@ -78,6 +78,14 @@
 - BrainyMCPAdapter, MCPAugmentationToolset, BrainyMCPService
 - Model Control Protocol request/response handling
 
+### Aggregation Engine (`src/aggregation/`)
+- **AggregationIndex** (`AggregationIndex.ts`): Write-time incremental aggregation — SUM, COUNT, AVG, MIN, MAX with GROUP BY and time windows
+- **Time Windows** (`timeWindows.ts`): ISO 8601 bucketing — hour, day, week, month, quarter, year, custom intervals
+- **Materializer** (`materializer.ts`): Debounced writes of aggregate results as `NounType.Measurement` entities
+- Integrates into `brain.find({ aggregate })` for unified query API
+- Write hooks in `add()`, `update()`, `delete()` for O(1) incremental updates
+- `'aggregation'` provider key enables native plugin acceleration
+
 ### Additional Systems
 - **CLI** (`src/cli/`): Complete command-line tool with interactive mode and catalog system
 - **Migration** (`src/migration/`): MigrationRunner for database schema migrations

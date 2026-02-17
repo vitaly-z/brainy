@@ -24,6 +24,7 @@ Full architecture reference: `.claude/skills/architecture.md`
 - **Graph Engine** (`src/graph/`): Relationship traversal with adjacency index and pathfinding
 - **Metadata Index** (`src/utils/metadataIndex.ts`): O(1) exact match, O(log n) range queries
 - **Triple Intelligence** (`src/triple/`): Unified query combining all three intelligence types
+- **Aggregation Engine** (`src/aggregation/`): Write-time incremental SUM/COUNT/AVG/MIN/MAX with GROUP BY and time windows
 - **Virtual Filesystem** (`src/vfs/`): Full VFS with semantic search
 
 ### Type System

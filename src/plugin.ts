@@ -47,6 +47,7 @@ export interface BrainyPluginContext {
    * - 'embedBatch'         — Batch embedding engine (texts[] → vectors[])
    * - 'distance'           — Distance function overrides
    * - 'msgpack'            — Msgpack encode/decode
+   * - 'aggregation'        — AggregationIndex replacement (incremental aggregates)
    *
    * Storage adapter keys:
    * - 'storage:<name>'     — Custom storage adapter factory

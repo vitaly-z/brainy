@@ -90,6 +90,9 @@ import { BrainyInterface } from './types/brainyInterface.js'
 import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
 import { MigrationRunner } from './migration/MigrationRunner.js'
 import type { MigrationPreview, MigrationResult, MigrateOptions } from './migration/types.js'
+import { AggregationIndex } from './aggregation/AggregationIndex.js'
+import { AggregateMaterializer } from './aggregation/materializer.js'
+import type { AggregateDefinition, AggregateQueryParams, AggregateResult } from './types/brainy.types.js'
 
 /**
  * Stopwords for semantic highlighting
@@ -172,6 +175,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _vfsInitialized = false  // Track VFS init completion separately
   private _hub?: IntegrationHub     // Integration Hub for external tools
   private _pendingMigrationRunner?: MigrationRunner  // Deferred migration runner for large datasets
+  private _aggregationIndex?: AggregationIndex       // Incremental aggregation engine
+  private _materializer?: AggregateMaterializer      // Debounced materialization of aggregate results
 
   // State
   private initialized = false
@@ -834,6 +839,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         )
       })
 
+      // Aggregation hook (outside transaction — derived data, can be reconstructed)
+      if (this._aggregationIndex) {
+        this._aggregationIndex.onEntityAdded(id, entityForIndexing)
+      }
+
       return id
   }
 
@@ -1322,6 +1332,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           new AddToMetadataIndexOperation(this.metadataIndex, params.id, entityForIndexing)
         )
       })
+
+      // Aggregation hook (outside transaction — derived data)
+      if (this._aggregationIndex) {
+        const oldEntityForAgg = {
+          type: existing.type,
+          service: existing.service,
+          data: existing.data,
+          metadata: existing.metadata
+        }
+        this._aggregationIndex.onEntityUpdated(params.id, entityForIndexing, oldEntityForAgg)
+      }
   }
 
   /**
@@ -1387,6 +1408,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           )
         }
       })
+
+      // Aggregation hook (outside transaction — derived data)
+      if (this._aggregationIndex && metadata) {
+        // Reconstruct entity-like object from stored metadata
+        const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+        const entityForAgg = {
+          type: noun,
+          service,
+          data,
+          metadata: customMetadata
+        }
+        this._aggregationIndex.onEntityDeleted(id, entityForAgg)
+      }
   }
 
   // ============= RELATIONSHIP OPERATIONS =============
@@ -1964,6 +1998,62 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    *   excludeVFS: true  // Exclude VFS files
    * })
    */
+  // ============= AGGREGATION =============
+
+  /**
+   * Define a named aggregate for incremental computation.
+   *
+   * Aggregate definitions persist across restarts. Once defined, all matching
+   * entities (existing and future) contribute to the aggregate automatically.
+   *
+   * @param def - Aggregate definition (name, source filter, groupBy, metrics)
+   *
+   * @example
+   * ```typescript
+   * brain.defineAggregate({
+   *   name: 'monthly_spending',
+   *   source: { type: NounType.Event, where: { domain: 'financial' } },
+   *   groupBy: ['category', { field: 'date', window: 'month' }],
+   *   metrics: {
+   *     total: { op: 'sum', field: 'amount' },
+   *     count: { op: 'count' },
+   *     average: { op: 'avg', field: 'amount' }
+   *   }
+   * })
+   * ```
+   */
+  defineAggregate(def: AggregateDefinition): void {
+    this.ensureAggregationIndex()
+    this._aggregationIndex!.defineAggregate(def)
+  }
+
+  /**
+   * Remove a named aggregate and clean up its state.
+   *
+   * @param name - Name of the aggregate to remove
+   */
+  removeAggregate(name: string): void {
+    if (this._aggregationIndex) {
+      this._aggregationIndex.removeAggregate(name)
+    }
+  }
+
+  /**
+   * Lazily create the AggregationIndex on first use.
+   * Checks for a native 'aggregation' provider from plugins.
+   */
+  private ensureAggregationIndex(): void {
+    if (this._aggregationIndex) return
+
+    const nativeProvider = this.pluginRegistry.getProvider<any>('aggregation')
+    this._aggregationIndex = new AggregationIndex(this.storage, nativeProvider)
+    // Note: init() is async but definitions can be registered synchronously.
+    // State loading happens lazily on first query.
+    this._aggregationIndex.init().catch(() => {
+      // Non-fatal — aggregation state will be empty but definitions still work
+    })
+  }
+
   async find(query: string | FindParams<T>): Promise<Result<T>[]> {
     await this.ensureInitialized()
 
@@ -1977,6 +2067,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Zero-config validation (static import for performance)
     validateFindParams(params)
+
+    // Aggregate query path — early return when params.aggregate is set
+    if (params.aggregate) {
+      return this.findAggregate(params)
+    }
 
     const startTime = Date.now()
     const result = await (async () => {
@@ -7128,6 +7223,66 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Execute an aggregate query, returning results as Result<T>[] for API consistency.
+   */
+  private async findAggregate(params: FindParams<T>): Promise<Result<T>[]> {
+    if (!this._aggregationIndex) {
+      throw new Error('No aggregates defined. Call defineAggregate() first.')
+    }
+
+    // Normalize aggregate params
+    const aggParams: AggregateQueryParams = typeof params.aggregate === 'string'
+      ? { name: params.aggregate }
+      : params.aggregate as AggregateQueryParams
+
+    // Merge find-level params into aggregate query
+    if (params.where && !aggParams.where) {
+      aggParams.where = params.where as Record<string, unknown>
+    }
+    if (params.orderBy && !aggParams.orderBy) {
+      aggParams.orderBy = params.orderBy
+    }
+    if (params.order && !aggParams.order) {
+      aggParams.order = params.order
+    }
+    if (params.limit !== undefined && aggParams.limit === undefined) {
+      aggParams.limit = params.limit
+    }
+    if (params.offset !== undefined && aggParams.offset === undefined) {
+      aggParams.offset = params.offset
+    }
+
+    const aggregateResults = this._aggregationIndex.queryAggregate(aggParams)
+
+    // Convert AggregateResult[] to Result<T>[] for API consistency
+    return aggregateResults.map((agg, index) => {
+      const entity: Entity<T> = {
+        id: agg.entityId || `__agg_${aggParams.name}_${index}`,
+        vector: [],
+        type: NounType.Measurement,
+        data: `${aggParams.name}: ${Object.entries(agg.groupKey).map(([k, v]) => `${k}=${v}`).join(', ')}`,
+        metadata: {
+          ...agg.groupKey,
+          ...agg.metrics,
+          __aggregate: aggParams.name,
+          count: agg.count
+        } as T,
+        createdAt: Date.now(),
+        service: 'brainy:aggregation'
+      }
+
+      return {
+        id: entity.id,
+        score: 1.0,
+        type: NounType.Measurement,
+        metadata: entity.metadata,
+        data: entity.data,
+        entity
+      }
+    })
+  }
+
+  /**
    * Close and cleanup
    *
    * Now flushes HNSW dirty nodes before closing
@@ -7160,6 +7315,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (this.storage && typeof (this.storage as any).flushCounts === 'function') {
           await (this.storage as any).flushCounts()
         }
+      })(),
+      // Flush aggregation index state
+      (async () => {
+        if (this._aggregationIndex) {
+          await this._aggregationIndex.flush()
+        }
       })()
     ])
 
@@ -7181,6 +7342,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           await (this.metadataIndex as any).close()
         }
       })(),
+      (async () => {
+        if (this._materializer) {
+          this._materializer.close()
+        }
+      })()
     ])
 
     // Deactivate plugins (safe — all data flushed and resources released above)

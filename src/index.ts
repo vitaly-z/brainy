@@ -26,8 +26,20 @@ export type {
   AddParams,
   UpdateParams,
   RelateParams,
-  FindParams
+  FindParams,
+  AggregateDefinition,
+  AggregateMetricDef,
+  AggregateSource,
+  AggregateQueryParams,
+  AggregateResult,
+  AggregationOp,
+  TimeWindowGranularity,
+  GroupByDimension,
+  AggregationProvider
 } from './types/brainy.types.js'
+
+// Export Aggregation Engine
+export { AggregationIndex, AggregateMaterializer, bucketTimestamp, parseBucketRange } from './aggregation/index.js'
 
 // Export zero-configuration types and enums
 export {

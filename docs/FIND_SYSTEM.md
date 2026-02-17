@@ -1339,6 +1339,42 @@ await brain.find({
 - No performance penalty - same speed as any metadata filter
 - Works seamlessly with vector + metadata + graph queries
 
+## 5. Aggregate Queries
+
+The `find()` method also supports aggregate queries via the `aggregate` parameter. When set, `find()` bypasses all vector/metadata/graph search paths and returns pre-computed aggregate results from the incremental aggregation engine.
+
+```typescript
+// Define the aggregate (once — survives restarts)
+brain.defineAggregate({
+  name: 'monthly_spending',
+  source: { type: NounType.Event, where: { domain: 'financial' } },
+  groupBy: ['category', { field: 'date', window: 'month' }],
+  metrics: {
+    total: { op: 'sum', field: 'amount' },
+    count: { op: 'count' }
+  }
+})
+
+// Query it through find()
+const results = await brain.find({
+  aggregate: 'monthly_spending',
+  where: { category: 'food' },    // Filters aggregate groups (not raw entities)
+  orderBy: 'total',
+  order: 'desc',
+  limit: 12
+})
+```
+
+**Key characteristics:**
+- **O(1) read performance** — results come from running totals, no query-time computation
+- **Updated incrementally** — every `add()`, `update()`, `delete()` updates matching aggregates
+- **Same Result<T>[] format** — aggregate results are returned as `NounType.Measurement` entities
+- **Combinable with `where`/`orderBy`/`limit`/`offset`** — standard find() parameters apply to group filtering
+
+See the **[API Reference → Aggregation Engine](./api/README.md#aggregation-engine)** for the full API.
+
+---
+
 ### Migration from v4.6.x
 
 **BREAKING CHANGE**: The `includeVFS` parameter has been removed:

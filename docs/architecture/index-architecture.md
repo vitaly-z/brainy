@@ -789,7 +789,7 @@ See [initialization-and-rebuild.md](./initialization-and-rebuild.md) for detaile
 
 ## Triple Intelligence Integration
 
-The **TripleIntelligenceSystem** (`src/cortex/tripleIntelligence.ts`) combines all three core indexes:
+The **TripleIntelligenceSystem** (`src/triple/TripleIntelligenceSystem.ts`) combines all three core indexes:
 
 ```typescript
 class TripleIntelligenceSystem {

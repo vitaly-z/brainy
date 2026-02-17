@@ -72,6 +72,7 @@ Time-travel and history tracking for individual entities - Git-like version cont
 
 - [Core CRUD Operations](#core-crud-operations)
 - [Search & Query](#search--query)
+- [Aggregation Engine](#aggregation-engine)
 - [Relationships](#relationships)
 - [Batch Operations](#batch-operations)
 - [Branch Management](#branch-management)
@@ -398,6 +399,180 @@ Brainy uses clean, readable operators (BFO — Brainy Field Operators):
 | `anyOf` | OR combinator | `{anyOf: [{role: 'admin'}, {role: 'owner'}]}` |
 
 **[Complete Operator Reference →](../QUERY_OPERATORS.md)** — all operators, aliases, indexed vs in-memory support matrix, and practical examples.
+
+---
+
+## Aggregation Engine
+
+Brainy's aggregation engine maintains **incremental running totals** at write time, delivering O(1) aggregate reads regardless of dataset size. Define aggregates once, and every `add()`, `update()`, and `delete()` automatically updates the running metrics.
+
+### `defineAggregate(definition)` → `void`
+
+Register a named aggregate for incremental computation.
+
+```typescript
+brain.defineAggregate({
+  name: 'monthly_spending',
+  source: {
+    type: NounType.Event,
+    where: { domain: 'financial', subtype: 'transaction' }
+  },
+  groupBy: [
+    'category',
+    { field: 'date', window: 'month' }   // Time-windowed dimension
+  ],
+  metrics: {
+    total:   { op: 'sum', field: 'amount' },
+    count:   { op: 'count' },
+    average: { op: 'avg', field: 'amount' },
+    highest: { op: 'max', field: 'amount' },
+    lowest:  { op: 'min', field: 'amount' }
+  },
+  materialize: true   // Optional: write results as NounType.Measurement entities
+})
+```
+
+**Parameters:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Unique identifier for this aggregate |
+| `source.type` | `NounType \| NounType[]` | Entity types that feed into this aggregate |
+| `source.where` | `Record<string, unknown>` | Metadata filter (same syntax as `find({ where })`) |
+| `source.service` | `string` | Multi-tenancy filter |
+| `groupBy` | `GroupByDimension[]` | Dimensions to group by — plain field names or `{ field, window }` for time bucketing |
+| `metrics` | `Record<string, AggregateMetricDef>` | Named metrics with `op` (`sum`, `count`, `avg`, `min`, `max`) and optional `field` |
+| `materialize` | `boolean \| object` | Write results as `NounType.Measurement` entities (auto-visible in OData/Sheets/SSE) |
+
+**Time window granularities:** `'hour'`, `'day'`, `'week'`, `'month'`, `'quarter'`, `'year'`, or `{ seconds: number }` for custom intervals.
+
+### `removeAggregate(name)` → `void`
+
+Remove a named aggregate and clean up its state.
+
+```typescript
+brain.removeAggregate('monthly_spending')
+```
+
+### Querying Aggregates via `find()`
+
+Aggregate results are queried through the standard `find()` method using the `aggregate` parameter:
+
+```typescript
+// Simple: query by name
+const results = await brain.find({ aggregate: 'monthly_spending' })
+
+// With filtering on group keys
+const foodOnly = await brain.find({
+  aggregate: 'monthly_spending',
+  where: { category: 'food' }
+})
+
+// With sorting and pagination
+const topCategories = await brain.find({
+  aggregate: {
+    name: 'monthly_spending',
+    orderBy: 'total',
+    order: 'desc',
+    limit: 10
+  }
+})
+
+// Combine find-level params (where, orderBy, limit, offset merge automatically)
+const recentFood = await brain.find({
+  aggregate: 'monthly_spending',
+  where: { category: 'food' },
+  orderBy: 'total',
+  order: 'desc',
+  limit: 12
+})
+```
+
+**Result format:** Returns `Result<T>[]` with `type: NounType.Measurement`. Each result contains:
+
+```typescript
+{
+  id: string,               // Aggregate group ID (or materialized entity ID)
+  score: 1.0,               // Always 1.0 for aggregates
+  type: NounType.Measurement,
+  metadata: {
+    __aggregate: 'monthly_spending',  // Source aggregate name
+    category: 'food',                 // Group key values
+    date: '2024-01',                  // Time window bucket
+    total: 342.50,                    // Computed metrics
+    count: 28,
+    average: 12.23,
+    highest: 45.00,
+    lowest: 2.50
+  },
+  entity: Entity              // Full entity structure
+}
+```
+
+### How It Works
+
+Aggregation hooks run **outside transactions** on every write operation:
+
+- **`add()`**: If the new entity matches any aggregate's `source` filter, its values are added to the matching group's running totals.
+- **`update()`**: The old entity's contribution is reversed and the new entity's contribution is applied (handles group key changes, source filter changes).
+- **`delete()`**: The deleted entity's contribution is reversed from its group.
+
+**Performance:** O(A × G × M) per write where A = matching aggregates, G = groupBy dimensions, M = metrics. For typical configurations (2-5 aggregates, 1-3 dimensions, 3-5 metrics), this is effectively O(1) — measured at **10,000 entities in 13ms** in unit tests.
+
+**Infinite loop prevention:** Materialized `NounType.Measurement` entities (with `service: 'brainy:aggregation'` or `metadata.__aggregate`) are automatically excluded from all aggregate source matching.
+
+**Persistence:** Definitions and running state are persisted to storage on `flush()`/`close()` and reloaded on `init()`. Definition changes are detected via FNV-1a hashing — only changed aggregates reset their state.
+
+**Native acceleration:** Register an `'aggregation'` provider via the plugin system to replace the TypeScript engine with a custom native implementation for higher throughput at scale.
+
+### Financial Data Modeling
+
+Brainy supports financial analytics through **metadata conventions** on existing NounTypes — no custom types needed:
+
+```typescript
+// Transaction = NounType.Event + financial metadata
+await brain.add({
+  data: 'Coffee at Blue Bottle',
+  type: NounType.Event,
+  metadata: {
+    domain: 'financial',
+    subtype: 'transaction',
+    amount: 5.50,
+    currency: 'USD',
+    category: 'food',
+    date: Date.now(),
+    merchant: 'Blue Bottle Coffee'
+  }
+})
+
+// Account = NounType.Collection + financial metadata
+await brain.add({
+  data: 'Checking Account',
+  type: NounType.Collection,
+  metadata: {
+    domain: 'financial',
+    subtype: 'account',
+    accountType: 'checking',
+    currency: 'USD',
+    institution: 'Chase'
+  }
+})
+
+// Invoice = NounType.Document + financial metadata
+await brain.add({
+  data: 'Invoice #1234 from Acme Corp',
+  type: NounType.Document,
+  metadata: {
+    domain: 'financial',
+    subtype: 'invoice',
+    amount: 15000,
+    currency: 'USD',
+    status: 'pending',
+    dueDate: Date.UTC(2024, 2, 15),
+    vendor: 'Acme Corp'
+  }
+})
+```
 
 ---
 
