@@ -1,6 +1,6 @@
 {
   "name": "@soulcraft/brainy",
-  "version": "7.19.0",
+  "version": "7.19.1",
   "description": "Universal Knowledge Protocol™ - World's first Triple Intelligence database unifying vector, graph, and document search in one API. Stage 3 CANONICAL: 42 nouns × 127 verbs covering 96-97% of all human knowledge.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -55,6 +55,10 @@
     "./internals": {
       "import": "./dist/internals.js",
       "types": "./dist/internals.d.ts"
+    },
+    "./embeddings/wasm": {
+      "import": "./dist/embeddings/wasm/index.js",
+      "types": "./dist/embeddings/wasm/index.d.ts"
     }
   },
   "browser": {
@@ -68,7 +72,7 @@
   },
   "scripts": {
     "build": "npm run build:types:if-needed && npm run build:patterns:if-needed && tsc && tsc -p tsconfig.cli.json && npm run build:copy-wasm",
-    "build:copy-wasm": "node -e \"const fs=require('fs');const src='src/embeddings/wasm/pkg';const dst='dist/embeddings/wasm/pkg';if(fs.existsSync(src)){fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).forEach(f=>fs.copyFileSync(src+'/'+f,dst+'/'+f));console.log('Copied WASM pkg to dist')}\"",
+    "build:copy-wasm": "node -e \"const fs=require('fs');const src='src/embeddings/wasm/pkg';const dst='dist/embeddings/wasm/pkg';const skip=new Set(['package.json','.gitignore']);if(fs.existsSync(src)){fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>!skip.has(f)).forEach(f=>fs.copyFileSync(src+'/'+f,dst+'/'+f));console.log('Copied WASM pkg to dist')}\"",
     "build:types": "tsx scripts/buildTypeEmbeddings.ts",
     "build:types:if-needed": "node scripts/check-type-embeddings.cjs || npm run build:types",
     "build:types:force": "npm run build:types",
