@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.2](https://github.com/soulcraftlabs/brainy/compare/v7.19.1...v7.19.2) (2026-02-18)
+
+- fix: metadata index not cleaned up after delete/deleteMany (1a628da)
+
+
 ### [7.18.0](https://github.com/soulcraftlabs/brainy/compare/v7.17.0...v7.18.0) (2026-02-16)
 
 - feat: add aggregation engine with incremental SUM/COUNT/AVG/MIN/MAX, GROUP BY, and time windows (f024e56)
