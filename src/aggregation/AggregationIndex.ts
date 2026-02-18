@@ -19,6 +19,7 @@ import type {
   AggregateGroupState,
   AggregateQueryParams,
   AggregateResult,
+  AggregationOp,
   AggregationProvider,
   GroupByDimension,
   MetricState
@@ -65,7 +66,7 @@ function hashDefinition(def: AggregateDefinition): string {
  * Create a fresh MetricState with identity values.
  */
 function freshMetricState(): MetricState {
-  return { sum: 0, count: 0, min: Infinity, max: -Infinity }
+  return { sum: 0, count: 0, min: Infinity, max: -Infinity, m2: 0 }
 }
 
 /**
@@ -146,6 +147,44 @@ function isAggregateEntity(entity: Record<string, unknown>): boolean {
   return false
 }
 
+/**
+ * Welford's online algorithm: add a value to running mean/M2.
+ */
+function updateMetricAdd(state: MetricState, val: number, op: AggregationOp): void {
+  state.sum += val
+  state.count++
+  if (val < state.min) state.min = val
+  if (val > state.max) state.max = val
+
+  // Welford's: update M2 for stddev/variance
+  if (op === 'stddev' || op === 'variance') {
+    const mean = state.sum / state.count
+    const oldMean = state.count > 1 ? (state.sum - val) / (state.count - 1) : 0
+    state.m2 = (state.m2 ?? 0) + (val - oldMean) * (val - mean)
+  }
+}
+
+/**
+ * Welford's online algorithm: remove a value from running mean/M2.
+ * Note: removing from Welford's is the inverse update.
+ */
+function updateMetricRemove(state: MetricState, val: number, op: AggregationOp): void {
+  if (state.count <= 1) {
+    state.sum = 0
+    state.count = 0
+    state.m2 = 0
+    return
+  }
+  const oldMean = state.sum / state.count
+  state.sum -= val
+  state.count--
+  const newMean = state.sum / state.count
+
+  if (op === 'stddev' || op === 'variance') {
+    state.m2 = Math.max(0, (state.m2 ?? 0) - (val - oldMean) * (val - newMean))
+  }
+}
+
 export class AggregationIndex {
   private storage: StorageAdapter
   private nativeProvider?: AggregationProvider
@@ -202,6 +241,21 @@ export class AggregationIndex {
         }
 
         this.definitionHashes.set(def.name, currentHash)
+
+        // Register definition with native provider
+        if (this.nativeProvider?.defineAggregate) {
+          this.nativeProvider.defineAggregate(def)
+        }
+      }
+    }
+
+    // Restore native provider state from persistence
+    if (this.nativeProvider?.restoreState) {
+      const nativeState = await this.storage.getMetadata('__aggregation_native_state__') as any
+      if (nativeState && typeof nativeState === 'string') {
+        this.nativeProvider.restoreState(nativeState)
+      } else if (nativeState && typeof nativeState === 'object' && nativeState.data) {
+        this.nativeProvider.restoreState(nativeState.data)
       }
     }
   }
@@ -227,6 +281,15 @@ export class AggregationIndex {
           { groups } as any
         )
       }
+    }
+
+    // Persist native provider state
+    if (this.nativeProvider?.serializeState) {
+      const nativeState = this.nativeProvider.serializeState()
+      await this.storage.saveMetadata(
+        '__aggregation_native_state__',
+        { data: nativeState } as any
+      )
     }
 
     this.dirty.clear()
@@ -267,6 +330,11 @@ export class AggregationIndex {
       this.states.set(def.name, new Map())
     }
 
+    // Notify native provider of definition (caches compiled form for hot path)
+    if (this.nativeProvider?.defineAggregate) {
+      this.nativeProvider.defineAggregate(def)
+    }
+
     this.dirty.add(def.name)
   }
 
@@ -278,6 +346,12 @@ export class AggregationIndex {
     this.definitionHashes.delete(name)
     this.states.delete(name)
     this.staleMinMax.delete(name)
+
+    // Notify native provider
+    if (this.nativeProvider?.removeAggregate) {
+      this.nativeProvider.removeAggregate(name)
+    }
+
     this.dirty.add(name) // Will persist the removal
   }
 
@@ -339,10 +413,7 @@ export class AggregationIndex {
         } else {
           const val = getNumericField(entity, metricDef.field!)
           if (val !== undefined) {
-            state.sum += val
-            state.count++
-            if (val < state.min) state.min = val
-            if (val > state.max) state.max = val
+            updateMetricAdd(state, val, metricDef.op)
           }
         }
       }
@@ -456,6 +527,12 @@ export class AggregationIndex {
           case 'max':
             metrics[metricName] = state.max === -Infinity ? 0 : state.max
             break
+          case 'variance':
+            metrics[metricName] = state.count > 1 ? (state.m2 ?? 0) / (state.count - 1) : 0
+            break
+          case 'stddev':
+            metrics[metricName] = state.count > 1 ? Math.sqrt((state.m2 ?? 0) / (state.count - 1)) : 0
+            break
         }
 
         if (metricDef.op === 'count') {
@@ -538,10 +615,7 @@ export class AggregationIndex {
       } else {
         const val = getNumericField(entity, metricDef.field!)
         if (val !== undefined) {
-          state.sum += val
-          state.count++
-          if (val < state.min) state.min = val
-          if (val > state.max) state.max = val
+          updateMetricAdd(state, val, metricDef.op)
         }
       }
     }
@@ -574,13 +648,9 @@ export class AggregationIndex {
       } else {
         const val = getNumericField(entity, metricDef.field!)
         if (val !== undefined) {
-          state.sum -= val
-          state.count = Math.max(0, state.count - 1)
+          updateMetricRemove(state, val, metricDef.op)
 
           // MIN/MAX can't be decremented — mark as potentially stale
-          // On next read, if the deleted value was the min or max, it will be off.
-          // For correctness at scale, a full rebuild would be needed.
-          // In practice, stale min/max is acceptable for most use cases.
           if (val <= state.min || val >= state.max) {
             if (!this.staleMinMax.has(aggName)) {
               this.staleMinMax.set(aggName, new Set())

@@ -32,6 +32,8 @@ export type {
   AggregateSource,
   AggregateQueryParams,
   AggregateResult,
+  AggregateGroupState,
+  MetricState,
   AggregationOp,
   TimeWindowGranularity,
   GroupByDimension,

@@ -688,7 +688,7 @@ export interface TraverseParams {
 /**
  * Supported aggregation operations
  */
-export type AggregationOp = 'sum' | 'count' | 'avg' | 'min' | 'max'
+export type AggregationOp = 'sum' | 'count' | 'avg' | 'min' | 'max' | 'stddev' | 'variance'
 
 /**
  * Time window granularity for GROUP BY time dimensions
@@ -749,6 +749,8 @@ export interface MetricState {
   count: number
   min: number
   max: number
+  /** Running M2 for Welford's online variance (sum of squared differences from mean) */
+  m2?: number
 }
 
 /**
@@ -802,6 +804,12 @@ export interface AggregateResult {
  * When registered as 'aggregation' provider, Brainy delegates to this.
  */
 export interface AggregationProvider {
+  /** Register an aggregate definition (caches compiled definition for hot path) */
+  defineAggregate?(def: AggregateDefinition): void
+
+  /** Remove a registered aggregate definition */
+  removeAggregate?(name: string): void
+
   /** Incrementally update aggregation state when an entity changes */
   incrementalUpdate(
     name: string,
@@ -828,6 +836,12 @@ export interface AggregationProvider {
     state: Map<string, AggregateGroupState>,
     params: AggregateQueryParams
   ): AggregateResult[]
+
+  /** Restore previously serialized state (called during init) */
+  restoreState?(data: string): void
+
+  /** Serialize internal state for persistence (called during flush) */
+  serializeState?(): string
 }
 
 // ============= Configuration =============

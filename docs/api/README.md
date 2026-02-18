@@ -426,7 +426,8 @@ brain.defineAggregate({
     count:   { op: 'count' },
     average: { op: 'avg', field: 'amount' },
     highest: { op: 'max', field: 'amount' },
-    lowest:  { op: 'min', field: 'amount' }
+    lowest:  { op: 'min', field: 'amount' },
+    spread:  { op: 'stddev', field: 'amount' }  // Welford's online algorithm
   },
   materialize: true   // Optional: write results as NounType.Measurement entities
 })
@@ -441,7 +442,7 @@ brain.defineAggregate({
 | `source.where` | `Record<string, unknown>` | Metadata filter (same syntax as `find({ where })`) |
 | `source.service` | `string` | Multi-tenancy filter |
 | `groupBy` | `GroupByDimension[]` | Dimensions to group by — plain field names or `{ field, window }` for time bucketing |
-| `metrics` | `Record<string, AggregateMetricDef>` | Named metrics with `op` (`sum`, `count`, `avg`, `min`, `max`) and optional `field` |
+| `metrics` | `Record<string, AggregateMetricDef>` | Named metrics with `op` (`sum`, `count`, `avg`, `min`, `max`, `stddev`, `variance`) and optional `field` |
 | `materialize` | `boolean \| object` | Write results as `NounType.Measurement` entities (auto-visible in OData/Sheets/SSE) |
 
 **Time window granularities:** `'hour'`, `'day'`, `'week'`, `'month'`, `'quarter'`, `'year'`, or `{ seconds: number }` for custom intervals.

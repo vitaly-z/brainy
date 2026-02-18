@@ -192,6 +192,23 @@ context.registerProvider('graphIndex', (storage) => {
 })
 ```
 
+#### `aggregation`
+**Type:** `(storage: StorageAdapter) => AggregationProvider-compatible`
+
+Factory function that creates an aggregation engine for write-time incremental SUM/COUNT/AVG/MIN/MAX with GROUP BY and time windows. The returned object must implement the `AggregationProvider` interface.
+
+```typescript
+context.registerProvider('aggregation', (storage) => {
+  return new MyNativeAggregationEngine(storage)
+})
+```
+
+When provided by a native plugin like `@soulcraft/cortex`, this enables:
+- Compiled source filters (vs per-entity JS object traversal)
+- Precise MIN/MAX via sorted data structures (vs lazy recompute)
+- Parallel aggregate rebuild across CPU cores
+- SIMD-accelerated timestamp bucketing
+
 ### Utility Providers
 
 #### `cache`
@@ -219,6 +236,29 @@ Replacement for the roaring bitmap implementation. Used internally by the metada
 **Type:** `{ encode: (data: any) => Buffer, decode: (buffer: Buffer) => any }`
 
 Native msgpack encode/decode for SSTable serialization.
+
+### Analytics Providers (Native-Only)
+
+These provider keys have **no JavaScript fallback** — they represent capabilities that require native code (SIMD, mmap, sub-microsecond latency). They are available when a native plugin like `@soulcraft/cortex` is installed.
+
+Use `brain.getProvider('analytics:hyperloglog')` to check availability. Returns `undefined` if no plugin provides it.
+
+#### `analytics:hyperloglog`
+Approximate distinct counts. Count unique values (e.g., unique merchants) across millions of records using ~16KB of memory with ~1% error. Each update is O(1).
+
+#### `analytics:tdigest`
+Streaming percentiles. Compute P50/P90/P95/P99 from streaming data without storing all values. Uses ~4KB per digest with ~1% accuracy at the tails.
+
+#### `analytics:countmin`
+Frequency estimation. Find the most common values (e.g., top-K merchants) using ~40KB with 0.1% error. O(1) per update.
+
+#### `analytics:anomaly`
+Real-time anomaly detection. Flag statistically unusual values at write-time using exponentially weighted moving averages. 64 bytes per group, sub-microsecond decisions.
+
+#### `aggregation:mmap`
+Persistent aggregate storage via memory-mapped files. Aggregate state survives process crashes without explicit flush. Zero serialization overhead.
+
+---
 
 ## Storage Adapter Plugins
 
