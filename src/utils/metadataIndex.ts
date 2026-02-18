@@ -1667,6 +1667,12 @@ export class MetadataIndexManager {
 
       // Flush all dirty chunks and sparse indices accumulated during remove
       await this.flushDirtyMetadata()
+
+      // Clean up ID mapper — must happen AFTER bitmap removal since removeFromChunk
+      // calls idMapper.getInt(id) internally. Skipping this leaves deleted IDs in the
+      // idMapper universe, causing ne/exists:false queries to return deleted entities.
+      this.idMapper.remove(id)
+      await this.idMapper.flush()
     } else {
       // Remove from all indexes (slower, requires scanning all field indexes)
       // This should be rare - prefer providing metadata when removing
@@ -1697,6 +1703,10 @@ export class MetadataIndexManager {
 
       // Flush all dirty chunks and sparse indices accumulated during scan-remove
       await this.flushDirtyMetadata()
+
+      // Clean up ID mapper — must happen AFTER bitmap removal (same reason as fast path above)
+      this.idMapper.remove(id)
+      await this.idMapper.flush()
     }
   }
 

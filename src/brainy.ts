@@ -791,19 +791,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
 
       // Build entity structure for indexing (NEW - with top-level fields)
+      // Optional fields must use conditional spreading to match storageMetadata exactly.
+      // If undefined values are included as explicit keys, extractIndexableFields indexes
+      // them as '__NULL__' entries that removeFromIndex can never clean up (storageMetadata
+      // omits those keys entirely via conditional spreading, so the fields don't match).
       const entityForIndexing = {
         id,
         vector,
         connections: new Map(),
         level: 0,
         type: params.type,
-        confidence: params.confidence,
-        weight: params.weight,
+        ...(params.confidence !== undefined && { confidence: params.confidence }),
+        ...(params.weight !== undefined && { weight: params.weight }),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         service: params.service,
         data: params.data,
-        createdBy: params.createdBy,
+        ...(params.createdBy && { createdBy: params.createdBy }),
         // Only custom fields in metadata
         metadata: params.metadata || {}
       }
@@ -2780,6 +2784,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     for (let i = 0; i < idsToDelete.length; i += chunkSize) {
       const chunk = idsToDelete.slice(i, i + chunkSize)
 
+      // Track IDs queued during builder phase separately from confirmed deletions.
+      // result.successful must only be updated AFTER the transaction commits — pushing
+      // inside the builder runs before transaction.execute(), so a rollback would leave
+      // successfully-queued IDs incorrectly listed as deleted.
+      const chunkQueued: string[] = []
+      const chunkBuilderFailed: Array<{ item: string; error: string }> = []
+
       try {
         // Process chunk in single transaction for atomic deletion
         await this.transactionManager.executeTransaction(async (tx) => {
@@ -2818,9 +2829,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
                 )
               }
 
-              result.successful.push(id)
+              chunkQueued.push(id)
             } catch (error) {
-              result.failed.push({
+              chunkBuilderFailed.push({
                 item: id,
                 error: (error as Error).message
               })
@@ -2830,15 +2841,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
         })
+
+        // Transaction committed — queued IDs were actually deleted
+        result.successful.push(...chunkQueued)
+        result.failed.push(...chunkBuilderFailed)
       } catch (error) {
-        // Transaction failed - mark remaining entities in chunk as failed if not already recorded
-        for (const id of chunk) {
-          if (!result.successful.includes(id) && !result.failed.find(f => f.item === id)) {
-            result.failed.push({
-              item: id,
-              error: (error as Error).message
-            })
-          }
+        // Transaction failed/rolled back — queued IDs were NOT deleted
+        result.failed.push(...chunkBuilderFailed)
+        for (const id of chunkQueued) {
+          result.failed.push({
+            item: id,
+            error: (error as Error).message
+          })
         }
 
         // Stop processing if continueOnError is false
