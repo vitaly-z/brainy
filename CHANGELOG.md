@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.4](https://github.com/soulcraftlabs/brainy/compare/v7.19.3...v7.19.4) (2026-02-19)
+
+
+
+
 ### [7.19.3](https://github.com/soulcraftlabs/brainy/compare/v7.19.2...v7.19.3) (2026-02-19)
 
 - docs: add public frontmatter to docs for soulcraft.com/docs pipeline (b6e3470)
