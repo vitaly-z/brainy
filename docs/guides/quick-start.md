@@ -23,7 +23,7 @@ npm install @soulcraft/brainy
 
 ## 2. Initialize
 
-```javascript
+```typescript
 import { Brainy, NounType, VerbType } from '@soulcraft/brainy'
 
 const brain = new Brainy()
@@ -34,15 +34,15 @@ That's it. Brainy auto-configures storage, loads the embedding model, and builds
 
 ## 3. Add Knowledge
 
-```javascript
+```typescript
 // Text is automatically embedded into 384-dim vectors
-const reactId = await brain.add({
+const reactId: string = await brain.add({
   data: 'React is a JavaScript library for building user interfaces',
   type: NounType.Concept,
   metadata: { category: 'frontend', year: 2013 }
 })
 
-const nextId = await brain.add({
+const nextId: string = await brain.add({
   data: 'Next.js framework for React with server-side rendering',
   type: NounType.Concept,
   metadata: { category: 'framework', year: 2016 }
@@ -51,7 +51,7 @@ const nextId = await brain.add({
 
 ## 4. Create Relationships
 
-```javascript
+```typescript
 // Typed graph relationships
 await brain.relate({
   from: nextId,
@@ -62,16 +62,18 @@ await brain.relate({
 
 ## 5. Query with Triple Intelligence
 
-```javascript
+```typescript
+import type { FindResult } from '@soulcraft/brainy'
+
 // All three search paradigms in one call
-const results = await brain.find({
+const results: FindResult[] = await brain.find({
   query: 'modern frontend frameworks',    // Vector similarity search
   where: { year: { greaterThan: 2015 } }, // Metadata filtering
   connected: { to: reactId, depth: 2 }   // Graph traversal
 })
 
-console.log(results.items)
-// [{ id: nextId, data: 'Next.js...', score: 0.94, ... }]
+console.log(results[0].data)   // 'Next.js framework for React...'
+console.log(results[0].score)  // 0.94
 ```
 
 ## What Just Happened
@@ -90,7 +92,7 @@ Every entity you `add()` lives in three indexes simultaneously:
 
 Brainy understands 220+ natural language patterns:
 
-```javascript
+```typescript
 // These all work without any configuration
 await brain.find({ query: 'recent documents about machine learning' })
 await brain.find({ query: 'articles created this week' })

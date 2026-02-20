@@ -34,7 +34,7 @@ pnpm add @soulcraft/brainy
 
 ## Verify
 
-```javascript
+```typescript
 import { Brainy } from '@soulcraft/brainy'
 
 const brain = new Brainy()
@@ -51,7 +51,7 @@ For production workloads, add Cortex for Rust-accelerated SIMD distance calculat
 npm install @soulcraft/cortex
 ```
 
-```javascript
+```typescript
 import { Brainy } from '@soulcraft/brainy'
 import { registerCortex } from '@soulcraft/cortex'
 
@@ -67,7 +67,7 @@ Cortex delivers a **5.2x geometric mean speedup** — see [Brainy vs Cortex](/do
 
 Brainy works in the browser using the Origin Private File System:
 
-```javascript
+```typescript
 import { Brainy } from '@soulcraft/brainy'
 
 const brain = new Brainy({ storage: 'opfs' })
