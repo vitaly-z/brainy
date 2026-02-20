@@ -1,3 +1,16 @@
+---
+title: The Find System
+slug: guides/find-system
+public: true
+category: guides
+template: guide
+order: 3
+description: Complete guide to Brainy's find() method — four intelligence systems, query execution phases, NLP patterns, and performance from 1K to 10M entities.
+next:
+  - concepts/triple-intelligence
+  - api/reference
+---
+
 # Brainy's Find System - Complete Guide
 
 ## Overview

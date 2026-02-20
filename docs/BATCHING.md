@@ -1,3 +1,16 @@
+---
+title: Batch Operations
+slug: guides/batching
+public: true
+category: guides
+template: guide
+order: 5
+description: Eliminate N+1 query patterns with batchGet() and storage-level batch APIs. Achieve 90%+ faster cloud storage access — from 12.7 seconds down to under 1 second.
+next:
+  - api/reference
+  - guides/find-system
+---
+
 # Batch Operations API
 > **Enterprise Production-Ready** | Zero N+1 Query Patterns | 90%+ Performance Improvement
 

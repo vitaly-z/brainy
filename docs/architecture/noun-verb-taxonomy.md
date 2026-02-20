@@ -1,3 +1,16 @@
+---
+title: Noun & Verb Types
+slug: concepts/noun-types
+public: true
+category: concepts
+template: concept
+order: 2
+description: 42 NounTypes and 127 VerbTypes cover 96-97% of all human knowledge. The universal vocabulary for structuring anything from people and documents to events and relationships.
+next:
+  - concepts/triple-intelligence
+  - api/reference
+---
+
 # The Universal Knowledge Protocol: Noun-Verb Taxonomy
 
 > **Brainy is the Universal Knowledge Protocol™ powered by Triple Intelligence™**

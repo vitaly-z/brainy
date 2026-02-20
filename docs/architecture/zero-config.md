@@ -1,3 +1,16 @@
+---
+title: Zero Configuration
+slug: concepts/zero-config
+public: true
+category: concepts
+template: concept
+order: 3
+description: Brainy auto-detects storage, initializes embeddings, and builds indexes — no configuration required. Works in Node.js, Bun, OPFS, and cloud environments.
+next:
+  - getting-started/installation
+  - guides/storage-adapters
+---
+
 # Zero Configuration & Auto-Adaptation
 
 > **Current Status**: Basic zero-config is fully functional. Advanced auto-adaptation features are in development.

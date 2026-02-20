@@ -151,6 +151,7 @@
     "assets/models/all-MiniLM-L6-v2/**",
     "bin/",
     "brainy.png",
+    "docs/**/*.md",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"

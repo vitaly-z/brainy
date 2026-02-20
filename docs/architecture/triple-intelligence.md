@@ -1,3 +1,16 @@
+---
+title: Triple Intelligence
+slug: concepts/triple-intelligence
+public: true
+category: concepts
+template: concept
+order: 1
+description: Unified vector similarity, graph traversal, and metadata filtering in one query. Auto-optimizes between parallel execution and progressive filtering.
+next:
+  - concepts/noun-types
+  - api/reference
+---
+
 # Triple Intelligence System
 
 The Triple Intelligence System is Brainy's revolutionary query engine that unifies vector similarity, graph relationships, and metadata filtering into a single, optimized query interface.

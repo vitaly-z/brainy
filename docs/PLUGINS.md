@@ -1,3 +1,16 @@
+---
+title: Plugin System
+slug: guides/plugins
+public: true
+category: guides
+template: guide
+order: 4
+description: Replace any Brainy subsystem — distance functions, embeddings, HNSW index, metadata index, aggregation — with a custom implementation or native Rust via Cortex.
+next:
+  - cortex/comparison
+  - guides/storage-adapters
+---
+
 # Plugin Development Guide
 
 Brainy has a plugin system that allows third-party packages to replace internal subsystems with custom implementations. This is how `@soulcraft/cortex` provides native Rust acceleration, and it's the same system available to any developer.

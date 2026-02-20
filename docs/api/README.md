@@ -1,3 +1,16 @@
+---
+title: API Reference
+slug: api/reference
+public: true
+category: api
+template: api
+order: 1
+description: Complete API reference for all Brainy methods — add, find, relate, update, delete, batch operations, branching, entity versioning, VFS, neural API, and more.
+next:
+  - getting-started/quick-start
+  - guides/find-system
+---
+
 # 🧠 Brainy API Reference
 
 > **Complete API documentation for Brainy**

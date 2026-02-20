@@ -1,3 +1,16 @@
+---
+title: Storage Adapters
+slug: guides/storage-adapters
+public: true
+category: guides
+template: guide
+order: 2
+description: "Six adapters for every deployment: in-memory, OPFS (browser), filesystem, S3, Google Cloud Storage, Azure Blob, and Cloudflare R2. All support copy-on-write branching."
+next:
+  - guides/plugins
+  - concepts/zero-config
+---
+
 # Storage Adapters Guide
 
 ## Overview

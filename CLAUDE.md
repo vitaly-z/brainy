@@ -75,6 +75,64 @@ test: add/update tests       (patch version bump)
 
 **Important:** Never use `BREAKING CHANGE` in commit messages. Major version bumps are manual decisions only (`npm run release:major`).
 
+## Docs Pipeline — soulcraft.com/docs
+
+Docs in `docs/**/*.md` are published with the npm package (included in `files`) and synced to soulcraft.com/docs on every portal deploy. Frontmatter controls what appears publicly.
+
+### Docs check triggers
+
+Run the docs check whenever the user says ANY of:
+- "commit, publish, release" / "release" / "publish"
+- "update the docs" / "make sure docs are accurate" / "check the docs"
+- "review docs" / "clean up docs"
+
+### Pre-release docs check (MANDATORY before every release)
+
+When the user says "commit, publish, release" or any variation, **before committing**:
+
+1. **Scan all files changed in this session** (and any recently added `docs/*.md` files)
+2. For each changed/new doc, decide: is this useful to external users?
+   - **Yes** → ensure it has complete frontmatter (add or update it)
+   - **No** (internal, migration, dev-only) → ensure it has no frontmatter or `public: false`
+3. For docs that already have frontmatter, verify:
+   - `description` still matches the actual content
+   - `next` links still exist and are still the right follow-up pages
+   - `title` matches the doc's h1
+4. Include frontmatter changes in the commit
+
+### Frontmatter format
+
+```yaml
+---
+title: Human-readable title
+slug: category/page-name          # URL: soulcraft.com/docs/category/page-name
+public: true                      # false or absent = not published
+category: getting-started | concepts | guides | api
+template: guide | concept | api   # controls layout on soulcraft.com
+order: 1                          # sidebar position within category (lower = first)
+description: One sentence. What this doc covers and why it matters.
+next:                             # "Next steps" links shown at bottom of page
+  - category/other-slug
+---
+```
+
+### Category guide
+
+| category | use for |
+|----------|---------|
+| `getting-started` | installation, quick start, first steps |
+| `concepts` | how the system works, mental models |
+| `guides` | how to do specific things, recipes |
+| `api` | method reference, signatures, parameters |
+
+### What stays internal (no frontmatter / `public: false`)
+
+- Release guides, developer learning paths
+- Migration guides for old versions (v3→v4, v5.11)
+- Architecture analysis docs (clustering algorithms, etc.)
+- Anything in `docs/internal/`
+- Deployment/ops/cost docs (cloud-run, kubernetes, cost-optimization)
+
 ## Release Process
 
 Fully automated via `scripts/release.sh`:
@@ -87,6 +145,11 @@ npm run release:major        # Breaking changes (rare, manual decision)
 ```
 
 The script: verifies clean git state, builds, tests, bumps version, updates CHANGELOG.md, commits, tags, pushes, publishes to npm, and creates a GitHub release.
+
+After a successful release, remind the user:
+> "Published. Deploy portal to pick up the new docs → go to the portal project and deploy."
+
+Do NOT deploy portal from here. Portal is always deployed separately from within the portal project.
 
 ## Performance Claims
 
