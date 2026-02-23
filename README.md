@@ -14,6 +14,8 @@
 
 Built because we were tired of stitching together Pinecone + Neo4j + MongoDB and spending weeks on configuration before writing a single line of business logic. Brainy unifies vector search, graph traversal, and metadata filtering so you don't have to choose.
 
+**New here?** → **[What is Brainy? — plain-language overview, no jargon](docs/eli5.md)**
+
 ---
 
 ## Install
@@ -296,6 +298,10 @@ Performance benchmarks and capacity planning in **[docs/PERFORMANCE.md](docs/PER
 ---
 
 ## Documentation
+
+### Start Here
+
+- **[Brainy explained simply](docs/eli5.md)** — Plain-language overview, no jargon, no code
 
 ### Core
 
