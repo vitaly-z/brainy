@@ -95,29 +95,13 @@ Most applications that need to store and search knowledge end up stitching toget
 
 ### Before and After
 
-**Before Brainy:**
+**Before Brainy** — a pile of services:
+- Pinecone (vectors) + Neo4j (graph) + MongoDB (docs)
+- Algolia (search) + Redis (cache) + PostgreSQL + pgvector
+- Plus glue code, sync jobs, ETL pipelines, and 3am incidents
 
-```
-┌──────────┐  ┌──────────┐  ┌──────────┐
-│ Pinecone │  │  Neo4j   │  │ MongoDB  │
-│ vectors  │  │  graph   │  │   docs   │
-└──────────┘  └──────────┘  └──────────┘
-┌──────────┐  ┌──────────┐  ┌──────────┐
-│  Algolia │  │  Redis   │  │ pgvector │
-│  search  │  │  cache   │  │ SQL+vecs │
-└──────────┘  └──────────┘  └──────────┘
-
-...plus glue code, sync jobs, ETL pipelines, and 3am incidents.
-```
-
-**After Brainy:**
-
-```
-┌──────────────────────────────────────────┐
-│                  Brainy                  │
-│   search · graph · filter · files · …   │
-└──────────────────────────────────────────┘
-```
+**After Brainy** — one thing:
+Search, graph, filter, files, branches, and imports — unified in a single query.
 
 ### What Each Tool Is Missing
 
