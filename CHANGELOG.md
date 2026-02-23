@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.7](https://github.com/soulcraftlabs/brainy/compare/v7.19.6...v7.19.7) (2026-02-23)
+
+- docs: add plain-language ELI5 overview and link from README (a88962f)
+
+
 ### [7.19.6](https://github.com/soulcraftlabs/brainy/compare/v7.19.5...v7.19.6) (2026-02-19)
 
 - docs: convert code examples to TypeScript (791cacc)
