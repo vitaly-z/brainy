@@ -5,7 +5,7 @@ public: true
 category: getting-started
 template: guide
 order: 0
-description: Plain-language explanation of what Brainy does and how Cortex accelerates it. No jargon, no code — just clear analogies.
+description: Plain-language guide covering what Brainy does, how it compares to other tools, and what you can build with it. No jargon, no code — just clear analogies.
 next:
   - getting-started/installation
   - getting-started/quick-start
@@ -86,3 +86,92 @@ Plain language:
 - **Analytics** that aren't even possible in pure JavaScript — real-time anomaly detection, streaming percentile estimates, approximate unique counts — become available because Cortex brings the native capabilities required to run them efficiently.
 
 If Brainy is what makes knowledge fast, Cortex is what makes Brainy feel instant.
+
+---
+
+## What Does Brainy Replace?
+
+Most applications that need to store and search knowledge end up stitching together several specialized tools. Brainy replaces all of them with one — a single free, open-source library in place of multiple paid services.
+
+### Before and After
+
+**Before Brainy:**
+
+```
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│ Pinecone │  │  Neo4j   │  │ MongoDB  │
+│ vectors  │  │  graph   │  │   docs   │
+└──────────┘  └──────────┘  └──────────┘
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│  Algolia │  │  Redis   │  │ pgvector │
+│  search  │  │  cache   │  │ SQL+vecs │
+└──────────┘  └──────────┘  └──────────┘
+
+...plus glue code, sync jobs, ETL pipelines, and 3am incidents.
+```
+
+**After Brainy:**
+
+```
+┌──────────────────────────────────────────┐
+│                  Brainy                  │
+│   search · graph · filter · files · …   │
+└──────────────────────────────────────────┘
+```
+
+### What Each Tool Is Missing
+
+| Tool | Search | Graph | Filter | VFS | Branch | Import |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Brainy** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| *— Vector databases —* | | | | | | |
+| Pinecone | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Weaviate | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Qdrant | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Chroma | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| *— Graph databases —* | | | | | | |
+| Neo4j | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| *— Document stores —* | | | | | | |
+| MongoDB | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Firestore | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| DynamoDB | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| *— Relational + vector —* | | | | | | |
+| PostgreSQL + pgvector | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| MySQL | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| SQLite | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| *— Search engines —* | | | | | | |
+| Elasticsearch | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Algolia | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| *— Cache —* | | | | | | |
+| Redis | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Brainy is the only row with every box checked. And it runs all of them in a single query — no stitching services together.
+
+### One library, any scale
+
+Brainy scales from a single laptop to billions of entities without changing a line of code. Small datasets live in memory. Larger ones spill to disk. At cloud scale, Brainy uses S3-compatible storage and automatically shards across nodes — the same API the whole way. Up to ten billion entities is fully implemented today.
+
+Add Cortex and you also unlock memory-mapped storage — aggregate state lives directly in the operating system's memory with zero serialization overhead, as fast as the hardware allows.
+
+---
+
+## What Can You Build?
+
+### Common applications
+
+- **AI agents with persistent memory** — Give any AI an always-on, self-organizing knowledge graph that persists between sessions and across agents.
+- **Searchable knowledge bases** — Build institutional memory that links documents automatically and surfaces answers across the full web of related information.
+- **Semantic document search** — Index PDFs, code, or media and find them by meaning, not just keywords.
+- **Relationship-aware recommendations** — Power product catalogs or content platforms where every recommendation understands what connects to what.
+- **Safe experiments** — Let teams branch the knowledge base, experiment independently, and merge when ready — just like branching code.
+- **Unified business platforms** — Combine booking, CRM, inventory, and analytics in one queryable knowledge graph with no sync pipeline.
+
+### Built with Brainy
+
+Real products built on Brainy — live in production at Soulcraft:
+
+- **Workshop** — AI-powered IDE and creation studio where imagination meets creation.
+- **Venue** — Unified physical + digital business operations, from food truck to franchise.
+- **Memory** — Infinite context for AI agents that never forgets.
+- **Collective** — Multi-agent coordination with shared knowledge and automatic task routing.
+- **Heart** — Emotional intelligence and empathy layer for AI communication.
