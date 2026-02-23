@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.8](https://github.com/soulcraftlabs/brainy/compare/v7.19.7...v7.19.8) (2026-02-23)
+
+- docs: redesign ELI5 comparison section and add What Can You Build? (3f16e17)
+
+
 ### [7.19.7](https://github.com/soulcraftlabs/brainy/compare/v7.19.6...v7.19.7) (2026-02-23)
 
 - docs: add plain-language ELI5 overview and link from README (a88962f)
