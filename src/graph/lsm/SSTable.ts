@@ -14,6 +14,7 @@
  * - Footer: checksum, stats
  */
 
+import { createHash } from 'node:crypto'
 import { encode as defaultEncode, decode as defaultDecode } from '@msgpack/msgpack'
 import { BloomFilter, SerializedBloomFilter } from './BloomFilter.js'
 
@@ -326,8 +327,7 @@ export class SSTable {
    * Simple but effective: hash of all sourceIds concatenated
    */
   private calculateChecksum(entries: SSTableEntry[]): string {
-    const crypto = require('crypto')
-    const hash = crypto.createHash('sha256')
+    const hash = createHash('sha256')
 
     for (const entry of entries) {
       hash.update(entry.sourceId)
