@@ -2,6 +2,20 @@
 
 This file provides guidance for Claude Code (and human contributors) when working on the Brainy codebase.
 
+## Cross-Project Coordination
+
+Handoff file: `/home/dpsifr/.strategy/PLATFORM-HANDOFF.md`
+
+**At session START:** Read the handoff. Find rows where Owner = Brainy. Act on those first.
+
+**At session END:** Mark completed actions ✅, delete rows you finished, delete threads with zero remaining actions. File must not grow. **If you shipped anything consumers need to know about, update `RELEASES.md` before closing.**
+
+**Brainy's current open actions:** None. MIT open-source — no platform-specific actions.
+
+**Current version:** `@soulcraft/brainy@7.19.10`
+
+---
+
 ## Project Overview
 
 Brainy is a Universal Knowledge Protocol -- a Triple Intelligence database that combines vector similarity search, graph traversal, and metadata filtering into a single TypeScript library. Published as `@soulcraft/brainy` on npm under the MIT license.
