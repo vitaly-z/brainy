@@ -889,6 +889,9 @@ export interface BrainyConfig {
   // Storage configuration
   storage?: {
     type: 'auto' | 'memory' | 'filesystem' | 's3' | 'r2' | 'opfs' | 'gcs'
+    /** Root directory for filesystem storage. Passed through to storage factories
+     *  including plugin-provided factories (e.g. Cortex mmap). */
+    rootDirectory?: string
     options?: any
     branch?: string              // COW branch name (default: 'main')
   }
