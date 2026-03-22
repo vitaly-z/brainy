@@ -164,6 +164,19 @@ export class TypeAwareHNSWIndex {
   }
 
   /**
+   * Switch persist mode at runtime. Propagates to all existing type-specific indexes.
+   * Used by addMany() to defer persistence during batch operations.
+   */
+  public setPersistMode(mode: 'immediate' | 'deferred'): void {
+    this.persistMode = mode
+    for (const index of this.indexes.values()) {
+      if (typeof (index as any).setPersistMode === 'function') {
+        (index as any).setPersistMode(mode)
+      }
+    }
+  }
+
+  /**
    * Get or create HNSW index for a specific type (lazy initialization)
    *
    * Indexes are created on-demand to save memory.

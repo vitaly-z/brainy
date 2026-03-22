@@ -2691,55 +2691,80 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       }
     }
 
-    // Process in batches
-    for (let i = 0; i < params.items.length; i += batchSize) {
-      const chunk = params.items.slice(i, i + batchSize)
+    // OPTIMIZATION: Defer HNSW persistence during batch insert.
+    // Without this, each add() triggers ~16-20 neighbor saveHNSWData calls
+    // (each a read→gzip→atomic-write cycle). For 450 items that's ~8,100
+    // individual storage writes. Deferred mode collects dirty node IDs and
+    // flushes once at the end — deduplicating repeated neighbor updates.
+    const index = this.index as any
+    const prevPersistMode = typeof index.getPersistMode === 'function'
+      ? index.getPersistMode()
+      : null
+    const canDefer = prevPersistMode === 'immediate'
+      && typeof index.setPersistMode === 'function'
+      && typeof index.flush === 'function'
 
-      const promises = chunk.map(async (item) => {
-        try {
-          const id = await this.add(item)
-          result.successful.push(id)
-        } catch (error) {
-          result.failed.push({
-            item,
-            error: (error as Error).message
-          })
-          if (!params.continueOnError) {
-            throw error
+    if (canDefer) {
+      index.setPersistMode('deferred')
+    }
+
+    try {
+      // Process in batches
+      for (let i = 0; i < params.items.length; i += batchSize) {
+        const chunk = params.items.slice(i, i + batchSize)
+
+        const promises = chunk.map(async (item) => {
+          try {
+            const id = await this.add(item)
+            result.successful.push(id)
+          } catch (error) {
+            result.failed.push({
+              item,
+              error: (error as Error).message
+            })
+            if (!params.continueOnError) {
+              throw error
+            }
+          }
+        })
+
+        // Parallel vs Sequential based on storage preference
+        if (parallel) {
+          await Promise.allSettled(promises)
+        } else {
+          // Sequential processing for rate-limited storage
+          for (const promise of promises) {
+            await promise
           }
         }
-      })
 
-      // Parallel vs Sequential based on storage preference
-      if (parallel) {
-        await Promise.allSettled(promises)
-      } else {
-        // Sequential processing for rate-limited storage
-        for (const promise of promises) {
-          await promise
-        }
-      }
-
-      // Progress callback
-      if (params.onProgress) {
-        params.onProgress(
-          result.successful.length + result.failed.length,
-          result.total
-        )
-      }
-
-      // Adaptive delay between batches
-      if (i + batchSize < params.items.length && delayMs > 0) {
-        const batchDuration = Date.now() - lastBatchTime
-
-        // If batch was too fast, add delay to respect rate limits
-        if (batchDuration < delayMs) {
-          await new Promise(resolve =>
-            setTimeout(resolve, delayMs - batchDuration)
+        // Progress callback
+        if (params.onProgress) {
+          params.onProgress(
+            result.successful.length + result.failed.length,
+            result.total
           )
         }
 
-        lastBatchTime = Date.now()
+        // Adaptive delay between batches
+        if (i + batchSize < params.items.length && delayMs > 0) {
+          const batchDuration = Date.now() - lastBatchTime
+
+          // If batch was too fast, add delay to respect rate limits
+          if (batchDuration < delayMs) {
+            await new Promise(resolve =>
+              setTimeout(resolve, delayMs - batchDuration)
+            )
+          }
+
+          lastBatchTime = Date.now()
+        }
+      }
+    } finally {
+      // Restore persist mode and flush all dirty nodes in one pass
+      if (canDefer) {
+        await index.flush()
+        index.setPersistMode(prevPersistMode)
       }
     }
 
