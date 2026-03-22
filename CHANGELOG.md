@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.14](https://github.com/soulcraftlabs/brainy/compare/v7.19.13...v7.19.14) (2026-03-22)
+
+- feat: add setMaxSize() for dynamic cache resizing (54865b3)
+
+
 ### [7.19.13](https://github.com/soulcraftlabs/brainy/compare/v7.19.12...v7.19.13) (2026-03-22)
 
 - fix: suppress misleading 'Using Q8 WASM' log when Cortex native is active (60a0f10)
