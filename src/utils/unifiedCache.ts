@@ -64,7 +64,7 @@ export class UnifiedCache {
   private typeAccessCounts = { hnsw: 0, metadata: 0, embedding: 0, other: 0 }
   private totalAccessCount = 0
   private currentSize = 0
-  private readonly maxSize: number
+  private maxSize: number
   private readonly config: UnifiedCacheConfig
 
   // Memory management
@@ -431,6 +431,28 @@ export class UnifiedCache {
       }
     }
     return deleted
+  }
+
+  /**
+   * Dynamically resize the cache maximum. If the new size is smaller than
+   * the current usage, evicts lowest-value items until the cache fits within
+   * the new budget. Used by Cortex's ResourceManager to rebalance cache vs
+   * instance memory as brainy instances are created and evicted.
+   *
+   * @param newMaxSize - New maximum cache size in bytes
+   */
+  setMaxSize(newMaxSize: number): void {
+    this.maxSize = Math.max(newMaxSize, 64 * 1024 * 1024) // Floor at 64MB
+    while (this.currentSize > this.maxSize && this.cache.size > 0) {
+      this.evictLowestValue()
+    }
+  }
+
+  /**
+   * Get the current maximum cache size in bytes.
+   */
+  getMaxSize(): number {
+    return this.maxSize
   }
 
   /**
