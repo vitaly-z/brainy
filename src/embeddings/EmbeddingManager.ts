@@ -48,7 +48,8 @@ export class EmbeddingManager {
 
   private constructor() {
     this.engine = WASMEmbeddingEngine.getInstance()
-    console.log('🎯 EmbeddingManager: Using Q8 precision (WASM)')
+    // Log deferred to init() — at construction time we don't know if a plugin
+    // (like Cortex) will replace the WASM embedder with a native one.
   }
 
   /**
