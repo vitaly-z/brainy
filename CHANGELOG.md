@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.15](https://github.com/soulcraftlabs/brainy/compare/v7.19.14...v7.19.15) (2026-03-23)
+
+- fix: commit() now flushes and captures state by default (b58ea02)
+
+
 ### [7.19.14](https://github.com/soulcraftlabs/brainy/compare/v7.19.13...v7.19.14) (2026-03-22)
 
 - feat: add setMaxSize() for dynamic cache resizing (54865b3)
