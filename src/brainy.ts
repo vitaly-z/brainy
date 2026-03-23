@@ -3411,8 +3411,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Create a commit with current state
-   * @param options - Commit options (message, author, metadata)
-   * @returns Commit hash
+   *
+   * Flushes all buffered data to disk, captures a full state snapshot
+   * (entities + relationships) into a content-addressed tree, then creates
+   * an immutable commit object pointing to that tree.
+   *
+   * By default, every commit captures a complete snapshot that can be
+   * restored via time-travel. Pass `captureState: false` for a lightweight
+   * metadata-only commit (tree hash will be NULL_HASH).
+   *
+   * @param options - Commit options
+   * @param options.message - Human-readable commit message
+   * @param options.author - Author identifier (email, username, or 'system')
+   * @param options.metadata - Arbitrary key-value metadata stored with the commit
+   * @param options.captureState - Capture entity snapshots for time-travel (default: true)
+   * @returns Commit hash (64-char hex SHA-256)
    *
    * @example
    * ```typescript
@@ -3427,13 +3440,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     message?: string
     author?: string
     metadata?: Record<string, any>
-    captureState?: boolean  // Capture entity snapshots for time-travel
+    captureState?: boolean
   }): Promise<string> {
     await this.ensureInitialized()
 
     if (!('refManager' in this.storage) || !('commitLog' in this.storage) || !('blobStorage' in this.storage)) {
         throw new Error('Commit requires COW-enabled storage')
       }
+
+      // Flush all buffered data to disk before creating the snapshot.
+      // Without this, deferred HNSW nodes, pending count batches, and
+      // unflushed index state could be missing from the commit tree.
+      await this.flush()
 
       const refManager = (this.storage as any).refManager
       const blobStorage = (this.storage as any).blobStorage
@@ -3449,15 +3467,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Import NULL_HASH constant
       const { NULL_HASH } = await import('./storage/cow/constants.js')
 
-      // Capture entity state if requested (for time-travel)
+      // Capture entity state to tree (default: true).
+      // Only skip when caller explicitly passes captureState: false
+      // for a lightweight metadata-only commit.
+      const shouldCapture = options?.captureState !== false
       let treeHash = NULL_HASH
-      if (options?.captureState) {
+      if (shouldCapture) {
         treeHash = await this.captureStateToTree()
       }
 
       // Build commit object using builder pattern
       const builder = CommitBuilder.create(blobStorage)
-        .tree(treeHash) // Use captured state tree or NULL_HASH
+        .tree(treeHash)
         .message(options?.message || 'Snapshot commit')
         .author(options?.author || 'unknown')
         .timestamp(Date.now())
@@ -3490,7 +3511,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Capture current entity and relationship state to tree object
-   * Used by commit({ captureState: true }) for time-travel
+   * Called by commit() by default for full state snapshots
    *
    * Serializes ALL entities + relationships to blobs and builds a tree.
    * BlobStorage automatically deduplicates unchanged data.

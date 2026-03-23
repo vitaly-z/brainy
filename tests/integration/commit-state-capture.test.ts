@@ -5,8 +5,8 @@
  * historical time-travel by capturing entity snapshots in trees.
  *
  * Tests:
- * 1. Backward compatibility (captureState: false uses NULL_HASH)
- * 2. State capture (captureState: true creates tree)
+ * 1. Lightweight commit (captureState: false uses NULL_HASH)
+ * 2. Default behavior (captureState omitted → captures state)
  * 3. Empty workspace handling
  * 4. Performance benchmarks (100, 1K, 10K entities)
  * 5. BlobStorage deduplication
@@ -56,10 +56,10 @@ describe('Commit State Capture (v5.4.0)', () => {
     // Add some entities
     await brain.add({ type: 'concept', data: { title: 'Test' } })
 
-    // Commit WITHOUT captureState (default behavior)
+    // Commit with explicit captureState: false (lightweight metadata-only commit)
     const commitId = await brain.commit({
       message: 'Test commit',
-      captureState: false  // Explicit false
+      captureState: false  // Explicit false — skips state capture
     })
 
     console.log(`   Commit ID: ${commitId.slice(0, 8)}`)
@@ -76,15 +76,15 @@ describe('Commit State Capture (v5.4.0)', () => {
     console.log(`   ✅ Tree is NULL_HASH (backward compatible)`)
   })
 
-  it('should use NULL_HASH when captureState is omitted (default)', async () => {
-    console.log('\n📋 Test 2: Default behavior (captureState omitted)')
+  it('should capture state when captureState is omitted (default: true)', async () => {
+    console.log('\n📋 Test 2: Default behavior (captureState omitted → captures state)')
 
     await brain.add({ type: 'concept', data: { title: 'Test' } })
 
-    // Commit WITHOUT captureState parameter (omitted = default)
+    // Commit WITHOUT captureState parameter (omitted = default true)
     const commitId = await brain.commit({
       message: 'Test commit'
-      // captureState not specified
+      // captureState not specified → defaults to true
     })
 
     const blobStorage = (brain.storage as any).blobStorage
@@ -93,8 +93,9 @@ describe('Commit State Capture (v5.4.0)', () => {
 
     const commit = await CommitObject.read(blobStorage, commitId)
 
-    expect(commit.tree).toBe(NULL_HASH)
-    console.log(`   ✅ Tree is NULL_HASH (default behavior)`)
+    // Default behavior now captures state (tree hash is NOT null)
+    expect(commit.tree).not.toBe(NULL_HASH)
+    console.log(`   ✅ Tree is ${commit.tree.slice(0, 8)}... (state captured by default)`)
   })
 
   it('should capture entity state when captureState is true', async () => {
