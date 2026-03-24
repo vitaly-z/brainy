@@ -223,23 +223,38 @@ export class MetadataIndexManager {
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
 
-    // Short-circuit: skip warmCache, lazyLoadCounts, syncTypeCountsToFixed for empty workspace
-    // On empty workspace, there are no fields to warm — avoids 4-6 wasted storage reads (404s)
+    // Check if field registry was loaded successfully
     const hasFields = this.fieldIndexes.size > 0
 
-    if (hasFields) {
-      // Warm the cache with common fields (lazy loading optimization)
-      // This loads the 'noun' sparse index which is needed for type counts
-      await this.warmCache()
+    if (!hasFields) {
+      // Don't trust "empty" — field registry may be missing due to interrupted flush.
+      // Probe storage for actual entities before concluding the workspace is empty.
+      try {
+        const probe = await this.storage.getNouns({ pagination: { limit: 1, offset: 0 } })
+        const hasEntities = (probe.totalCount ?? 0) > 0 || probe.items.length > 0
 
-      // Load type counts AFTER warmCache (sparse index is now cached)
-      // Previously called in constructor without await and read from wrong source
-      await this.lazyLoadCounts()
-
-      // Phase 1b: Sync loaded counts to fixed-size arrays
-      // Now correctly happens AFTER lazyLoadCounts() finishes
-      this.syncTypeCountsToFixed()
+        if (hasEntities) {
+          console.warn(
+            `[MetadataIndex] Field registry missing but ${probe.totalCount ?? 'unknown'} entities exist on disk — rebuilding index`
+          )
+          await this.rebuild()
+          return // rebuild handles warmCache + lazyLoadCounts internally
+        }
+      } catch {
+        // Storage probe failed — genuinely empty or storage not ready
+      }
+      return // Truly empty workspace — nothing to warm
     }
+
+    // Warm the cache with common fields (lazy loading optimization)
+    // This loads the 'noun' sparse index which is needed for type counts
+    await this.warmCache()
+
+    // Load type counts AFTER warmCache (sparse index is now cached)
+    await this.lazyLoadCounts()
+
+    // Phase 1b: Sync loaded counts to fixed-size arrays
+    this.syncTypeCountsToFixed()
   }
 
   /**
@@ -2409,9 +2424,19 @@ export class MetadataIndexManager {
     // Flush any deferred chunk/sparse writes first
     await this.flushDirtyMetadata()
 
-    // Check if we have anything to flush
+    // Always save field registry — even with no dirty fields. This tiny file
+    // (list of field names) is the critical link that init() needs to discover
+    // persisted indices. Without it, the index appears empty after restart.
+    if (this.fieldIndexes.size > 0) {
+      await this.saveFieldRegistry()
+    }
+
+    // Also always flush the EntityIdMapper — prevents ID collisions on restart
+    await this.idMapper.flush()
+
+    // Check if we have anything else to flush
     if (this.dirtyFields.size === 0) {
-      return // Nothing to flush
+      return // No dirty field indexes to flush
     }
 
     // Process in smaller batches to avoid blocking
@@ -3072,10 +3097,12 @@ export class MetadataIndexManager {
       // This ensures rebuild starts fresh
       this.unifiedCache.clear('metadata')
 
-      // CRITICAL FIX - Delete existing chunk files from storage
-      // Without this, old chunk data accumulates with each rebuild causing 77x overcounting!
-      // Previous fix cleared type counts but missed chunk file accumulation.
-      prodLog.info('🗑️ Clearing existing metadata index chunks from storage...')
+      // Clear existing chunk files from storage to prevent overcounting.
+      // Chunks are deleted first, then rebuilt. The field registry is NOT deleted
+      // here — it's always saved at the end of rebuild via flush(). This ensures
+      // that if rebuild fails partway, the next init() can still discover fields
+      // and trigger another rebuild attempt.
+      prodLog.info('Clearing existing metadata index chunks from storage...')
       const existingFields = await this.getPersistedFieldList()
 
       if (existingFields.length > 0) {
@@ -3083,14 +3110,7 @@ export class MetadataIndexManager {
           await this.deleteFieldChunks(field)
         }
 
-        // Delete field registry (will be recreated on flush)
-        try {
-          await this.storage.saveMetadata('__metadata_field_registry__', null as any)
-        } catch (error) {
-          prodLog.debug('Could not delete field registry:', error)
-        }
-
-        prodLog.info(`✅ Cleared ${existingFields.length} field indexes from storage`)
+        prodLog.info(`Cleared ${existingFields.length} field indexes from storage`)
       }
 
       // Clear EntityIdMapper to start fresh

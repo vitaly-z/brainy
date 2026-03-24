@@ -7170,14 +7170,27 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       ])
 
       const rebuildDuration = Date.now() - rebuildStartTime
+      const metadataCountAfter = (await this.metadataIndex.getStats()).totalEntries
+
       if (!this.config.silent) {
         console.log(
-          `✅ All indexes rebuilt in ${rebuildDuration}ms:\n` +
-          `   - Metadata: ${await this.metadataIndex.getStats().then(s => s.totalEntries)} entries\n` +
+          `All indexes rebuilt in ${rebuildDuration}ms:\n` +
+          `   - Metadata: ${metadataCountAfter} entries\n` +
           `   - HNSW Vector: ${this.index.size()} nodes\n` +
-          `   - Graph Adjacency: ${await this.graphIndex.size()} relationships\n` +
-          `   💡 Indexes loaded from persisted storage (no recomputation)`
+          `   - Graph Adjacency: ${await this.graphIndex.size()} relationships`
         )
+      }
+
+      // Consistency verification: metadata index must match storage entity count.
+      // If mismatch, the rebuild missed entities — force a second attempt.
+      if (metadataCountAfter === 0 && totalCount > 0) {
+        console.error(
+          `[Brainy] CRITICAL: Metadata index has 0 entries but storage has ${totalCount} entities. ` +
+          `Forcing second rebuild.`
+        )
+        await this.metadataIndex.rebuild()
+        const secondAttempt = (await this.metadataIndex.getStats()).totalEntries
+        console.log(`[Brainy] Second rebuild result: ${secondAttempt} entries`)
       }
 
     } catch (error) {

@@ -62,6 +62,22 @@ export class EntityIdMapper {
         // Rebuild maps from serialized data
         this.uuidToInt = new Map(Object.entries(data.uuidToInt).map(([k, v]) => [k, Number(v)]))
         this.intToUuid = new Map(Object.entries(data.intToUuid).map(([k, v]) => [Number(k), v]))
+      } else {
+        // Guard: mapper file missing but entities may exist on disk.
+        // If we start from nextId=1 with existing entities, roaring bitmap
+        // queries will use wrong integer IDs → silent data corruption.
+        // Probe storage to detect this case and log a warning.
+        try {
+          const probe = await this.storage.getNouns({ pagination: { limit: 1, offset: 0 } })
+          if ((probe.totalCount ?? 0) > 0 || probe.items.length > 0) {
+            console.warn(
+              `[EntityIdMapper] Mapper file missing but entities exist on disk. ` +
+              `IDs will be rebuilt during metadata index reconstruction.`
+            )
+          }
+        } catch {
+          // Storage not ready
+        }
       }
     } catch (error) {
       // First time initialization - maps are empty, nextId = 1
