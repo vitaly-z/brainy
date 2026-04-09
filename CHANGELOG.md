@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.17](https://github.com/soulcraftlabs/brainy/compare/v7.19.16...v7.19.17) (2026-04-09)
+
+- fix: correct orderBy sort for timestamp fields via centralized field resolver (be6c4dc)
+
+
 ### [7.19.15](https://github.com/soulcraftlabs/brainy/compare/v7.19.14...v7.19.15) (2026-03-23)
 
 - fix: commit() now flushes and captures state by default (b58ea02)
