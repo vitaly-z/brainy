@@ -13,7 +13,8 @@
  * - Delta detection hashes definitions; only changed aggregates rebuild on restart
  */
 
-import type { StorageAdapter } from '../coreTypes.js'
+import type { StorageAdapter, HNSWNounWithMetadata } from '../coreTypes.js'
+import { resolveEntityField } from '../coreTypes.js'
 import type {
   AggregateDefinition,
   AggregateGroupState,
@@ -96,22 +97,25 @@ function matchesSource(entity: Record<string, unknown>, source: AggregateDefinit
 
 /**
  * Compute the group key for an entity given groupBy dimensions.
+ *
+ * Field lookups go through `resolveEntityField` to honor the
+ * HNSWNounWithMetadata shape contract (standard fields top-level,
+ * custom fields in metadata) in a single source of truth.
  */
 function computeGroupKey(
   entity: Record<string, unknown>,
   groupBy: GroupByDimension[]
 ): Record<string, string | number> {
   const key: Record<string, string | number> = {}
-  const metadata = (entity.metadata ?? {}) as Record<string, unknown>
+  const e = entity as unknown as HNSWNounWithMetadata
 
   for (const dim of groupBy) {
     if (typeof dim === 'string') {
-      // Plain field lookup — check metadata first, then top-level
-      const val = metadata[dim] ?? entity[dim]
+      const val = resolveEntityField(e, dim)
       key[dim] = val !== undefined && val !== null ? String(val) : '__null__'
     } else {
       // Time-windowed field
-      const val = metadata[dim.field] ?? entity[dim.field]
+      const val = resolveEntityField(e, dim.field)
       if (typeof val === 'number') {
         key[dim.field] = bucketTimestamp(val, dim.window)
       } else {
@@ -124,11 +128,14 @@ function computeGroupKey(
 }
 
 /**
- * Get the numeric value of a field from entity metadata (for metric computation).
+ * Get the numeric value of a field from an entity (for metric computation).
+ *
+ * Routes through `resolveEntityField` so standard top-level numeric fields
+ * (weight, confidence, createdAt, updatedAt) and custom user numeric fields
+ * in metadata are both handled in one place.
  */
 function getNumericField(entity: Record<string, unknown>, field: string): number | undefined {
-  const metadata = (entity.metadata ?? {}) as Record<string, unknown>
-  const val = metadata[field] ?? entity[field]
+  const val = resolveEntityField(entity as unknown as HNSWNounWithMetadata, field)
   if (typeof val === 'number' && !isNaN(val)) return val
   if (typeof val === 'string') {
     const num = parseFloat(val)

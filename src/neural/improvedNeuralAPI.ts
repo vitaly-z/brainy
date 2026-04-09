@@ -18,7 +18,7 @@
  * Private methods are prefixed with _ and not exposed in public API
  */
 
-import { Vector } from '../coreTypes.js'
+import { Vector, resolveEntityField, type HNSWNounWithMetadata } from '../coreTypes.js'
 import { cosineDistance, euclideanDistance } from '../utils/distance.js'
 import {
   SemanticCluster,
@@ -2927,22 +2927,20 @@ export class ImprovedNeuralAPI {
   private _groupByDomain(items: any[], field: string): Map<string, any[]> {
     const groups = new Map()
     for (const item of items) {
-      // Check multiple locations for the field value
+      // Resolve domain field value across legacy storage shapes.
       let domain: any = 'unknown'
 
-      // Special handling for type/nounType field
+      // Special handling for type/nounType — legacy storage compatibility
+      // where the type may live at item.nounType or metadata.noun/metadata.type
+      // rather than the current top-level item.type.
       if (field === 'type' || field === 'nounType') {
         domain = item.nounType || item.metadata?.noun || item.metadata?.type || 'unknown'
       } else {
-        // Check root level first
-        domain = item[field]
+        // Primary path: single-source-of-truth resolver (standard top-level,
+        // custom in metadata).
+        domain = resolveEntityField(item as HNSWNounWithMetadata, field)
 
-        // Then check metadata
-        if (domain == null) {
-          domain = item.metadata?.[field]
-        }
-
-        // Then check data
+        // Legacy fallback: some producers stash data under item.data.
         if (domain == null) {
           domain = item.data?.[field]
         }
@@ -3127,17 +3125,16 @@ export class ImprovedNeuralAPI {
 
         const entity = item.entity
 
-        // Get timestamp value from various possible locations
-        let timestamp: any = null
-
-        // Check root level first
-        if (timeField === 'createdAt' || timeField === 'updatedAt') {
-          timestamp = entity[timeField]
-        }
-
-        // Check metadata/data
+        // Resolve the timestamp field through the single-source-of-truth
+        // helper so standard top-level fields (createdAt, updatedAt) and
+        // custom fields in metadata are both handled uniformly. Fall back
+        // to entity.data for legacy producers that stash timestamps there.
+        let timestamp: any = resolveEntityField(
+          entity as HNSWNounWithMetadata,
+          timeField
+        )
         if (timestamp == null) {
-          timestamp = entity.metadata?.[timeField] || entity.data?.[timeField]
+          timestamp = entity.data?.[timeField]
         }
 
         if (timestamp == null) {
