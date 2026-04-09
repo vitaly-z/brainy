@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.19.19](https://github.com/soulcraftlabs/brainy/compare/v7.19.18...v7.19.19) (2026-04-09)
+
+- refactor: migrate aggregation + neural field reads to resolveEntityField (108e2bc)
+
+
 ### [7.19.18](https://github.com/soulcraftlabs/brainy/compare/v7.19.17...v7.19.18) (2026-04-09)
 
 - feat: export resolveEntityField + STANDARD_ENTITY_FIELDS from internals (beefacb)
