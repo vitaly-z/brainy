@@ -11,3 +11,7 @@ export { EntityIdMapper } from './utils/entityIdMapper.js'
 export type { EntityIdMapperOptions, EntityIdMapperData } from './utils/entityIdMapper.js'
 export { getRecommendedCacheConfig, formatBytes, checkMemoryPressure } from './utils/memoryDetection.js'
 export type { MemoryInfo, CacheAllocationStrategy } from './utils/memoryDetection.js'
+// Entity field resolution — single source of truth for reading fields off
+// HNSWNounWithMetadata. First-party plugins (Cortex) use this to stay in
+// lockstep with the entity shape contract.
+export { resolveEntityField, STANDARD_ENTITY_FIELDS } from './coreTypes.js'
