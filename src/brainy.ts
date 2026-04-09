@@ -2166,6 +2166,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
+        // orderBy without any filter is not supported — it would require
+        // O(N) work across every entity in storage. Consumers must supply
+        // a filter (`type`, `where`, or `excludeVFS: true`) so the sort
+        // runs over a bounded, roaring-bitmap-filtered set. The long-term
+        // fix is a dedicated time-ordered segment index (Track 2).
+        if (params.orderBy) {
+          throw new Error(
+            `find({ orderBy: '${params.orderBy}' }) requires a filter. ` +
+            `Add 'type', 'where', or 'excludeVFS: true' so the sort runs ` +
+            `over a bounded set. Unfiltered sort over all entities is not ` +
+            `scalable with the current index and is tracked as a dedicated ` +
+            `time-ordered segment index (Track 2).`
+          )
+        }
+
         // ExcludeVFS helper - exclude VFS infrastructure entities
         // VFS files/folders have vfsType set, extracted entities do NOT
         let filter: any = {}

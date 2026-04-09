@@ -4,7 +4,7 @@
  * Automatically updates indexes when data changes
  */
 
-import { StorageAdapter } from '../coreTypes.js'
+import { StorageAdapter, resolveEntityField } from '../coreTypes.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { prodLog } from './logger.js'
 import { getGlobalCache, UnifiedCache } from './unifiedCache.js'
@@ -27,6 +27,21 @@ import {
 import { EntityIdMapper } from './entityIdMapper.js'
 import { RoaringBitmap32, roaringLibraryInitialize } from './roaring/index.js'
 import { FieldTypeInference, FieldType } from './fieldTypeInference.js'
+
+/**
+ * Fields whose values are stored in the sparse index as BUCKETED values
+ * (rounded to a coarser granularity to keep the index compact). Sorting
+ * and any precision-sensitive comparison on these fields must bypass the
+ * index and read the actual value directly from entity storage.
+ *
+ * Currently only timestamps are bucketed — they round to 1-minute windows
+ * via `Math.floor(ts / 60000) * 60000` in the chunking layer. If any new
+ * bucketed field is added (e.g. a compressed float), add it here too.
+ */
+const BUCKETED_INDEX_FIELDS: ReadonlySet<string> = new Set([
+  'createdAt',
+  'updatedAt'
+])
 
 export interface MetadataIndexEntry {
   field: string
@@ -2216,6 +2231,12 @@ export class MetadataIndexManager {
     order: 'asc' | 'desc' = 'asc'
   ): Promise<string[]> {
     // 1. Get filtered IDs using existing roaring bitmap implementation (fast!)
+    //
+    // NOTE: This method REQUIRES a non-empty filter. Unfiltered sort over all
+    // entities is not supported here because it would require O(N) storage reads
+    // on bucketed fields (timestamps), which does not scale. The proper solution
+    // is a dedicated time-ordered segment index — tracked as Track 2.
+    // Callers should enforce a filter (type / where / excludeVFS) before calling.
     const filteredIds = await this.getIdsForFilter(filter)
 
     if (filteredIds.length === 0) {
@@ -2254,17 +2275,24 @@ export class MetadataIndexManager {
   /**
    * Get field value for a specific entity (helper for sorted queries)
    *
-   * **IMPORTANT**: For timestamp fields (createdAt, updatedAt), this loads
-   * the ACTUAL value from entity metadata, NOT the bucketed index value.
-   * This is required because timestamp bucketing (1-minute precision) loses
-   * precision needed for accurate sorting.
+   * Three-path lookup:
    *
-   * For non-timestamp fields, loads from the chunked sparse index without
-   * loading the full entity. This is critical for production-scale sorting.
+   * 1. **Bucketed fields** (timestamps) — the sparse index stores values
+   *    rounded to 1-minute buckets to keep the index compact for range
+   *    queries. That bucketing loses precision, so sorting must read the
+   *    actual value directly from entity storage.
+   *
+   * 2. **Custom fields with no sparse index** — VFS fields like `modified`
+   *    and `accessed`, plus any user custom field whose sparse index was
+   *    never built. Resolved from entity storage via `resolveEntityField`,
+   *    which knows the top-level-vs-metadata shape contract.
+   *
+   * 3. **Indexed fields** — strings, enums, and low-cardinality ints live
+   *    in the sparse roaring index. O(chunks) lookup, typically 1-10 chunks.
    *
    * **Performance**:
-   * - Timestamp fields: O(1) metadata load from storage (cached)
-   * - Other fields: O(chunks) roaring bitmap lookup (typically 1-10 chunks)
+   * - Paths 1 & 2: O(1) entity load from storage (cached)
+   * - Path 3: O(chunks) roaring bitmap lookup
    *
    * @param entityId - Entity UUID to get field value for
    * @param field - Field name to retrieve (e.g., 'createdAt', 'title')
@@ -2273,43 +2301,39 @@ export class MetadataIndexManager {
    * @public (called from brainy.ts for sorted queries)
    */
   async getFieldValueForEntity(entityId: string, field: string): Promise<any> {
-    // For timestamp fields, load ACTUAL value from entity metadata
-    // (index has bucketed values which lose precision for sorting)
-    if (field === 'createdAt' || field === 'updatedAt' || field === 'accessed' || field === 'modified') {
-      try {
-        const noun = await this.storage.getNoun(entityId)
-        if (noun && noun.metadata) {
-          return noun.metadata[field]
-        }
-      } catch (err) {
-        // If metadata load fails, fall back to index (bucketed value)
-        console.warn(`[MetadataIndex] Failed to load ${field} from metadata for ${entityId}, using bucketed value`)
-      }
+    // Path 1: Bucketed fields need the actual value from storage.
+    if (BUCKETED_INDEX_FIELDS.has(field)) {
+      const noun = await this.storage.getNoun(entityId)
+      return noun ? resolveEntityField(noun, field) : undefined
     }
 
-    // For non-timestamp fields, use the sparse index (no bucketing issues)
+    // Path 3 precondition: entity must be in the id mapper for bitmap lookup.
     const intId = this.idMapper.getInt(entityId)
     if (intId === undefined) {
       return undefined
     }
 
-    // Load sparse index for this field (cached via UnifiedCache)
+    // Load sparse index for this field (cached via UnifiedCache).
     const sparseIndex = await this.loadSparseIndex(field)
+
+    // Path 2: No sparse index exists — fall back to entity storage.
+    // Covers VFS custom fields (modified, accessed) and user fields not
+    // yet indexed. resolveEntityField handles the shape contract.
     if (!sparseIndex) {
-      return undefined
+      const noun = await this.storage.getNoun(entityId)
+      return noun ? resolveEntityField(noun, field) : undefined
     }
 
-    // Search through chunks to find which value this entity has
-    // Typically 1-10 chunks per field, so this is fast
+    // Path 3: Search sparse index chunks for this entity's value.
+    // Typically 1-10 chunks per field, so this is fast.
     for (const chunkId of sparseIndex.getAllChunkIds()) {
       const chunk = await this.chunkManager.loadChunk(field, chunkId)
       if (!chunk) continue
 
-      // Check each value's roaring bitmap for our entity ID
-      // Roaring bitmap .has() is O(1) with SIMD optimization
+      // Check each value's roaring bitmap for our entity ID.
+      // Roaring bitmap .has() is O(1) with SIMD optimization.
       for (const [value, bitmap] of chunk.entries) {
         if (bitmap.has(intId)) {
-          // Found it! Denormalize the value (no bucketing for non-timestamps)
           return this.denormalizeValue(value, field)
         }
       }

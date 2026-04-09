@@ -234,6 +234,58 @@ export interface HNSWNounWithMetadata {
 }
 
 /**
+ * Standard top-level fields on HNSWNounWithMetadata.
+ *
+ * Single source of truth for the entity shape contract: fields listed here
+ * live at the top level of the entity; any other field is a custom user
+ * field and lives in `entity.metadata`.
+ *
+ * Keep this set in lockstep with the HNSWNounWithMetadata interface above.
+ * Adding a new top-level field to the interface? Add it here too, or
+ * `resolveEntityField` will look for it in the wrong place.
+ */
+export const STANDARD_ENTITY_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'vector',
+  'connections',
+  'level',
+  'type',
+  'confidence',
+  'weight',
+  'createdAt',
+  'updatedAt',
+  'service',
+  'createdBy',
+  'data'
+])
+
+/**
+ * Resolve a field value off an entity by name.
+ *
+ * Encodes the HNSWNounWithMetadata shape contract in one place: standard
+ * fields live at the top level, custom user fields live in `entity.metadata`.
+ * Use this helper anywhere code needs to read a field by name (sorting,
+ * filtering, aggregation) instead of reaching into the entity directly.
+ *
+ * @param entity - The entity to read from
+ * @param field - The field name to resolve
+ * @returns The field value, or undefined if not present
+ *
+ * @example
+ * resolveEntityField(noun, 'createdAt')  // reads noun.createdAt (top-level)
+ * resolveEntityField(noun, 'customTag')  // reads noun.metadata?.customTag
+ */
+export function resolveEntityField(
+  entity: HNSWNounWithMetadata,
+  field: string
+): unknown {
+  if (STANDARD_ENTITY_FIELDS.has(field)) {
+    return (entity as unknown as Record<string, unknown>)[field]
+  }
+  return entity.metadata?.[field]
+}
+
+/**
  * Combined verb structure for transport/API boundaries
  *
  * Standard fields moved to top-level
