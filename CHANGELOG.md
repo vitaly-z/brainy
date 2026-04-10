@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.20.0](https://github.com/soulcraftlabs/brainy/compare/v7.19.19...v7.20.0) (2026-04-10)
+
+- refactor: delete dead sparse index write path (11be039)
+- feat: unified column store for filtering + sorting at billion scale (46583f2)
+
+
 ### [7.19.19](https://github.com/soulcraftlabs/brainy/compare/v7.19.18...v7.19.19) (2026-04-09)
 
 - refactor: migrate aggregation + neural field reads to resolveEntityField (108e2bc)
