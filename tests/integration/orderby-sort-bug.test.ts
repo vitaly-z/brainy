@@ -125,16 +125,25 @@ describe('find({ orderBy }) sort bug regression', () => {
   })
 
   /**
-   * Unfiltered sort is explicitly rejected with a clear error pointing
-   * callers at the right pattern. This guards against silent N-scans
-   * on production workloads.
+   * Unfiltered sort now works via the unified column store.
+   * This was the Track 2 motivating use case — previously threw an error.
    */
-  it('orderBy without any filter throws a helpful error', async () => {
-    await brain.add({ data: 'anything', type: NounType.Concept })
+  it('orderBy without filter works via column store', async () => {
+    const id1 = await brain.add({ data: 'first', type: NounType.Concept })
+    await new Promise((r) => setTimeout(r, 20))
+    await brain.add({ data: 'second', type: NounType.Concept })
+    await new Promise((r) => setTimeout(r, 20))
+    const id3 = await brain.add({ data: 'third', type: NounType.Concept })
 
-    await expect(
-      brain.find({ orderBy: 'createdAt', order: 'desc', limit: 1 })
-    ).rejects.toThrow(/requires a filter/)
+    const results = await brain.find({
+      orderBy: 'createdAt',
+      order: 'desc',
+      limit: 2
+    })
+
+    expect(results.length).toBeGreaterThanOrEqual(2)
+    // Newest should be first (desc order)
+    expect(results[0].id).toBe(id3)
   })
 })
 

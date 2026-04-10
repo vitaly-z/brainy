@@ -2166,19 +2166,31 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         const limit = params.limit || 20
         const offset = params.offset || 0
 
-        // orderBy without any filter is not supported — it would require
-        // O(N) work across every entity in storage. Consumers must supply
-        // a filter (`type`, `where`, or `excludeVFS: true`) so the sort
-        // runs over a bounded, roaring-bitmap-filtered set. The long-term
-        // fix is a dedicated time-ordered segment index (Track 2).
+        // Unfiltered sort: column store handles this at O(K log S) scale.
+        // No per-entity storage reads, no bucketing precision loss.
         if (params.orderBy) {
-          throw new Error(
-            `find({ orderBy: '${params.orderBy}' }) requires a filter. ` +
-            `Add 'type', 'where', or 'excludeVFS: true' so the sort runs ` +
-            `over a bounded set. Unfiltered sort over all entities is not ` +
-            `scalable with the current index and is tracked as a dedicated ` +
-            `time-ordered segment index (Track 2).`
+          const k = limit + offset
+          const sortedIntIds = await this.metadataIndex.columnStore.sortTopK(
+            params.orderBy,
+            params.order || 'asc',
+            k
           )
+
+          // Convert int IDs to UUIDs and paginate
+          const idMapper = this.metadataIndex.getIdMapper()
+          const allUuids = sortedIntIds
+            .map(intId => idMapper.getUuid(intId))
+            .filter((uuid): uuid is string => uuid !== undefined)
+          const pageIds = allUuids.slice(offset, offset + limit)
+
+          const entitiesMap = await this.batchGet(pageIds)
+          for (const id of pageIds) {
+            const entity = entitiesMap.get(id)
+            if (entity) {
+              results.push(this.createResult(id, 1.0, entity))
+            }
+          }
+          return results
         }
 
         // ExcludeVFS helper - exclude VFS infrastructure entities

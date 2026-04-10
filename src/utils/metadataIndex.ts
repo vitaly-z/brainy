@@ -5,6 +5,7 @@
  */
 
 import { StorageAdapter, resolveEntityField } from '../coreTypes.js'
+import { ColumnStore } from '../indexes/columnStore/ColumnStore.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { prodLog } from './logger.js'
 import { getGlobalCache, UnifiedCache } from './unifiedCache.js'
@@ -163,6 +164,14 @@ export class MetadataIndexManager {
   // Replaces unreliable pattern matching with DuckDB-inspired value analysis
   private fieldTypeInference: FieldTypeInference
 
+  /**
+   * Unified Column Store — replaces sparse index internals for filtering + sorting.
+   * Created in the constructor (no storage needed for writes), storage discovery
+   * happens in init(). Public so brainy.ts can call sortTopK directly for
+   * unfiltered sort.
+   */
+  public columnStore: ColumnStore
+
   constructor(storage: StorageAdapter, config: MetadataIndexConfig = {}, options: MetadataIndexOptions = {}) {
     this.storage = storage
     this.config = {
@@ -218,9 +227,22 @@ export class MetadataIndexManager {
     // Initialize Field Type Inference
     this.fieldTypeInference = new FieldTypeInference(storage)
 
+    // Create column store — works immediately for writes (in-memory tail buffers).
+    // Storage discovery (loading existing segments) happens in init().
+    this.columnStore = new ColumnStore()
+
     // Removed lazyLoadCounts() call from constructor
     // It was a race condition (not awaited) and read from wrong source.
     // Now properly called in init() after warmCache() loads the sparse index.
+  }
+
+  /**
+   * Get the shared EntityIdMapper instance. Used by the ColumnStore and
+   * other subsystems that need UUID ↔ u32 mapping without creating a
+   * second mapper that could diverge.
+   */
+  getIdMapper(): EntityIdMapper {
+    return this.idMapper
   }
 
   /**
@@ -237,6 +259,15 @@ export class MetadataIndexManager {
 
     // Initialize EntityIdMapper (loads UUID ↔ integer mappings from storage)
     await this.idMapper.init()
+
+    // Initialize column store storage discovery (load existing segment manifests).
+    // The column store was created in the constructor for immediate writes;
+    // this step loads persisted segments so queries can find existing data.
+    try {
+      await this.columnStore.init(this.storage, this.idMapper)
+    } catch (err) {
+      prodLog.warn('[MetadataIndex] Column store storage discovery failed:', err)
+    }
 
     // Check if field registry was loaded successfully
     const hasFields = this.fieldIndexes.size > 0
@@ -981,44 +1012,39 @@ export class MetadataIndexManager {
    * @param fieldValuePairs Array of field-value pairs to intersect
    * @returns Array of UUID strings matching ALL criteria
    */
+  /**
+   * Multi-field intersection query: find entities matching ALL field-value pairs.
+   *
+   * Collects roaring bitmaps for each pair via the column store, then
+   * intersects them using hardware-accelerated AND operations.
+   *
+   * @param fieldValuePairs - Array of { field, value } to intersect
+   * @returns Array of entity UUID strings matching ALL pairs
+   */
   async getIdsForMultipleFields(fieldValuePairs: Array<{ field: string; value: any }>): Promise<string[]> {
-    if (fieldValuePairs.length === 0) {
-      return []
-    }
-
-    // Fast path: single field query
+    if (fieldValuePairs.length === 0) return []
     if (fieldValuePairs.length === 1) {
-      const { field, value } = fieldValuePairs[0]
-      return await this.getIds(field, value)
+      return await this.getIds(fieldValuePairs[0].field, fieldValuePairs[0].value)
     }
 
-    // Collect roaring bitmaps for each field-value pair
+    // Collect roaring bitmaps for each field-value pair via column store
     const bitmaps: RoaringBitmap32[] = []
-
     for (const { field, value } of fieldValuePairs) {
-      const bitmap = await this.getBitmapFromChunks(field, value)
-      if (!bitmap || bitmap.size === 0) {
-        // Short circuit: if any field has no matches, intersection is empty
-        return []
-      }
+      const bitmap = this.columnStore.hasField(field)
+        ? await this.columnStore.filter(field, value)
+        : await this.getBitmapFromChunks(field, value) ?? new RoaringBitmap32()
+
+      if (bitmap.size === 0) return [] // Short circuit: empty intersection
       bitmaps.push(bitmap)
     }
 
-    // Hardware-accelerated intersection using SIMD instructions (AVX2/SSE4.2)
-    // This is 500-900x faster than JavaScript array filtering
-    // Note: RoaringBitmap32.and() only takes 2 params, so we reduce manually
-    let intersectionBitmap = bitmaps[0]
+    // Intersect all bitmaps (SIMD-accelerated roaring AND)
+    let result = bitmaps[0]
     for (let i = 1; i < bitmaps.length; i++) {
-      intersectionBitmap = RoaringBitmap32.and(intersectionBitmap, bitmaps[i])
+      result = RoaringBitmap32.and(result, bitmaps[i])
     }
 
-    // Check if empty before converting
-    if (intersectionBitmap.size === 0) {
-      return []
-    }
-
-    // Convert final bitmap to UUIDs (only once, not per-field)
-    return this.idMapper.intsIterableToUuids(intersectionBitmap)
+    return result.size > 0 ? this.idMapper.intsIterableToUuids(result) : []
   }
 
   /**
@@ -1168,6 +1194,19 @@ export class MetadataIndexManager {
   /**
    * Get IDs matching a range query using zone maps
    */
+  /**
+   * Range query: find all entity IDs where a field's value falls within a range.
+   *
+   * Routes through the column store for O(log n) binary search when available,
+   * falls back to sparse index zone-map scan for fields not yet in the column store.
+   *
+   * @param field - Field name to query
+   * @param min - Lower bound (undefined = no lower bound)
+   * @param max - Upper bound (undefined = no upper bound)
+   * @param includeMin - Whether to include the lower bound (default: true)
+   * @param includeMax - Whether to include the upper bound (default: true)
+   * @returns Array of matching entity UUID strings
+   */
   private async getIdsForRange(
     field: string,
     min?: any,
@@ -1181,7 +1220,14 @@ export class MetadataIndexManager {
       stats.rangeQueryCount++
     }
 
-    // All fields use chunked sparse index with zone map optimization
+    // Column store path: O(log n) binary search on sorted column.
+    // Use raw values (no normalization) — column store stores exact values.
+    if (this.columnStore && this.columnStore.hasField(field)) {
+      const bitmap = await this.columnStore.rangeQuery(field, min, max)
+      return this.idMapper.intsIterableToUuids(bitmap)
+    }
+
+    // Fallback: sparse index zone-map scan (legacy path)
     return await this.getIdsFromChunksForRange(field, min, max, includeMin, includeMax)
   }
 
@@ -1579,33 +1625,29 @@ export class MetadataIndexManager {
       if (b.field === 'noun') return 1
       return 0
     })
-    
-    // Track which fields we're updating for incremental sorted index maintenance
-    const updatedFields = new Set<string>()
-    
+
+    // Update statistics and tracking for each field
     for (let i = 0; i < fields.length; i++) {
       const { field, value } = fields[i]
-
-      // All fields use chunked sparse indexing
-      await this.addToChunkedIndex(field, value, id)
-
-      // Update statistics and tracking
       this.updateCardinalityStats(field, value, 'add')
       this.updateTypeFieldAffinity(id, field, value, 'add', entityOrMetadata)
       await this.updateFieldIndex(field, value, 1)
-
-      // Yield to event loop every 5 fields to prevent blocking
-      if (i % 5 === 4) {
-        await this.yieldToEventLoop()
-      }
     }
 
-    // Flush all dirty chunks and sparse indices accumulated during this add operation
-    // This batches writes that were previously sequential per-field into a single concurrent flush
-    // During rebuild (deferWrites=true), defer flushes to periodic batch boundaries (every 5000 entities)
-    // to avoid N × flush I/O amplification. The rebuild() method handles periodic + final flushes.
-    if (!deferWrites) {
-      await this.flushDirtyMetadata()
+    // Write to column store — the single write path for all indexed data.
+    // Converts extracted fields into a map and feeds the column store.
+    if (this.columnStore) {
+      const entityIntId = this.idMapper.getOrAssign(id)
+      const fieldsMap: Record<string, unknown> = {}
+      for (const { field, value } of fields) {
+        if (field === '__words__') {
+          if (!fieldsMap.__words__) fieldsMap.__words__ = []
+          ;(fieldsMap.__words__ as number[]).push(value)
+        } else {
+          fieldsMap[field] = value
+        }
+      }
+      this.columnStore.addEntity(entityIntId, fieldsMap)
     }
 
     // Adaptive auto-flush based on usage patterns
@@ -1679,65 +1721,30 @@ export class MetadataIndexManager {
    */
   async removeFromIndex(id: string, metadata?: any): Promise<void> {
     if (metadata) {
-      // Remove from specific field indexes
       const fields = this.extractIndexableFields(metadata)
 
+      // Update statistics and tracking
       for (const { field, value } of fields) {
-        // All fields use chunked sparse indexing
-        await this.removeFromChunkedIndex(field, value, id)
-
-        // Update statistics and tracking
         this.updateCardinalityStats(field, value, 'remove')
         this.updateTypeFieldAffinity(id, field, value, 'remove', metadata)
         await this.updateFieldIndex(field, value, -1)
-
-        // Invalidate cache
         this.metadataCache.invalidatePattern(`field_values_${field}`)
       }
-
-      // Flush all dirty chunks and sparse indices accumulated during remove
-      await this.flushDirtyMetadata()
-
-      // Clean up ID mapper — must happen AFTER bitmap removal since removeFromChunk
-      // calls idMapper.getInt(id) internally. Skipping this leaves deleted IDs in the
-      // idMapper universe, causing ne/exists:false queries to return deleted entities.
-      this.idMapper.remove(id)
-      await this.idMapper.flush()
-    } else {
-      // Remove from all indexes (slower, requires scanning all field indexes)
-      // This should be rare - prefer providing metadata when removing
-      // Scan via fieldIndexes, load sparse indices on-demand
-      prodLog.warn(`Removing ID ${id} without metadata requires scanning all fields (slow)`)
-
-      // Scan all fields via fieldIndexes
-      for (const field of this.fieldIndexes.keys()) {
-        const sparseIndex = await this.loadSparseIndex(field)
-        if (sparseIndex) {
-          for (const chunkId of sparseIndex.getAllChunkIds()) {
-            const chunk = await this.chunkManager.loadChunk(field, chunkId)
-            if (chunk) {
-              // Convert UUID to integer for bitmap checking
-              const intId = this.idMapper.getInt(id)
-              if (intId !== undefined) {
-                // Check all values in this chunk
-                for (const [value, bitmap] of chunk.entries) {
-                  if (bitmap.has(intId)) {
-                    await this.removeFromChunkedIndex(field, value, id)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Flush all dirty chunks and sparse indices accumulated during scan-remove
-      await this.flushDirtyMetadata()
-
-      // Clean up ID mapper — must happen AFTER bitmap removal (same reason as fast path above)
-      this.idMapper.remove(id)
-      await this.idMapper.flush()
     }
+
+    // Remove from column store (global deleted bitmap)
+    if (this.columnStore) {
+      const intId = this.idMapper.getInt(id)
+      if (intId !== undefined) {
+        this.columnStore.removeEntity(intId)
+      }
+    }
+
+    // Clean up ID mapper — must happen AFTER column store removal since it uses
+    // idMapper.getInt(id). Prevents deleted IDs from persisting in the mapper
+    // universe, which would cause ne/exists:false queries to return deleted entities.
+    this.idMapper.remove(id)
+    await this.idMapper.flush()
   }
 
   /**
@@ -1771,6 +1778,16 @@ export class MetadataIndexManager {
   /**
    * Get IDs for a specific field-value combination using chunked sparse index
    */
+  /**
+   * Point query: find all entity IDs where a field has a specific value.
+   *
+   * Routes through the column store for O(log n) binary search when available,
+   * falls back to sparse index scan for fields not yet in the column store.
+   *
+   * @param field - Field name to query
+   * @param value - Exact value to match
+   * @returns Array of matching entity UUID strings
+   */
   async getIds(field: string, value: any): Promise<string[]> {
     // Track exact query for field statistics
     if (this.fieldStats.has(field)) {
@@ -1778,7 +1795,15 @@ export class MetadataIndexManager {
       stats.exactQueryCount++
     }
 
-    // All fields use chunked sparse indexing
+    // Column store path: O(log n) binary search + roaring bitmap.
+    // Use raw value (no normalization) — the column store stores exact values,
+    // not the bucketed/stringified format the sparse index uses.
+    if (this.columnStore && this.columnStore.hasField(field)) {
+      const bitmap = await this.columnStore.filter(field, value)
+      return this.idMapper.intsIterableToUuids(bitmap)
+    }
+
+    // Fallback: sparse index scan (legacy path during migration)
     return await this.getIdsFromChunks(field, value)
   }
 
@@ -2059,111 +2084,44 @@ export class MetadataIndexManager {
 
             // ===== EXISTENCE OPERATOR =====
             // exists: boolean - check if field exists (any value)
-            case 'exists':
+            case 'exists': {
+              // Column store path: rangeQuery with no bounds returns all IDs for the field
+              const existsBitmap = (this.columnStore && this.columnStore.hasField(field))
+                ? await this.columnStore.rangeQuery(field)
+                : await this.getExistsBitmapLegacy(field)
+
               if (operand) {
-                // exists: true - Get all IDs that have this field (any value)
-                // From chunked sparse index with roaring bitmaps
-                // Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
-                const allIntIds = new Set<number>()
-
-                // Load sparse index via UnifiedCache (lazy loading)
-                const sparseIndex = await this.loadSparseIndex(field)
-                if (sparseIndex) {
-                  // Iterate through all chunks for this field
-                  for (const chunkId of sparseIndex.getAllChunkIds()) {
-                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
-                    if (chunk) {
-                      // Collect all integer IDs from all roaring bitmaps in this chunk
-                      for (const bitmap of chunk.entries.values()) {
-                        for (const intId of bitmap) {
-                          allIntIds.add(intId)
-                        }
-                      }
-                    }
-                  }
-                }
-
-                // Convert integer IDs back to UUIDs
-                fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
+                // exists: true — entities that HAVE this field
+                fieldResults = this.idMapper.intsIterableToUuids(existsBitmap)
               } else {
-                // exists: false - Get all IDs that DON'T have this field
-                // Uses EntityIdMapper universe (in-memory) instead of getAllIds() storage scan
-                const existsIntIds = new Set<number>()
-
-                // Get IDs that HAVE this field
-                const sparseIndex = await this.loadSparseIndex(field)
-                if (sparseIndex) {
-                  for (const chunkId of sparseIndex.getAllChunkIds()) {
-                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
-                    if (chunk) {
-                      for (const bitmap of chunk.entries.values()) {
-                        for (const intId of bitmap) {
-                          existsIntIds.add(intId)
-                        }
-                      }
-                    }
-                  }
-                }
-
-                // Use EntityIdMapper universe and subtract IDs that have this field
+                // exists: false — entities that DON'T have this field
                 const allKnownIds = this.idMapper.intsIterableToUuids(this.idMapper.getAllIntIds())
-                const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
+                const existsUuids = this.idMapper.intsIterableToUuids(existsBitmap)
                 const existsSet = new Set(existsUuids)
                 fieldResults = allKnownIds.filter(id => !existsSet.has(id))
               }
               break
+            }
 
             // ===== MISSING OPERATOR =====
-            // missing: boolean - equivalent to exists: !boolean (for compatibility with metadataFilter.ts)
-            case 'missing':
-              // missing: true is equivalent to exists: false
-              // missing: false is equivalent to exists: true
-              // Added for API consistency with in-memory metadataFilter
+            // missing: boolean - equivalent to exists: !boolean
+            case 'missing': {
+              const missingBitmap = (this.columnStore && this.columnStore.hasField(field))
+                ? await this.columnStore.rangeQuery(field)
+                : await this.getExistsBitmapLegacy(field)
+
               if (operand) {
-                // missing: true - field does NOT exist (same as exists: false)
-                // Uses EntityIdMapper universe (in-memory) instead of getAllIds() storage scan
-                const existsIntIds = new Set<number>()
-
-                const sparseIndex = await this.loadSparseIndex(field)
-                if (sparseIndex) {
-                  for (const chunkId of sparseIndex.getAllChunkIds()) {
-                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
-                    if (chunk) {
-                      for (const bitmap of chunk.entries.values()) {
-                        for (const intId of bitmap) {
-                          existsIntIds.add(intId)
-                        }
-                      }
-                    }
-                  }
-                }
-
-                // Use EntityIdMapper universe and subtract IDs that have this field
+                // missing: true — entities that DON'T have this field (same as exists: false)
                 const allKnownIds = this.idMapper.intsIterableToUuids(this.idMapper.getAllIntIds())
-                const existsUuids = this.idMapper.intsIterableToUuids(existsIntIds)
+                const existsUuids = this.idMapper.intsIterableToUuids(missingBitmap)
                 const existsSet = new Set(existsUuids)
                 fieldResults = allKnownIds.filter(id => !existsSet.has(id))
               } else {
-                // missing: false - field DOES exist (same as exists: true)
-                const allIntIds = new Set<number>()
-
-                const sparseIndex = await this.loadSparseIndex(field)
-                if (sparseIndex) {
-                  for (const chunkId of sparseIndex.getAllChunkIds()) {
-                    const chunk = await this.chunkManager.loadChunk(field, chunkId)
-                    if (chunk) {
-                      for (const bitmap of chunk.entries.values()) {
-                        for (const intId of bitmap) {
-                          allIntIds.add(intId)
-                        }
-                      }
-                    }
-                  }
-                }
-
-                fieldResults = this.idMapper.intsIterableToUuids(allIntIds)
+                // missing: false — entities that HAVE this field (same as exists: true)
+                fieldResults = this.idMapper.intsIterableToUuids(missingBitmap)
               }
               break
+            }
           }
         }
       } else {
@@ -2190,6 +2148,33 @@ export class MetadataIndexManager {
       resultSet = new Set([...resultSet].filter(id => current.has(id)))
     }
     return Array.from(resultSet)
+  }
+
+  /**
+   * Legacy helper: get all entity int IDs that have any value for a field,
+   * using the sparse index. Used by exists/missing operators when the
+   * column store doesn't have data for the field.
+   *
+   * @param field - Field name
+   * @returns Roaring bitmap of entity int IDs (or iterable for compatibility)
+   * @private
+   */
+  private async getExistsBitmapLegacy(field: string): Promise<Iterable<number>> {
+    const allIntIds = new Set<number>()
+    const sparseIndex = await this.loadSparseIndex(field)
+    if (sparseIndex) {
+      for (const chunkId of sparseIndex.getAllChunkIds()) {
+        const chunk = await this.chunkManager.loadChunk(field, chunkId)
+        if (chunk) {
+          for (const bitmap of chunk.entries.values()) {
+            for (const intId of bitmap) {
+              allIntIds.add(intId)
+            }
+          }
+        }
+      }
+    }
+    return allIntIds
   }
 
   /**
@@ -2230,45 +2215,62 @@ export class MetadataIndexManager {
     orderBy: string,
     order: 'asc' | 'desc' = 'asc'
   ): Promise<string[]> {
-    // 1. Get filtered IDs using existing roaring bitmap implementation (fast!)
-    //
-    // NOTE: This method REQUIRES a non-empty filter. Unfiltered sort over all
-    // entities is not supported here because it would require O(N) storage reads
-    // on bucketed fields (timestamps), which does not scale. The proper solution
-    // is a dedicated time-ordered segment index — tracked as Track 2.
-    // Callers should enforce a filter (type / where / excludeVFS) before calling.
+    // Column store path: O(K log S) sort via k-way merge across segments.
+    // No per-entity storage reads, no precision loss from bucketing.
+    if (this.columnStore && this.columnStore.hasField(orderBy)) {
+      // Get filtered IDs from existing roaring bitmap path
+      const hasFilter = filter && Object.keys(filter).length > 0
+      const filteredIds = hasFilter ? await this.getIdsForFilter(filter) : []
+
+      if (hasFilter && filteredIds.length === 0) return []
+
+      let sortedIntIds: number[]
+      if (hasFilter) {
+        // Build filter bitmap for the column store
+        const filterBitmap = new RoaringBitmap32()
+        for (const id of filteredIds) {
+          const intId = this.idMapper.getInt(id)
+          if (intId !== undefined) filterBitmap.add(intId)
+        }
+        sortedIntIds = await this.columnStore.filteredSortTopK(
+          filterBitmap, orderBy, order, filteredIds.length
+        )
+      } else {
+        // Unfiltered sort — column store handles the full entity set efficiently
+        sortedIntIds = await this.columnStore.sortTopK(
+          orderBy, order, this.idMapper.size
+        )
+      }
+
+      // Convert int IDs back to UUIDs
+      return sortedIntIds
+        .map(intId => this.idMapper.getUuid(intId))
+        .filter((uuid): uuid is string => uuid !== undefined)
+    }
+
+    // Fallback: sparse index path (for fields not yet in column store).
+    // Requires a non-empty filter because it reads O(k) entity values from storage.
     const filteredIds = await this.getIdsForFilter(filter)
 
     if (filteredIds.length === 0) {
       return []
     }
 
-    // 2. Load sort field values for filtered IDs ONLY
-    // This is O(k) not O(n) where k = filtered count
-    // We only load the ONE field needed for sorting, not full entities
     const idValuePairs: Array<{ id: string, value: any }> = []
-
     for (const id of filteredIds) {
       const value = await this.getFieldValueForEntity(id, orderBy)
       idValuePairs.push({ id, value })
     }
 
-    // 3. Sort by value (in-memory BUT only IDs + sort values)
-    // This is acceptable because we're sorting the FILTERED set, not all entities
-    // Even 1M filtered results = ~50MB (IDs + values), manageable in-memory
     idValuePairs.sort((a, b) => {
-      // Handle null/undefined (always sort to end)
       if (a.value == null && b.value == null) return 0
       if (a.value == null) return order === 'asc' ? 1 : -1
       if (b.value == null) return order === 'asc' ? -1 : 1
-
-      // Compare values
       if (a.value === b.value) return 0
       const comparison = a.value < b.value ? -1 : 1
       return order === 'asc' ? comparison : -comparison
     })
 
-    // 4. Return sorted IDs (caller handles pagination BEFORE loading entities)
     return idValuePairs.map(p => p.id)
   }
 
@@ -2494,6 +2496,11 @@ export class MetadataIndexManager {
 
     this.dirtyFields.clear()
     this.lastFlushTime = Date.now()
+
+    // Flush column store tail buffers to L0 segments
+    if (this.columnStore) {
+      await this.columnStore.flush()
+    }
   }
   
   /**
