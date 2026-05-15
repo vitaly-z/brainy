@@ -303,6 +303,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Whether the active storage adapter implements a given optional method.
+   *
+   * Brainy ships new storage-adapter capabilities over time (multi-process
+   * locking, cross-process flush RPC, etc.). Older plugins (notably
+   * `@soulcraft/cortex` ≤2.2.0) bundle their own `BaseStorage` from an
+   * earlier Brainy version that doesn't have those methods. Rather than crash
+   * at runtime, every call site that uses an optional storage method goes
+   * through this helper and degrades gracefully when the method is absent.
+   */
+  private hasStorageMethod(name: string): boolean {
+    return !!this.storage && typeof (this.storage as unknown as Record<string, unknown>)[name] === 'function'
+  }
+
+  /**
    * Throw if this instance cannot perform writes. Called at the top of every
    * mutation method. The check is cheap (a property lookup + boolean test) and
    * runs before any work, so callers get a clear, fast failure in read-only mode.
@@ -385,24 +399,41 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Acquire the writer lock for filesystem (and other locking-capable) backends.
       // Skipped in reader mode and on backends that don't support multi-process locking.
       // Throws if another live writer holds the directory (unless force: true).
-      if (this.config.mode !== 'reader' && this.storage.supportsMultiProcessLocking()) {
-        await this.storage.acquireWriterLock({ force: this.config.force })
-        // Watch for cross-process flush requests so inspectors can see fresh
-        // state on demand. Reader instances don't run a watcher (nothing to flush).
-        this.storage.startFlushRequestWatcher(async () => {
-          if (this.initialized) {
-            await this.flush()
+      //
+      // Defensive call: older storage adapters (e.g. `@soulcraft/cortex@2.2.0`
+      // and earlier) bundle a pre-7.21 `BaseStorage` that doesn't define these
+      // methods. We feature-detect each one rather than fail boot.
+      if (this.config.mode !== 'reader') {
+        const canLock = this.hasStorageMethod('supportsMultiProcessLocking') &&
+                        (this.storage as any).supportsMultiProcessLocking()
+        if (canLock && this.hasStorageMethod('acquireWriterLock')) {
+          await (this.storage as any).acquireWriterLock({ force: this.config.force })
+          if (this.hasStorageMethod('startFlushRequestWatcher')) {
+            (this.storage as any).startFlushRequestWatcher(async () => {
+              if (this.initialized) {
+                await this.flush()
+              }
+            })
           }
-        })
-      } else if (this.config.mode !== 'reader' && !this.config.silent) {
-        // Cloud / memory backends: multi-process safety not enforced. One-time
-        // warning so operators know what they're getting.
-        const backendName = (this.storage.constructor as any).name || 'storage'
-        if (backendName !== 'MemoryStorage') {
-          console.warn(
-            `[brainy] Multi-process writer protection is not enforced on ${backendName}. ` +
-            `See docs/concepts/multi-process.md for the model.`
-          )
+        } else if (!this.config.silent) {
+          // Older adapter OR a backend that doesn't enforce locking (cloud / memory).
+          // Surface this so operators know the multi-process protections aren't active.
+          const backendName = (this.storage.constructor as any).name || 'storage'
+          if (backendName === 'MemoryStorage') {
+            // Memory is single-process by construction — no warning needed.
+          } else if (!this.hasStorageMethod('supportsMultiProcessLocking')) {
+            console.warn(
+              `[brainy] Storage adapter \`${backendName}\` predates the 7.21 ` +
+              `multi-process methods. Writer locking and the flush-request RPC ` +
+              `are disabled for this directory. Upgrade the plugin (e.g. ` +
+              `\`@soulcraft/cortex\` ≥2.3.0) for full enforcement.`
+            )
+          } else {
+            console.warn(
+              `[brainy] Multi-process writer protection is not enforced on ${backendName}. ` +
+              `See docs/concepts/multi-process.md for the model.`
+            )
+          }
         }
       }
 

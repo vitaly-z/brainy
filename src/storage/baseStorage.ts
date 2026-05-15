@@ -223,6 +223,21 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   // Built into all storage adapters for billion-scale efficiency
   protected nounCountsByType = new Uint32Array(NOUN_TYPE_COUNT) // 168 bytes (Stage 3: 42 types)
   protected verbCountsByType = new Uint32Array(VERB_TYPE_COUNT) // 508 bytes (Stage 3: 127 types)
+
+  /**
+   * In-memory map from noun id → its `noun` (NounType) value, populated when
+   * `saveNounMetadata_internal()` runs. `saveNoun_internal()` consults this
+   * to attribute the entity to the correct slot in `nounCountsByType` so the
+   * persisted `_system/type-statistics.json` is honest.
+   *
+   * History: a previous cache was removed in commit `42ae5be` and replaced
+   * with a hardcoded `return 'thing'` from `getNounType()`, which silently
+   * poisoned the on-disk type statistics. This cache restores the correct
+   * behavior. Memory footprint is one Map entry per live noun id (typically
+   * tens of bytes each); the writer process keeps it for the duration of
+   * its lifetime and prunes on delete.
+   */
+  protected nounTypeByIdCache = new Map<string, NounType>()
   // Total: 676 bytes (99.2% reduction vs Map-based tracking)
 
   // Type caches REMOVED - ID-first paths eliminate need for type lookups!
@@ -2172,6 +2187,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Save the metadata (COW-aware - writes to branch-specific path)
     await this.writeObjectToBranch(path, metadata)
 
+    // Record the id→type mapping so `saveNoun_internal()` (which receives only
+    // an HNSWNoun and has no metadata access in its signature) can attribute
+    // the entity to the right slot in `nounCountsByType`. This is what makes
+    // `_system/type-statistics.json` honest. Updates the cache even for
+    // existing entities so a type change via `update()` is reflected.
+    if (metadata.noun) {
+      this.nounTypeByIdCache.set(id, metadata.noun as NounType)
+    }
+
     // CRITICAL FIX: Increment count for new entities
     // This runs AFTER metadata is saved, guaranteeing type information is available
     // Uses synchronous increment since storage operations are already serialized
@@ -2560,6 +2584,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Direct O(1) delete with ID-first path
     const path = getNounMetadataPath(id)
     await this.deleteObjectFromBranch(path)
+
+    // Prune the id→type cache so a future re-add of the same id (e.g. churn
+    // during tests) doesn't see a stale type. Lookup the prior type and
+    // decrement `nounCountsByType` so type-statistics stay honest across
+    // deletes; symmetric with the increment in `saveNounMetadata_internal()`.
+    const priorType = this.nounTypeByIdCache.get(id)
+    if (priorType) {
+      this.nounTypeByIdCache.delete(id)
+      const idx = TypeUtils.getNounIndex(priorType)
+      if (this.nounCountsByType[idx] > 0) {
+        this.nounCountsByType[idx]--
+      }
+    }
   }
 
   /**
@@ -2660,6 +2697,11 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   /**
    * Load type statistics from storage
    * Rebuilds type counts if needed (called during init)
+   *
+   * Auto-detects the 7.20.0–7.21.0 poisoned-statistics signature: every
+   * noun attributed to `'thing'` because the old `getNounType()` was hardcoded.
+   * If detected, runs `rebuildTypeCounts()` once to rewrite the file with
+   * correct per-type counts derived from on-disk metadata. Logged loudly.
    */
   protected async loadTypeStatistics(): Promise<void> {
     try {
@@ -2673,10 +2715,67 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         if (stats.verbCounts && stats.verbCounts.length === VERB_TYPE_COUNT) {
           this.verbCountsByType = new Uint32Array(stats.verbCounts)
         }
+
+        if (await this.detectPoisonedTypeStatistics()) {
+          prodLog.warn(
+            '[BaseStorage] Detected poisoned type-statistics.json signature ' +
+            '(all nouns attributed to \'thing\' — symptom of pre-7.22 getNounType ' +
+            'hardcode). Rebuilding counts from on-disk metadata.'
+          )
+          await this.rebuildTypeCounts()
+        }
       }
     } catch (error) {
       // No existing type statistics, starting fresh
     }
+  }
+
+  /**
+   * Detect the 7.20.0–7.21.0 poisoned-statistics signature.
+   *
+   * The defect: the old `getNounType()` returned hardcoded `'thing'`, so
+   * `_system/type-statistics.json` ended up with `nounCounts[thing] === N`
+   * and every other index `=== 0`, regardless of the actual mix on disk.
+   *
+   * Heuristic: nounCounts has at least 2 non-thing entities on disk (so the
+   * file *should* show multiple non-zero buckets) but only the `thing`
+   * bucket is non-zero. We bound the on-disk check with `limit: 3` so this
+   * never costs more than a couple of cheap reads.
+   *
+   * Returns false (no self-heal needed) for genuinely thing-only stores or
+   * empty stores.
+   */
+  private async detectPoisonedTypeStatistics(): Promise<boolean> {
+    const thingIdx = TypeUtils.getNounIndex('thing' as NounType)
+    if (thingIdx < 0) return false
+
+    let nonZeroBuckets = 0
+    let thingCount = 0
+    for (let i = 0; i < this.nounCountsByType.length; i++) {
+      if (this.nounCountsByType[i] > 0) {
+        nonZeroBuckets++
+        if (i === thingIdx) thingCount = this.nounCountsByType[i]
+      }
+    }
+
+    // Only one bucket populated, and it's 'thing' with ≥2 entities — suspicious.
+    if (nonZeroBuckets !== 1 || thingCount < 2) return false
+
+    // Cross-check: sample a few metadata files. If any non-'thing' types
+    // show up, we're confirmed poisoned. If only 'thing' types appear in the
+    // sample, this is a genuine thing-only store and we leave the file alone.
+    try {
+      const sample = await this.getNouns({ pagination: { offset: 0, limit: 3 } })
+      for (const noun of sample.items) {
+        const type = await this.getNounTypeFromStorageAsync(noun.id)
+        if (type && type !== ('thing' as NounType)) {
+          return true
+        }
+      }
+    } catch {
+      // If we can't read the metadata, don't trigger a rebuild — leave state alone.
+    }
+    return false
   }
 
   /**
@@ -2691,6 +2790,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     await this.writeObjectToPath(`${SYSTEM_DIR}/type-statistics.json`, stats)
+  }
+
+  /**
+   * Persist both counter systems atomically when an explicit flush is
+   * requested. `super.flushCounts()` writes `entityCounts` (the Map in
+   * `BaseStorageAdapter`); we additionally write `nounCountsByType` /
+   * `verbCountsByType` so a reader opening the same directory sees the
+   * exact same counts the writer holds in memory.
+   *
+   * Before this override the Uint32Array counters were only persisted
+   * on a heuristic schedule inside `saveNoun_internal` (first-of-type or
+   * every-100th), which left readers seeing stale counts after a clean
+   * writer flush — the same failure mode that BR-FIND-WHERE-ZERO surfaced
+   * via `brain.stats()`.
+   */
+  public async flushCounts(): Promise<void> {
+    await super.flushCounts()
+    await this.saveTypeStatistics()
   }
 
   /**
@@ -2712,11 +2829,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Rebuild type counts from actual storage
-   * Called when statistics are missing or inconsistent
-   * Ensures verbCountsByType is always accurate for reliable pagination
+   * Rebuild type counts from actual storage. Scans every shard, reads each
+   * entity's metadata, and reconstructs `nounCountsByType` / `verbCountsByType`
+   * from ground truth. Persists the corrected counts to `type-statistics.json`.
+   *
+   * Public so it can be triggered by `brainy inspect repair` and by the
+   * `brain.health()` reconciliation path. Called automatically by
+   * `loadTypeStatistics()` when the persisted state matches the poisoned
+   * 7.20.0–7.21.0 signature (all entities attributed to `'thing'`).
+   *
+   * For very large stores this is O(N) where N is total entities; intended
+   * for diagnostic / repair use, not on every init.
    */
-  protected async rebuildTypeCounts(): Promise<void> {
+  public async rebuildTypeCounts(): Promise<void> {
     prodLog.info('[BaseStorage] Rebuilding type counts from storage...')
 
     // Rebuild by scanning shards (0x00-0xFF) and reading metadata
@@ -2788,14 +2913,61 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
-   * Get noun type (type no longer needed for paths!)
-   * With ID-first paths, this is only used for internal statistics tracking.
-   * The actual type is stored in metadata and indexed by MetadataIndexManager.
+   * Resolve the `NounType` for a noun, used to attribute the entity to the
+   * correct slot in `nounCountsByType` (which backs `_system/type-statistics.json`
+   * and `brain.stats().entitiesByType`).
+   *
+   * Lookup order:
+   *   1. `nounTypeByIdCache`, populated by `saveNounMetadata_internal()`
+   *      whenever a noun's metadata is written. This is the common path —
+   *      add() saves metadata before the HNSW noun, so by the time we get
+   *      here the cache is warm.
+   *   2. `'thing'` as a final fallback when metadata genuinely doesn't exist
+   *      (a noun added without metadata — irregular but tolerated for back-
+   *      compat). Logged so a real bug doesn't go unnoticed.
+   *
+   * Note this is intentionally synchronous because `saveNoun_internal()` and
+   * its callers are not async-friendly at this layer. For cases where only
+   * an id is known after a process restart and the cache is cold,
+   * `getNounTypeFromStorageAsync()` is available for callers that can await.
    */
   protected getNounType(noun: HNSWNoun): NounType {
-    // Type cache removed - default to 'thing' for statistics
-    // The real type is in metadata, accessible via getNounMetadata(id)
+    const cached = this.nounTypeByIdCache.get(noun.id)
+    if (cached) return cached
+    // Cache miss on a noun we're about to write means metadata was not saved
+    // first. Brainy.add() always saves metadata before HNSW, so this only
+    // fires in unusual code paths (raw `storage.saveNoun()` without metadata).
+    prodLog.warn(
+      `[BaseStorage] getNounType: no type cached for noun ${noun.id}. ` +
+      `Type-statistics will attribute this entity to 'thing'. ` +
+      `Call saveNounMetadata() before saveNoun() to avoid stat drift.`
+    )
     return 'thing'
+  }
+
+  /**
+   * Async variant of `getNounType()` that consults disk if the in-memory
+   * cache is cold (e.g. after a process restart with deferred work). Used by
+   * `rebuildTypeCounts()` and other callers that can await an IO. Returns
+   * `null` if metadata genuinely doesn't exist; callers decide whether to
+   * fall back to 'thing' or skip the entity.
+   */
+  protected async getNounTypeFromStorageAsync(id: string): Promise<NounType | null> {
+    const cached = this.nounTypeByIdCache.get(id)
+    if (cached) return cached
+    try {
+      const metadataPath = getNounMetadataPath(id)
+      const metadata = await this.readWithInheritance(metadataPath)
+      if (metadata && (metadata as NounMetadata).noun) {
+        const type = (metadata as NounMetadata).noun as NounType
+        // Warm the cache so subsequent sync calls hit fast.
+        this.nounTypeByIdCache.set(id, type)
+        return type
+      }
+    } catch {
+      // Storage error — treat as unknown.
+    }
+    return null
   }
 
   /**

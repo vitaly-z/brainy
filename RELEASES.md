@@ -11,6 +11,103 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.22.0 — 2026-05-15
+
+**Affected products:** All. Fixes a silent-data-loss class affecting `find()` and
+`brain.stats()`, plus Cortex-compatibility regression from 7.21.0. Recommended
+upgrade for everyone on 7.20.x or 7.21.x.
+
+### Two correctness fixes
+
+#### 1. `find({ where })` no longer silently returns `[]` (BR-FIND-WHERE-ZERO)
+
+The 7.20.0 column-store refactor deleted the legacy sparse-index write path
+but left `getStats()` and `getIds()` reading from sparse indices. New
+workspaces had no sparse-index files, so:
+- `brain.stats().entityCount` was `0` regardless of actual entity count
+- `find({ where: { ... } })` returned `[]` regardless of actual matches
+- `rebuildIndexesIfNeeded()` saw `0` entries → fired the `[Brainy] CRITICAL ...
+  Second rebuild result: 0 entries` log → application saw no indexed data
+
+7.22.0 makes the ColumnStore the single source of truth post-7.20.0:
+- `MetadataIndex.getStats()` reads from `ColumnStore.getIndexedFields()` and
+  `idMapper.size`. Entity count is now accurate across writer → close →
+  reader-open cycles.
+- `MetadataIndex.getIdsFromChunks()` throws `BrainyError(FIELD_NOT_INDEXED)`
+  when neither column store nor legacy sparse index has the field.
+- `MetadataIndex.getIdsForFilter()` catches per-clause, logs
+  `[brainy] find() where-clause referenced unindexed field(s): ...`, returns
+  `[]`. Production `find()` is now consistent with `brain.explain()`'s
+  `path: 'none'` diagnostic.
+
+Separately, `BaseStorage.getNounType()` was hardcoded to return `'thing'`
+since a type-cache removal in commit `42ae5be`. Every noun save attributed
+the entity to `'thing'` regardless of its actual type, poisoning
+`_system/type-statistics.json` and `brain.stats().entitiesByType`. 7.22.0
+restores type-correct attribution:
+- New `nounTypeByIdCache: Map<string, NounType>` on `BaseStorage`, populated
+  in `saveNounMetadata_internal` and consumed in `saveNoun_internal`.
+- New `flushCounts()` override that persists `nounCountsByType` /
+  `verbCountsByType` alongside the per-entity counter. Readers opening the
+  same directory after a writer flush now see correct per-type counts.
+
+**Self-heal at init.** If `loadTypeStatistics()` detects the poisoned-state
+signature (all nouns attributed to `'thing'` with multiple non-`thing`
+entities on disk), it auto-runs `rebuildTypeCounts()` once and rewrites the
+file. A `[BaseStorage] Detected poisoned type-statistics.json signature ...`
+warning is logged. Operators don't need to take any action — the first 7.22
+open of a directory poisoned by 7.20.0/7.21.0 fixes it.
+
+**`brainy inspect repair`** can also be used to manually trigger
+`rebuildTypeCounts()`. It's now public on `BaseStorage`.
+
+#### 2. Cortex 2.2.x no longer crashes 7.21.0 boot (BR-DEFENSIVE-INTERFACE)
+
+7.21.0 added new storage-adapter methods (`supportsMultiProcessLocking`,
+`acquireWriterLock`, etc.) and called them unconditionally. Cortex 2.2.0's
+mmap storage adapter bundles a pre-7.21 `BaseStorage` and doesn't define
+them, so Venue's 7.21.0 upgrade attempt threw
+`TypeError: this.storage.supportsMultiProcessLocking is not a function`
+at boot.
+
+7.22.0 introduces `hasStorageMethod(name)` on Brainy and guards every new-
+method call site. Older adapters degrade with a one-line warning at init:
+```
+[brainy] Storage adapter `CortexMmapStorage` predates the 7.21
+multi-process methods. Writer locking and the flush-request RPC are
+disabled for this directory. Upgrade the plugin (e.g.
+`@soulcraft/cortex` ≥2.3.0) for full enforcement.
+```
+
+### Dead-code cleanup
+
+Removed `MetadataIndexManager.dirtyChunks`, `dirtySparseIndices`, and the
+`flushDirtyMetadata()` no-op machinery. These accumulators stopped being
+populated when the sparse-index write path was deleted in 7.20.0; the
+remaining 6 callers wasted async hops on an empty Map iteration.
+
+### Upgrade notes
+
+- **Behaviour change:** `find({ where: { unindexedField: ... } })` previously
+  returned `[]` silently. It now logs a one-line warning and still returns
+  `[]`. The diagnostic message names the field — use
+  `brain.explain({ where: { ... } })` for full diagnosis. No code change
+  needed for callers that already handle empty results.
+- **Behaviour change (good):** `brain.stats()` and `brain.health()` now
+  report accurate per-type counts. If you previously relied on the buggy
+  `entitiesByType.thing` over-count, update consumers.
+- **No API breaks.** Pure additive on the public surface.
+
+### Cortex consumers
+
+Cortex 2.2.x continues to work against 7.22.0 thanks to the defensive
+guards, but for full multi-process protection on Cortex-backed stores and
+to make sure Cortex's native MetadataIndex picks up the find-where-zero
+fix, Cortex 2.3.0 is recommended. Tracked as `CX-MULTIPROC-METHOD` in the
+internal platform handoff.
+
+---
+
 ## v7.21.0 — 2026-05-15
 
 **Affected products:** All consumers using filesystem storage (Venue, Workshop dev,

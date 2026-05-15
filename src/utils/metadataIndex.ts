@@ -28,6 +28,7 @@ import {
 import { EntityIdMapper } from './entityIdMapper.js'
 import { RoaringBitmap32, roaringLibraryInitialize } from './roaring/index.js'
 import { FieldTypeInference, FieldType } from './fieldTypeInference.js'
+import { BrainyError } from '../errors/brainyError.js'
 
 /**
  * Fields whose values are stored in the sparse index as BUCKETED values
@@ -150,11 +151,10 @@ export class MetadataIndexManager {
   private chunkManager: ChunkManager
   private chunkingStrategy: AdaptiveChunkingStrategy
 
-  // Deferred write tracking: accumulate chunk/sparse index writes during add/remove
-  // operations and flush them in a single concurrent batch at the end.
-  // This eliminates per-field sequential writes that cause cloud storage rate limiting.
-  private dirtyChunks = new Map<string, ChunkData>()         // "field:chunkId" -> ChunkData
-  private dirtySparseIndices = new Map<string, SparseIndex>() // field -> SparseIndex
+  // (Removed in 7.22.0) `dirtyChunks` and `dirtySparseIndices` Maps —
+  // never populated since the sparse-index write path was deleted in 7.20.0
+  // (commit 11be039). The associated `flushDirtyMetadata()` no-op was also
+  // removed. Column store is the single source of truth for indexed writes.
 
   // Roaring Bitmap Support
   // EntityIdMapper for UUID ↔ integer conversion
@@ -728,46 +728,31 @@ export class MetadataIndexManager {
     this.unifiedCache.set(unifiedKey, sparseIndex, 'metadata', size, 200)
   }
 
-  /**
-   * Flush all deferred chunk and sparse index writes accumulated during add/remove operations.
-   * Writes are deduplicated (same chunk/field written once even if updated multiple times)
-   * and executed concurrently via Promise.all for maximum throughput.
-   */
-  private async flushDirtyMetadata(): Promise<void> {
-    if (this.dirtyChunks.size === 0 && this.dirtySparseIndices.size === 0) {
-      return
-    }
-
-    const promises: Promise<void>[] = []
-
-    // Save all dirty chunks (deduplicated — same chunk written once even if updated multiple times)
-    for (const [_key, chunk] of this.dirtyChunks) {
-      promises.push(this.chunkManager.saveChunk(chunk))
-    }
-
-    // Save all dirty sparse indices (deduplicated — same field's index written once)
-    for (const [field, sparseIndex] of this.dirtySparseIndices) {
-      promises.push(this.saveSparseIndex(field, sparseIndex))
-    }
-
-    // Execute all writes concurrently
-    await Promise.all(promises)
-
-    this.dirtyChunks.clear()
-    this.dirtySparseIndices.clear()
-  }
-
-  // splitChunkDeferred — DELETED. Only called from addToChunkedIndex (also deleted).
+  // flushDirtyMetadata — DELETED in 7.22.0. The dirtyChunks / dirtySparseIndices
+  // accumulators it drained were never populated after the 7.20.0 column-store
+  // refactor (commit 11be039). Column store flush happens in flush() directly.
 
   /**
-   * Get IDs for a value using chunked sparse index with roaring bitmaps
-   * Now fully lazy-loaded via UnifiedCache (no local sparseIndices Map)
+   * Get IDs for a value using the legacy chunked sparse index.
+   *
+   * **This path is only for pre-7.20.0 workspaces** still being migrated to
+   * the column store. The write path for sparse indices was removed in
+   * commit `11be039` — new workspaces never get them.
+   *
+   * If neither the column store nor a sparse index covers the field, the
+   * function throws `BrainyError(FIELD_NOT_INDEXED)`. Returning `[]` for a
+   * genuinely unindexed field was the bug class `BR-FIND-WHERE-ZERO`
+   * tracked — a silent empty result indistinguishable from "the data
+   * really isn't there."
    */
   private async getIdsFromChunks(field: string, value: any): Promise<string[]> {
     // Load sparse index via UnifiedCache (lazy loading)
     const sparseIndex = await this.loadSparseIndex(field)
     if (!sparseIndex) {
-      return [] // No chunked index exists yet
+      // No column store match (we'd have returned in getIds()) AND no legacy
+      // sparse index for this field — the field is genuinely not indexed.
+      // Throw so find()-evaluation can log and translate to [].
+      throw BrainyError.fieldNotIndexed(field)
     }
 
     // Find candidate chunks using zone maps and bloom filters
@@ -1323,7 +1308,19 @@ export class MetadataIndexManager {
     const wordIdSets: Map<string, number>[] = []
     for (const word of queryWords) {
       const wordHash = this.hashWord(word)
-      const ids = await this.getIds('__words__', wordHash)
+      let ids: string[]
+      try {
+        ids = await this.getIds('__words__', wordHash)
+      } catch (err) {
+        // `__words__` is not yet indexed (e.g. no text content has been
+        // added). Treat as no matches and continue — text search against
+        // an empty workspace should return [], not throw.
+        if (err instanceof BrainyError && err.type === 'FIELD_NOT_INDEXED') {
+          ids = []
+        } else {
+          throw err
+        }
+      }
       const idSet = new Map<string, number>()
       for (const id of ids) {
         idSet.set(id, 1)
@@ -1585,6 +1582,20 @@ export class MetadataIndexManager {
     }
   }
 
+  /**
+   * Resolve a `where: { field: value }` clause to entity UUIDs.
+   *
+   * Lookup order:
+   *   1. **Column store** — the post-7.20.0 single source of truth. Fast.
+   *   2. **Legacy sparse index** — only consulted for pre-7.20.0 workspaces
+   *      that haven't been migrated. Returns `[]` if no sparse data either.
+   *
+   * Throws `BrainyError(FIELD_NOT_INDEXED)` if the field has no entries in
+   * either store. Callers in find()-evaluation catch this and translate to
+   * an empty result with a logged warning. The throw aligns the production
+   * `find()` path with the `brain.explain()` diagnostic, so the silent-
+   * empty bug class (BR-FIND-WHERE-ZERO) is no longer possible.
+   */
   async getIds(field: string, value: any): Promise<string[]> {
     // Track exact query for field statistics
     if (this.fieldStats.has(field)) {
@@ -1600,7 +1611,9 @@ export class MetadataIndexManager {
       return this.idMapper.intsIterableToUuids(bitmap)
     }
 
-    // Fallback: sparse index scan (legacy path during migration)
+    // Fallback: sparse index scan (legacy path during migration). If neither
+    // store has the field, throw FIELD_NOT_INDEXED so the caller knows it's a
+    // genuine "no such index" rather than "the value isn't there".
     return await this.getIdsFromChunks(field, value)
   }
 
@@ -1780,13 +1793,23 @@ export class MetadataIndexManager {
 
     // Process field filters with range support
     const idSets: string[][] = []
-    
+    // Capture field-not-indexed warnings so we log once per find() call,
+    // not once per AND-clause inside it.
+    const unindexedFields: string[] = []
+
     for (const [field, condition] of Object.entries(filter)) {
       // Skip logical operators
       if (field === 'allOf' || field === 'anyOf' || field === 'not') continue
-      
+
       let fieldResults: string[] = []
-      
+
+      try {
+        // The block below evaluates one field clause. If `getIds()` throws
+        // FIELD_NOT_INDEXED (no column-store and no legacy sparse index for
+        // this field), we treat the clause as matching zero entities. This
+        // makes the production `find()` path consistent with the
+        // `brain.explain()` diagnostic: an unindexed field returns no
+        // results AND logs a warning, instead of silently returning [].
       if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
         // Handle Brainy Field Operators (canonical operators defined)
         // See docs/api/README.md for complete operator reference
@@ -1925,16 +1948,38 @@ export class MetadataIndexManager {
         // Direct value match (shorthand for 'eq' operator)
         fieldResults = await this.getIds(field, condition)
       }
-      
+      } catch (err) {
+        if (err instanceof BrainyError && err.type === 'FIELD_NOT_INDEXED') {
+          unindexedFields.push(field)
+          fieldResults = []
+        } else {
+          throw err
+        }
+      }
+
       if (fieldResults.length > 0) {
         idSets.push(fieldResults)
       } else {
         // If any field has no matches, intersection will be empty
+        if (unindexedFields.length > 0) {
+          prodLog.warn(
+            `[brainy] find() where-clause referenced unindexed field(s): ` +
+            `${unindexedFields.join(', ')}. Returning []. Use ` +
+            `brain.explain({ where: {...} }) for diagnostics.`
+          )
+        }
         return []
       }
     }
-    
+
     if (idSets.length === 0) return []
+    if (unindexedFields.length > 0) {
+      prodLog.warn(
+        `[brainy] find() where-clause referenced unindexed field(s) ` +
+        `${unindexedFields.join(', ')}; their clauses contributed no rows. ` +
+        `Use brain.explain({ where: {...} }) for diagnostics.`
+      )
+    }
     if (idSets.length === 1) return idSets[0]
 
     // Set-based intersection O(n) — start with smallest set for optimal perf
@@ -2212,21 +2257,38 @@ export class MetadataIndexManager {
     // Handle regular field filters
     const criteria = this.convertFilterToCriteria(filter)
     const idSets: string[][] = []
-    
+    const unindexedFields: string[] = []
+
     for (const { field, values } of criteria) {
       const unionIds = new Set<string>()
-      for (const value of values) {
-        const ids = await this.getIds(field, value)
-        ids.forEach(id => unionIds.add(id))
+      try {
+        for (const value of values) {
+          const ids = await this.getIds(field, value)
+          ids.forEach(id => unionIds.add(id))
+        }
+      } catch (err) {
+        if (err instanceof BrainyError && err.type === 'FIELD_NOT_INDEXED') {
+          unindexedFields.push(field)
+          // Treat as no matches and continue — same semantics as the main
+          // getIdsForFilter() path.
+        } else {
+          throw err
+        }
       }
       idSets.push(Array.from(unionIds))
     }
-    
+
+    if (unindexedFields.length > 0) {
+      prodLog.warn(
+        `[brainy] find() where-clause referenced unindexed field(s) ` +
+        `${unindexedFields.join(', ')}; their clauses contributed no rows.`
+      )
+    }
     if (idSets.length === 0) return []
     if (idSets.length === 1) return idSets[0]
-    
+
     // Intersection of all field criteria (implicit $and)
-    return idSets.reduce((intersection, currentSet) => 
+    return idSets.reduce((intersection, currentSet) =>
       intersection.filter(id => currentSet.includes(id))
     )
   }
@@ -2244,9 +2306,6 @@ export class MetadataIndexManager {
    * NOTE: Sparse indices are flushed immediately in add/remove operations
    */
   async flush(): Promise<void> {
-    // Flush any deferred chunk/sparse writes first
-    await this.flushDirtyMetadata()
-
     // Always save field registry — even with no dirty fields. This tiny file
     // (list of field names) is the critical link that init() needs to discover
     // persisted indices. Without it, the index appears empty after restart.
@@ -2776,54 +2835,70 @@ export class MetadataIndexManager {
   }
 
   /**
-   * Get index statistics with enhanced counting information
-   * Sparse indices now lazy-loaded via UnifiedCache
-   * Note: This method may load sparse indices to calculate stats
+   * Get index statistics.
+   *
+   * Source-of-truth precedence (post-7.20.0 column-store-first architecture):
+   *   1. **EntityIdMapper** — `idMapper.size` is the canonical entity count.
+   *      Every indexed entity gets a UUID→int mapping; nothing else is
+   *      consistent across instances.
+   *   2. **ColumnStore** — `getIndexedFields()` is the canonical list of
+   *      indexed fields. `getFieldSizeSummary()` provides segment / tail
+   *      bookkeeping per field.
+   *   3. **Legacy sparse-index registry** — only for pre-7.20.0 workspaces
+   *      whose data hasn't been migrated. `getPersistedFieldList()` may know
+   *      fields the column store doesn't yet, so we union them in.
+   *
+   * Prior implementation read from `this.fieldIndexes` + lazy-loaded sparse
+   * indices, which silently returned `0` entries for any workspace written
+   * after sparse-index writes were deleted in commit `11be039`. That defect
+   * is what `BR-FIND-WHERE-ZERO` tracked.
    */
   async getStats(): Promise<MetadataIndexStats> {
+    const entityCount = this.idMapper.size
+
+    // Field set: union of column-store fields and any legacy sparse-index
+    // fields registered on disk. Exclude the `__words__` text index by
+    // convention (it's not a metadata field in the public sense).
     const fields = new Set<string>()
-    let totalEntries = 0
-    let totalIds = 0
-
-    // Collect stats from metadata field indexes only (excludes __words__ keyword index)
-    for (const field of this.fieldIndexes.keys()) {
-      if (field === '__words__') continue // Keyword index not included in metadata stats
-      fields.add(field)
-
-      // Load sparse index to count entries (may trigger lazy load)
-      const sparseIndex = await this.loadSparseIndex(field)
-      if (sparseIndex) {
-        // Count entries and IDs from all chunks
-        for (const chunkId of sparseIndex.getAllChunkIds()) {
-          const chunk = await this.chunkManager.loadChunk(field, chunkId)
-          if (chunk) {
-            totalEntries += chunk.entries.size
-            for (const ids of chunk.entries.values()) {
-              totalIds += ids.size
-            }
-          }
-        }
+    if (this.columnStore) {
+      for (const f of this.columnStore.getIndexedFields()) {
+        if (f !== '__words__') fields.add(f)
       }
     }
+    // Legacy fallback: pre-7.20.0 workspaces may have sparse-index registry
+    // entries the column store doesn't know about yet. Surfacing them in the
+    // field list lets the rest of the system migrate them on read.
+    try {
+      const legacyFields = await this.getPersistedFieldList()
+      for (const f of legacyFields) {
+        if (f !== '__words__') fields.add(f)
+      }
+    } catch {
+      // Registry missing — nothing to add.
+    }
 
-    // Sanity check for index corruption (only metadata fields, not __words__ keyword index)
-    const entityCount = this.idMapper.size
-    if (entityCount > 0) {
-      const avgIdsPerEntity = totalIds / entityCount
-      if (avgIdsPerEntity > 100) {
-        prodLog.warn(
-          `⚠️ Metadata index may be corrupted: ${avgIdsPerEntity.toFixed(1)} avg entries/entity (expected ~30). ` +
-          `Try running brain.index.clearAllIndexData() followed by brain.index.rebuild() to fix.`
-        )
+    // `totalEntries` semantically means "distinct entities tracked by this
+    // index". That's `idMapper.size`. `totalIds` is the sum of all
+    // (field, value) → entityId postings — proxied by the segment/tail size
+    // summary so we don't have to scan every bitmap.
+    let totalIds = 0
+    if (this.columnStore) {
+      for (const summary of this.columnStore.getFieldSizeSummary()) {
+        if (summary.field === '__words__') continue
+        totalIds += summary.tailSize
+        // Segment count is a proxy; for a coarser-grained number we'd open
+        // each segment cursor. Avoided here because stats() is on the hot
+        // path for `brain.stats()` / health checks.
+        totalIds += summary.segmentCount * 1 // segments contribute at least 1 posting
       }
     }
 
     return {
-      totalEntries,
+      totalEntries: entityCount,
       totalIds,
-      fieldsIndexed: Array.from(fields),
+      fieldsIndexed: Array.from(fields).sort(),
       lastRebuild: Date.now(),
-      indexSize: totalEntries * 100 // rough estimate
+      indexSize: entityCount * 100 // rough estimate
     }
   }
 
@@ -2996,9 +3071,9 @@ export class MetadataIndexManager {
             await this.addToIndex(noun.id, metadata, true, true)
             localCount++
             // Periodic safety flush every 5000 entities to cap memory during rebuild
-            if (localCount % 5000 === 0) {
-              await this.flushDirtyMetadata()
-            }
+            // (Periodic safety flush removed in 7.22.0 — the underlying
+            // flushDirtyMetadata was a no-op since the 7.20.0 column-store
+            // refactor. Column store handles its own flushing.)
           }
         }
 
@@ -3092,10 +3167,6 @@ export class MetadataIndexManager {
         await this.yieldToEventLoop()
 
         totalNounsProcessed += result.items.length
-        // Periodic safety flush every 5000 entities to cap memory during rebuild
-        if (totalNounsProcessed % 5000 === 0) {
-          await this.flushDirtyMetadata()
-        }
         hasMoreNouns = result.hasMore
         nounOffset += nounLimit
         
@@ -3150,10 +3221,7 @@ export class MetadataIndexManager {
           if (metadata) {
             await this.addToIndex(verb.id, metadata, true, true)
             verbLocalCount++
-            // Periodic safety flush every 5000 entities to cap memory during rebuild
-            if (verbLocalCount % 5000 === 0) {
-              await this.flushDirtyMetadata()
-            }
+            // (Periodic safety flush removed in 7.22.0 — see noun loop above.)
           }
         }
 
@@ -3242,10 +3310,6 @@ export class MetadataIndexManager {
         await this.yieldToEventLoop()
 
         totalVerbsProcessed += result.items.length
-        // Periodic safety flush every 5000 entities to cap memory during rebuild
-        if (totalVerbsProcessed % 5000 === 0) {
-          await this.flushDirtyMetadata()
-        }
         hasMoreVerbs = result.hasMore
         verbOffset += verbLimit
         
@@ -3262,11 +3326,8 @@ export class MetadataIndexManager {
         }
       }
 
-      // Flush remaining dirty chunks/sparse indices accumulated during rebuild
-      // (deferWrites=true prevented per-entity flushes, so dirty data accumulated)
-      await this.flushDirtyMetadata()
-
-      // Flush to storage with final yield
+      // Flush to storage with final yield. The column store's flush() handles
+      // tail-buffer-to-segment promotion + manifest persistence.
       prodLog.debug('💾 Flushing metadata index to storage...')
       await this.flush()
       await this.yieldToEventLoop()

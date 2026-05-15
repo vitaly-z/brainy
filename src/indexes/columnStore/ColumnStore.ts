@@ -310,6 +310,44 @@ export class ColumnStore implements ColumnStoreProvider {
   }
 
   /**
+   * List every field that has at least one persisted segment or buffered
+   * write. Used by `MetadataIndexManager.getStats()` and by
+   * `brainy inspect fields` so callers see the same field set the column
+   * store will actually serve queries from.
+   */
+  getIndexedFields(): string[] {
+    const fields = new Set<string>()
+    for (const [field, manifest] of this.manifests) {
+      if (!manifest.isEmpty()) fields.add(field)
+    }
+    for (const [field, buffer] of this.tailBuffers) {
+      if (buffer.size > 0) fields.add(field)
+    }
+    return Array.from(fields).sort()
+  }
+
+  /**
+   * Approximate segment + tail-buffer sizes per indexed field. Returns
+   * `segmentCount` (number of persisted L0+ segments) and `tailSize` (entries
+   * buffered but not yet flushed) per field. Suitable for stats / health
+   * surfaces. For exact distinct-value cardinality use
+   * `getFilterValues(field).length` per field on demand.
+   */
+  getFieldSizeSummary(): Array<{ field: string; segmentCount: number; tailSize: number }> {
+    const summary: Array<{ field: string; segmentCount: number; tailSize: number }> = []
+    for (const field of this.getIndexedFields()) {
+      const manifest = this.manifests.get(field)
+      const buffer = this.tailBuffers.get(field)
+      const segmentCount = manifest && !manifest.isEmpty()
+        ? manifest.getAllSegments().length
+        : 0
+      const tailSize = buffer ? buffer.size : 0
+      summary.push({ field, segmentCount, tailSize })
+    }
+    return summary
+  }
+
+  /**
    * Flush all tail buffers to L0 segments and save manifests.
    * No-op if init() hasn't been called (no storage to write to).
    */

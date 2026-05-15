@@ -204,12 +204,13 @@ describe('Multi-process safety + read-only mode', () => {
       })
       const stats = await reader.stats()
       expect(stats.mode).toBe('reader')
-      // NOTE: cross-instance count + type-classification drift between an
-      // in-process writer and a freshly-opened reader is a known issue with
-      // the reader-side index rebuild path. We verify shape + at-least-one-
-      // entity here; exact count/type fidelity is tracked as a separate fix.
-      expect(stats.entityCount).toBeGreaterThanOrEqual(1)
-      expect(Object.keys(stats.entitiesByType).length).toBeGreaterThan(0)
+      // Both Concept entities the writer added should be visible to the
+      // reader, classified correctly as 'concept' (not 'thing'). This is
+      // the BR-FIND-WHERE-ZERO regression test: stats() must read from the
+      // column store via idMapper.size, and getNounType() must use the
+      // write-time type cache instead of the old hardcoded 'thing'.
+      expect(stats.entityCount).toBeGreaterThanOrEqual(2)
+      expect(stats.entitiesByType.concept).toBeGreaterThanOrEqual(2)
       expect(stats.writerLock).toBeDefined()
       expect(stats.writerLock!.pid).toBe(process.pid)
       expect(stats.version).toBeTruthy()

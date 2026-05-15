@@ -3,7 +3,14 @@
  * Provides better error classification and handling
  */
 
-export type BrainyErrorType = 'TIMEOUT' | 'NETWORK' | 'STORAGE' | 'NOT_FOUND' | 'RETRY_EXHAUSTED' | 'VALIDATION'
+export type BrainyErrorType =
+  | 'TIMEOUT'
+  | 'NETWORK'
+  | 'STORAGE'
+  | 'NOT_FOUND'
+  | 'RETRY_EXHAUSTED'
+  | 'VALIDATION'
+  | 'FIELD_NOT_INDEXED'
 
 /**
  * Custom error class for Brainy operations
@@ -96,6 +103,25 @@ export class BrainyError extends Error {
             lastError,
             maxRetries,
             maxRetries
+        )
+    }
+
+    /**
+     * Create a "field is not indexed" error. Thrown by metadata-index reads
+     * when a `where` clause names a field that has neither a column-store
+     * entry nor a sparse-index entry. Callers in `find()` evaluation catch
+     * this, translate the offending clause to an empty result, and log so
+     * the silent-empty behavior is replaced with a loud one. Use
+     * `brain.explain({ where: {...} })` to discover this before running.
+     */
+    static fieldNotIndexed(field: string): BrainyError {
+        return new BrainyError(
+            `Field "${field}" is not indexed. find()/where will not match any entities. ` +
+            `Likely causes: (1) the writer registered the field in memory but has not flushed; ` +
+            `(2) the field name is mistyped; (3) no entity has ever held this field. ` +
+            `Run brain.explain({ where: { ${field}: ... } }) for the diagnostic.`,
+            'FIELD_NOT_INDEXED',
+            false
         )
     }
 
