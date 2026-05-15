@@ -883,6 +883,52 @@ export interface IntegrationsConfig {
 }
 
 /**
+ * Operator-facing summary returned by `brain.stats()`. Designed to fit in a
+ * terminal screen so an incident responder can read it at a glance: counts,
+ * mode, lock owner, indexed fields, and index health flags.
+ */
+export interface BrainyStats {
+  /** Whether this instance can mutate. `reader` is set by `openReadOnly()` and `asOf()`. */
+  mode: 'writer' | 'reader'
+  /** Total entity (noun) count across all types. */
+  entityCount: number
+  /** Breakdown by NounType name (`person`, `event`, ...). Zero-count types omitted. */
+  entitiesByType: Record<string, number>
+  /** Total relationship (verb) count across all types. */
+  relationCount: number
+  /** Breakdown by VerbType name. Zero-count types omitted. */
+  relationsByType: Record<string, number>
+  /** Indexed metadata field names known to the metadata index. */
+  fieldRegistry: string[]
+  /** Per-index health flags. `true` = index has entries OR no entities exist yet. */
+  indexHealth: {
+    hnsw: boolean
+    metadata: boolean
+    graph: boolean
+  }
+  /** Storage backend info — `backend` is the adapter class name. */
+  storage: {
+    backend: string
+    rootDir?: string
+  }
+  /**
+   * Writer lock metadata if one is currently held on this directory. Present
+   * for both writer instances (their own lock) and readers inspecting a
+   * directory with a live writer.
+   */
+  writerLock?: {
+    pid: number
+    hostname: string
+    startedAt: string
+    lastHeartbeat: string
+    version: string
+    rootDir?: string
+  }
+  /** The Brainy library version this instance was built against. */
+  version: string
+}
+
+/**
  * Brainy configuration
  */
 export interface BrainyConfig {
@@ -986,6 +1032,31 @@ export interface BrainyConfig {
   // - false/undefined (default): Log warning if pending migrations exist, but don't auto-run
   // - true: Automatically run pending migrations during init() for small datasets (<10K entities)
   autoMigrate?: boolean
+
+  /**
+   * Process role for multi-process safety on filesystem storage.
+   *
+   * - `'writer'` (default): acquires an exclusive lock on the storage directory at
+   *   `init()` and refuses to open if another live writer holds the lock. Required
+   *   for any instance that calls `add`/`update`/`delete`/`relate` or any other
+   *   mutation. Released on `close()` and on process exit/SIGINT/SIGTERM.
+   * - `'reader'`: opens without acquiring the writer lock. Coexists with a live
+   *   writer and with other readers. All mutation methods throw
+   *   `Cannot mutate a read-only Brainy instance`. Use `Brainy.openReadOnly()`
+   *   as a convenience factory.
+   *
+   * For cloud storage backends (s3/r2/gcs/azure) the lock is a best-effort
+   * advisory marker — multi-process safety against concurrent writers on
+   * cloud-backed stores is not yet enforced. See `docs/concepts/multi-process.md`.
+   */
+  mode?: 'writer' | 'reader'
+
+  /**
+   * Bypass the writer-lock check at init even when another writer holds the lock.
+   * Use only when you know the existing lock is stale and stale-detection
+   * (PID liveness + heartbeat) cannot prove it. Logs a warning regardless.
+   */
+  force?: boolean
 }
 
 // ============= Neural API Types =============

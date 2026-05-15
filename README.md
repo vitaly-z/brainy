@@ -349,6 +349,41 @@ npm install @soulcraft/brainy    # Node.js — fully supported
 
 > **Deprecation Notice:** Browser support (OPFS, Web Workers, WASM embeddings) is deprecated in v7.10.0 and will be removed in v8.0.0. Brainy v8+ will be server-only.
 
+## Single-Writer Model
+
+Brainy is **single-writer, many-reader** on filesystem storage. One writer
+holds an exclusive lock on the data directory; any number of readers can
+inspect it concurrently. Opening a second writer throws with the PID of the
+existing one.
+
+```typescript
+// Live application — writer mode is the default
+const brain = new Brainy({ storage: { type: 'filesystem', rootDirectory: '/data/brain' } })
+await brain.init()
+
+// Out-of-band diagnostics from a separate process — safe to run while the
+// writer is live
+const reader = await Brainy.openReadOnly({
+  storage: { type: 'filesystem', rootDirectory: '/data/brain' }
+})
+await reader.requestFlush({ timeoutMs: 5000 })
+const stats = await reader.stats()
+```
+
+For incident debugging, use the `brainy inspect` CLI:
+
+```bash
+brainy inspect stats   /data/brain
+brainy inspect find    /data/brain --where '{"entityType":"booking"}'
+brainy inspect explain /data/brain --where '{"entityType":"booking"}'
+brainy inspect health  /data/brain
+```
+
+See [the multi-process model](docs/concepts/multi-process.md) and the
+[inspection guide](docs/guides/inspection.md) for the full story, including
+stale-lock detection, the cross-process flush RPC, and what's not yet
+enforced on cloud storage backends.
+
 ## Contributing
 
 We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for guidelines.

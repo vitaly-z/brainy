@@ -18,6 +18,7 @@ import { nlpCommands } from './commands/nlp.js'
 import { insightsCommands } from './commands/insights.js'
 import { importCommands } from './commands/import.js'
 import { cowCommands } from './commands/cow.js'
+import { inspectCommands } from './commands/inspect.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -550,6 +551,143 @@ program
   .command('data-stats')
   .description('Show detailed database statistics')
   .action(dataCommands.stats)
+
+// ===== Inspect Commands =====
+// Out-of-process diagnostics. Every subcommand opens the store via
+// Brainy.openReadOnly() so a live writer can keep running. `--fresh`
+// (default) asks the writer to flush before opening.
+
+program
+  .command('inspect')
+  .description('🔍 Out-of-process diagnostics on a Brainy data directory')
+  .addCommand(
+    new Command('stats')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Counts, mode, indexed fields, writer lock info')
+      .option('--no-fresh', 'Skip the writer flush request (faster, but state may be slightly stale)')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.stats(path, options))
+  )
+  .addCommand(
+    new Command('find')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Find entities matching a where-clause filter')
+      .option('--type <type>', 'Filter by entity type')
+      .option('--where <json>', 'Metadata filter (JSON object)')
+      .option('--limit <n>', 'Max results', '20')
+      .option('--offset <n>', 'Skip N results (pagination)')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.find(path, options))
+  )
+  .addCommand(
+    new Command('get')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .argument('<id>', 'Entity ID')
+      .description('Fetch a single entity by ID')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, id, options) => inspectCommands.get(path, id, options))
+  )
+  .addCommand(
+    new Command('relations')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .argument('<id>', 'Entity ID')
+      .description('Show inbound/outbound relationships for an entity')
+      .option('--direction <dir>', 'in | out | both', 'both')
+      .option('--type <type>', 'Filter by verb type')
+      .option('--limit <n>', 'Max relationships', '50')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, id, options) => inspectCommands.relations(path, id, options))
+  )
+  .addCommand(
+    new Command('explain')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Show which index path will serve each where-clause field (column-store / sparse / none)')
+      .option('--type <type>', 'Filter by entity type')
+      .option('--where <json>', 'Metadata filter to plan (JSON object)')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.explain(path, options))
+  )
+  .addCommand(
+    new Command('health')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Run invariant checks (index parity, field registry, _seeded sweep, writer heartbeat)')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.health(path, options))
+  )
+  .addCommand(
+    new Command('sample')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Random N-entity sample')
+      .option('--type <type>', 'Filter by entity type')
+      .option('--n <n>', 'Sample size', '10')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.sample(path, options))
+  )
+  .addCommand(
+    new Command('fields')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('List indexed metadata fields')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.fields(path, options))
+  )
+  .addCommand(
+    new Command('dump')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Dump all entities of a type as JSONL (one per line) to stdout')
+      .option('--type <type>', 'Filter by entity type')
+      .option('--batch <n>', 'Page size', '500')
+      .option('--no-fresh', 'Skip the writer flush request')
+      .action((path, options) => inspectCommands.dump(path, options))
+  )
+  .addCommand(
+    new Command('watch')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Tail newly-written entities')
+      .option('--type <type>', 'Filter by entity type')
+      .option('--interval <ms>', 'Poll interval', '1000')
+      .action((path, options) => inspectCommands.watch(path, options))
+  )
+  .addCommand(
+    new Command('backup')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .argument('<dest>', 'Destination tarball')
+      .description('Atomic flush-then-tar snapshot of the data directory')
+      .action((path, dest, options) => inspectCommands.backup(path, dest, options))
+  )
+  .addCommand(
+    new Command('repair')
+      .argument('<path>', 'Path to the Brainy data directory')
+      .description('Rebuild indexes from raw storage (writer-mode — stop the live writer first)')
+      .option('--force', 'Override the writer lock if you are sure no other writer is running')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((path, options) => inspectCommands.repair(path, options))
+  )
+  .addCommand(
+    new Command('diff')
+      .argument('<pathA>', 'First Brainy data directory')
+      .argument('<pathB>', 'Second Brainy data directory')
+      .description('Compare counts and a sample of entity IDs between two stores')
+      .option('--sample <n>', 'Sample size per side', '100')
+      .option('--json', 'Output as JSON')
+      .option('--pretty', 'Pretty-print JSON')
+      .action((pathA, pathB, options) => inspectCommands.diff(pathA, pathB, options))
+  )
 
 // ===== NLP Commands =====
 

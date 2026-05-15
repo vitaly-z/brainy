@@ -18,8 +18,10 @@ import {
   BaseStorage,
   StorageBatchConfig,
   SYSTEM_DIR,
-  STATISTICS_KEY
+  STATISTICS_KEY,
+  WriterLockInfo
 } from '../baseStorage.js'
+import { getBrainyVersion } from '../../utils/index.js'
 
 // Type aliases for better readability
 type HNSWNode = HNSWNoun
@@ -90,6 +92,30 @@ export class FileSystemStorage extends BaseStorage {
   private activeLocks: Set<string> = new Set()
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
+
+  // Writer-lock state. The writer lock at `locks/_writer.lock` is acquired
+  // at Brainy.init() in writer mode and released at close(). A heartbeat
+  // timer rewrites the lock every 10s so stale-lock detection can tell a dead
+  // writer from a slow one. The constant name matches the file path used.
+  private static readonly WRITER_LOCK_FILE = '_writer.lock'
+  private static readonly WRITER_HEARTBEAT_MS = 10_000
+  private static readonly WRITER_STALE_THRESHOLD_MS = 60_000
+  private writerLockHeartbeat?: NodeJS.Timeout
+  private writerLockInfo?: WriterLockInfo
+
+  // Flush-request RPC state. The writer polls `locks/_flush_requests/` for
+  // new `.req` files and emits `.ack` files in `locks/_flush_responses/` after
+  // flushing. Inspectors call `requestFlushOverFilesystem` to drop a request
+  // and wait for the ack. Polling interval is short enough to feel synchronous
+  // for operator workflows but doesn't pressure the FS.
+  private static readonly FLUSH_REQUEST_DIR = '_flush_requests'
+  private static readonly FLUSH_RESPONSE_DIR = '_flush_responses'
+  private static readonly FLUSH_WATCH_INTERVAL_MS = 500
+  private static readonly FLUSH_POLL_INTERVAL_MS = 100
+  private static readonly FLUSH_REQUEST_TTL_MS = 60_000
+  private flushWatcherInterval?: NodeJS.Timeout
+  private flushWatcherInFlight = false
+  private flushWatcherOnRequest?: () => Promise<void>
 
   // CRITICAL FIX: Mutex locks for HNSW concurrency control
   // Prevents read-modify-write races during concurrent neighbor updates at scale (1000+ ops)
@@ -1211,6 +1237,352 @@ export class FileSystemStorage extends BaseStorage {
 
   // Removed 10 *_internal method overrides - now inherit from BaseStorage's type-first implementation
   // Removed 2 pagination methods (getNounsWithPagination, getVerbsWithPagination) - use BaseStorage's implementation
+
+  public supportsMultiProcessLocking(): boolean {
+    return true
+  }
+
+  /**
+   * Acquire the process-level writer lock for this data directory. Called by
+   * `Brainy.init()` in writer mode. Refuses to open if another live writer
+   * holds the lock — the worst possible default is to "succeed" with stale
+   * indexes and silently lie about query results.
+   *
+   * Lock file: `<rootDir>/locks/_writer.lock`.
+   *
+   * Stale-lock detection: a lock is considered stale when ALL of:
+   *   1. Same hostname as the current process (cross-host PID checks are unsafe).
+   *   2. The recorded PID is no longer alive (`process.kill(pid, 0)` → ESRCH), OR
+   *      `lastHeartbeat` is older than `WRITER_STALE_THRESHOLD_MS` (60s).
+   * Stale locks are overwritten with a warning. `force: true` overrides even live locks.
+   */
+  public async acquireWriterLock(options?: { force?: boolean }): Promise<WriterLockInfo | null> {
+    await this.ensureInitialized()
+    await this.ensureDirectoryExists(this.lockDir)
+
+    const lockFile = path.join(this.lockDir, FileSystemStorage.WRITER_LOCK_FILE)
+    const os = await import('node:os')
+    const hostname = os.hostname()
+    const now = new Date().toISOString()
+
+    const existing = await this.readWriterLock()
+    if (existing && !options?.force) {
+      // Same-process re-open: a second Brainy instance in this Node process
+      // (e.g. test "simulate server restart" patterns, or a consumer that
+      // explicitly re-instantiates without closing first). This isn't the
+      // dangerous cross-process case the lock exists to prevent — the two
+      // instances share a memory space and can't silently diverge from each
+      // other beyond what their callers already see. Warn and take over the lock.
+      if (existing.pid === (typeof process !== 'undefined' ? process.pid : 0) &&
+          existing.hostname === hostname) {
+        console.warn(
+          `[brainy] Re-acquiring writer lock for ${this.rootDir} held by the same process (PID ${existing.pid}). ` +
+          `If you intended to keep the previous Brainy instance alive, this is a bug — close it first.`
+        )
+      } else {
+        const stale = await this.isWriterLockStale(existing)
+        if (!stale) {
+          const err = new Error(
+            `Another writer holds this Brainy directory.\n` +
+            `  PID:        ${existing.pid} on host ${existing.hostname}\n` +
+            `  Started:    ${existing.startedAt}\n` +
+            `  Heartbeat:  ${existing.lastHeartbeat}\n` +
+            `  Version:    ${existing.version}\n` +
+            `  Directory:  ${this.rootDir}\n\n` +
+            `For diagnostic queries against this live store, use:\n` +
+            `  const reader = await Brainy.openReadOnly({ storage: { type: 'filesystem', rootDirectory: '${this.rootDir}' } })\n\n` +
+            `If you have verified the existing lock is stale (e.g. a crashed writer on a different host that PID liveness cannot reach), pass { force: true }.`
+          )
+          ;(err as any).code = 'BRAINY_WRITER_LOCKED'
+          ;(err as any).lockInfo = existing
+          throw err
+        }
+        console.warn(
+          `[brainy] Overwriting stale writer lock for ${this.rootDir} ` +
+          `(PID ${existing.pid} on ${existing.hostname} appears dead).`
+        )
+      }
+    } else if (existing && options?.force) {
+      console.warn(
+        `[brainy] Force-overwriting writer lock for ${this.rootDir} ` +
+        `(was held by PID ${existing.pid} on ${existing.hostname}).`
+      )
+    }
+
+    const info: WriterLockInfo = {
+      pid: typeof process !== 'undefined' && process.pid ? process.pid : 0,
+      hostname,
+      startedAt: existing && options?.force ? existing.startedAt : now,
+      lastHeartbeat: now,
+      version: getBrainyVersion(),
+      rootDir: this.rootDir
+    }
+
+    await this.writeFileAtomic(lockFile, JSON.stringify(info, null, 2))
+    this.writerLockInfo = info
+
+    // Heartbeat — rewrite lastHeartbeat every WRITER_HEARTBEAT_MS so other
+    // processes can tell a live writer from one that crashed without releasing.
+    this.writerLockHeartbeat = setInterval(() => {
+      this.refreshWriterLockHeartbeat().catch((err) => {
+        console.warn('[brainy] Failed to refresh writer lock heartbeat:', err)
+      })
+    }, FileSystemStorage.WRITER_HEARTBEAT_MS)
+    if (typeof this.writerLockHeartbeat.unref === 'function') {
+      // Don't keep the event loop alive just for the heartbeat.
+      this.writerLockHeartbeat.unref()
+    }
+
+    return info
+  }
+
+  public async releaseWriterLock(): Promise<void> {
+    if (this.writerLockHeartbeat) {
+      clearInterval(this.writerLockHeartbeat)
+      this.writerLockHeartbeat = undefined
+    }
+    if (!this.writerLockInfo) {
+      return
+    }
+    const lockFile = path.join(this.lockDir, FileSystemStorage.WRITER_LOCK_FILE)
+    try {
+      // Only delete if we still own it — avoid clobbering a successor that
+      // claimed the lock via force-override.
+      const current = await this.readWriterLock()
+      if (current && current.pid === this.writerLockInfo.pid && current.hostname === this.writerLockInfo.hostname) {
+        await fs.promises.unlink(lockFile)
+      }
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') {
+        console.warn('[brainy] Failed to release writer lock file:', err)
+      }
+    } finally {
+      this.writerLockInfo = undefined
+    }
+  }
+
+  public async readWriterLock(): Promise<WriterLockInfo | null> {
+    await this.ensureInitialized()
+    const lockFile = path.join(this.lockDir, FileSystemStorage.WRITER_LOCK_FILE)
+    try {
+      const raw = await fs.promises.readFile(lockFile, 'utf-8')
+      return JSON.parse(raw) as WriterLockInfo
+    } catch (err: any) {
+      if (err.code === 'ENOENT') return null
+      console.warn('[brainy] Failed to read writer lock file:', err)
+      return null
+    }
+  }
+
+  /**
+   * Atomically refresh `lastHeartbeat` on the writer lock we own. Skips if the
+   * lock file has been deleted out from under us (e.g. operator removed it).
+   */
+  private async refreshWriterLockHeartbeat(): Promise<void> {
+    if (!this.writerLockInfo) return
+    const current = await this.readWriterLock()
+    if (!current) return
+    // Defensive: don't overwrite if a successor claimed the lock.
+    if (current.pid !== this.writerLockInfo.pid || current.hostname !== this.writerLockInfo.hostname) {
+      return
+    }
+    const updated: WriterLockInfo = {
+      ...this.writerLockInfo,
+      lastHeartbeat: new Date().toISOString()
+    }
+    const lockFile = path.join(this.lockDir, FileSystemStorage.WRITER_LOCK_FILE)
+    await this.writeFileAtomic(lockFile, JSON.stringify(updated, null, 2))
+    this.writerLockInfo = updated
+  }
+
+  /**
+   * Determine whether an existing writer lock is stale (safe to overwrite).
+   * Same hostname and (dead PID OR heartbeat older than threshold) → stale.
+   * Different hostname → cannot prove stale, treat as live.
+   */
+  private async isWriterLockStale(lock: WriterLockInfo): Promise<boolean> {
+    const os = await import('node:os')
+    if (lock.hostname !== os.hostname()) {
+      return false
+    }
+    const heartbeatAge = Date.now() - new Date(lock.lastHeartbeat).getTime()
+    const pidAlive = this.isPidAlive(lock.pid)
+    if (!pidAlive) return true
+    return heartbeatAge > FileSystemStorage.WRITER_STALE_THRESHOLD_MS
+  }
+
+  /**
+   * `process.kill(pid, 0)` sends signal 0 — no signal is actually delivered;
+   * it just checks whether the kernel still considers `pid` reachable from
+   * this process. ESRCH = no such process. EPERM = exists but we can't signal
+   * it, which still proves it's alive.
+   */
+  private isPidAlive(pid: number): boolean {
+    if (!pid || pid <= 0) return false
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (err: any) {
+      if (err.code === 'EPERM') return true
+      return false
+    }
+  }
+
+  /**
+   * Atomic write via temp-file-then-rename so concurrent readers never see a
+   * half-written lock JSON. Reused by writer-lock writes + heartbeat.
+   */
+  private async writeFileAtomic(filePath: string, contents: string): Promise<void> {
+    const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`
+    await fs.promises.writeFile(tmp, contents)
+    await fs.promises.rename(tmp, filePath)
+  }
+
+  /**
+   * Start watching for cross-process flush requests. Called by Brainy.init()
+   * in writer mode. Polls `locks/_flush_requests/` every
+   * FLUSH_WATCH_INTERVAL_MS — each new `.req` file triggers the supplied
+   * callback (`brain.flush()`), after which an `.ack` is written to
+   * `locks/_flush_responses/` with the same request ID. Stale `.req` files
+   * (>FLUSH_REQUEST_TTL_MS) are garbage-collected on every tick.
+   */
+  public startFlushRequestWatcher(onRequest: () => Promise<void>): void {
+    if (this.flushWatcherInterval) return // already watching
+    this.flushWatcherOnRequest = onRequest
+
+    const reqDir = path.join(this.lockDir, FileSystemStorage.FLUSH_REQUEST_DIR)
+    const ackDir = path.join(this.lockDir, FileSystemStorage.FLUSH_RESPONSE_DIR)
+
+    // Ensure both dirs exist up front so the first .req drop doesn't race with mkdir.
+    this.ensureDirectoryExists(reqDir).catch(() => {})
+    this.ensureDirectoryExists(ackDir).catch(() => {})
+
+    this.flushWatcherInterval = setInterval(() => {
+      if (this.flushWatcherInFlight) return // skip overlapping tick
+      this.flushWatcherInFlight = true
+      this.processFlushRequests(reqDir, ackDir).finally(() => {
+        this.flushWatcherInFlight = false
+      })
+    }, FileSystemStorage.FLUSH_WATCH_INTERVAL_MS)
+    if (typeof this.flushWatcherInterval.unref === 'function') {
+      this.flushWatcherInterval.unref()
+    }
+  }
+
+  public stopFlushRequestWatcher(): void {
+    if (this.flushWatcherInterval) {
+      clearInterval(this.flushWatcherInterval)
+      this.flushWatcherInterval = undefined
+    }
+    this.flushWatcherOnRequest = undefined
+  }
+
+  /**
+   * Process any pending `.req` files: invoke the flush callback once, then
+   * write an `.ack` for each request. Multiple requests that arrived in the
+   * same tick share a single flush — they all see the same ack timestamp.
+   */
+  private async processFlushRequests(reqDir: string, ackDir: string): Promise<void> {
+    let entries: string[]
+    try {
+      entries = await fs.promises.readdir(reqDir)
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') {
+        console.warn('[brainy] Flush watcher readdir failed:', err)
+      }
+      return
+    }
+
+    const reqs = entries.filter((e: string) => e.endsWith('.req'))
+    if (reqs.length === 0) return
+
+    // One flush per tick — N pending requests share it.
+    const callback = this.flushWatcherOnRequest
+    if (!callback) return
+    let flushError: Error | null = null
+    try {
+      await callback()
+    } catch (err: any) {
+      flushError = err instanceof Error ? err : new Error(String(err))
+      console.warn('[brainy] Flush callback threw inside flush-request watcher:', err)
+    }
+
+    const ackTimestamp = new Date().toISOString()
+    for (const filename of reqs) {
+      const requestId = filename.replace(/\.req$/, '')
+      const ackPath = path.join(ackDir, `${requestId}.ack`)
+      const ackBody = JSON.stringify({
+        requestId,
+        completedAt: ackTimestamp,
+        ok: !flushError,
+        error: flushError ? flushError.message : undefined
+      })
+      try {
+        await this.writeFileAtomic(ackPath, ackBody)
+        await fs.promises.unlink(path.join(reqDir, filename))
+      } catch (err: any) {
+        if (err.code !== 'ENOENT') {
+          console.warn('[brainy] Failed to write flush ack:', err)
+        }
+      }
+    }
+
+    // Garbage-collect stale .req files in case a watcher missed them (e.g.
+    // the writer was restarted between request and processing).
+    const now = Date.now()
+    for (const filename of entries) {
+      if (!filename.endsWith('.req')) continue
+      const fp = path.join(reqDir, filename)
+      try {
+        const stat = await fs.promises.stat(fp)
+        if (now - stat.mtimeMs > FileSystemStorage.FLUSH_REQUEST_TTL_MS) {
+          await fs.promises.unlink(fp).catch(() => {})
+        }
+      } catch {
+        // ignore — file already removed
+      }
+    }
+  }
+
+  /**
+   * Inspector side: drop a `.req` file and poll for the corresponding `.ack`.
+   * Returns true if the writer acknowledged in time, false on timeout.
+   */
+  public async requestFlushOverFilesystem(timeoutMs: number): Promise<boolean> {
+    await this.ensureInitialized()
+    const reqDir = path.join(this.lockDir, FileSystemStorage.FLUSH_REQUEST_DIR)
+    const ackDir = path.join(this.lockDir, FileSystemStorage.FLUSH_RESPONSE_DIR)
+    await this.ensureDirectoryExists(reqDir)
+    await this.ensureDirectoryExists(ackDir)
+
+    const requestId = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 10)}`
+    const reqPath = path.join(reqDir, `${requestId}.req`)
+    const ackPath = path.join(ackDir, `${requestId}.ack`)
+    const body = JSON.stringify({
+      requestId,
+      requestedAt: new Date().toISOString(),
+      requesterPid: process.pid
+    })
+
+    await this.writeFileAtomic(reqPath, body)
+
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      try {
+        await fs.promises.access(ackPath, fs.constants.F_OK)
+        await fs.promises.unlink(ackPath).catch(() => {})
+        return true
+      } catch {
+        // not yet
+      }
+      await new Promise((r) => setTimeout(r, FileSystemStorage.FLUSH_POLL_INTERVAL_MS))
+    }
+
+    // Timeout — best effort to clean up our request so the writer doesn't act
+    // on stale work later. Watcher will GC anyway after FLUSH_REQUEST_TTL_MS.
+    await fs.promises.unlink(reqPath).catch(() => {})
+    return false
+  }
 
   /**
    * Acquire a file-based lock for coordinating operations across multiple processes

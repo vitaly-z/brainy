@@ -65,7 +65,10 @@ import {
   DistributedCoordinator,
   ShardManager,
   CacheSync,
-  ReadWriteSeparation
+  ReadWriteSeparation,
+  BaseOperationalMode,
+  ReaderMode,
+  HybridMode
 } from './distributed/index.js'
 import {
   Entity,
@@ -83,6 +86,7 @@ import {
   RelateManyParams,
   BatchResult,
   BrainyConfig,
+  BrainyStats,
   ScoreExplanation
 } from './types/brainy.types.js'
 import { NounType, VerbType } from './types/graphTypes.js'
@@ -182,6 +186,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private initialized = false
   private dimensions?: number
 
+  // Multi-process mode (writer is default; reader is set via mode: 'reader' or
+  // Brainy.openReadOnly()). `operationalMode.validateOperation('write')` is
+  // called at the top of every mutation method. Snapshots from `asOf()` also
+  // set this to ReaderMode so historical instances are protected the same way.
+  private operationalMode: BaseOperationalMode
+
   // Ready Promise state (Unified readiness API)
   // Allows consumers to await brain.ready for initialization completion
   private _readyPromise: Promise<void> | null = null
@@ -197,6 +207,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   constructor(config?: BrainyConfig) {
     // Normalize configuration with defaults
     this.config = this.normalizeConfig(config)
+
+    // Multi-process mode — default 'writer' uses HybridMode (read + write),
+    // 'reader' uses ReaderMode (read-only, all mutations throw).
+    // `WriterMode` from operationalModes.ts blocks reads, which is too strict
+    // for a Brainy instance — a writer needs to read its own data.
+    this.operationalMode = this.config.mode === 'reader'
+      ? new ReaderMode()
+      : new HybridMode()
 
     // Configure memory limits
     // This must happen early, before any validation occurs
@@ -223,11 +241,80 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       this._readyResolve = resolve
       this._readyReject = reject
     })
+    // Attach a default no-op rejection handler so that init-failure cases
+    // (e.g. another writer holds the lock) do not surface as Node
+    // "unhandled promise rejection" warnings when callers don't `await brain.ready`.
+    // Callers who DO await it still see the original rejection.
+    this._readyPromise.catch(() => { /* observed by ready() consumers, if any */ })
 
     // Track this instance for shutdown hooks
     Brainy.instances.push(this)
 
     // Index and storage are initialized in init() because they may need each other
+  }
+
+  /**
+   * Open a Brainy store in read-only mode and initialize it.
+   *
+   * Convenience factory equivalent to
+   * `new Brainy({ ...config, mode: 'reader' })` followed by `init()`. The
+   * resulting instance:
+   *
+   * - Does NOT acquire the writer lock — coexists with a live writer process
+   *   and with any number of other readers on the same data directory.
+   * - Throws `Cannot mutate a read-only Brainy instance` from every mutation
+   *   method (`add`, `addMany`, `update`, `delete`, `deleteMany`, `relate`,
+   *   `unrelate`, `commit`, `branch`, `merge`, `deleteBranch`).
+   * - Reflects the state of the writer's last successful `flush()`. To force
+   *   the writer to flush before opening, call `requestFlush()` on a separate
+   *   handle first, or pass `--fresh` to the `brainy inspect` CLI.
+   *
+   * Typical use cases:
+   * - Operator diagnostics during incidents (`brainy inspect` uses this).
+   * - Read-replica processes on the same machine.
+   * - Long-running analytics scripts that should not contend with the writer.
+   *
+   * @param config Same options as `new Brainy(config)`. The `mode` field is
+   *   ignored and forced to `'reader'`.
+   * @returns An initialized, read-only Brainy instance.
+   *
+   * @example
+   * ```typescript
+   * const reader = await Brainy.openReadOnly({
+   *   storage: { type: 'filesystem', rootDirectory: '/data/brainy-data/tenant' }
+   * })
+   * const bookings = await reader.find({ where: { entityType: 'booking' } })
+   * await reader.close()
+   * ```
+   */
+  static async openReadOnly<T = any>(config: BrainyConfig): Promise<Brainy<T>> {
+    const brain = new Brainy<T>({ ...config, mode: 'reader' })
+    await brain.init()
+    return brain
+  }
+
+  /**
+   * Whether this instance is read-only (set via `mode: 'reader'`,
+   * `Brainy.openReadOnly()`, or `asOf()`). When true, all mutation methods
+   * throw.
+   */
+  get isReadOnly(): boolean {
+    return !this.operationalMode.canWrite
+  }
+
+  /**
+   * Throw if this instance cannot perform writes. Called at the top of every
+   * mutation method. The check is cheap (a property lookup + boolean test) and
+   * runs before any work, so callers get a clear, fast failure in read-only mode.
+   */
+  private assertWritable(method: string): void {
+    if (!this.operationalMode.canWrite) {
+      throw new Error(
+        `Cannot call ${method}() on a read-only Brainy instance. ` +
+        `This instance was opened with mode: 'reader' (or via Brainy.openReadOnly() / asOf()). ` +
+        `Open in writer mode to modify data.`
+      )
+    }
   }
 
   /**
@@ -254,6 +341,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Set dimensions if provided
       if (dimensions) {
         this.dimensions = dimensions
+      }
+
+      // Re-derive operationalMode if mode override changed it
+      if (configOverrides.mode) {
+        this.operationalMode = configOverrides.mode === 'reader'
+          ? new ReaderMode()
+          : new HybridMode()
       }
     }
 
@@ -287,6 +381,30 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Setup and initialize storage (checks plugin storage factories first)
       this.storage = await this.setupStorage()
       await this.storage.init()
+
+      // Acquire the writer lock for filesystem (and other locking-capable) backends.
+      // Skipped in reader mode and on backends that don't support multi-process locking.
+      // Throws if another live writer holds the directory (unless force: true).
+      if (this.config.mode !== 'reader' && this.storage.supportsMultiProcessLocking()) {
+        await this.storage.acquireWriterLock({ force: this.config.force })
+        // Watch for cross-process flush requests so inspectors can see fresh
+        // state on demand. Reader instances don't run a watcher (nothing to flush).
+        this.storage.startFlushRequestWatcher(async () => {
+          if (this.initialized) {
+            await this.flush()
+          }
+        })
+      } else if (this.config.mode !== 'reader' && !this.config.silent) {
+        // Cloud / memory backends: multi-process safety not enforced. One-time
+        // warning so operators know what they're getting.
+        const backendName = (this.storage.constructor as any).name || 'storage'
+        if (backendName !== 'MemoryStorage') {
+          console.warn(
+            `[brainy] Multi-process writer protection is not enforced on ${backendName}. ` +
+            `See docs/concepts/multi-process.md for the model.`
+          )
+        }
+      }
 
       // Enable COW immediately after storage init
       // This ensures ALL data is stored in branch-scoped paths from the start
@@ -510,6 +628,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
               (async () => {
                 if (instance.metadataIndex && typeof (instance.metadataIndex as any).close === 'function') {
                   await (instance.metadataIndex as any).close()
+                }
+              })(),
+              // Release the writer lock so a successor process can take over.
+              // No-op for readers and for backends without locking.
+              (async () => {
+                if (instance.storage && typeof instance.storage.releaseWriterLock === 'function') {
+                  await instance.storage.releaseWriterLock()
+                }
+              })(),
+              // Stop the flush-request watcher to release its interval timer.
+              (async () => {
+                if (instance.storage && typeof instance.storage.stopFlushRequestWatcher === 'function') {
+                  instance.storage.stopFlushRequestWatcher()
                 }
               })(),
             ])
@@ -755,6 +886,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async add(params: AddParams<T>): Promise<string> {
+    this.assertWritable('add')
     await this.ensureInitialized()
 
     // Zero-config validation (static import for performance)
@@ -1216,6 +1348,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async update(params: UpdateParams<T>): Promise<void> {
+    this.assertWritable('update')
     await this.ensureInitialized()
 
     // Zero-config validation (static import for performance)
@@ -1365,6 +1498,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async delete(id: string): Promise<void> {
+    this.assertWritable('delete')
     // Handle invalid IDs gracefully
     if (!id || typeof id !== 'string') {
       return // Silently return for invalid IDs
@@ -1552,6 +1686,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * }
    */
   async relate(params: RelateParams<T>): Promise<string> {
+    this.assertWritable('relate')
     await this.ensureInitialized()
 
     // Zero-config validation (static import for performance)
@@ -1703,6 +1838,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async unrelate(id: string): Promise<void> {
+    this.assertWritable('unrelate')
     await this.ensureInitialized()
 
     // Get verb data before deletion for rollback
@@ -2664,6 +2800,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async addMany(params: AddManyParams<T>): Promise<BatchResult<string>> {
+    this.assertWritable('addMany')
     await this.ensureInitialized()
 
     // Get optimal batch configuration from storage adapter
@@ -2803,6 +2940,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Delete multiple entities
    */
   async deleteMany(params: DeleteManyParams): Promise<BatchResult<string>> {
+    this.assertWritable('deleteMany')
     await this.ensureInitialized()
 
     // Determine what to delete
@@ -3012,6 +3150,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async relateMany(params: RelateManyParams<T>): Promise<string[]> {
+    this.assertWritable('relateMany')
     await this.ensureInitialized()
 
     // Get optimal batch configuration from storage adapter
@@ -3215,6 +3354,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     message?: string
     metadata?: Record<string, any>
   }): Promise<Brainy<T>> {
+    this.assertWritable('fork')
     await this.ensureInitialized()
 
     const branchName = branch || `fork-${Date.now()}`
@@ -3469,6 +3609,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     metadata?: Record<string, any>
     captureState?: boolean
   }): Promise<string> {
+    this.assertWritable('commit')
     await this.ensureInitialized()
 
     if (!('refManager' in this.storage) || !('commitLog' in this.storage) || !('blobStorage' in this.storage)) {
@@ -3695,17 +3836,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Create Brainy instance wrapping historical storage
     // All queries will lazy-load from historical state on-demand
+    // mode: 'reader' wires ReaderMode so every mutation throws.
     const snapshotBrain = new Brainy({
       ...this.config,
       // Use the historical adapter directly (no need for separate storage type)
-      storage: historicalStorage as any
+      storage: historicalStorage as any,
+      mode: 'reader'
     })
 
     // Initialize the snapshot (creates indexes, but they'll be populated lazily)
     await snapshotBrain.init()
 
-    // Mark as read-only snapshot (prevents writes)
-    ;(snapshotBrain as any).isReadOnlySnapshot = true
+    // Track which commit this snapshot reflects
     ;(snapshotBrain as any).snapshotCommitId = commitId
 
     console.log(`[asOf] Snapshot ready (lazy-loading, cache size: ${options?.cacheSize || 10000})`)
@@ -3724,6 +3866,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * ```
    */
   async deleteBranch(branch: string): Promise<void> {
+    this.assertWritable('deleteBranch')
     await this.ensureInitialized()
 
     if (!('refManager' in this.storage)) {
@@ -4775,8 +4918,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async flush(): Promise<void> {
     await this.ensureInitialized()
 
-    console.log('Flushing Brainy indexes and caches to disk...')
+    // Read-only instances have no buffered writes to flush. close() may call
+    // flush() defensively, so we early-return instead of throwing.
+    if (this.isReadOnly) {
+      return
+    }
 
+    console.log('Flushing Brainy indexes and caches to disk...')
     const startTime = Date.now()
 
     // Flush all components in parallel for performance
@@ -4805,6 +4953,49 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const elapsed = Date.now() - startTime
 
     console.log(`All indexes flushed to disk in ${elapsed}ms`)
+  }
+
+  /**
+   * Ask the writer process serving this data directory to flush its in-memory
+   * indexes to disk, so a read-only inspector can observe fresh state.
+   *
+   * - **Same-process call** (this instance owns the writer lock): equivalent
+   *   to `this.flush()`.
+   * - **Different process** (typical inspector flow): writes a request file
+   *   into the lock directory and polls for an ack file. The writer's
+   *   flush-request watcher (started in `init()` for writer instances) sees
+   *   the request, calls `flush()`, and writes the ack.
+   * - **No writer running**: times out and returns `false`. Callers can
+   *   proceed with last-flushed disk state and warn the operator.
+   *
+   * @param options.timeoutMs - How long to wait for an ack (default 5000ms).
+   * @returns `true` if the writer flushed in response to this request,
+   *   `false` on timeout (no writer or unresponsive).
+   *
+   * @example
+   * ```typescript
+   * const reader = await Brainy.openReadOnly({ storage: { type: 'filesystem', rootDirectory: '/data/brain' } })
+   * const fresh = await reader.requestFlush({ timeoutMs: 3000 })
+   * if (!fresh) {
+   *   console.warn('Writer did not respond; results reflect last natural flush.')
+   * }
+   * const bookings = await reader.find({ where: { entityType: 'booking' } })
+   * ```
+   */
+  async requestFlush(options?: { timeoutMs?: number }): Promise<boolean> {
+    await this.ensureInitialized()
+    const timeoutMs = options?.timeoutMs ?? 5000
+
+    // In-process shortcut: if this instance can write, just flush directly.
+    if (!this.isReadOnly) {
+      await this.flush()
+      return true
+    }
+
+    if (typeof (this.storage as any).requestFlushOverFilesystem !== 'function') {
+      return false
+    }
+    return (this.storage as any).requestFlushOverFilesystem(timeoutMs)
   }
 
   /**
@@ -4874,6 +5065,273 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       storage: {
         totalEntities: storageEntityCount
       }
+    }
+  }
+
+  /**
+   * Run a battery of cheap invariant checks suitable for an operator-facing
+   * health probe. Reports counts of suspicious states alongside the basic
+   * size invariants — designed so an incident responder can spot the typical
+   * failure modes (mismatched index sizes, lots of `_seeded` records hanging
+   * around, missing field stats) without scanning the whole store.
+   *
+   * @example
+   * ```typescript
+   * const h = await brain.health()
+   * for (const c of h.checks) {
+   *   console.log(`${c.status === 'pass' ? '✓' : '!'} ${c.name}: ${c.message}`)
+   * }
+   * ```
+   */
+  async health(): Promise<{
+    overall: 'pass' | 'warn' | 'fail'
+    checks: Array<{
+      name: string
+      status: 'pass' | 'warn' | 'fail'
+      message: string
+      details?: Record<string, unknown>
+    }>
+  }> {
+    await this.ensureInitialized()
+    const checks: Array<{
+      name: string
+      status: 'pass' | 'warn' | 'fail'
+      message: string
+      details?: Record<string, unknown>
+    }> = []
+
+    const hnswSize = this.index.size()
+    const metadataStats = await this.metadataIndex.getStats()
+    const graphSize = await this.graphIndex.size()
+
+    // 1. Index size parity. HNSW must hold at least one node per indexed entity.
+    if (hnswSize === metadataStats.totalEntries) {
+      checks.push({
+        name: 'index-parity',
+        status: 'pass',
+        message: `HNSW (${hnswSize}) and metadata index (${metadataStats.totalEntries}) agree.`,
+        details: { hnswSize, metadataEntries: metadataStats.totalEntries, graphRelationships: graphSize }
+      })
+    } else {
+      const drift = Math.abs(hnswSize - metadataStats.totalEntries)
+      checks.push({
+        name: 'index-parity',
+        status: drift > Math.max(10, metadataStats.totalEntries * 0.01) ? 'fail' : 'warn',
+        message: `HNSW (${hnswSize}) and metadata (${metadataStats.totalEntries}) differ by ${drift}. Run a rebuild if the gap is unexpected.`,
+        details: { hnswSize, metadataEntries: metadataStats.totalEntries, drift }
+      })
+    }
+
+    // 2. Field registry sanity. Empty field set + non-zero entities = stale reader.
+    let fieldCount = 0
+    try {
+      if (typeof (this.metadataIndex as any).getFieldStatistics === 'function') {
+        const fs = await (this.metadataIndex as any).getFieldStatistics() as Map<string, unknown>
+        fieldCount = fs.size
+      }
+    } catch {
+      // ignore — metadata index doesn't expose stats
+    }
+    if (metadataStats.totalEntries > 0 && fieldCount === 0) {
+      checks.push({
+        name: 'field-registry',
+        status: 'warn',
+        message: `${metadataStats.totalEntries} entities present but the field registry is empty. Reader may be stale; consider requestFlush().`,
+        details: { entities: metadataStats.totalEntries, fields: fieldCount }
+      })
+    } else {
+      checks.push({
+        name: 'field-registry',
+        status: 'pass',
+        message: `${fieldCount} fields registered for ${metadataStats.totalEntries} entities.`,
+        details: { fields: fieldCount, entities: metadataStats.totalEntries }
+      })
+    }
+
+    // 3. Seeded entity sweep — operators often want to know if demo seed data
+    // is still in a brain that's also serving real traffic (a common root
+    // cause of duplicate-ID and stale-content bugs). Uses the metadata index,
+    // not a full scan.
+    let seededIds: string[] = []
+    try {
+      seededIds = await this.metadataIndex.getIds('_seeded', true)
+    } catch {
+      // ignore — field may not be indexed
+    }
+    if (seededIds.length > 0) {
+      checks.push({
+        name: 'seeded-records',
+        status: 'warn',
+        message: `${seededIds.length} entities tagged _seeded:true. Verify this is the demo data you expect.`,
+        details: { count: seededIds.length, sample: seededIds.slice(0, 5) }
+      })
+    } else {
+      checks.push({
+        name: 'seeded-records',
+        status: 'pass',
+        message: 'No _seeded:true entities found.'
+      })
+    }
+
+    // 4. Lock heartbeat freshness — only meaningful for readers inspecting a
+    // running writer. If the lock exists but the heartbeat is old, the writer
+    // probably crashed.
+    if (typeof this.storage.readWriterLock === 'function') {
+      const lock = await this.storage.readWriterLock()
+      if (lock) {
+        const age = Date.now() - new Date(lock.lastHeartbeat).getTime()
+        if (age > 60_000) {
+          checks.push({
+            name: 'writer-heartbeat',
+            status: 'warn',
+            message: `Writer lock heartbeat is ${Math.round(age / 1000)}s old (PID ${lock.pid} on ${lock.hostname}). Writer may be hung.`,
+            details: { lock, ageMs: age }
+          })
+        } else {
+          checks.push({
+            name: 'writer-heartbeat',
+            status: 'pass',
+            message: `Writer healthy (PID ${lock.pid} on ${lock.hostname}, heartbeat ${Math.round(age / 1000)}s ago).`,
+            details: { lock }
+          })
+        }
+      }
+    }
+
+    const worst = checks.reduce<'pass' | 'warn' | 'fail'>((acc, c) => {
+      if (c.status === 'fail') return 'fail'
+      if (c.status === 'warn' && acc !== 'fail') return 'warn'
+      return acc
+    }, 'pass')
+
+    return { overall: worst, checks }
+  }
+
+  /**
+   * Explain how a `find` query's `where` clause will be served. For each
+   * field, returns whether it will hit the column store (best), a sparse
+   * chunked index (legacy fallback), or has no index entries at all (silently
+   * empty result — usually a bug or a stale reader). Designed to be the very
+   * first thing an operator runs when `find()` returns surprising results.
+   *
+   * @example
+   * ```typescript
+   * const plan = await brain.explain({ where: { entityType: 'booking', status: 'paid' } })
+   * for (const f of plan.fieldPlan) {
+   *   console.log(`${f.field} -> ${f.path}: ${f.notes ?? ''}`)
+   * }
+   * ```
+   */
+  async explain(params: FindParams<T>): Promise<{
+    query: FindParams<T>
+    fieldPlan: Array<{ field: string; path: 'column-store' | 'sparse-chunked' | 'none'; notes?: string }>
+    warnings: string[]
+  }> {
+    await this.ensureInitialized()
+    const fieldPlan: Array<{ field: string; path: 'column-store' | 'sparse-chunked' | 'none'; notes?: string }> = []
+    const warnings: string[] = []
+
+    const where = (params as any)?.where
+    if (where && typeof where === 'object') {
+      for (const field of Object.keys(where)) {
+        const result = await this.metadataIndex.explainField(field)
+        fieldPlan.push({ field, path: result.path, notes: result.notes })
+        if (result.path === 'none') {
+          warnings.push(
+            `Field "${field}" has no index entries. find() will return [] silently. ` +
+            `Run brain.requestFlush() or check the writer's field registry.`
+          )
+        }
+      }
+    } else {
+      warnings.push('No `where` clause provided; nothing to explain.')
+    }
+
+    return { query: params, fieldPlan, warnings }
+  }
+
+  /**
+   * Operator-facing summary of what's in this Brainy store. Designed to be
+   * the first thing a human runs during an incident: counts, mode, lock owner,
+   * indexed field list, index health flags.
+   *
+   * Safe to call on a read-only instance. All counts come from already-loaded
+   * indexes (no extra storage scans), so this is fast (<10ms typical).
+   *
+   * @example
+   * ```typescript
+   * const s = await brain.stats()
+   * console.log(`${s.entityCount} entities (${Object.entries(s.entitiesByType).map(([t,n])=>`${t}:${n}`).join(', ')})`)
+   * if (s.writerLock) {
+   *   console.log(`Writer PID ${s.writerLock.pid} on ${s.writerLock.hostname}`)
+   * }
+   * ```
+   */
+  async stats(): Promise<BrainyStats> {
+    await this.ensureInitialized()
+
+    const { NounTypeEnum, VerbTypeEnum } = await import('./types/graphTypes.js')
+    const nounCounts = typeof (this.storage as any).getNounCountsByType === 'function'
+      ? (this.storage as any).getNounCountsByType() as Uint32Array
+      : new Uint32Array(0)
+    const verbCounts = typeof (this.storage as any).getVerbCountsByType === 'function'
+      ? (this.storage as any).getVerbCountsByType() as Uint32Array
+      : new Uint32Array(0)
+
+    const entitiesByType: Record<string, number> = {}
+    let entityCount = 0
+    for (let i = 0; i < nounCounts.length; i++) {
+      if (nounCounts[i] === 0) continue
+      const name = NounTypeEnum[i as number]
+      if (name) entitiesByType[name] = nounCounts[i]
+      entityCount += nounCounts[i]
+    }
+
+    const relationsByType: Record<string, number> = {}
+    let relationCount = 0
+    for (let i = 0; i < verbCounts.length; i++) {
+      if (verbCounts[i] === 0) continue
+      const name = VerbTypeEnum[i as number]
+      if (name) relationsByType[name] = verbCounts[i]
+      relationCount += verbCounts[i]
+    }
+
+    const metadataStats = await this.metadataIndex.getStats()
+    let fieldRegistry: string[] = []
+    try {
+      if (typeof (this.metadataIndex as any).getFieldStatistics === 'function') {
+        const fieldStats = await (this.metadataIndex as any).getFieldStatistics() as Map<string, unknown>
+        fieldRegistry = Array.from(fieldStats.keys()).sort()
+      }
+    } catch {
+      // Field stats unavailable on this metadata index implementation — leave empty.
+    }
+
+    const writerLock = typeof this.storage.readWriterLock === 'function'
+      ? await this.storage.readWriterLock()
+      : null
+
+    const storageBackend = this.storage.constructor.name
+    const rootDir = (this.storage as any).rootDir
+
+    return {
+      mode: this.isReadOnly ? 'reader' : 'writer',
+      entityCount,
+      entitiesByType,
+      relationCount,
+      relationsByType,
+      fieldRegistry,
+      indexHealth: {
+        hnsw: this.index.size() > 0 || entityCount === 0,
+        metadata: metadataStats.totalEntries > 0 || entityCount === 0,
+        graph: (await this.graphIndex.size()) > 0 || relationCount === 0
+      },
+      storage: {
+        backend: storageBackend,
+        rootDir: typeof rootDir === 'string' ? rootDir : undefined
+      },
+      writerLock: writerLock || undefined,
+      version: getBrainyVersion()
     }
   }
 
@@ -6835,6 +7293,20 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Setup storage
    */
   private async setupStorage(): Promise<BaseStorage> {
+    const rawStorage = this.config.storage as unknown
+
+    // If the caller passed a pre-constructed storage adapter (e.g.
+    // `storage: new MemoryStorage()`), use it directly instead of routing
+    // through the factory. Otherwise the factory's `type === 'auto'` branch
+    // would silently create a FileSystemStorage at `./brainy-data`, ignoring
+    // the instance and surprising anyone who wrote `new MemoryStorage()`
+    // expecting it to be honoured.
+    if (rawStorage && typeof rawStorage === 'object' && 'init' in (rawStorage as any) &&
+        typeof (rawStorage as any).init === 'function' &&
+        typeof (rawStorage as any).saveNoun === 'function') {
+      return rawStorage as BaseStorage
+    }
+
     const storageConfig = (this.config.storage || {}) as Record<string, unknown>
     const storageType = (storageConfig.type as string) || 'auto'
 
@@ -7017,7 +7489,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Integration Hub - undefined/false = disabled
       integrations: config?.integrations ?? undefined as any,
       // Migration — disabled by default, opt-in for automatic migration
-      autoMigrate: config?.autoMigrate ?? false
+      autoMigrate: config?.autoMigrate ?? false,
+      // Multi-process safety
+      mode: config?.mode ?? 'writer',
+      force: config?.force ?? false
     }
   }
 
@@ -7467,6 +7942,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if (buffer && typeof buffer.destroy === 'function') {
         await buffer.destroy()
       }
+    }
+
+    // Stop the cross-process flush-request watcher (no-op if never started).
+    if (this.storage && typeof this.storage.stopFlushRequestWatcher === 'function') {
+      this.storage.stopFlushRequestWatcher()
+    }
+
+    // Release the writer lock (no-op for readers and for backends that don't
+    // hold a lock). Must run after the metadata buffer drain — otherwise a
+    // pending write could land after a successor writer claimed the lock.
+    if (this.storage && typeof this.storage.releaseWriterLock === 'function') {
+      await this.storage.releaseWriterLock()
     }
 
     this.initialized = false

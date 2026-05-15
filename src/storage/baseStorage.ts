@@ -81,6 +81,20 @@ export const SYSTEM_DIR = '_system'
 export const STATISTICS_KEY = 'statistics'
 
 /**
+ * Metadata persisted in the writer lock file. Used by stale-lock detection
+ * (PID liveness + hostname + heartbeat freshness) and by `brain.stats()` for
+ * operator-facing diagnostics.
+ */
+export interface WriterLockInfo {
+  pid: number
+  hostname: string
+  startedAt: string          // ISO timestamp when the lock was first acquired
+  lastHeartbeat: string      // ISO timestamp of the most recent heartbeat update
+  version: string            // Brainy version that wrote the lock
+  rootDir?: string           // Convenience for log lines / error messages
+}
+
+/**
  * FNV-1a hash returning a 2-char hex bucket (00-ff).
  * Distributes system keys across 256 sub-prefixes to avoid
  * cloud storage per-prefix rate limits.
@@ -396,6 +410,79 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     if (!this.isInitialized) {
       await this.init()
     }
+  }
+
+  /**
+   * Whether this storage adapter enforces multi-process writer exclusion.
+   * Filesystem storage returns true; cloud and memory adapters return false.
+   * Brainy.init() checks this to decide whether to log a multi-process warning
+   * in writer mode.
+   */
+  public supportsMultiProcessLocking(): boolean {
+    return false
+  }
+
+  /**
+   * Attempt to acquire the process-level writer lock at init time. Default
+   * implementation is a no-op (multi-process safety not enforced). Filesystem
+   * storage overrides this with real locking semantics.
+   *
+   * @param options.force - If true, overwrite any existing writer lock. Use
+   *   only when stale detection cannot prove the existing lock is dead.
+   * @returns Metadata about the acquired lock (or `null` if no lock was needed).
+   * @throws If another live writer holds the lock and `force` is not set.
+   */
+  public async acquireWriterLock(options?: { force?: boolean }): Promise<WriterLockInfo | null> {
+    return null
+  }
+
+  /**
+   * Release the writer lock acquired by `acquireWriterLock()`. No-op if no lock
+   * was held. Filesystem storage overrides this to delete the lock file and
+   * stop the heartbeat timer.
+   */
+  public async releaseWriterLock(): Promise<void> {
+    // No-op by default
+  }
+
+  /**
+   * Read the current writer-lock metadata if one is held by any process. Used
+   * by `brain.stats()` for diagnostics. Default returns null (no lock model).
+   */
+  public async readWriterLock(): Promise<WriterLockInfo | null> {
+    return null
+  }
+
+  /**
+   * Start watching for cross-process flush requests. The writer Brainy
+   * instance calls this so that out-of-process inspectors can ask for a
+   * synchronous flush before they open the store read-only. Default is a
+   * no-op (non-filesystem backends have no shared filesystem to poll).
+   *
+   * @param onRequest - Callback invoked when a request file appears. Should
+   *   call `brain.flush()` and resolve when persistence is complete.
+   */
+  public startFlushRequestWatcher(onRequest: () => Promise<void>): void {
+    // No-op by default
+  }
+
+  /**
+   * Stop the flush-request watcher started by `startFlushRequestWatcher`.
+   */
+  public stopFlushRequestWatcher(): void {
+    // No-op by default
+  }
+
+  /**
+   * Write a flush-request file and wait for the writer to acknowledge by
+   * writing the corresponding response file. Returns true if a response was
+   * received before the timeout, false if it timed out.
+   *
+   * Cross-platform RPC over the shared filesystem — no signals, so this works
+   * on Windows, Linux, macOS, and inside containers without IPC config.
+   */
+  public async requestFlushOverFilesystem(_timeoutMs: number): Promise<boolean> {
+    return false
   }
 
   /**

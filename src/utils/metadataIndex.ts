@@ -1549,6 +1549,42 @@ export class MetadataIndexManager {
    * @param value - Exact value to match
    * @returns Array of matching entity UUID strings
    */
+  /**
+   * Report which index path a `where` clause on `field` will hit. Used by
+   * `brain.explain()` so an operator can see *before* running a query whether
+   * the field has any index entries at all. A `find({ where: { someField: ... } })`
+   * against a field with no index entries returns `[]` silently — `explainField`
+   * surfaces that as `path: 'none'` so the empty result has an explanation.
+   */
+  async explainField(field: string): Promise<{
+    path: 'column-store' | 'sparse-chunked' | 'none'
+    notes?: string
+  }> {
+    if (this.columnStore && this.columnStore.hasField(field)) {
+      return {
+        path: 'column-store',
+        notes: 'O(log n) binary search + roaring bitmap. Best path.'
+      }
+    }
+    const sparse = await this.loadSparseIndex(field)
+    if (sparse) {
+      return {
+        path: 'sparse-chunked',
+        notes: 'Chunked sparse index with zone maps and bloom filters.'
+      }
+    }
+    return {
+      path: 'none',
+      notes:
+        `No index entries for field "${field}". A find({ where: { ${field}: ... } }) ` +
+        `will return an empty result regardless of whether matching entities exist on disk. ` +
+        `Likely causes: (1) the writer registered the field in memory but has not flushed; ` +
+        `(2) the field name does not match what was written (typo or casing); ` +
+        `(3) the field is genuinely absent from all entities. Call requestFlush() on the ` +
+        `writer or call brain.flush() before relying on the result.`
+    }
+  }
+
   async getIds(field: string, value: any): Promise<string[]> {
     // Track exact query for field statistics
     if (this.fieldStats.has(field)) {
