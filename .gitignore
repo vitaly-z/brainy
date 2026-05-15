@@ -106,3 +106,6 @@ src/embeddings/wasm/pkg/
 # Temporary files (redundant but explicit)
 *.tmp
 /.junie/guidelines.md
+
+# Claude Code harness state
+.claude/scheduled_tasks.lock
