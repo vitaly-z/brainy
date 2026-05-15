@@ -303,14 +303,35 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Whether the active storage adapter implements a given optional method.
+   * Whether the active storage adapter (anywhere in its prototype chain)
+   * implements a given optional method.
    *
-   * Brainy ships new storage-adapter capabilities over time (multi-process
-   * locking, cross-process flush RPC, etc.). Older plugins (notably
-   * `@soulcraft/cortex` ≤2.2.0) bundle their own `BaseStorage` from an
-   * earlier Brainy version that doesn't have those methods. Rather than crash
-   * at runtime, every call site that uses an optional storage method goes
-   * through this helper and degrades gracefully when the method is absent.
+   * Storage-adapter plugins (e.g. `@soulcraft/cortex`'s `MmapFileSystemStorage
+   * extends FileSystemStorage`) inherit new methods Brainy adds to
+   * `FileSystemStorage` / `BaseStorage` automatically — `typeof` walks the
+   * prototype chain, so there's no in-package version skew to worry about as
+   * long as the plugin's own dist resolves `@soulcraft/brainy` dynamically
+   * (which Cortex 2.2.x onward does — see
+   * `node_modules/@soulcraft/cortex/dist/storage/mmapFileSystemStorage.js`).
+   *
+   * This helper exists for the **build/install** failure modes the import
+   * resolution can't catch:
+   *   - Stale `node_modules` left over from a prior `bun install` against
+   *     `@soulcraft/brainy ≤7.20.x`.
+   *   - Lockfile drift pinning brainy below the version that introduced the
+   *     method.
+   *   - Docker layer caches that reuse a `node_modules` from an earlier image.
+   *   - Bundlers (esbuild, webpack) that freeze the prototype chain at build
+   *     time and lose later prototype mutations.
+   * In any of those, calling the new method unconditionally crashes boot with
+   * `TypeError: storage.X is not a function`. The guard turns that into a
+   * loud warning + graceful degradation; the operator's clue is the warning
+   * naming the adapter class so they can re-run install / rebuild the image.
+   *
+   * Storage-adapter authors: see `docs/concepts/storage-adapters.md` for the
+   * inheritance contract. Filesystem-backed adapters extending
+   * `FileSystemStorage` inherit the 6 multi-process helpers for free; just
+   * override `supportsMultiProcessLocking()` → `true` to activate enforcement.
    */
   private hasStorageMethod(name: string): boolean {
     return !!this.storage && typeof (this.storage as unknown as Record<string, unknown>)[name] === 'function'
@@ -422,11 +443,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           if (backendName === 'MemoryStorage') {
             // Memory is single-process by construction — no warning needed.
           } else if (!this.hasStorageMethod('supportsMultiProcessLocking')) {
+            // The multi-process methods are inherited from FileSystemStorage
+            // when an adapter extends it. Reaching this branch means the
+            // prototype chain doesn't resolve to a Brainy version that
+            // defines them — almost always a build/install artifact rather
+            // than the plugin lacking the code. Tell the operator what to
+            // try first.
             console.warn(
-              `[brainy] Storage adapter \`${backendName}\` predates the 7.21 ` +
-              `multi-process methods. Writer locking and the flush-request RPC ` +
-              `are disabled for this directory. Upgrade the plugin (e.g. ` +
-              `\`@soulcraft/cortex\` ≥2.3.0) for full enforcement.`
+              `[brainy] Storage adapter \`${backendName}\` is missing the ` +
+              `multi-process methods on its prototype chain. Writer locking ` +
+              `and the flush-request RPC are disabled for this directory. ` +
+              `Likely fix: clean install (\`rm -rf node_modules bun.lockb && ` +
+              `bun install\`) or rebuild your container image to refresh ` +
+              `\`@soulcraft/brainy\` to ≥7.21. See docs/concepts/storage-adapters.md.`
             )
           } else {
             console.warn(
