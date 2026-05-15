@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.21.0](https://github.com/soulcraftlabs/brainy/compare/v7.20.0...v7.21.0) (2026-05-15)
+
+- chore: gitignore Claude Code harness scheduled-tasks lockfile (a8fcc3d)
+- feat: multi-process safety + read-only inspector mode (4fcdc0f)
+
+
 ### [7.20.0](https://github.com/soulcraftlabs/brainy/compare/v7.19.19...v7.20.0) (2026-04-10)
 
 - refactor: delete dead sparse index write path (11be039)
