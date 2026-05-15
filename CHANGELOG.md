@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.22.0](https://github.com/soulcraftlabs/brainy/compare/v7.21.0...v7.22.0) (2026-05-15)
+
+- fix: find()/stats() correctness + Cortex compat (BR-FIND-WHERE-ZERO, BR-DEFENSIVE-INTERFACE) (7026311)
+
+
 ### [7.21.0](https://github.com/soulcraftlabs/brainy/compare/v7.20.0...v7.21.0) (2026-05-15)
 
 - chore: gitignore Claude Code harness scheduled-tasks lockfile (a8fcc3d)
