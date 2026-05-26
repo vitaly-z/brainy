@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.23.0](https://github.com/soulcraftlabs/brainy/compare/v7.22.1...v7.23.0) (2026-05-26)
+
+- feat: queryAggregate() + HAVING, plus aggregate backfill, traversal depth/via, extraction typing (BR-ADV-FEATURES-BUN) (1a98e42)
+- chore(release): create annotated tag so --follow-tags pushes it (513186d)
+
+
 ### [7.22.1](https://github.com/soulcraftlabs/brainy/compare/v7.22.0...v7.22.1) (2026-05-26)
 
 - fix: extraction, multi-hop traversal, and aggregate result shape (BR-ADV-FEATURES-BUN) (0a9d1d9)
