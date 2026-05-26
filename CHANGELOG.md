@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.24.0](https://github.com/soulcraftlabs/brainy/compare/v7.23.0...v7.24.0) (2026-05-26)
+
+- feat: array-unnest groupBy for aggregates + batch-embed entity extraction (c2e21b7)
+
+
 ### [7.23.0](https://github.com/soulcraftlabs/brainy/compare/v7.22.1...v7.23.0) (2026-05-26)
 
 - feat: queryAggregate() + HAVING, plus aggregate backfill, traversal depth/via, extraction typing (BR-ADV-FEATURES-BUN) (1a98e42)
