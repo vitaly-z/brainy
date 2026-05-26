@@ -11,6 +11,47 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.23.0 — 2026-05-26
+
+**Affected products:** anyone using aggregation (stats/dashboards), graph traversal, or entity
+extraction. Adds two report APIs and fixes three correctness gaps surfaced by BR-ADV-FEATURES-BUN.
+Drop-in upgrade from 7.22.x.
+
+### New — `brain.queryAggregate(name, params)`
+
+A first-class report API returning the clean `AggregateResult[]` shape
+(`{ groupKey, metrics, count }[]`) directly, instead of the search-`Result` wrapper that
+`find({ aggregate })` returns. Accepts `where` / `having` / `orderBy` / `order` / `limit` / `offset`.
+
+### New — HAVING (filter groups by metric value)
+
+`find({ aggregate, having: { revenue: { greaterThan: 1000 } } })` (and the same on
+`queryAggregate`) filters groups by their computed metrics — the analytics equivalent of SQL
+`HAVING`, complementing `where` (which filters group keys). Evaluated per group: **O(groups),
+independent of entity count.**
+
+### Fix — aggregates now backfill when defined over existing data (R1)
+
+Defining an aggregate on a store that already holds matching entities returned `[]` because
+write-time hooks only saw *future* writes. It now backfills from existing entities on first query
+(one-time scan via `getNouns`, then incremental) — storage-agnostic, so it works under durable
+backends (Cortex) where a brain reopens pre-populated. Also: `groupBy:['noun']` now resolves to
+the entity type instead of a single null group. `find({ aggregate })` rows now expose
+`groupKey`/`metrics`/`count` at the top level (previously only under `.metadata`).
+
+### Fix — multi-hop `find({ connected: { depth, via } })` (traversal)
+
+`depth` and `via` are now honored at **every hop** (previously only the immediate neighbour was
+returned, and verb filtering applied to hop 1 only). The BFS is bounded by `limit`.
+
+### Fix — entity extraction type accuracy (R3)
+
+`extractEntities` no longer lets a type indicator in one candidate's surrounding text bleed onto
+neighbours (e.g. "Corp" in "Sarah Chen founded Acme Corp" no longer types "Sarah Chen" as
+Organization). Each candidate is typed by its own span; context may only reinforce the same type.
+
+---
+
 ## v7.22.1 — 2026-05-26
 
 **Affected products:** Anyone using `extractEntities()` / `extractConcepts()`, native

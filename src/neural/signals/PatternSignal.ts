@@ -135,7 +135,7 @@ export class PatternSignal {
 
     // Person patterns - SPECIFIC INDICATORS (high confidence)
     this.addPatterns(NounType.Person, 0.82, [
-      /\b(?:Dr|Prof|Mr|Mrs|Ms|Sir|Lady|Lord)\s+[A-Z][a-z]+/, // Titles
+      /\b(?:Dr|Prof|Mr|Mrs|Ms|Sir|Lady|Lord)\.?\s+[A-Z][a-z]+/, // Titles (optional period: "Dr." / "Dr")
       /\b(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Developer|Designer)\b/i, // Roles
       /\b(?:author|creator|founder|inventor|contributor|maintainer)\b/i
     ])
@@ -294,7 +294,8 @@ export class PatternSignal {
       return cached
     }
 
-    // Try regex patterns (primary method)
+    // Try regex patterns (primary method). The candidate span is authoritative for its
+    // type; context can only reinforce the same type, never override it (see matchRegexPatterns).
     const regexMatch = this.matchRegexPatterns(candidate, context?.definition)
     if (regexMatch && regexMatch.confidence >= this.options.minConfidence) {
       this.stats.regexMatches++
@@ -328,49 +329,76 @@ export class PatternSignal {
   }
 
   /**
-   * Match against pre-compiled regex patterns
+   * Match against pre-compiled regex patterns.
    *
-   * Checks candidate and optional definition text
+   * Matches the CANDIDATE SPAN ONLY — never the surrounding context. Folding the
+   * candidate's own span decides the type; the surrounding `definition`/context may only
+   * REINFORCE that same type (small boost), never override it with a different one.
+   *
+   * This is the fix for cross-candidate type bleed: folding the 30-char context window into
+   * one match let an indicator in a neighbour's span (e.g. "Corp" in "Sarah Chen founded
+   * Acme Corp") flip "Sarah Chen" to Organization. Now a different-type context match is
+   * ignored. When the candidate has no pattern of its own, the context's type is used as a
+   * fallback — a descriptive cue (a role, "conference", …) still classifies an otherwise
+   * shapeless candidate, which is the legitimate use of context the ContextSignal complements.
    */
   private matchRegexPatterns(
     candidate: string,
     definition?: string
   ): TypeSignal | null {
-    const textToMatch = definition ? `${candidate} ${definition}` : candidate
-    const matches: Array<{ pattern: CompiledPattern, count: number }> = []
+    const candidateMatch = this.bestPatternMatch(candidate)
+    const contextMatch = definition ? this.bestPatternMatch(definition) : null
 
-    // Check all patterns
-    for (const pattern of this.patterns) {
-      const matchCount = (textToMatch.match(pattern.regex) || []).length
-      if (matchCount > 0) {
-        matches.push({ pattern, count: matchCount })
+    if (candidateMatch) {
+      const chosen = candidateMatch.pattern
+      let confidence = Math.min(chosen.confidence, 0.85) // Cap at 0.85
+      let evidence = `Pattern match: ${chosen.name} (${candidateMatch.count} occurrence${candidateMatch.count > 1 ? 's' : ''})`
+
+      // Context of the SAME type reinforces (use the stronger evidence + a small agreement
+      // boost); a different-type context match is deliberately ignored — no override.
+      if (contextMatch && contextMatch.pattern.type === chosen.type) {
+        confidence = Math.min(Math.max(confidence, contextMatch.pattern.confidence) + 0.05, 0.95)
+        evidence += ' + context'
+      }
+
+      return {
+        source: 'pattern-regex',
+        type: chosen.type,
+        confidence,
+        evidence,
+        metadata: { patternName: chosen.name, matchCount: candidateMatch.count }
       }
     }
 
-    if (matches.length === 0) return null
+    // Candidate has no shape of its own — fall back to the context's descriptive cue.
+    if (contextMatch) {
+      const chosen = contextMatch.pattern
+      return {
+        source: 'pattern-regex',
+        type: chosen.type,
+        confidence: Math.min(chosen.confidence, 0.85),
+        evidence: `Context pattern match: ${chosen.name} (${contextMatch.count} occurrence${contextMatch.count > 1 ? 's' : ''})`,
+        metadata: { patternName: chosen.name, matchCount: contextMatch.count }
+      }
+    }
 
-    // Find best match (highest confidence * match count)
-    let best = matches[0]
-    let bestScore = best.pattern.confidence * Math.log(best.count + 1)
+    return null
+  }
 
-    for (const match of matches.slice(1)) {
-      const score = match.pattern.confidence * Math.log(match.count + 1)
+  /** Best pattern match (ranked by confidence × log(count+1)) for a single text span. */
+  private bestPatternMatch(text: string): { pattern: CompiledPattern, count: number } | null {
+    let best: { pattern: CompiledPattern, count: number } | null = null
+    let bestScore = -1
+    for (const pattern of this.patterns) {
+      const count = (text.match(pattern.regex) || []).length
+      if (count === 0) continue
+      const score = pattern.confidence * Math.log(count + 1)
       if (score > bestScore) {
-        best = match
+        best = { pattern, count }
         bestScore = score
       }
     }
-
-    return {
-      source: 'pattern-regex',
-      type: best.pattern.type,
-      confidence: Math.min(best.pattern.confidence, 0.85), // Cap at 0.85
-      evidence: `Pattern match: ${best.pattern.name} (${best.count} occurrence${best.count > 1 ? 's' : ''})`,
-      metadata: {
-        patternName: best.pattern.name,
-        matchCount: best.count
-      }
-    }
+    return best
   }
 
   /**

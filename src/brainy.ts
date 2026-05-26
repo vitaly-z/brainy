@@ -2239,6 +2239,35 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Query a named aggregate, returning the documented `AggregateResult[]` shape
+   * (`{ groupKey, metrics, count }`) directly — the report-friendly view.
+   *
+   * `find({ aggregate })` returns the same data wrapped as search `Result<T>` rows (with
+   * `score`/`type`/`entity`) for uniformity with the rest of `find()`; this method is the
+   * first-class analytics path for dashboards and reports.
+   *
+   * @param name - Aggregate name (must be defined via `defineAggregate`)
+   * @param params - Optional `where` (group-key filter), `having` (metric filter), `orderBy`, `order`, `limit`, `offset`
+   * @returns Computed group rows
+   *
+   * @example
+   * const rows = await brain.queryAggregate('sales_by_category', { orderBy: 'revenue', order: 'desc', limit: 10 })
+   * // [{ groupKey: { category: 'food' }, metrics: { revenue: 17.5, count: 2 }, count: 2 }, ...]
+   */
+  async queryAggregate(
+    name: string,
+    params?: Omit<AggregateQueryParams, 'name'>
+  ): Promise<AggregateResult[]> {
+    await this.ensureInitialized()
+    this.ensureAggregationIndex()
+    if (!this._aggregationIndex!.hasAggregate(name)) {
+      throw new Error(`Aggregate '${name}' is not defined. Call defineAggregate() first.`)
+    }
+    await this.backfillAggregateIfNeeded(name)
+    return this._aggregationIndex!.queryAggregate({ name, ...params })
+  }
+
+  /**
    * Lazily create the AggregationIndex on first use.
    * Checks for a native 'aggregation' provider from plugins.
    */
@@ -4479,12 +4508,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * @param options - Extraction options
    * @returns Array of extracted entities with types and confidence
    *
+   * Fast heuristic ensemble (pattern + type-embedding + context), not a trained NER —
+   * each candidate is typed by its own span (no cross-candidate bleed). Confidences are
+   * approximate; pass `types` to constrain results when precision matters.
+   *
+   * @param text - Text to extract entities from
+   * @param options - Extraction options
+   * @returns Array of extracted entities with types and confidence
+   *
    * @example
-   * const entities = await brain.extract('John Smith founded Acme Corp in New York')
+   * const entities = await brain.extract('Sarah Chen founded Acme Corp')
    * // [
-   * //   { text: 'John Smith', type: NounType.Person, confidence: 0.95 },
-   * //   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.92 },
-   * //   { text: 'New York', type: NounType.Location, confidence: 0.88 }
+   * //   { text: 'Sarah Chen', type: NounType.Person, confidence: 0.68 },
+   * //   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.85 }
    * // ]
    */
   async extract(
@@ -6275,7 +6311,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     options?: {
       direction?: 'outgoing' | 'incoming' | 'both'
       depth?: number
-      verbType?: VerbType
+      verbType?: VerbType | VerbType[]
       limit?: number
     }
   ): Promise<string[]> {
@@ -6283,72 +6319,82 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     const direction = options?.direction || 'both'
     const limit = options?.limit
+    const verbTypes = options?.verbType === undefined
+      ? undefined
+      : new Set(Array.isArray(options.verbType) ? options.verbType : [options.verbType])
 
     // Map our API direction to graphIndex direction
     const graphDirection = direction === 'outgoing' ? 'out' :
                            direction === 'incoming' ? 'in' : 'both'
 
-    // Get neighbors from graph index
-    let neighbors = await this.graphIndex.getNeighbors(entityId, {
-      direction: graphDirection,
-      limit
-    })
+    let neighbors = await this.getTypedNeighbors(entityId, graphDirection, verbTypes, limit)
 
-    // Filter by verb type if specified
-    if (options?.verbType) {
-      const filteredNeighbors: string[] = []
-      const verbIds = direction !== 'incoming'
-        ? await this.graphIndex.getVerbIdsBySource(entityId)
-        : await this.graphIndex.getVerbIdsByTarget(entityId)
-
-      // Load verbs to check their types
-      const verbs = await this.graphIndex.getVerbsBatchCached(verbIds)
-
-      for (const [, verb] of verbs) {
-        if (verb.type === options.verbType || verb.verb === options.verbType) {
-          const neighborId = verb.sourceId === entityId ? verb.targetId : verb.sourceId
-          if (neighbors.includes(neighborId)) {
-            filteredNeighbors.push(neighborId)
-          }
-        }
-      }
-
-      neighbors = filteredNeighbors
-    }
-
-    // Handle depth > 1 (multi-hop traversal)
+    // Handle depth > 1 (multi-hop traversal). The verb-type filter is applied at EVERY hop
+    // (previously only the first), and the BFS is bounded by `limit` so a dense graph can't
+    // expand without limit before the final slice.
     if (options?.depth && options.depth > 1) {
       const visited = new Set<string>([entityId, ...neighbors])
       let currentLevel = neighbors
 
       for (let d = 1; d < options.depth; d++) {
+        if (limit && neighbors.length >= limit) break
         const nextLevel: string[] = []
 
-        for (const nodeId of currentLevel) {
-          const nodeNeighbors = await this.graphIndex.getNeighbors(nodeId, {
-            direction: graphDirection
-          })
-
+        outer: for (const nodeId of currentLevel) {
+          const nodeNeighbors = await this.getTypedNeighbors(nodeId, graphDirection, verbTypes)
           for (const neighbor of nodeNeighbors) {
             if (!visited.has(neighbor)) {
               visited.add(neighbor)
               nextLevel.push(neighbor)
+              neighbors.push(neighbor)
+              if (limit && neighbors.length >= limit) break outer
             }
           }
         }
 
         if (nextLevel.length === 0) break
         currentLevel = nextLevel
-        neighbors.push(...nextLevel)
       }
 
-      // Apply limit after multi-hop traversal
       if (limit && neighbors.length > limit) {
         neighbors = neighbors.slice(0, limit)
       }
     }
 
     return neighbors
+  }
+
+  /**
+   * Neighbours of a single node, optionally filtered to a set of verb types.
+   *
+   * Extracted so depth traversal can apply the verb-type filter at every hop (not just the
+   * first). For `direction: 'both'` the verb scan unions out-edges and in-edges so the filter
+   * isn't silently limited to outgoing edges.
+   */
+  private async getTypedNeighbors(
+    nodeId: string,
+    graphDirection: 'in' | 'out' | 'both',
+    verbTypes?: Set<VerbType>,
+    limit?: number
+  ): Promise<string[]> {
+    const neighbors = await this.graphIndex.getNeighbors(nodeId, { direction: graphDirection, limit })
+    if (!verbTypes || verbTypes.size === 0) return neighbors
+
+    // Gather candidate edges in the relevant direction(s).
+    const verbIds: string[] = []
+    if (graphDirection !== 'in') verbIds.push(...await this.graphIndex.getVerbIdsBySource(nodeId))
+    if (graphDirection !== 'out') verbIds.push(...await this.graphIndex.getVerbIdsByTarget(nodeId))
+
+    const verbs = await this.graphIndex.getVerbsBatchCached(verbIds)
+    const neighborSet = new Set(neighbors)
+    const filtered: string[] = []
+    for (const [, verb] of verbs) {
+      if (verbTypes.has(verb.type as VerbType) || verbTypes.has(verb.verb as VerbType)) {
+        const neighborId = verb.sourceId === nodeId ? verb.targetId : verb.sourceId
+        if (neighborSet.has(neighborId)) filtered.push(neighborId)
+      }
+    }
+    return filtered
   }
 
   /**
@@ -6805,18 +6851,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const toNeighborDir = (d: 'in' | 'out' | 'both'): 'incoming' | 'outgoing' | 'both' =>
       d === 'in' ? 'incoming' : d === 'out' ? 'outgoing' : 'both'
 
-    // Collect reachable ids honoring depth + verb-type filter. `via` may be a single VerbType
-    // or an array; reuse the depth-aware BFS in neighbors() (one pass per requested verb type).
-    const collect = async (id: string, dir: 'incoming' | 'outgoing' | 'both'): Promise<string[]> => {
-      const verbTypes: Array<VerbType | undefined> =
-        via === undefined ? [undefined] : Array.isArray(via) ? via : [via]
-      const ids = new Set<string>()
-      for (const verbType of verbTypes) {
-        const hops = await this.neighbors(id, { direction: dir, depth: depth ?? 1, verbType })
-        for (const n of hops) ids.add(n)
-      }
-      return [...ids]
-    }
+    // Collect reachable ids honoring depth + verb-type filter via the depth-aware BFS in
+    // neighbors(), which takes the whole verb-type set and filters every hop against it — so a
+    // mixed-verb path (a-[likes]->b-[knows]->c with via:[likes,knows]) is followed correctly.
+    const collect = (id: string, dir: 'incoming' | 'outgoing' | 'both'): Promise<string[]> =>
+      this.neighbors(id, { direction: dir, depth: depth ?? 1, verbType: via })
 
     const connectedIds = new Set<string>()
 
@@ -7909,6 +7948,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       aggParams.offset = params.offset
     }
 
+    // Backfill from already-stored entities if this aggregate was defined over a
+    // populated store (write-time hooks only capture entities added after define).
+    await this.backfillAggregateIfNeeded(aggParams.name)
+
     const aggregateResults = this._aggregationIndex.queryAggregate(aggParams)
 
     // Convert AggregateResult[] to Result<T>[] for API consistency
@@ -7944,6 +7987,44 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         count: agg.count
       }
     })
+  }
+
+  /**
+   * Backfill a named aggregate from entities already in storage.
+   *
+   * Write-time hooks (`onEntityAdded` etc.) only capture entities added *after* an
+   * aggregate is defined, so an aggregate defined over a populated store — the common
+   * case under durable storage, where a brain reopens pre-populated — would otherwise
+   * return `[]`. On first query we clear the aggregate's state and stream every stored
+   * noun back through it. Storage-agnostic: `getNouns()` works for in-memory, the
+   * filesystem adapter, and native (Cortex) storage alike. One-time per definition —
+   * the rebuilt state is persisted on flush() and reloaded on the next session.
+   */
+  private async backfillAggregateIfNeeded(name: string): Promise<void> {
+    const index = this._aggregationIndex
+    if (!index || !index.getPendingBackfills().includes(name)) return
+
+    index.beginBackfill(name)
+
+    const PAGE = 500
+    let offset = 0
+    let cursor: string | undefined
+    for (;;) {
+      const page = await this.storage.getNouns({
+        pagination: cursor ? { limit: PAGE, cursor } : { limit: PAGE, offset }
+      })
+      for (const noun of page.items) {
+        index.backfillEntity(name, noun as unknown as Record<string, unknown>)
+      }
+      if (!page.hasMore || page.items.length === 0) break
+      if (page.nextCursor) {
+        cursor = page.nextCursor
+      } else {
+        offset += page.items.length
+      }
+    }
+
+    index.finishBackfill(name)
   }
 
   /**

@@ -208,6 +208,15 @@ export class AggregationIndex {
   /** Track which aggregates have dirty state needing persistence */
   private dirty = new Set<string>()
 
+  /**
+   * Aggregates whose state must be backfilled from entities that already existed
+   * when the aggregate was defined (or whose persisted state was missing/stale at
+   * init). Write-time hooks only capture entities added *after* a definition, so
+   * without backfill an aggregate defined over a populated store stays empty.
+   * Drained by the owner (Brainy) which has the entity iterator; see `getPendingBackfills`.
+   */
+  private needsBackfill = new Set<string>()
+
   /** Track aggregates with stale MIN/MAX (need lazy recompute) */
   private staleMinMax = new Map<string, Set<string>>()
 
@@ -243,8 +252,10 @@ export class AggregationIndex {
           }
           this.states.set(def.name, groupMap)
         } else {
-          // Definition changed or no saved state — start fresh (will be rebuilt)
+          // Definition changed or no saved state — start fresh and backfill from
+          // existing entities (the owner drains needsBackfill on first query).
           this.states.set(def.name, new Map())
+          this.needsBackfill.add(def.name)
         }
 
         this.definitionHashes.set(def.name, currentHash)
@@ -332,9 +343,12 @@ export class AggregationIndex {
     this.definitions.set(def.name, def)
     this.definitionHashes.set(def.name, newHash)
 
-    // Reset state if definition changed or doesn't exist yet
+    // Reset state if definition changed or doesn't exist yet, and flag it for
+    // backfill so already-stored entities are counted (write-time hooks only see
+    // future writes). The owner drains this on the next query via getPendingBackfills().
     if (!this.states.has(def.name) || (oldHash && oldHash !== newHash)) {
       this.states.set(def.name, new Map())
+      this.needsBackfill.add(def.name)
     }
 
     // Notify native provider of definition (caches compiled form for hot path)
@@ -374,6 +388,50 @@ export class AggregationIndex {
    */
   hasAggregate(name: string): boolean {
     return this.definitions.has(name)
+  }
+
+  // ============= Backfill =============
+  //
+  // Write-time hooks only capture entities added after a definition exists, so an
+  // aggregate defined over a populated store would stay empty. The owner (Brainy) has
+  // the entity iterator, so backfill is driven from there: it reads the pending set,
+  // clears the aggregate, streams every existing entity through `backfillEntity`, then
+  // calls `finishBackfill`. Clearing first means a concurrent write that landed via the
+  // incremental hook is wiped and re-counted exactly once by the rescan.
+
+  /** Names of aggregates whose state must be (re)built from existing entities. */
+  getPendingBackfills(): string[] {
+    return Array.from(this.needsBackfill)
+  }
+
+  /** Clear an aggregate's state so a full rescan cannot double-count. */
+  beginBackfill(name: string): void {
+    this.states.set(name, new Map())
+    // Reset native provider state for this aggregate too, if present.
+    const def = this.definitions.get(name)
+    if (def && this.nativeProvider?.removeAggregate && this.nativeProvider?.defineAggregate) {
+      this.nativeProvider.removeAggregate(name)
+      this.nativeProvider.defineAggregate(def)
+    }
+  }
+
+  /** Feed one already-stored entity into a single aggregate during backfill. */
+  backfillEntity(name: string, entity: Record<string, unknown>): void {
+    if (isAggregateEntity(entity)) return
+    const def = this.definitions.get(name)
+    if (!def || !matchesSource(entity, def.source)) return
+
+    if (this.nativeProvider) {
+      this.applyNativeResults(name, this.nativeProvider.incrementalUpdate(name, def, entity, 'add'))
+    } else {
+      this.addContribution(name, def, entity)
+    }
+  }
+
+  /** Mark an aggregate's backfill complete; rebuilt state persists on next flush(). */
+  finishBackfill(name: string): void {
+    this.needsBackfill.delete(name)
+    this.dirty.add(name)
   }
 
   // ============= Write-Time Hooks =============
@@ -547,6 +605,12 @@ export class AggregationIndex {
         } else {
           totalCount = Math.max(totalCount, state.count)
         }
+      }
+
+      // HAVING: filter groups by computed metric values (post-compute, O(groups), before
+      // sort/pagination). Reuses the where-operator engine over metrics + `count`.
+      if (params.having && Object.keys(params.having).length > 0) {
+        if (!matchesMetadataFilter({ ...metrics, count: totalCount } as any, params.having)) continue
       }
 
       results.push({

@@ -40,10 +40,18 @@ describe('BR-ADV-FEATURES-BUN regression', () => {
       const entities = await brain.extractEntities(text, { confidence: 0.1 })
       expect(entities.length).toBeGreaterThan(0)
       const texts = entities.map(e => e.text)
-      // The candidate spans must be surfaced (type accuracy on dense sentences is a separate
-      // pre-existing concern; this guards the reported "returns nothing" regression).
       expect(texts).toContain('Sarah Chen')
       expect(texts).toContain('Acme Corp')
+    })
+
+    it('does not bleed a neighbour\'s type indicator across candidates (R3)', async () => {
+      // "Corp" belongs to "Acme Corp" — it must not flip "Sarah Chen" to Organization.
+      const entities = await brain.extractEntities(text, { confidence: 0.1 })
+      const byText = (t: string) => entities.find(e => e.text === t)
+      expect(byText('Sarah Chen')?.type).toBe(NounType.Person)
+      expect(byText('Acme Corp')?.type).toBe(NounType.Organization)
+      // (Type accuracy for "New York" → Location needs semantic/gazetteer support and is a
+      // documented heuristic limitation, not the reported context-bleed bug.)
     })
 
     it('a confident single-signal candidate classifies correctly in isolation', async () => {
@@ -126,6 +134,100 @@ describe('BR-ADV-FEATURES-BUN regression', () => {
       expect(transit).toBeDefined()
       expect(transit.metrics.total).toBe(3)
       expect(transit.count).toBe(1)
+    })
+  })
+
+  describe('R1 — aggregate backfills over a pre-populated store', () => {
+    it('defineAggregate AFTER entities exist still returns correct rows', async () => {
+      // The durable-storage case: a brain reopens pre-populated, then an aggregate is
+      // defined. Write-time hooks never saw these entities, so without backfill this is [].
+      const b: any = new Brainy({ storage: { type: 'memory' } })
+      await b.init()
+      await b.add({ data: 'a', type: NounType.Event, metadata: { category: 'food', amount: 5 } })
+      await b.add({ data: 'b', type: NounType.Event, metadata: { category: 'food', amount: 7 } })
+      await b.add({ data: 'c', type: NounType.Event, metadata: { category: 'transit', amount: 3 } })
+      await b.flush()
+
+      b.defineAggregate({
+        name: 'after',
+        source: { type: NounType.Event },
+        groupBy: ['category'],
+        metrics: { total: { op: 'sum', field: 'amount' }, count: { op: 'count' } }
+      })
+
+      const rows: any[] = await b.find({ aggregate: 'after' })
+      const food = rows.find(r => r.groupKey?.category === 'food')
+      const transit = rows.find(r => r.groupKey?.category === 'transit')
+      expect(food?.metrics.total).toBe(12)
+      expect(food?.count).toBe(2)
+      expect(transit?.count).toBe(1)
+      await b.close()
+    })
+
+    it('groupBy "noun" resolves to the entity type, not null', async () => {
+      const b: any = new Brainy({ storage: { type: 'memory' } })
+      await b.init()
+      await b.add({ data: 'p', type: NounType.Person })
+      b.defineAggregate({
+        name: 'byNoun',
+        source: { type: NounType.Person },
+        groupBy: ['noun'],
+        metrics: { count: { op: 'count' } }
+      })
+      const rows: any[] = await b.find({ aggregate: 'byNoun' })
+      expect(rows.length).toBe(1)
+      expect(rows[0].groupKey.noun).toBe(NounType.Person)
+      await b.close()
+    })
+  })
+
+  describe('Traversal — via filter applies at every hop', () => {
+    it('depth-2 via traversal follows the typed chain to the second hop', async () => {
+      const b: any = new Brainy({ storage: { type: 'memory' } })
+      await b.init()
+      const a = await b.add({ data: 'a', type: NounType.Concept, metadata: { name: 'A' } })
+      const m = await b.add({ data: 'm', type: NounType.Concept, metadata: { name: 'M' } })
+      const z = await b.add({ data: 'z', type: NounType.Concept, metadata: { name: 'Z' } })
+      await b.relate({ from: a, to: m, type: VerbType.RelatedTo })
+      await b.relate({ from: m, to: z, type: VerbType.RelatedTo })
+
+      const viaMatch = await b.find({ connected: { from: a, depth: 2, direction: 'out', via: VerbType.RelatedTo } })
+      expect(viaMatch.map((x: any) => x.metadata?.name).sort()).toEqual(['M', 'Z'])
+
+      // A non-matching verb type filters out hop 1 (and therefore everything) — proving the
+      // filter is honored, not silently ignored as it was before.
+      const viaMiss = await b.find({ connected: { from: a, depth: 2, direction: 'out', via: VerbType.Contains } })
+      expect(viaMiss.length).toBe(0)
+      await b.close()
+    })
+  })
+
+  describe('queryAggregate() + HAVING', () => {
+    it('returns AggregateResult[] and filters groups by metric value', async () => {
+      const b: any = new Brainy({ storage: { type: 'memory' } })
+      await b.init()
+      b.defineAggregate({
+        name: 'rev',
+        source: { type: NounType.Event },
+        groupBy: ['cat'],
+        metrics: { total: { op: 'sum', field: 'amt' }, count: { op: 'count' } }
+      })
+      await b.add({ data: '1', type: NounType.Event, metadata: { cat: 'a', amt: 1500 } })
+      await b.add({ data: '2', type: NounType.Event, metadata: { cat: 'a', amt: 200 } })
+      await b.add({ data: '3', type: NounType.Event, metadata: { cat: 'b', amt: 50 } })
+      await b.flush()
+
+      const all = await b.queryAggregate('rev', { orderBy: 'total', order: 'desc' })
+      expect(all.length).toBe(2)
+      expect(all[0].groupKey.cat).toBe('a') // highest total first
+      expect(all[0].metrics.total).toBe(1700)
+      expect(all[0].count).toBe(2)
+
+      // HAVING: only groups whose computed total exceeds 1000
+      const big = await b.queryAggregate('rev', { having: { total: { greaterThan: 1000 } } })
+      expect(big.length).toBe(1)
+      expect(big[0].groupKey.cat).toBe('a')
+      await b.close()
     })
   })
 })

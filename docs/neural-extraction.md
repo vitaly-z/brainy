@@ -30,12 +30,11 @@ const brain = new Brainy()
 await brain.init()
 
 // Extract all entities
-const entities = await brain.extractEntities('John Smith founded Acme Corp in New York')
-// Returns:
+const entities = await brain.extractEntities('Sarah Chen founded Acme Corp')
+// Returns (fast pattern + embedding ensemble; confidences are approximate):
 // [
-//   { text: 'John Smith', type: NounType.Person, confidence: 0.95 },
-//   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.92 },
-//   { text: 'New York', type: NounType.Location, confidence: 0.88 }
+//   { text: 'Sarah Chen', type: NounType.Person, confidence: 0.68 },
+//   { text: 'Acme Corp', type: NounType.Organization, confidence: 0.85 }
 // ]
 
 // Extract with filters
@@ -45,6 +44,17 @@ const people = await brain.extractEntities('...', {
   neuralMatching: true
 })
 ```
+
+> **What this is (and isn't).** `extractEntities` is a fast, dependency-free **heuristic
+> ensemble** (regex/pattern + type-embedding similarity + context), not a trained NER model.
+> Each candidate is typed by its own span — a type indicator in a neighbour's text (e.g. "Corp"
+> in "Sarah Chen founded Acme Corp") will **not** bleed onto another candidate.
+>
+> **Known limitation:** a bare proper-noun place name with no structural cue (e.g. "New York",
+> no comma, state code, or "in"/"at" preposition handling) can be typed as `Person` by the
+> generic full-name pattern. For high-precision typing, pass `types` to constrain results, supply
+> richer context, or post-validate. For state-of-the-art NER, drive extraction from an LLM at the
+> application layer and store the results in Brainy.
 
 ### Method 2: Direct Import (Advanced)
 

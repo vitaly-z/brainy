@@ -783,6 +783,13 @@ export interface AggregateQueryParams {
   name: string
   /** Filter aggregate groups by their key values */
   where?: Record<string, unknown>
+  /**
+   * Filter groups by their computed METRIC values (SQL HAVING). Same BFO operators as
+   * `where`, but applied to the derived metric results plus `count`, e.g.
+   * `{ revenue: { greaterThan: 1000 } }`. Evaluated per group (O(groups), independent of
+   * entity count), before sort/pagination.
+   */
+  having?: Record<string, unknown>
   /** Sort by metric name or group key field */
   orderBy?: string
   /** Sort direction */

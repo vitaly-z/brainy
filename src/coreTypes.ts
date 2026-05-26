@@ -279,6 +279,14 @@ export function resolveEntityField(
   entity: HNSWNounWithMetadata,
   field: string
 ): unknown {
+  // `noun` is an alias for the entity's type — some shapes carry `noun`, the
+  // canonical HNSWNounWithMetadata carries `type`. Resolve it consistently so
+  // groupBy/source/sort on 'noun' isn't silently null (it otherwise falls through
+  // to metadata.noun, which doesn't exist). Mirrors matchesSource's `type ?? noun`.
+  if (field === 'noun') {
+    const e = entity as unknown as Record<string, unknown>
+    return e.type ?? e.noun
+  }
   if (STANDARD_ENTITY_FIELDS.has(field)) {
     return (entity as unknown as Record<string, unknown>)[field]
   }

@@ -8,6 +8,11 @@ Brainy's aggregation engine computes running totals at write time, so reading ag
 
 No batch jobs. No scheduled recalculations. Aggregates stay current with every write.
 
+**Defining over existing data:** if you define an aggregate on a store that already holds
+matching entities, Brainy backfills it from those entities on the first query (a one-time scan,
+then purely incremental). So `defineAggregate()` behaves the same whether you define it before
+or after the data exists — including when a persisted brain reopens already populated.
+
 ## Quick Start
 
 ```typescript
@@ -216,6 +221,22 @@ const foodOnly = await brain.find({
 })
 ```
 
+### Filter by Metric Value (HAVING)
+
+Use `having` to filter groups by their **computed metric values** — the analytics equivalent of
+SQL `HAVING`. (`where` filters group *keys*; `having` filters *metrics*.)
+
+```typescript
+const bigCategories = await brain.find({
+  aggregate: 'sales_by_category',
+  having: { revenue: { greaterThan: 1000 } }
+})
+```
+
+`having` accepts the same operators as `where`, applied to each group's metric results plus
+`count`. It is evaluated per group — **O(groups), independent of entity count** — before sorting
+and pagination, so it stays cheap even over billions of entities.
+
 ### Sort and Paginate
 
 Sort by any metric or group key field:
@@ -248,23 +269,46 @@ const recentTopSpenders = await brain.find({
 
 ### Result Format
 
-Each result is returned as a `Result<T>` with `type: NounType.Measurement`:
+`find({ aggregate })` returns `Result<T>` rows (for uniformity with the rest of `find()`),
+with the aggregate fields surfaced **both** at the top level and, for backward compatibility,
+flattened into `metadata`:
 
 ```typescript
 {
   id: string,
   score: 1.0,
   type: NounType.Measurement,
-  metadata: {
+  groupKey: { category: 'food' },             // top-level — the group key values
+  metrics:  { revenue: 17.50, count: 2, average: 8.75 }, // top-level — computed metrics
+  count: 2,                                   // top-level — entities in the group
+  metadata: {                                 // legacy mirror of the same data
     __aggregate: 'sales_by_category',
-    category: 'food',         // Group key values
-    revenue: 17.50,           // Computed metrics
-    count: 2,
-    average: 8.75
+    category: 'food',
+    revenue: 17.50, count: 2, average: 8.75
   },
   entity: Entity
 }
 ```
+
+### `queryAggregate()` — the report-friendly view
+
+For dashboards and reports, prefer `brain.queryAggregate(name, params)`. It returns the clean
+`AggregateResult[]` shape directly — no search-result wrapper:
+
+```typescript
+const rows = await brain.queryAggregate('sales_by_category', {
+  orderBy: 'revenue',
+  order: 'desc',
+  limit: 10
+})
+// [
+//   { groupKey: { category: 'electronics' }, metrics: { revenue: 1200, count: 1, average: 1200 }, count: 1 },
+//   { groupKey: { category: 'food' }, metrics: { revenue: 17.50, count: 2, average: 8.75 }, count: 2 }
+// ]
+```
+
+It accepts the same `where` / `having` / `orderBy` / `order` / `limit` / `offset` params as the
+`find({ aggregate })` form.
 
 ## Source Filtering
 
