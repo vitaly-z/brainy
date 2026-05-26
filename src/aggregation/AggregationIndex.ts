@@ -198,6 +198,13 @@ function updateMetricAdd(state: MetricState, val: number, op: AggregationOp): vo
     const oldMean = state.count > 1 ? (state.sum - val) / (state.count - 1) : 0
     state.m2 = (state.m2 ?? 0) + (val - oldMean) * (val - mean)
   }
+
+  // Percentile/distinctCount: track the value multiset (matches Cortex's value_counts).
+  if (op === 'percentile' || op === 'distinctCount') {
+    if (!state.valueCounts) state.valueCounts = {}
+    const key = String(val)
+    state.valueCounts[key] = (state.valueCounts[key] ?? 0) + 1
+  }
 }
 
 /**
@@ -205,6 +212,16 @@ function updateMetricAdd(state: MetricState, val: number, op: AggregationOp): vo
  * Note: removing from Welford's is the inverse update.
  */
 function updateMetricRemove(state: MetricState, val: number, op: AggregationOp): void {
+  // Percentile/distinctCount: decrement the value multiset (drop the key at zero).
+  if ((op === 'percentile' || op === 'distinctCount') && state.valueCounts) {
+    const key = String(val)
+    const c = state.valueCounts[key]
+    if (c !== undefined) {
+      if (c <= 1) delete state.valueCounts[key]
+      else state.valueCounts[key] = c - 1
+    }
+  }
+
   if (state.count <= 1) {
     state.sum = 0
     state.count = 0
@@ -219,6 +236,39 @@ function updateMetricRemove(state: MetricState, val: number, op: AggregationOp):
   if (op === 'stddev' || op === 'variance') {
     state.m2 = Math.max(0, (state.m2 ?? 0) - (val - oldMean) * (val - newMean))
   }
+}
+
+/**
+ * Exact percentile over a value multiset, using linear interpolation between closest ranks
+ * (numpy 'linear' / type-7): `rank = p·(n−1)`, interpolating between the floor and ceil
+ * positions of the sorted expansion. Mirrors Cortex's `MetricState::percentile` bit-for-bit.
+ */
+function computePercentile(valueCounts: Record<string, number>, count: number, p: number): number {
+  if (count === 0) return 0
+  const pp = Math.max(0, Math.min(1, p))
+  const entries = Object.entries(valueCounts)
+    .map(([v, c]) => [parseFloat(v), c] as [number, number])
+    .sort((a, b) => a[0] - b[0])
+  if (entries.length === 0) return 0
+  if (count === 1) return entries[0][0]
+
+  const rank = pp * (count - 1)
+  const lo = Math.floor(rank)
+  const hi = Math.ceil(rank)
+  const vLo = valueAtRank(entries, lo)
+  if (lo === hi) return vLo
+  const vHi = valueAtRank(entries, hi)
+  return vLo + (vHi - vLo) * (rank - lo)
+}
+
+/** Value at 0-based rank `idx` in the sorted expansion of the multiset. */
+function valueAtRank(entries: Array<[number, number]>, idx: number): number {
+  let cum = 0
+  for (const [v, c] of entries) {
+    cum += c
+    if (idx < cum) return v
+  }
+  return entries.length ? entries[entries.length - 1][0] : 0
 }
 
 export class AggregationIndex {
@@ -594,6 +644,12 @@ export class AggregationIndex {
             break
           case 'stddev':
             metrics[metricName] = state.count > 1 ? Math.sqrt((state.m2 ?? 0) / (state.count - 1)) : 0
+            break
+          case 'percentile':
+            metrics[metricName] = computePercentile(state.valueCounts ?? {}, state.count, metricDef.p ?? 0.5)
+            break
+          case 'distinctCount':
+            metrics[metricName] = state.valueCounts ? Object.keys(state.valueCounts).length : 0
             break
         }
 

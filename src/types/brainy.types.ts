@@ -696,7 +696,18 @@ export interface TraverseParams {
 /**
  * Supported aggregation operations
  */
-export type AggregationOp = 'sum' | 'count' | 'avg' | 'min' | 'max' | 'stddev' | 'variance'
+export type AggregationOp =
+  | 'sum'
+  | 'count'
+  | 'avg'
+  | 'min'
+  | 'max'
+  | 'stddev'
+  | 'variance'
+  /** Exact percentile (requires `p` in `[0,1]` on the metric def) — value-multiset, delete-safe. */
+  | 'percentile'
+  /** Exact count of distinct values — value-multiset, delete-safe. */
+  | 'distinctCount'
 
 /**
  * Time window granularity for GROUP BY time dimensions
@@ -752,8 +763,10 @@ export interface AggregateDefinition {
 export interface AggregateMetricDef {
   /** Aggregation operation */
   op: AggregationOp
-  /** Metadata field to aggregate (required for sum/avg/min/max; optional for count) */
+  /** Metadata field to aggregate (required for all ops except count) */
   field?: string
+  /** Percentile fraction in `[0, 1]` — required when `op === 'percentile'`, ignored otherwise. */
+  p?: number
 }
 
 /**
@@ -767,6 +780,12 @@ export interface MetricState {
   max: number
   /** Running M2 for Welford's online variance (sum of squared differences from mean) */
   m2?: number
+  /**
+   * Value multiset (String(value) → occurrence count) for exact percentile + distinctCount.
+   * Maintained only for `percentile`/`distinctCount` metrics. JSON-serializable; mirrors
+   * Cortex's `value_counts` so JS and native agree bit-for-bit.
+   */
+  valueCounts?: Record<string, number>
 }
 
 /**

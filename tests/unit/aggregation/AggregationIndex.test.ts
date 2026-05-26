@@ -617,4 +617,62 @@ describe('AggregationIndex', () => {
       }
     })
   })
+
+  // ============= Percentile + distinctCount (exact, parity with Cortex native) =============
+
+  describe('percentile + distinctCount', () => {
+    beforeEach(() => {
+      index.defineAggregate({
+        name: 'lat',
+        source: { type: NounType.Event },
+        groupBy: ['svc'],
+        metrics: {
+          p0: { op: 'percentile', field: 'ms', p: 0 },
+          p50: { op: 'percentile', field: 'ms', p: 0.5 },
+          p90: { op: 'percentile', field: 'ms', p: 0.9 },
+          p100: { op: 'percentile', field: 'ms', p: 1 },
+          uniq: { op: 'distinctCount', field: 'ms' }
+        }
+      })
+    })
+
+    const addLat = (id: string, ms: number) =>
+      index.onEntityAdded(id, { type: NounType.Event, metadata: { svc: 'api', ms } })
+
+    it('computes exact numpy-linear percentiles (same values as Cortex)', () => {
+      for (let v = 1; v <= 10; v++) addLat(`e${v}`, v)
+      const [row] = index.queryAggregate({ name: 'lat' })
+      expect(row.metrics.p0).toBe(1)
+      expect(row.metrics.p50).toBeCloseTo(5.5, 10)
+      expect(row.metrics.p90).toBeCloseTo(9.1, 10)
+      expect(row.metrics.p100).toBe(10)
+      expect(row.metrics.uniq).toBe(10)
+    })
+
+    it('stays exact after deletes', () => {
+      for (let v = 1; v <= 10; v++) addLat(`e${v}`, v)
+      index.onEntityDeleted('e10', { type: NounType.Event, metadata: { svc: 'api', ms: 10 } })
+      const [row] = index.queryAggregate({ name: 'lat' })
+      expect(row.metrics.p50).toBeCloseTo(5, 10) // median of 1..9
+      expect(row.metrics.uniq).toBe(9)
+    })
+
+    it('distinctCount counts distinct values, not occurrences', () => {
+      addLat('a', 1); addLat('b', 2); addLat('c', 2)
+      const [row] = index.queryAggregate({ name: 'lat' })
+      expect(row.metrics.uniq).toBe(2) // {1, 2}
+    })
+
+    it('percentile + distinctCount survive a persist + reload', async () => {
+      for (let v = 1; v <= 10; v++) addLat(`e${v}`, v)
+      await index.flush()
+
+      const reloaded = new AggregationIndex(storage)
+      await reloaded.init()
+      const [row] = reloaded.queryAggregate({ name: 'lat' })
+      expect(row.metrics.p50).toBeCloseTo(5.5, 10) // valueCounts round-tripped through storage
+      expect(row.metrics.uniq).toBe(10)
+      await reloaded.close()
+    })
+  })
 })
