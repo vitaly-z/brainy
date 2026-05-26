@@ -122,6 +122,14 @@ export interface Result<T = any> {
   semanticScore?: number      // Semantic similarity score (0-1)
   matchSource?: 'text' | 'semantic' | 'both'  // Where this result came from
   rrfScore?: number           // Raw RRF fusion score (for advanced ranking analysis)
+
+  // Aggregation: present only on rows returned by find({ aggregate }). These mirror the
+  // documented AggregateResult shape so callers can read group/metric data at the top level
+  // instead of digging into `metadata`. (The same values are also flattened into `metadata`
+  // for backward compatibility.)
+  groupKey?: Record<string, string | number>   // Group-by key values for this aggregate row
+  metrics?: Record<string, number>             // Computed metric values (sum/avg/min/max/count)
+  count?: number                               // Total entity count in this group
 }
 
 /**

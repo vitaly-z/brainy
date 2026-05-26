@@ -140,14 +140,17 @@ export class NeuralEntityExtractor {
     
     // Step 2: Classify each candidate using SmartExtractor
     for (const candidate of candidates) {
-      // Use SmartExtractor for unified neural + rule-based classification
+      // Use SmartExtractor for unified neural + rule-based classification.
+      // Pass the caller's threshold through so `confidence` actually controls the gate
+      // (previously SmartExtractor applied a hardcoded 0.60 floor, so a low confidence
+      // option had no loosening effect).
       const classification = await this.smartExtractor.extract(candidate.text, {
         definition: candidate.context,
         allTerms: [candidate.text, candidate.context]
-      })
+      }, minConfidence)
 
-      // Skip if SmartExtractor returns null (low confidence) or below threshold
-      if (!classification || classification.confidence < minConfidence) {
+      // SmartExtractor already gates at minConfidence; this guards against null only.
+      if (!classification) {
         continue
       }
 

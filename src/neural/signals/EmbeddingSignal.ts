@@ -43,7 +43,10 @@ export interface EmbeddingSignalOptions {
   minConfidence?: number // Minimum confidence threshold (default: 0.60)
   checkGraph?: boolean   // Check against graph entities (default: true)
   checkHistory?: boolean // Check against historical data (default: true)
-  timeout?: number       // Max time in ms (default: 100)
+  timeout?: number       // Max time in ms (default: 2000). A real transformer embed of a single
+                         // candidate is commonly 50–200ms (cold/under load higher); the previous
+                         // 100ms default silently timed out, dropping the neural signal entirely —
+                         // which alone left concept extraction (no regex fallback) returning nothing.
   cacheSize?: number     // LRU cache size (default: 1000)
 }
 
@@ -110,7 +113,7 @@ export class EmbeddingSignal {
       minConfidence: options?.minConfidence ?? 0.60,
       checkGraph: options?.checkGraph ?? true,
       checkHistory: options?.checkHistory ?? true,
-      timeout: options?.timeout ?? 100,
+      timeout: options?.timeout ?? 2000,
       cacheSize: options?.cacheSize ?? 1000
     }
   }

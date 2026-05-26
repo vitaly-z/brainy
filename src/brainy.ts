@@ -4559,7 +4559,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     }
   ): Promise<string[]> {
     const entities = await this.extract(text, {
-      types: [NounType.Concept, NounType.Concept],
+      types: [NounType.Concept],
       confidence: options?.confidence || 0.7,
       neuralMatching: true
     })
@@ -6787,36 +6787,58 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
   
   /**
-   * Execute graph search component with O(1) traversal
+   * Execute graph search component.
+   *
+   * Honors the full `GraphConstraints` contract: multi-hop `depth` (breadth-first via
+   * `neighbors()`), `via`/`type` verb-type filtering, and `direction`. Previously this read
+   * only `from`/`to`/`direction` and did a single 1-hop `getNeighbors()`, so `depth` and `via`
+   * were silently ignored — `find({ connected: { from, depth: 3 } })` returned only the
+   * immediate neighbour at every depth.
    */
   private async executeGraphSearch(params: FindParams<T>, existingResults: Result<T>[]): Promise<Result<T>[]> {
     if (!params.connected) return existingResults
-    
-    const { from, to, direction = 'both' } = params.connected
-    const connectedIds: string[] = []
-    
+
+    const { from, to, depth, direction = 'both' } = params.connected
+    const via = params.connected.via ?? params.connected.type
+
+    // GraphConstraints speaks 'in' | 'out' | 'both'; neighbors() speaks 'incoming' | 'outgoing' | 'both'.
+    const toNeighborDir = (d: 'in' | 'out' | 'both'): 'incoming' | 'outgoing' | 'both' =>
+      d === 'in' ? 'incoming' : d === 'out' ? 'outgoing' : 'both'
+
+    // Collect reachable ids honoring depth + verb-type filter. `via` may be a single VerbType
+    // or an array; reuse the depth-aware BFS in neighbors() (one pass per requested verb type).
+    const collect = async (id: string, dir: 'incoming' | 'outgoing' | 'both'): Promise<string[]> => {
+      const verbTypes: Array<VerbType | undefined> =
+        via === undefined ? [undefined] : Array.isArray(via) ? via : [via]
+      const ids = new Set<string>()
+      for (const verbType of verbTypes) {
+        const hops = await this.neighbors(id, { direction: dir, depth: depth ?? 1, verbType })
+        for (const n of hops) ids.add(n)
+      }
+      return [...ids]
+    }
+
+    const connectedIds = new Set<string>()
+
     if (from) {
-      const neighbors = await this.graphIndex.getNeighbors(from, direction)
-      connectedIds.push(...neighbors)
+      for (const id of await collect(from, toNeighborDir(direction))) connectedIds.add(id)
     }
-    
+
     if (to) {
-      const reverseDirection = direction === 'in' ? 'out' : direction === 'out' ? 'in' : 'both'
-      const neighbors = await this.graphIndex.getNeighbors(to, reverseDirection)
-      connectedIds.push(...neighbors)
+      const reverse: 'in' | 'out' | 'both' = direction === 'in' ? 'out' : direction === 'out' ? 'in' : 'both'
+      for (const id of await collect(to, toNeighborDir(reverse))) connectedIds.add(id)
     }
-    
+
     // Filter existing results to only connected entities
     if (existingResults.length > 0) {
-      const connectedIdSet = new Set(connectedIds)
-      return existingResults.filter(r => connectedIdSet.has(r.id))
+      return existingResults.filter(r => connectedIds.has(r.id))
     }
-    
-    // Batch-load connected entities for 10x faster cloud storage performance
-    // GCS: 20 entities = 1×50ms vs 20×50ms = 1000ms (20x faster)
+
+    // Batch-load connected entities for fast cloud-storage performance
     const results: Result<T>[] = []
-    const entitiesMap = await this.batchGet(connectedIds)
-    for (const id of connectedIds) {
+    const ids = [...connectedIds]
+    const entitiesMap = await this.batchGet(ids)
+    for (const id of ids) {
       const entity = entitiesMap.get(id)
       if (entity) {
         results.push(this.createResult(id, 1.0, entity))
@@ -7912,7 +7934,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         type: NounType.Measurement,
         metadata: entity.metadata,
         data: entity.data,
-        entity
+        entity,
+        // Surface the documented AggregateResult fields at the top level so consumers can read
+        // groupKey/metrics/count directly. Previously these were only reachable under .metadata,
+        // so callers expecting an AggregateResult saw rows with no groupKey/metrics/count and
+        // interpreted the output as degenerate/empty.
+        groupKey: agg.groupKey,
+        metrics: agg.metrics,
+        count: agg.count
       }
     })
   }

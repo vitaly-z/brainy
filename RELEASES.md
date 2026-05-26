@@ -11,6 +11,39 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.22.1 — 2026-05-26
+
+**Affected products:** Anyone using `extractEntities()` / `extractConcepts()`, native
+aggregation (`find({ aggregate })`), or multi-hop graph traversal
+(`find({ connected: { depth } })`). Three advanced-API correctness fixes — all reproduce on
+Node, so they were **not** Bun-specific despite the original report (BR-ADV-FEATURES-BUN).
+
+### Entity/concept extraction no longer returns `[]`
+
+`extractEntities()` / `extractConcepts()` returned empty for entity-rich text. The SmartExtractor
+ensemble scored agreeing signals with a weighted **sum** against an absolute 0.60 gate, so a
+confident low-weight signal (e.g. a name pattern at 0.82) lost selection to a mediocre
+high-weight signal that then failed the gate — dropping the whole result. It now selects and
+gates on a normalized weighted **average**. Also: the `confidence` option now actually controls
+the threshold (was a dead hardcoded 0.60), and the embedding-signal timeout was raised
+100ms → 2000ms so the neural signal isn't silently dropped on slower runtimes.
+
+*Known limitation:* type accuracy on dense multi-entity sentences is still imperfect — a strong
+indicator in one entity's surrounding text can bleed onto neighbours. Tracked separately.
+
+### `find({ aggregate })` exposes `groupKey` / `metrics` / `count`
+
+Aggregation always computed correct values, but rows nested them under `.metadata`, so callers
+expecting the documented `AggregateResult` shape saw empty-looking rows. Those three fields are
+now also present at the top level of each result row.
+
+### Multi-hop `find({ connected: { depth } })` honours depth
+
+Previously returned only the immediate (1-hop) neighbour at any depth because the graph-search
+path ignored `depth` / `via`. It now performs the full depth-aware traversal.
+
+---
+
 ## v7.22.0 — 2026-05-15
 
 **Affected products:** All. Fixes a silent-data-loss class affecting `find()` and

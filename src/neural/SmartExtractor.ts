@@ -211,12 +211,18 @@ export class SmartExtractor {
       formatContext?: FormatContext
       allTerms?: string[]
       metadata?: any
-    }
+    },
+    minConfidence?: number
   ): Promise<ExtractionResult | null> {
     this.stats.calls++
 
+    // Per-call confidence threshold (falls back to the instance default). This lets callers
+    // such as brain.extractEntities({ confidence }) actually loosen or tighten the gate; it is
+    // part of the cache key below so results computed at one threshold are not reused at another.
+    const threshold = minConfidence ?? this.options.minConfidence
+
     // Check cache first
-    const cacheKey = this.getCacheKey(candidate, context)
+    const cacheKey = this.getCacheKey(candidate, context, threshold)
     const cached = this.getFromCache(cacheKey)
     if (cached !== undefined) {
       this.stats.cacheHits++
@@ -282,8 +288,8 @@ export class SmartExtractor {
 
       // Combine using ensemble or best signal
       const result = this.options.enableEnsemble
-        ? this.combineEnsemble(signalResults, formatHints, context?.formatContext)
-        : this.selectBestSignal(signalResults, formatHints, context?.formatContext)
+        ? this.combineEnsemble(signalResults, formatHints, context?.formatContext, threshold)
+        : this.selectBestSignal(signalResults, formatHints, context?.formatContext, threshold)
 
       // Cache result (including nulls to avoid recomputation)
       this.addToCache(cacheKey, result)
@@ -509,7 +515,8 @@ export class SmartExtractor {
   private combineEnsemble(
     signalResults: SignalResult[],
     formatHints: string[],
-    formatContext?: FormatContext
+    formatContext?: FormatContext,
+    minConfidence: number = this.options.minConfidence
   ): ExtractionResult | null {
     // Filter out null results
     const validResults = signalResults.filter(r => r.type !== null)
@@ -518,56 +525,61 @@ export class SmartExtractor {
       return null
     }
 
-    // Count votes by type with weighted confidence
-    const typeScores = new Map<NounType, { score: number; signals: SignalResult[] }>()
+    // Group the signals by the type they voted for
+    const typeScores = new Map<NounType, SignalResult[]>()
 
     for (const result of validResults) {
       if (!result.type) continue
 
-      const weighted = result.confidence * result.weight
       const existing = typeScores.get(result.type)
-
       if (existing) {
-        existing.score += weighted
-        existing.signals.push(result)
+        existing.push(result)
       } else {
-        typeScores.set(result.type, { score: weighted, signals: [result] })
+        typeScores.set(result.type, [result])
       }
     }
 
-    // Find best type
+    // Score each candidate type by a NORMALIZED, weighted-average confidence
+    // — Σ(confidence·weight) / Σ(weight of its signals) — plus a small boost when
+    // multiple signals concur, then select the type with the highest such confidence.
+    //
+    // Why an average and not a sum (this was the bug): a weighted *sum* lives on the
+    // signal-weight scale, so two signals agreeing on a fresh brain summed to ≈0.37 —
+    // below the 0.60 gate — meaning agreement was effectively *penalized*. Worse, selecting
+    // the best type by that sum let a high-weight signal with mediocre confidence
+    // (embedding @0.51 · 0.35 = 0.179) outrank a low-weight signal with high confidence
+    // (pattern @0.82 · 0.20 = 0.164); the wrong type won selection, then failed the threshold
+    // on its own 0.51 confidence, and the whole extraction returned null. Averaging keeps the
+    // score on the same 0–1 scale as the threshold, so selection and the gate agree and the
+    // most-confident type wins (pattern @0.82 here).
     let bestType: NounType | null = null
-    let bestScore = 0
+    let finalConfidence = 0
     let bestSignals: SignalResult[] = []
 
-    for (const [type, data] of typeScores.entries()) {
-      // Apply agreement boost (multiple signals agree)
-      let finalScore = data.score
-      if (data.signals.length > 1) {
-        const agreementBoost = 0.05 * (data.signals.length - 1)
-        finalScore += agreementBoost
-        this.stats.agreementBoosts++
+    for (const [type, signals] of typeScores.entries()) {
+      const weightSum = signals.reduce((sum, s) => sum + s.weight, 0)
+      const weightedConfidence = signals.reduce((sum, s) => sum + s.confidence * s.weight, 0)
+      let confidence = weightSum > 0 ? weightedConfidence / weightSum : 0
+
+      // Reward agreement between independent signals
+      if (signals.length > 1) {
+        confidence = Math.min(confidence + 0.05 * (signals.length - 1), 1.0)
       }
 
-      if (finalScore > bestScore) {
-        bestScore = finalScore
+      if (confidence > finalConfidence) {
+        finalConfidence = confidence
         bestType = type
-        bestSignals = data.signals
+        bestSignals = signals
       }
-    }
-
-    // Determine final confidence score
-    // FIX: When only one signal matches, use its original confidence instead of weighted score
-    // The weighted score is too low when only one signal matches (e.g., 0.8 * 0.2 = 0.16 < 0.60 threshold)
-    let finalConfidence = bestScore
-    if (bestSignals.length === 1) {
-      // Single signal: use its original confidence
-      finalConfidence = bestSignals[0].confidence
     }
 
     // Check minimum confidence threshold
-    if (!bestType || finalConfidence < this.options.minConfidence) {
+    if (!bestType || finalConfidence < minConfidence) {
       return null
+    }
+
+    if (bestSignals.length > 1) {
+      this.stats.agreementBoosts++
     }
 
     // Track signal contributions
@@ -604,13 +616,17 @@ export class SmartExtractor {
   private selectBestSignal(
     signalResults: SignalResult[],
     formatHints: string[],
-    formatContext?: FormatContext
+    formatContext?: FormatContext,
+    minConfidence: number = this.options.minConfidence
   ): ExtractionResult | null {
-    // Filter valid results and sort by weighted confidence
+    // Select by confidence — the same metric the threshold checks below. Sorting by
+    // weighted score (confidence·weight) instead would let a high-weight, mediocre-confidence
+    // signal outrank a low-weight, high-confidence one and then fail the gate, dropping the
+    // result entirely (the same defect fixed in combineEnsemble). Weight matters for ensemble
+    // voting, not for picking the single best signal.
     const validResults = signalResults
       .filter(r => r.type !== null)
-      .map(r => ({ ...r, weightedScore: r.confidence * r.weight }))
-      .sort((a, b) => b.weightedScore - a.weightedScore)
+      .sort((a, b) => b.confidence - a.confidence)
 
     if (validResults.length === 0) {
       return null
@@ -618,9 +634,7 @@ export class SmartExtractor {
 
     const best = validResults[0]
 
-    // FIX: Use original confidence, not weighted score for threshold check
-    // Weighted score is for ranking signals, not for absolute threshold
-    if (best.confidence < this.options.minConfidence) {
+    if (best.confidence < minConfidence) {
       return null
     }
 
@@ -661,11 +675,12 @@ export class SmartExtractor {
   /**
    * Get cache key from candidate and context
    */
-  private getCacheKey(candidate: string, context?: any): string {
+  private getCacheKey(candidate: string, context?: any, minConfidence?: number): string {
     const normalized = candidate.toLowerCase().trim()
     const defSnippet = context?.definition?.substring(0, 50) || ''
     const format = context?.formatContext?.format || ''
-    return `${normalized}:${defSnippet}:${format}`
+    const threshold = minConfidence ?? this.options.minConfidence
+    return `${normalized}:${defSnippet}:${format}:${threshold}`
   }
 
   /**

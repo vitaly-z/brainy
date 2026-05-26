@@ -118,10 +118,11 @@ describe('NaturalLanguageProcessor', () => {
       expect(extraction).toBeDefined()
       expect(Array.isArray(extraction)).toBe(true)
 
-      // Entity extraction uses neural matching with type embeddings
-      // Extraction quality depends on text context and entity similarity to known types
-      // For simple text without rich context, extraction may return empty array
-      // This is correct behavior - it's better to return nothing than false positives
+      // This unit suite runs with mock (zero-vector) embeddings, so the neural embedding
+      // signal can't fire here — only the array shape is asserted. Real, non-empty extraction
+      // is verified against actual embeddings in
+      // tests/integration/advanced-apis-regression.test.ts (BR-ADV-FEATURES-BUN). An empty
+      // result here reflects the mock embeddings, not expected production behaviour.
     })
     
     it('should extract topics and concepts', async () => {
