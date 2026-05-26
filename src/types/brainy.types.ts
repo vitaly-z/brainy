@@ -706,9 +706,17 @@ export type TimeWindowGranularity =
   | { seconds: number }
 
 /**
- * A GROUP BY dimension — either a plain metadata field or a time-windowed field
+ * A GROUP BY dimension — one of:
+ * - a plain metadata field name (string),
+ * - a time-windowed field (`{ field, window }`), or
+ * - an **unnest** field (`{ field, unnest: true }`): the field holds an array, and the entity
+ *   contributes once to a group per distinct element (e.g. `tags: string[]` → tag frequency).
+ *   An entity whose unnest field is missing or an empty array contributes to no group.
  */
-export type GroupByDimension = string | { field: string; window: TimeWindowGranularity }
+export type GroupByDimension =
+  | string
+  | { field: string; window: TimeWindowGranularity }
+  | { field: string; unnest: true }
 
 /**
  * Source filter for which entities feed into an aggregate

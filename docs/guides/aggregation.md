@@ -200,6 +200,25 @@ brain.defineAggregate({
 // { region: 'EU', date: '2024-01' }
 ```
 
+### Array Fields (Unnest)
+
+Group by **each element** of an array-valued field — for tag frequencies, label counts, and
+faceted breakdowns. Mark the dimension `{ field, unnest: true }`:
+
+```typescript
+brain.defineAggregate({
+  name: 'tag_frequency',
+  source: { type: NounType.Document },
+  groupBy: [{ field: 'tags', unnest: true }],
+  metrics: { count: { op: 'count' } }
+})
+
+// A document tagged ['ml', 'ai'] contributes once to the 'ml' group and once to 'ai'.
+// Duplicate tags on one entity count once; an entity with no tags joins no group.
+const top = await brain.queryAggregate('tag_frequency', { orderBy: 'count', order: 'desc' })
+// [ { groupKey: { tags: 'ai' }, metrics: { count: 3 }, count: 3 }, ... ]
+```
+
 ## Querying Aggregates
 
 Aggregate results are queried through the standard `find()` method.

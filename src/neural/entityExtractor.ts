@@ -137,7 +137,27 @@ export class NeuralEntityExtractor {
     
     // Step 1: Extract potential entities using patterns
     const candidates = await this.extractCandidates(text)
-    
+
+    // Step 1b: Batch-embed the unique candidate texts once, instead of one brain.embed()
+    // per candidate inside EmbeddingSignal (N sequential model calls). The vectors are
+    // forwarded into the signal; if the batch fails, the signal falls back to per-candidate
+    // embedding, so this is a pure performance optimization with no behavior change.
+    const vectorByText = new Map<string, Vector>()
+    if (useNeuralMatching) {
+      const uniqueTexts = [...new Set(candidates.map(c => c.text))]
+      if (uniqueTexts.length > 0) {
+        try {
+          const vectors = await this.brain.embedBatch(uniqueTexts)
+          uniqueTexts.forEach((t, i) => {
+            const v = vectors[i]
+            if (v) vectorByText.set(t, v)
+          })
+        } catch {
+          // Leave the map empty — EmbeddingSignal will embed per-candidate as before.
+        }
+      }
+    }
+
     // Step 2: Classify each candidate using SmartExtractor
     for (const candidate of candidates) {
       // Use SmartExtractor for unified neural + rule-based classification.
@@ -146,7 +166,8 @@ export class NeuralEntityExtractor {
       // option had no loosening effect).
       const classification = await this.smartExtractor.extract(candidate.text, {
         definition: candidate.context,
-        allTerms: [candidate.text, candidate.context]
+        allTerms: [candidate.text, candidate.context],
+        vector: vectorByText.get(candidate.text)
       }, minConfidence)
 
       // SmartExtractor already gates at minConfidence; this guards against null only.

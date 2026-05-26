@@ -11,6 +11,39 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.24.0 — 2026-05-26
+
+**Affected products:** aggregation/reporting users + anyone calling `extractEntities` on
+multi-entity text. Additive; drop-in from 7.23.x.
+
+### New — array-unnest `groupBy` (tag frequency / faceted counts)
+
+A `groupBy` dimension can now be `{ field, unnest: true }`: the field holds an array and the
+entity contributes once per **distinct** element. Enables tag-frequency / label-count style
+aggregates:
+
+```typescript
+brain.defineAggregate({
+  name: 'tag_frequency',
+  source: { type: NounType.Document },
+  groupBy: [{ field: 'tags', unnest: true }],
+  metrics: { count: { op: 'count' } }
+})
+// queryAggregate('tag_frequency', { orderBy: 'count', order: 'desc' })
+```
+
+Duplicate elements on one entity count once; an entity with an empty/missing array joins no group.
+
+### Perf — entity extraction batch-embeds candidates
+
+`extractEntities` / `extractConcepts` now embed all unique candidate spans in a single
+`embedBatch` call instead of one `embed()` per candidate (N sequential model calls before). No
+behavior change — and with vectors reliably available, the embedding signal more consistently
+reinforces correct types (e.g. clearer Organization confidence). Falls back to per-candidate
+embedding if a batch call fails.
+
+---
+
 ## v7.23.0 — 2026-05-26
 
 **Affected products:** anyone using aggregation (stats/dashboards), graph traversal, or entity

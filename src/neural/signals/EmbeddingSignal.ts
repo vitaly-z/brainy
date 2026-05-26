@@ -151,6 +151,8 @@ export class EmbeddingSignal {
       definition?: string
       allTerms?: string[]
       metadata?: any
+      /** Pre-computed candidate embedding (from a batch embed) — skips the per-candidate embed. */
+      vector?: Vector
     }
   ): Promise<TypeSignal | null> {
     this.stats.calls++
@@ -167,8 +169,8 @@ export class EmbeddingSignal {
     }
 
     try {
-      // Embed candidate once (efficiency!)
-      const vector = await this.embedWithTimeout(candidate)
+      // Use the pre-computed vector when the caller batch-embedded; otherwise embed once here.
+      const vector = context?.vector ?? await this.embedWithTimeout(candidate)
 
       // Check all three sources in parallel
       const [typeMatch, graphMatch, historyMatch] = await Promise.all([

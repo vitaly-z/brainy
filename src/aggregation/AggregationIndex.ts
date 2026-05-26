@@ -102,29 +102,58 @@ function matchesSource(entity: Record<string, unknown>, source: AggregateDefinit
  * HNSWNounWithMetadata shape contract (standard fields top-level,
  * custom fields in metadata) in a single source of truth.
  */
-function computeGroupKey(
+/**
+ * Compute the group key(s) an entity contributes to.
+ *
+ * Returns one key normally, but **multiple** when a groupBy dimension is an `unnest` field:
+ * the entity contributes once per distinct array element (cartesian product across multiple
+ * unnest dimensions). An entity whose unnest field is missing/empty contributes to no group
+ * (returns `[]`). This is the fan-out behind tag-frequency style aggregates.
+ */
+function computeGroupKeys(
   entity: Record<string, unknown>,
   groupBy: GroupByDimension[]
-): Record<string, string | number> {
-  const key: Record<string, string | number> = {}
+): Record<string, string | number>[] {
   const e = entity as unknown as HNSWNounWithMetadata
+  let keys: Record<string, string | number>[] = [{}]
 
   for (const dim of groupBy) {
     if (typeof dim === 'string') {
       const val = resolveEntityField(e, dim)
-      key[dim] = val !== undefined && val !== null ? String(val) : '__null__'
+      const v = val !== undefined && val !== null ? String(val) : '__null__'
+      for (const k of keys) k[dim] = v
+    } else if ('unnest' in dim) {
+      const val = resolveEntityField(e, dim.field)
+      const raw = Array.isArray(val) ? val : val !== undefined && val !== null ? [val] : []
+      // Distinct elements: an entity with duplicate tags counts once per distinct tag.
+      const elems = Array.from(new Set(raw.map(x => String(x))))
+      if (elems.length === 0) return [] // contributes to no group
+      const next: Record<string, string | number>[] = []
+      for (const k of keys) {
+        for (const el of elems) next.push({ ...k, [dim.field]: el })
+      }
+      keys = next
     } else {
       // Time-windowed field
       const val = resolveEntityField(e, dim.field)
-      if (typeof val === 'number') {
-        key[dim.field] = bucketTimestamp(val, dim.window)
-      } else {
-        key[dim.field] = '__null__'
-      }
+      const v = typeof val === 'number' ? bucketTimestamp(val, dim.window) : '__null__'
+      for (const k of keys) k[dim.field] = v
     }
   }
 
-  return key
+  return keys
+}
+
+/**
+ * Single representative group key (first of {@link computeGroupKeys}). Retained for the
+ * materializer and back-compat; the incremental contribution paths use `computeGroupKeys`
+ * so unnest dimensions fan out correctly.
+ */
+function computeGroupKey(
+  entity: Record<string, unknown>,
+  groupBy: GroupByDimension[]
+): Record<string, string | number> {
+  return computeGroupKeys(entity, groupBy)[0] ?? {}
 }
 
 /**
@@ -451,40 +480,8 @@ export class AggregationIndex {
         continue
       }
 
-      const groupKey = computeGroupKey(entity, def.groupBy)
-      const serialized = serializeGroupKey(groupKey)
-      const stateMap = this.states.get(name)!
-      let group = stateMap.get(serialized)
-
-      if (!group) {
-        group = {
-          groupKey,
-          metrics: {},
-          lastUpdated: Date.now()
-        }
-        // Initialize all metrics
-        for (const metricName of Object.keys(def.metrics)) {
-          group.metrics[metricName] = freshMetricState()
-        }
-        stateMap.set(serialized, group)
-      }
-
-      // Increment each metric
-      for (const [metricName, metricDef] of Object.entries(def.metrics)) {
-        const state = group.metrics[metricName]
-        if (metricDef.op === 'count') {
-          state.count++
-          state.sum++
-        } else {
-          const val = getNumericField(entity, metricDef.field!)
-          if (val !== undefined) {
-            updateMetricAdd(state, val, metricDef.op)
-          }
-        }
-      }
-
-      group.lastUpdated = Date.now()
-      this.dirty.add(name)
+      // Shared with onEntityUpdated/backfill; fans out unnest dimensions to N groups.
+      this.addContribution(name, def, entity)
     }
   }
 
@@ -661,37 +658,41 @@ export class AggregationIndex {
     def: AggregateDefinition,
     entity: Record<string, unknown>
   ): void {
-    const groupKey = computeGroupKey(entity, def.groupBy)
-    const serialized = serializeGroupKey(groupKey)
     const stateMap = this.states.get(aggName)!
-    let group = stateMap.get(serialized)
 
-    if (!group) {
-      group = {
-        groupKey,
-        metrics: {},
-        lastUpdated: Date.now()
-      }
-      for (const metricName of Object.keys(def.metrics)) {
-        group.metrics[metricName] = freshMetricState()
-      }
-      stateMap.set(serialized, group)
-    }
+    // Fan out: an unnest dimension makes one entity contribute to several groups.
+    for (const groupKey of computeGroupKeys(entity, def.groupBy)) {
+      const serialized = serializeGroupKey(groupKey)
+      let group = stateMap.get(serialized)
 
-    for (const [metricName, metricDef] of Object.entries(def.metrics)) {
-      const state = group.metrics[metricName]
-      if (metricDef.op === 'count') {
-        state.count++
-        state.sum++
-      } else {
-        const val = getNumericField(entity, metricDef.field!)
-        if (val !== undefined) {
-          updateMetricAdd(state, val, metricDef.op)
+      if (!group) {
+        group = {
+          groupKey,
+          metrics: {},
+          lastUpdated: Date.now()
+        }
+        for (const metricName of Object.keys(def.metrics)) {
+          group.metrics[metricName] = freshMetricState()
+        }
+        stateMap.set(serialized, group)
+      }
+
+      for (const [metricName, metricDef] of Object.entries(def.metrics)) {
+        const state = group.metrics[metricName]
+        if (metricDef.op === 'count') {
+          state.count++
+          state.sum++
+        } else {
+          const val = getNumericField(entity, metricDef.field!)
+          if (val !== undefined) {
+            updateMetricAdd(state, val, metricDef.op)
+          }
         }
       }
+
+      group.lastUpdated = Date.now()
     }
 
-    group.lastUpdated = Date.now()
     this.dirty.add(aggName)
   }
 
@@ -704,40 +705,42 @@ export class AggregationIndex {
     def: AggregateDefinition,
     entity: Record<string, unknown>
   ): void {
-    const groupKey = computeGroupKey(entity, def.groupBy)
-    const serialized = serializeGroupKey(groupKey)
     const stateMap = this.states.get(aggName)!
-    const group = stateMap.get(serialized)
 
-    if (!group) return
+    // Fan out: reverse the entity's contribution from every group it joined.
+    for (const groupKey of computeGroupKeys(entity, def.groupBy)) {
+      const serialized = serializeGroupKey(groupKey)
+      const group = stateMap.get(serialized)
+      if (!group) continue
 
-    for (const [metricName, metricDef] of Object.entries(def.metrics)) {
-      const state = group.metrics[metricName]
-      if (metricDef.op === 'count') {
-        state.count = Math.max(0, state.count - 1)
-        state.sum = Math.max(0, state.sum - 1)
-      } else {
-        const val = getNumericField(entity, metricDef.field!)
-        if (val !== undefined) {
-          updateMetricRemove(state, val, metricDef.op)
+      for (const [metricName, metricDef] of Object.entries(def.metrics)) {
+        const state = group.metrics[metricName]
+        if (metricDef.op === 'count') {
+          state.count = Math.max(0, state.count - 1)
+          state.sum = Math.max(0, state.sum - 1)
+        } else {
+          const val = getNumericField(entity, metricDef.field!)
+          if (val !== undefined) {
+            updateMetricRemove(state, val, metricDef.op)
 
-          // MIN/MAX can't be decremented — mark as potentially stale
-          if (val <= state.min || val >= state.max) {
-            if (!this.staleMinMax.has(aggName)) {
-              this.staleMinMax.set(aggName, new Set())
+            // MIN/MAX can't be decremented — mark as potentially stale
+            if (val <= state.min || val >= state.max) {
+              if (!this.staleMinMax.has(aggName)) {
+                this.staleMinMax.set(aggName, new Set())
+              }
+              this.staleMinMax.get(aggName)!.add(`${serialized}:${metricName}`)
             }
-            this.staleMinMax.get(aggName)!.add(`${serialized}:${metricName}`)
           }
         }
       }
-    }
 
-    // Remove group if all metrics are empty
-    const allEmpty = Object.values(group.metrics).every(m => m.count === 0)
-    if (allEmpty) {
-      stateMap.delete(serialized)
-    } else {
-      group.lastUpdated = Date.now()
+      // Remove group if all metrics are empty
+      const allEmpty = Object.values(group.metrics).every(m => m.count === 0)
+      if (allEmpty) {
+        stateMap.delete(serialized)
+      } else {
+        group.lastUpdated = Date.now()
+      }
     }
 
     this.dirty.add(aggName)

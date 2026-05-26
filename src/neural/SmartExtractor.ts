@@ -34,6 +34,7 @@
 
 import type { Brainy } from '../brainy.js'
 import type { NounType } from '../types/graphTypes.js'
+import type { Vector } from '../coreTypes.js'
 import { ExactMatchSignal } from './signals/ExactMatchSignal.js'
 import { PatternSignal } from './signals/PatternSignal.js'
 import { EmbeddingSignal } from './signals/EmbeddingSignal.js'
@@ -211,6 +212,8 @@ export class SmartExtractor {
       formatContext?: FormatContext
       allTerms?: string[]
       metadata?: any
+      /** Pre-computed candidate embedding (from a batch embed) — forwarded to EmbeddingSignal. */
+      vector?: Vector
     },
     minConfidence?: number
   ): Promise<ExtractionResult | null> {
@@ -243,7 +246,8 @@ export class SmartExtractor {
       const enrichedContext = {
         definition: context?.definition,
         allTerms: [...(context?.allTerms || []), ...formatHints],
-        metadata: context?.metadata
+        metadata: context?.metadata,
+        vector: context?.vector
       }
 
       // Execute all signals in parallel

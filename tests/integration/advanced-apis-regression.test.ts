@@ -230,4 +230,28 @@ describe('BR-ADV-FEATURES-BUN regression', () => {
       await b.close()
     })
   })
+
+  describe('R2 — array-unnest groupBy (tag frequency)', () => {
+    it('groups by each distinct array element; dedups per entity; skips empty', async () => {
+      const b: any = new Brainy({ storage: { type: 'memory' } })
+      await b.init()
+      b.defineAggregate({
+        name: 'tags',
+        source: { type: NounType.Concept },
+        groupBy: [{ field: 'tags', unnest: true }],
+        metrics: { count: { op: 'count' } }
+      })
+      await b.add({ data: 'a', type: NounType.Concept, metadata: { tags: ['ml', 'ai'] } })
+      await b.add({ data: 'b', type: NounType.Concept, metadata: { tags: ['ai', 'rust'] } })
+      await b.add({ data: 'c', type: NounType.Concept, metadata: { tags: ['ai'] } })
+      await b.add({ data: 'd', type: NounType.Concept, metadata: { tags: ['rust', 'rust'] } }) // dup → once
+      await b.add({ data: 'e', type: NounType.Concept, metadata: {} })                          // no tags → no group
+      await b.flush()
+
+      const rows = await b.queryAggregate('tags', { orderBy: 'count', order: 'desc' })
+      const freq = Object.fromEntries(rows.map((r: any) => [r.groupKey.tags, r.count]))
+      expect(freq).toEqual({ ai: 3, rust: 2, ml: 1 })
+      await b.close()
+    })
+  })
 })
