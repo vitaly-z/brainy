@@ -141,8 +141,10 @@ git commit -m "chore(release): ${NEW_VERSION}"
 echo -e "${GREEN}✅ Release commit created${NC}\n"
 
 # Step 8: Create git tag
+# Annotated (-a) so `git push --follow-tags` below actually pushes it. A lightweight tag is
+# skipped by --follow-tags, which leaves the tag local-only and makes `gh release create` fail.
 echo -e "${BLUE}7️⃣  Creating git tag v${NEW_VERSION}...${NC}"
-git tag "v${NEW_VERSION}"
+git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
 echo -e "${GREEN}✅ Tag created${NC}\n"
 
 # Step 9: Push to GitHub
