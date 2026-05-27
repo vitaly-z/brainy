@@ -402,6 +402,122 @@ export class OPFSStorage extends BaseStorage {
     }
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+
+  /**
+   * Resolve a blob key to its OPFS path under the shared `_blobs/` prefix, e.g.
+   * `"graph-lsm/source/sstable-123"` →
+   * `["_blobs", "graph-lsm", "source", "sstable-123.bin"]` (returned as segments
+   * to navigate the OPFS directory tree). Mirrors the on-disk convention used by
+   * filesystem storage.
+   *
+   * @param key - The blob key.
+   * @returns Path segments for the blob, including the trailing `.bin` filename.
+   * @private
+   */
+  private blobPathSegments(key: string): string[] {
+    const parts = key.split('/')
+    const filename = parts.pop()! + '.bin'
+    return ['_blobs', ...parts, filename]
+  }
+
+  /**
+   * Store a raw binary blob in OPFS under `key`, writing the bytes verbatim (no
+   * JSON envelope). Parent directories are created on demand. Overwrites any
+   * existing blob at the same key.
+   *
+   * @param key - The blob key.
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    await this.ensureInitialized()
+
+    const segments = this.blobPathSegments(key)
+    const filename = segments.pop()!
+
+    let currentDir = this.rootDir!
+    for (const dirName of segments) {
+      currentDir = await currentDir.getDirectoryHandle(dirName, { create: true })
+    }
+
+    const fileHandle = await currentDir.getFileHandle(filename, { create: true })
+    const writable = await fileHandle.createWritable()
+    // Write a copy of the exact bytes; Uint8Array view keeps it binary-clean.
+    await writable.write(new Uint8Array(data))
+    await writable.close()
+  }
+
+  /**
+   * Load the raw bytes of the OPFS blob for `key`, or `null` if it does not
+   * exist.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    await this.ensureInitialized()
+
+    try {
+      const segments = this.blobPathSegments(key)
+      const filename = segments.pop()!
+
+      let currentDir = this.rootDir!
+      for (const dirName of segments) {
+        currentDir = await currentDir.getDirectoryHandle(dirName)
+      }
+
+      const fileHandle = await currentDir.getFileHandle(filename)
+      const file = await fileHandle.getFile()
+      const arrayBuffer = await file.arrayBuffer()
+      return Buffer.from(arrayBuffer)
+    } catch (error: any) {
+      if (error.name === 'NotFoundError') {
+        return null
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Delete the OPFS blob for `key`. Missing blobs are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const segments = this.blobPathSegments(key)
+      const filename = segments.pop()!
+
+      let currentDir = this.rootDir!
+      for (const dirName of segments) {
+        currentDir = await currentDir.getDirectoryHandle(dirName)
+      }
+
+      await currentDir.removeEntry(filename)
+    } catch (error: any) {
+      if (error.name === 'NotFoundError') {
+        return
+      }
+      throw error
+    }
+  }
+
+  /**
+   * OPFS is browser-sandboxed storage with no real local filesystem path to
+   * mmap, so this always returns `null`. Callers must use {@link loadBinaryBlob}
+   * instead.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * Get multiple metadata objects in batches (CRITICAL: Prevents socket exhaustion)
    * OPFS implementation uses controlled concurrency for file operations

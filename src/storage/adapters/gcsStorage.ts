@@ -1036,6 +1036,93 @@ export class GcsStorage extends BaseStorage {
     }
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+
+  /**
+   * Map a blob key to its GCS object name under the shared `_blobs/` prefix, e.g.
+   * `"graph-lsm/source/sstable-123"` → `"_blobs/graph-lsm/source/sstable-123.bin"`.
+   *
+   * @param key - The blob key.
+   * @returns The GCS object name for the blob.
+   * @private
+   */
+  private blobObjectKey(key: string): string {
+    return `_blobs/${key}.bin`
+  }
+
+  /**
+   * Store a raw binary blob as a GCS object, writing the bytes verbatim with
+   * `application/octet-stream` content type. Overwrites any existing blob at the
+   * same key.
+   *
+   * @param key - The blob key.
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    await this.ensureInitialized()
+    await this.ensureValidatedForWrite()
+
+    const file = this.bucket!.file(this.blobObjectKey(key))
+    await file.save(data, {
+      contentType: 'application/octet-stream',
+      resumable: false
+    })
+  }
+
+  /**
+   * Load the raw bytes of the GCS blob object for `key`, or `null` if it does not
+   * exist.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    await this.ensureInitialized()
+
+    try {
+      const file = this.bucket!.file(this.blobObjectKey(key))
+      const [contents] = await file.download()
+      return Buffer.from(contents)
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null
+      }
+      throw BrainyError.fromError(error, `loadBinaryBlob(${key})`)
+    }
+  }
+
+  /**
+   * Delete the GCS blob object for `key`. Missing objects are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const file = this.bucket!.file(this.blobObjectKey(key))
+      await file.delete()
+    } catch (error: any) {
+      if (error.code === 404) {
+        return
+      }
+      throw new Error(`Failed to delete blob ${key}: ${error}`)
+    }
+  }
+
+  /**
+   * GCS is a remote object store with no local filesystem path to mmap, so this
+   * always returns `null`. Callers must use {@link loadBinaryBlob} instead.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * List all objects under a specific prefix in GCS
    * Primitive operation required by base class

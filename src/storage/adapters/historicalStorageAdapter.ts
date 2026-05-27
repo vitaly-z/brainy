@@ -264,6 +264,81 @@ export class HistoricalStorageAdapter extends BaseStorage {
     )
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive (read-only)
+  // ===========================================================================
+
+  /**
+   * WRITE BLOCKED: Historical storage is read-only.
+   *
+   * @param key - The blob key (unused; included for the error message).
+   * @throws Always — historical state is immutable.
+   */
+  public async saveBinaryBlob(key: string, _data: Buffer): Promise<void> {
+    throw new Error(
+      `Historical storage is read-only. Cannot save binary blob: ${key}`
+    )
+  }
+
+  /**
+   * Load the raw bytes of a binary blob from the historical commit state by
+   * walking the commit tree for the blob entry at `_blobs/<key>.bin` and reading
+   * its content-addressed bytes verbatim (no JSON decode). Returns `null` if the
+   * blob was not present in this commit.
+   *
+   * @param key - The blob key (same convention as the live adapters).
+   * @returns The blob bytes as stored at this commit, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    try {
+      const { CommitObject } = await import('../cow/CommitObject.js')
+      const { TreeObject } = await import('../cow/TreeObject.js')
+      const { isNullHash } = await import('../cow/constants.js')
+
+      const commit = await CommitObject.read(this.blobStorage!, this.commitId)
+      if (isNullHash(commit.tree)) {
+        return null
+      }
+
+      const tree = await TreeObject.read(this.blobStorage!, commit.tree)
+      const blobName = `_blobs/${key}.bin`
+
+      for await (const entry of TreeObject.walk(this.blobStorage!, tree)) {
+        if (entry.type === 'blob' && entry.name === blobName) {
+          return await this.blobStorage!.read(entry.hash)
+        }
+      }
+
+      return null
+    } catch (error) {
+      // Blob not present in historical state
+      return null
+    }
+  }
+
+  /**
+   * DELETE BLOCKED: Historical storage is read-only.
+   *
+   * @param key - The blob key (unused; included for the error message).
+   * @throws Always — historical state is immutable.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    throw new Error(
+      `Historical storage is read-only. Cannot delete binary blob: ${key}`
+    )
+  }
+
+  /**
+   * Historical state lives in the content-addressed commit store, not on the
+   * local filesystem, so there is no mmap-able path. Always returns `null`.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * Get storage statistics from historical commit
    */

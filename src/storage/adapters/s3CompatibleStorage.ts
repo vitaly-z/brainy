@@ -1961,6 +1961,126 @@ export class S3CompatibleStorage extends BaseStorage {
     }
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+
+  /**
+   * Map a blob key to its S3 object key under the shared `_blobs/` prefix, e.g.
+   * `"graph-lsm/source/sstable-123"` → `"_blobs/graph-lsm/source/sstable-123.bin"`.
+   * Matches the on-disk convention used by filesystem storage so the same logical
+   * key resolves consistently across backends.
+   *
+   * @param key - The blob key.
+   * @returns The S3 object key for the blob.
+   * @private
+   */
+  private blobObjectKey(key: string): string {
+    return `_blobs/${key}.bin`
+  }
+
+  /**
+   * Store a raw binary blob as an S3 object, writing the bytes verbatim with
+   * `application/octet-stream` content type (no JSON envelope, no base64).
+   * Overwrites any existing blob at the same key.
+   *
+   * @param key - The blob key.
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    await this.ensureInitialized()
+    await this.ensureValidatedForWrite()
+
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+    await this.s3Client!.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: this.blobObjectKey(key),
+        Body: data,
+        ContentType: 'application/octet-stream'
+      })
+    )
+  }
+
+  /**
+   * Load the raw bytes of the S3 blob object for `key`, or `null` if it does not
+   * exist.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    await this.ensureInitialized()
+
+    try {
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+      const response = await this.s3Client!.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: this.blobObjectKey(key)
+        })
+      )
+      if (!response || !response.Body) {
+        return null
+      }
+      const bytes = await response.Body.transformToByteArray()
+      return Buffer.from(bytes)
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchKey' ||
+        (error.message &&
+          (error.message.includes('NoSuchKey') ||
+            error.message.includes('not found') ||
+            error.message.includes('does not exist')))
+      ) {
+        return null
+      }
+      throw BrainyError.fromError(error, `loadBinaryBlob(${key})`)
+    }
+  }
+
+  /**
+   * Delete the S3 blob object for `key`. Missing objects are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    await this.ensureInitialized()
+    await this.ensureValidatedForWrite()
+
+    try {
+      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3')
+      await this.s3Client!.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: this.blobObjectKey(key)
+        })
+      )
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchKey' ||
+        (error.message &&
+          (error.message.includes('NoSuchKey') ||
+            error.message.includes('not found') ||
+            error.message.includes('does not exist')))
+      ) {
+        return
+      }
+      throw new Error(`Failed to delete blob ${key}: ${error}`)
+    }
+  }
+
+  /**
+   * S3 is a remote object store with no local filesystem path to mmap, so this
+   * always returns `null`. Callers must use {@link loadBinaryBlob} instead.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * Batch delete multiple objects from S3-compatible storage
    * Deletes up to 1000 objects per batch (S3 limit)
