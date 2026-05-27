@@ -6,6 +6,7 @@
 
 import { StorageAdapter, resolveEntityField } from '../coreTypes.js'
 import { ColumnStore } from '../indexes/columnStore/ColumnStore.js'
+import type { MetadataIndexProvider } from '../plugin.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
 import { compareCodePoints } from './collation.js'
 import { prodLog } from './logger.js'
@@ -103,7 +104,12 @@ interface FieldStats {
   normalizationStrategy?: 'none' | 'precision' | 'bucket'
 }
 
-export class MetadataIndexManager {
+/**
+ * Implements {@link MetadataIndexProvider}: the metadata-index surface Brainy
+ * calls on whatever the `'metadataIndex'` provider resolves to (its own
+ * manager, or Cortex's native Rust engine).
+ */
+export class MetadataIndexManager implements MetadataIndexProvider {
   private storage: StorageAdapter
   private config: Required<MetadataIndexConfig>
   private isRebuilding = false

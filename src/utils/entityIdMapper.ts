@@ -14,6 +14,7 @@
  */
 
 import type { StorageAdapter } from '../coreTypes.js'
+import type { EntityIdMapperProvider } from '../plugin.js'
 
 export interface EntityIdMapperOptions {
   storage: StorageAdapter
@@ -27,9 +28,12 @@ export interface EntityIdMapperData {
 }
 
 /**
- * Maps entity UUIDs to integer IDs for use with Roaring Bitmaps
+ * Maps entity UUIDs to integer IDs for use with Roaring Bitmaps.
+ *
+ * Implements {@link EntityIdMapperProvider}: the surface a registered
+ * `'entityIdMapper'` provider (e.g. Cortex's native mapper) must also satisfy.
  */
-export class EntityIdMapper {
+export class EntityIdMapper implements EntityIdMapperProvider {
   private storage: StorageAdapter
   private storageKey: string
 

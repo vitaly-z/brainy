@@ -17,6 +17,7 @@ import {
   type MemoryInfo,
   type CacheAllocationStrategy
 } from './memoryDetection.js'
+import type { CacheProvider } from '../plugin.js'
 
 export interface CacheItem {
   key: string
@@ -57,7 +58,14 @@ export interface UnifiedCacheConfig {
   memoryCheckInterval?: number
 }
 
-export class UnifiedCache {
+/**
+ * Single cost-aware cache for HNSW and MetadataIndex.
+ *
+ * Implements {@link CacheProvider}: the surface Brainy calls on whatever cache
+ * is installed as the global cache (its own instance, or a registered
+ * `'cache'` provider such as Cortex's native eviction engine).
+ */
+export class UnifiedCache implements CacheProvider {
   private cache = new Map<string, CacheItem>()
   private access = new Map<string, number>()  // Access counts
   private loadingPromises = new Map<string, Promise<any>>()

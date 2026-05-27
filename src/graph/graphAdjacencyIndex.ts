@@ -12,6 +12,7 @@ import { GraphVerb, StorageAdapter } from '../coreTypes.js'
 import { UnifiedCache, getGlobalCache } from '../utils/unifiedCache.js'
 import { prodLog } from '../utils/logger.js'
 import { LSMTree } from './lsm/LSMTree.js'
+import type { GraphIndexProvider } from '../plugin.js'
 
 export interface GraphIndexConfig {
   maxIndexSize?: number      // Default: 100000
@@ -36,7 +37,7 @@ export interface GraphIndexStats {
  * Memory efficient: 385x less memory (1.3GB vs 500GB for 1B relationships)
  * Performance: Sub-5ms neighbor lookups with bloom filter optimization
  */
-export class GraphAdjacencyIndex {
+export class GraphAdjacencyIndex implements GraphIndexProvider {
   // LSM-tree storage for outgoing and incoming edges
   private lsmTreeSource: LSMTree  // sourceId -> targetIds (outgoing edges)
   private lsmTreeTarget: LSMTree  // targetId -> sourceIds (incoming edges)

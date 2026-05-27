@@ -17,6 +17,7 @@ import { getGlobalCache, UnifiedCache } from '../utils/unifiedCache.js'
 import { prodLog } from '../utils/logger.js'
 import { quantizeSQ8, distanceSQ8 } from '../utils/vectorQuantization.js'
 import type { SQ8QuantizedVector } from '../utils/vectorQuantization.js'
+import type { HnswProvider } from '../plugin.js'
 
 // Default HNSW parameters
 const DEFAULT_CONFIG: HNSWConfig = {
@@ -26,7 +27,12 @@ const DEFAULT_CONFIG: HNSWConfig = {
   ml: 16 // Max level
 }
 
-export class HNSWIndex {
+/**
+ * Implements {@link HnswProvider}: the vector-index surface Brainy calls on
+ * whatever the `'hnsw'` factory returns (its own `HNSWIndex`, or Cortex's
+ * native engine).
+ */
+export class HNSWIndex implements HnswProvider {
   private nouns: Map<string, HNSWNoun> = new Map()
   private entryPointId: string | null = null
   private maxLevel = 0
