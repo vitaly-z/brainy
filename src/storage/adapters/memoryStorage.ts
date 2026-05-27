@@ -30,6 +30,11 @@ export class MemoryStorage extends BaseStorage {
   // Unified object store for primitive operations (replaces metadata, nounMetadata, verbMetadata)
   private objectStore: Map<string, any> = new Map()
 
+  // Raw binary-blob store, keyed by blob key. Holds opaque byte payloads
+  // (column-store segments, batch vectors) verbatim — no JSON envelope. In-memory
+  // storage has no local file, so getBinaryBlobPath() returns null.
+  private blobStore: Map<string, Buffer> = new Map()
+
   // Backward compatibility aliases
   private get metadata(): Map<string, any> {
     return this.objectStore
@@ -136,6 +141,54 @@ export class MemoryStorage extends BaseStorage {
     return paths.sort()
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+
+  /**
+   * Persist a raw binary blob in memory under `key`. A defensive copy of the
+   * bytes is stored so later mutations to the caller's buffer don't corrupt the
+   * stored blob. Overwrites any existing blob at the same key.
+   *
+   * @param key - The blob key.
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    this.blobStore.set(key, Buffer.from(data))
+  }
+
+  /**
+   * Load a copy of the bytes stored under `key`, or `null` if absent. A copy is
+   * returned so callers cannot mutate the stored blob in place.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    const data = this.blobStore.get(key)
+    return data ? Buffer.from(data) : null
+  }
+
+  /**
+   * Delete the blob stored under `key`. Missing blobs are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    this.blobStore.delete(key)
+  }
+
+  /**
+   * In-memory storage has no local filesystem path to mmap, so this always
+   * returns `null`. Callers must use {@link loadBinaryBlob} instead.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * Get multiple metadata objects in batches (CRITICAL: Prevents socket exhaustion)
    * Memory storage implementation is simple since all data is already in memory
@@ -163,6 +216,7 @@ export class MemoryStorage extends BaseStorage {
    */
   public async clear(): Promise<void> {
     this.objectStore.clear()
+    this.blobStore.clear()
     this.statistics = null
     this.totalNounCount = 0
     this.totalVerbCount = 0

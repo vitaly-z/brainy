@@ -879,6 +879,52 @@ export interface StorageAdapter {
   }>
 
   /**
+   * Persist a raw binary blob under `key`, writing the bytes verbatim with no
+   * JSON envelope and no base64 inflation. Overwrites any existing blob at the
+   * same key. On filesystem-backed adapters the write is atomic (temp + rename).
+   *
+   * This is the zero-copy / mmap-friendly counterpart to the JSON object
+   * primitives — intended for column-store segments and batch vector payloads
+   * where base64-in-JSON would inflate size ~33% and force full materialization.
+   *
+   * @param key - Logical blob key; "/"-separated segments nest under the
+   *   adapter's `_blobs/` prefix (e.g. `"graph-lsm/source/sstable-123"`).
+   * @param data - The exact bytes to store.
+   */
+  saveBinaryBlob(key: string, data: Buffer): Promise<void>
+
+  /**
+   * Load the raw bytes stored under `key`, byte-identical to what was saved, or
+   * `null` if no blob exists at that key.
+   *
+   * @param key - The blob key used when saving.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  loadBinaryBlob(key: string): Promise<Buffer | null>
+
+  /**
+   * Delete the blob stored under `key`. Missing blobs are ignored, so delete is
+   * idempotent.
+   *
+   * @param key - The blob key to delete.
+   */
+  deleteBinaryBlob(key: string): Promise<void>
+
+  /**
+   * Resolve `key` to a real local filesystem path that native code can `mmap`
+   * directly, or `null` when this backend has no local file for the blob.
+   *
+   * Filesystem storage returns the on-disk path; remote object stores, in-memory
+   * storage, browser (OPFS) storage, and historical (read-only) storage return
+   * `null`. `null` is correct behavior for those backends, not a fallback —
+   * callers must fall back to {@link loadBinaryBlob} when no path is available.
+   *
+   * @param key - The blob key.
+   * @returns An absolute local filesystem path, or `null` if none exists.
+   */
+  getBinaryBlobPath(key: string): string | null
+
+  /**
    * Save statistics data
    * @param statistics The statistics data to save
    */

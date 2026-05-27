@@ -1007,6 +1007,92 @@ export class AzureBlobStorage extends BaseStorage {
     }
   }
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+
+  /**
+   * Map a blob key to its Azure blob name under the shared `_blobs/` prefix, e.g.
+   * `"graph-lsm/source/sstable-123"` → `"_blobs/graph-lsm/source/sstable-123.bin"`.
+   *
+   * @param key - The blob key.
+   * @returns The Azure blob name for the blob.
+   * @private
+   */
+  private blobObjectKey(key: string): string {
+    return `_blobs/${key}.bin`
+  }
+
+  /**
+   * Store a raw binary blob as an Azure block blob, writing the bytes verbatim
+   * with `application/octet-stream` content type. Overwrites any existing blob at
+   * the same key.
+   *
+   * @param key - The blob key.
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    await this.ensureInitialized()
+    await this.ensureValidatedForWrite()
+
+    const blockBlobClient = this.containerClient!.getBlockBlobClient(this.blobObjectKey(key))
+    await blockBlobClient.upload(data, data.length, {
+      blobHTTPHeaders: { blobContentType: 'application/octet-stream' }
+    })
+  }
+
+  /**
+   * Load the raw bytes of the Azure blob for `key`, or `null` if it does not
+   * exist.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    await this.ensureInitialized()
+
+    try {
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(this.blobObjectKey(key))
+      const downloadResponse = await blockBlobClient.download(0)
+      return await this.streamToBuffer(downloadResponse.readableStreamBody!)
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        return null
+      }
+      throw BrainyError.fromError(error, `loadBinaryBlob(${key})`)
+    }
+  }
+
+  /**
+   * Delete the Azure blob for `key`. Missing blobs are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    await this.ensureInitialized()
+
+    try {
+      const blockBlobClient = this.containerClient!.getBlockBlobClient(this.blobObjectKey(key))
+      await blockBlobClient.delete()
+    } catch (error: any) {
+      if (error.statusCode === 404 || error.code === 'BlobNotFound') {
+        return
+      }
+      throw new Error(`Failed to delete blob ${key}: ${error}`)
+    }
+  }
+
+  /**
+   * Azure Blob Storage is remote with no local filesystem path to mmap, so this
+   * always returns `null`. Callers must use {@link loadBinaryBlob} instead.
+   *
+   * @param _key - The blob key (unused).
+   * @returns Always `null`.
+   */
+  public getBinaryBlobPath(_key: string): string | null {
+    return null
+  }
+
   /**
    * Batch delete multiple blobs from Azure Blob Storage
    * Deletes up to 256 blobs per batch (Azure limit)

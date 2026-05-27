@@ -2123,6 +2123,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected abstract listObjectsUnderPath(prefix: string): Promise<string[]>
 
+  // Raw binary-blob primitive (saveBinaryBlob/loadBinaryBlob/deleteBinaryBlob/
+  // getBinaryBlobPath) is declared abstract on BaseStorageAdapter — the class
+  // that `implements StorageAdapter` — alongside the other public storage
+  // methods. Each concrete adapter implements it. See BaseStorageAdapter for the
+  // contract and the shared `_blobs/<key>.bin` key→location convention.
+
   /**
    * Save metadata to storage (now typed)
    * Routes to correct location (system or entity) based on key format

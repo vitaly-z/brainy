@@ -129,6 +129,84 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
     details?: Record<string, any>
   }>
 
+  // ===========================================================================
+  // Raw binary-blob primitive
+  // ===========================================================================
+  //
+  // A first-class storage primitive for opaque byte payloads that must NOT be
+  // wrapped in a JSON envelope. The JSON object path base64-encodes binary data,
+  // inflating it ~33% and forcing full in-memory materialization on every read.
+  // Blobs side-step that: bytes are written and read verbatim.
+  //
+  // This unblocks zero-copy, mmap-able column-store segments and batch vector
+  // I/O at billion scale. On filesystem-backed adapters `getBinaryBlobPath`
+  // returns a real local path so native code (Rust) can mmap the file directly.
+  //
+  // Blob key → location convention (shared by every adapter so cross-language
+  // and cross-adapter consumers agree on exactly where a blob lives):
+  //
+  //   key                            location
+  //   "graph-lsm/source/sstable-123" "<root>/_blobs/graph-lsm/source/sstable-123.bin"
+  //
+  // i.e. the key's "/"-separated segments are nested under a `_blobs/` prefix and
+  // suffixed with `.bin`. Blobs are deliberately NOT branch-scoped (COW): they
+  // are immutable, content-addressed segments managed by their producer,
+  // mirroring how COW metadata under `_cow/` is also kept global.
+
+  /**
+   * Persist a raw binary blob under `key`, writing the bytes verbatim (no JSON
+   * envelope, no base64). Overwrites any existing blob at the same key. Where the
+   * backend is a real filesystem the write is atomic (temp file + rename) so a
+   * concurrent reader never observes a torn write.
+   *
+   * @param key - Logical blob key. "/"-separated segments map to nested
+   *   directories under the adapter's `_blobs/` prefix (e.g.
+   *   `"graph-lsm/source/sstable-123"`).
+   * @param data - The exact bytes to store.
+   * @returns Resolves once the blob is durably written.
+   * @example
+   * await storage.saveBinaryBlob('graph-lsm/source/sstable-7', segmentBytes)
+   */
+  abstract saveBinaryBlob(key: string, data: Buffer): Promise<void>
+
+  /**
+   * Load the raw bytes previously stored under `key`, or `null` if no blob
+   * exists at that key. The returned buffer is byte-identical to what was passed
+   * to {@link saveBinaryBlob}.
+   *
+   * @param key - The blob key used when saving.
+   * @returns The blob bytes, or `null` if absent.
+   * @example
+   * const bytes = await storage.loadBinaryBlob('graph-lsm/source/sstable-7')
+   * if (bytes) decodeSegment(bytes)
+   */
+  abstract loadBinaryBlob(key: string): Promise<Buffer | null>
+
+  /**
+   * Delete the blob stored under `key`. Missing blobs are ignored (no error) so
+   * delete is idempotent.
+   *
+   * @param key - The blob key to delete.
+   * @returns Resolves once the blob is gone (or was already absent).
+   */
+  abstract deleteBinaryBlob(key: string): Promise<void>
+
+  /**
+   * Resolve `key` to a real local filesystem path that native code can `mmap`
+   * directly, or `null` when this backend has no local file for the blob.
+   *
+   * Filesystem-backed adapters return the on-disk path (whether or not the file
+   * currently exists — the caller is expected to write before mapping). Remote
+   * object stores (S3, R2, GCS, Azure), in-memory storage, browser storage
+   * (OPFS), and the read-only historical adapter genuinely have no local path
+   * and therefore return `null`. A `null` here is correct behavior, not a
+   * fallback: callers must use {@link loadBinaryBlob} when no path is available.
+   *
+   * @param key - The blob key.
+   * @returns An absolute local filesystem path, or `null` if none exists.
+   */
+  abstract getBinaryBlobPath(key: string): string | null
+
   /**
    * Get optimal batch configuration for this storage adapter
    * Override in subclasses to provide storage-specific optimization

@@ -89,6 +89,10 @@ export class FileSystemStorage extends BaseStorage {
   private indexDir!: string  // Legacy - for backward compatibility
   private systemDir!: string
   private lockDir!: string
+  // Root for raw binary blobs (`<rootDir>/_blobs`). Blobs are stored verbatim
+  // (no JSON envelope, no compression) so native code can mmap them directly via
+  // getBinaryBlobPath(). Set in init() once the path module is loaded.
+  private blobsDir!: string
   private activeLocks: Set<string> = new Set()
   private lockTimers: Map<string, NodeJS.Timeout> = new Map()  // Track timers for cleanup
   private allTimers: Set<NodeJS.Timeout> = new Set()  // Track all timers for cleanup
@@ -213,6 +217,7 @@ export class FileSystemStorage extends BaseStorage {
       this.indexDir = path.join(this.rootDir, 'indexes')
       this.systemDir = path.join(this.rootDir, SYSTEM_DIR)
       this.lockDir = path.join(this.rootDir, 'locks')
+      this.blobsDir = path.join(this.rootDir, '_blobs')
 
       // Create the root directory if it doesn't exist
       await this.ensureDirectoryExists(this.rootDir)
@@ -241,6 +246,9 @@ export class FileSystemStorage extends BaseStorage {
 
       // Create the locks directory if it doesn't exist
       await this.ensureDirectoryExists(this.lockDir)
+
+      // Create the binary blobs directory if it doesn't exist
+      await this.ensureDirectoryExists(this.blobsDir)
 
       // Initialize count management
       this.countsFilePath = path.join(this.systemDir, 'counts.json')
@@ -944,6 +952,91 @@ export class FileSystemStorage extends BaseStorage {
       }
       throw error
     }
+  }
+
+  // ===========================================================================
+  // Raw binary-blob primitive (mmap-friendly)
+  // ===========================================================================
+
+  /**
+   * Resolve a blob key to its on-disk path under `<rootDir>/_blobs`.
+   *
+   * The key's "/"-separated segments become nested directories and the file is
+   * suffixed with `.bin`, e.g. `"graph-lsm/source/sstable-123"` →
+   * `<rootDir>/_blobs/graph-lsm/source/sstable-123.bin`. This convention is
+   * shared with cortex's `MmapFileSystemStorage` so native code and the TS layer
+   * agree on exactly where each blob lives.
+   *
+   * @param key - The blob key.
+   * @returns The absolute on-disk path for the blob.
+   * @private
+   */
+  private blobPath(key: string): string {
+    // `path` and `blobsDir` are populated in init(). If a caller resolves a blob
+    // path before init() (e.g. native code probing for a mmap target), fall back
+    // to a POSIX-style join off rootDir so this synchronous method never throws.
+    if (path && this.blobsDir) {
+      return path.join(this.blobsDir, ...key.split('/')) + '.bin'
+    }
+    return `${this.rootDir}/_blobs/${key}.bin`
+  }
+
+  /**
+   * Persist a raw binary blob verbatim under `key`, using an atomic
+   * temp-file + rename so concurrent readers never observe a torn write.
+   * Parent directories are created on demand.
+   *
+   * @param key - The blob key (see {@link getBinaryBlobPath} for the convention).
+   * @param data - The exact bytes to store.
+   */
+  public async saveBinaryBlob(key: string, data: Buffer): Promise<void> {
+    await this.ensureInitialized()
+    const filePath = this.blobPath(key)
+    await this.ensureDirectoryExists(path.dirname(filePath))
+    const tmpPath = filePath + '.tmp'
+    await fs.promises.writeFile(tmpPath, data)
+    await fs.promises.rename(tmpPath, filePath)
+  }
+
+  /**
+   * Load the raw bytes stored under `key`, or `null` if the blob does not exist.
+   *
+   * @param key - The blob key.
+   * @returns The blob bytes, or `null` if absent.
+   */
+  public async loadBinaryBlob(key: string): Promise<Buffer | null> {
+    await this.ensureInitialized()
+    try {
+      return await fs.promises.readFile(this.blobPath(key))
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Delete the blob stored under `key`. Missing blobs are ignored.
+   *
+   * @param key - The blob key.
+   */
+  public async deleteBinaryBlob(key: string): Promise<void> {
+    await this.ensureInitialized()
+    try {
+      await fs.promises.unlink(this.blobPath(key))
+    } catch {
+      /* ignore missing files */
+    }
+  }
+
+  /**
+   * Return the real on-disk path for `key` so native code can mmap the file
+   * directly. The path is returned whether or not the file currently exists —
+   * callers are expected to write before mapping.
+   *
+   * @param key - The blob key.
+   * @returns The absolute on-disk path (never `null` for filesystem storage).
+   */
+  public getBinaryBlobPath(key: string): string | null {
+    return this.blobPath(key)
   }
 
   /**
