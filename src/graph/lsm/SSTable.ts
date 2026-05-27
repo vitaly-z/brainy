@@ -17,6 +17,7 @@
 import { createHash } from 'node:crypto'
 import { encode as defaultEncode, decode as defaultDecode } from '@msgpack/msgpack'
 import { BloomFilter, SerializedBloomFilter } from './BloomFilter.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 // Swappable msgpack implementation — defaults to @msgpack/msgpack JS,
 // can be replaced with native msgpack (e.g., cortex's Rust-backed encoder)
@@ -181,8 +182,11 @@ export class SSTable {
    * @param id Unique ID for this SSTable
    */
   constructor(entries: SSTableEntry[], level: number = 0, id?: string) {
-    // Sort entries by sourceId for binary search
-    this.entries = entries.sort((a, b) => a.sourceId.localeCompare(b.sourceId))
+    // Sort entries by sourceId for binary search. Code-point (UTF-8 byte) order —
+    // deterministic across environments and identical to the native engine, unlike
+    // localeCompare. The zone map (isInRange) and binary search (get) below MUST use
+    // the same ordering or they will skip/miss entries.
+    this.entries = entries.sort((a, b) => compareCodePoints(a.sourceId, b.sourceId))
 
     // Calculate statistics
     const relationshipCount = entries.reduce(
@@ -243,8 +247,8 @@ export class SSTable {
     }
 
     return (
-      sourceId >= this.metadata.minSourceId &&
-      sourceId <= this.metadata.maxSourceId
+      compareCodePoints(sourceId, this.metadata.minSourceId) >= 0 &&
+      compareCodePoints(sourceId, this.metadata.maxSourceId) <= 0
     )
   }
 
@@ -271,7 +275,7 @@ export class SSTable {
     while (left <= right) {
       const mid = Math.floor((left + right) / 2)
       const entry = this.entries[mid]
-      const cmp = entry.sourceId.localeCompare(sourceId)
+      const cmp = compareCodePoints(entry.sourceId, sourceId)
 
       if (cmp === 0) {
         // Found it!

@@ -20,6 +20,7 @@
  */
 
 import type { COWStorageAdapter } from './BlobStorage.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 /**
  * Reference type
@@ -226,7 +227,7 @@ export class RefManager {
     // Mark cache as valid
     this.cacheValid = true
 
-    return refs.sort((a, b) => a.name.localeCompare(b.name))
+    return refs.sort((a, b) => compareCodePoints(a.name, b.name))
   }
 
   /**

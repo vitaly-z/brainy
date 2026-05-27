@@ -7,6 +7,7 @@
 import { StorageAdapter, resolveEntityField } from '../coreTypes.js'
 import { ColumnStore } from '../indexes/columnStore/ColumnStore.js'
 import { MetadataIndexCache, MetadataIndexCacheConfig } from './metadataIndexCache.js'
+import { compareCodePoints } from './collation.js'
 import { prodLog } from './logger.js'
 import { getGlobalCache, UnifiedCache } from './unifiedCache.js'
 import {
@@ -2109,7 +2110,16 @@ export class MetadataIndexManager {
       if (a.value == null) return order === 'asc' ? 1 : -1
       if (b.value == null) return order === 'asc' ? -1 : 1
       if (a.value === b.value) return 0
-      const comparison = a.value < b.value ? -1 : 1
+      // Numbers compare numerically; everything else by code-point (UTF-8 byte) order.
+      // This makes the JS fallback sort match cortex's native column store exactly
+      // (numeric i64/f64 vs code-point strings) and stay deterministic across
+      // environments, unlike the `<` operator's UTF-16 ordering for strings.
+      let comparison: number
+      if (typeof a.value === 'number' && typeof b.value === 'number') {
+        comparison = a.value < b.value ? -1 : 1
+      } else {
+        comparison = compareCodePoints(String(a.value), String(b.value))
+      }
       return order === 'asc' ? comparison : -comparison
     })
 

@@ -15,6 +15,7 @@
  */
 
 import { BlobStorage } from './BlobStorage.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 /**
  * Tree entry: name → blob hash mapping
@@ -98,7 +99,12 @@ export class TreeBuilder {
    */
   async build(): Promise<string> {
     const tree: TreeObject = {
-      entries: this.entries.sort((a, b) => a.name.localeCompare(b.name)),
+      // Code-point (UTF-8 byte) order so the serialized tree — and therefore its
+      // content hash — is reproducible across environments (localeCompare's default
+      // locale varies by OS/Node/ICU). Sorting happens only here at write time;
+      // deserialize() preserves stored order, so existing trees keep their hashes
+      // and stay valid — no migration needed.
+      entries: this.entries.sort((a, b) => compareCodePoints(a.name, b.name)),
       createdAt: Date.now()
     }
 
