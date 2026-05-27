@@ -96,31 +96,24 @@ export function dequantizeSQ8(quantized: Uint8Array, min: number, max: number): 
 }
 
 /**
- * Compute approximate cosine distance between two SQ8-quantized vectors.
+ * Reference JS implementation of {@link distanceSQ8}: approximate cosine distance
+ * between two SQ8-quantized vectors, operating directly on the uint8 arrays without
+ * full dequantization. Cosine distance is `1 - (A·B / (|A| · |B|))`; for quantized
+ * values `q_i` with codebook `(min, max)` the actual value is
+ * `min + q_i * (max - min) / 255`, and the dot product / norms are computed on the
+ * quantized values and rescaled by the codebook parameters.
  *
- * Operates directly on uint8 arrays without full dequantization.
- * Uses integer arithmetic where possible for speed.
+ * Exported so callers can explicitly restore the default after swapping in a native
+ * implementation, and so cross-language parity tests can compare native output
+ * against this baseline.
  *
- * Cosine distance = 1 - (A.B / (|A| * |B|))
- *
- * For quantized values q_i with codebook (min, max):
- *   actual_i = min + q_i * (max - min) / 255
- *
- * The dot product and norms can be computed on quantized values
- * and scaled by the codebook parameters.
- *
- * @param a - First quantized vector
- * @param aMin - First vector codebook minimum
- * @param aMax - First vector codebook maximum
- * @param b - Second quantized vector
- * @param bMin - Second vector codebook minimum
- * @param bMax - Second vector codebook maximum
- * @returns Approximate cosine distance [0, 2]
- */
-/**
- * Reference JS implementation of {@link distanceSQ8}. Exported so callers can
- * explicitly restore the default after swapping in a native implementation, and
- * so cross-language parity tests can compare native output against this baseline.
+ * @param a - First quantized vector.
+ * @param aMin - First vector's codebook minimum.
+ * @param aMax - First vector's codebook maximum.
+ * @param b - Second quantized vector.
+ * @param bMin - Second vector's codebook minimum.
+ * @param bMax - Second vector's codebook maximum.
+ * @returns Approximate cosine distance in [0, 2].
  */
 export function distanceSQ8Js(
   a: Uint8Array,
