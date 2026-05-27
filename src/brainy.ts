@@ -35,6 +35,7 @@ import { createPipeline } from './streaming/pipeline.js'
 import { configureLogger, LogLevel } from './utils/logger.js'
 import { setGlobalCache } from './utils/unifiedCache.js'
 import type { UnifiedCache } from './utils/unifiedCache.js'
+import { rankIndicesByScore, reorderByIndices } from './utils/resultRanking.js'
 import { PluginRegistry } from './plugin.js'
 import type { BrainyPlugin, BrainyPluginContext } from './plugin.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
@@ -508,6 +509,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       if (sq8DistanceProvider) {
         const { setSQ8DistanceImplementation } = await import('./utils/vectorQuantization.js')
         setSQ8DistanceImplementation(sq8DistanceProvider)
+      }
+
+      // Provider: sort:topK (e.g. cortex's native partial-sort / heap-select) — swaps the
+      // JS result-ranking used by find() to pick the top `offset + limit` rows. The provider
+      // returns indices into a scores array, ordered descending with stable ties, identical
+      // to the JS sortTopKIndicesJs. rankIndicesByScore validates the provider's output and
+      // falls back to JS on any inconsistency, so ranking is always correct.
+      const sortTopKProvider = this.pluginRegistry.getProvider<
+        (scores: number[], k: number, descending: boolean) => number[]
+      >('sort:topK')
+      if (sortTopKProvider) {
+        const { setSortTopKImplementation } = await import('./utils/resultRanking.js')
+        setSortTopKImplementation(sortTopKProvider)
       }
 
       // Provider: distance function (resolve BEFORE setupIndex — index uses this.distance)
@@ -2585,10 +2599,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           const limit = params.limit || 10
           const offset = params.offset || 0
 
-          // If we have enough filtered results, sort and paginate early
+          // If we have enough filtered results, sort and paginate early.
+          // Rank by score (top offset+limit), then drop the offset — identical ordering
+          // to a full `sort((a, b) => b.score - a.score)` + slice, but the native
+          // `sort:topK` provider can compute only the page instead of the full sort.
           if (results.length >= offset + limit) {
-            results.sort((a, b) => b.score - a.score)
-            results = results.slice(offset, offset + limit)
+            const k = offset + limit
+            const order = rankIndicesByScore(results.map(r => r.score), k, true)
+            results = reorderByIndices(results, order).slice(offset, k)
 
             // Batch-load entities only for the paginated results (10x faster on GCS)
             const idsToLoad = results.filter(r => !r.entity).map(r => r.id)
@@ -2693,8 +2711,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
         results = resultsWithValues.map(({ result }) => result)
       } else {
-        // Default: sort by relevance score
-        results.sort((a, b) => b.score - a.score)
+        // Default: sort by relevance score. Rank to the page (offset+limit) via the
+        // swappable sort:topK seam; the slice below drops the offset. Ordering is
+        // identical to a full `sort((a, b) => b.score - a.score)`.
+        const k = (params.offset || 0) + limit
+        const order = rankIndicesByScore(results.map(r => r.score), k, true)
+        results = reorderByIndices(results, order)
       }
 
       const finalOffset = params.offset || 0
