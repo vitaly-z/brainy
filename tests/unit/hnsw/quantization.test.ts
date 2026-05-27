@@ -10,12 +10,14 @@
  * - Config defaults: quantization disabled by default (no behavior change)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { v4 as uuidv4 } from 'uuid'
 import {
   quantizeSQ8,
   dequantizeSQ8,
   distanceSQ8,
+  distanceSQ8Js,
+  setSQ8DistanceImplementation,
   serializeSQ8,
   deserializeSQ8
 } from '../../../src/utils/vectorQuantization.js'
@@ -27,6 +29,47 @@ import { MemoryStorage } from '../../../src/storage/adapters/memoryStorage.js'
 function randomVector(dim: number): number[] {
   return Array.from({ length: dim }, () => Math.random() * 2 - 1)
 }
+
+describe('SQ8 distance provider hook (setSQ8DistanceImplementation)', () => {
+  const q1 = quantizeSQ8([0.1, 0.5, -0.3, 0.8])
+  const q2 = quantizeSQ8([0.2, 0.4, -0.1, 0.7])
+
+  // Always restore the JS default so a swapped impl never leaks into other tests.
+  afterEach(() => setSQ8DistanceImplementation(distanceSQ8Js))
+
+  it('dispatches to the JS implementation by default (identical result)', () => {
+    const viaDispatcher = distanceSQ8(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)
+    const viaJs = distanceSQ8Js(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)
+    expect(viaDispatcher).toBe(viaJs)
+    expect(viaDispatcher).toBeGreaterThanOrEqual(0)
+    expect(viaDispatcher).toBeLessThanOrEqual(2)
+  })
+
+  it('routes through a swapped implementation with the cortex 6-arg signature', () => {
+    const calls: Array<[Uint8Array, number, number, Uint8Array, number, number]> = []
+    setSQ8DistanceImplementation((a, aMin, aMax, b, bMin, bMax) => {
+      calls.push([a, aMin, aMax, b, bMin, bMax])
+      return 0.4242
+    })
+    const result = distanceSQ8(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)
+    expect(result).toBe(0.4242)
+    expect(calls).toHaveLength(1)
+    // Exactly the arguments cortex's native cosineDistanceSq8(a, aMin, aMax, b, bMin, bMax) expects.
+    expect(calls[0][0]).toBe(q1.quantized)
+    expect(calls[0][1]).toBe(q1.min)
+    expect(calls[0][3]).toBe(q2.quantized)
+    expect(calls[0][5]).toBe(q2.max)
+  })
+
+  it('restores the JS default when set back', () => {
+    setSQ8DistanceImplementation(() => -999)
+    expect(distanceSQ8(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)).toBe(-999)
+    setSQ8DistanceImplementation(distanceSQ8Js)
+    expect(distanceSQ8(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)).toBe(
+      distanceSQ8Js(q1.quantized, q1.min, q1.max, q2.quantized, q2.min, q2.max)
+    )
+  })
+})
 
 // Helper: cosine distance for float32 vectors (reference implementation)
 function cosineDistance(a: number[], b: number[]): number {

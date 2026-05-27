@@ -499,6 +499,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         setMsgpackImplementation(msgpackProvider)
       }
 
+      // Provider: native SQ8 approximate distance (e.g. cortex's Rust SIMD) — swaps
+      // the JS quantized-distance used in HNSW SQ8 reranking. Signature is
+      // byte-compatible with the JS distanceSQ8; falls back to JS when absent.
+      const sq8DistanceProvider = this.pluginRegistry.getProvider<
+        (a: Uint8Array, aMin: number, aMax: number, b: Uint8Array, bMin: number, bMax: number) => number
+      >('distance:sq8')
+      if (sq8DistanceProvider) {
+        const { setSQ8DistanceImplementation } = await import('./utils/vectorQuantization.js')
+        setSQ8DistanceImplementation(sq8DistanceProvider)
+      }
+
       // Provider: distance function (resolve BEFORE setupIndex — index uses this.distance)
       const nativeDistance = this.pluginRegistry.getProvider<DistanceFunction>('distance')
       if (nativeDistance) {

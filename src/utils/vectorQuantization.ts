@@ -117,7 +117,12 @@ export function dequantizeSQ8(quantized: Uint8Array, min: number, max: number): 
  * @param bMax - Second vector codebook maximum
  * @returns Approximate cosine distance [0, 2]
  */
-export function distanceSQ8(
+/**
+ * Reference JS implementation of {@link distanceSQ8}. Exported so callers can
+ * explicitly restore the default after swapping in a native implementation, and
+ * so cross-language parity tests can compare native output against this baseline.
+ */
+export function distanceSQ8Js(
   a: Uint8Array,
   aMin: number,
   aMax: number,
@@ -183,6 +188,59 @@ export function distanceSQ8(
   const cosine = dot / (normA * normB)
   // Clamp to [-1, 1] to handle floating point imprecision
   return 1 - Math.max(-1, Math.min(1, cosine))
+}
+
+/** Signature of the SQ8 approximate-distance function (quantized cosine distance). */
+export type SQ8DistanceFn = (
+  a: Uint8Array,
+  aMin: number,
+  aMax: number,
+  b: Uint8Array,
+  bMin: number,
+  bMax: number
+) => number
+
+/**
+ * Active SQ8 distance implementation. Defaults to the JS `distanceSQ8Js`; swapped to
+ * a native SIMD implementation by {@link setSQ8DistanceImplementation} when a cortex
+ * `distance:sq8` provider is registered. The native implementation is byte-compatible
+ * (same quantized cosine formula), so results match within float tolerance.
+ */
+let activeSQ8Distance: SQ8DistanceFn = distanceSQ8Js
+
+/**
+ * Approximate cosine distance between two SQ8-quantized vectors, dispatched to the
+ * active implementation (JS by default, native when a `distance:sq8` provider is
+ * registered). Used in the HNSW SQ8 reranking hot path.
+ *
+ * @param a - First quantized vector.
+ * @param aMin - First vector's codebook minimum.
+ * @param aMax - First vector's codebook maximum.
+ * @param b - Second quantized vector.
+ * @param bMin - Second vector's codebook minimum.
+ * @param bMax - Second vector's codebook maximum.
+ * @returns Approximate cosine distance in [0, 2].
+ */
+export function distanceSQ8(
+  a: Uint8Array,
+  aMin: number,
+  aMax: number,
+  b: Uint8Array,
+  bMin: number,
+  bMax: number
+): number {
+  return activeSQ8Distance(a, aMin, aMax, b, bMin, bMax)
+}
+
+/**
+ * Replace the SQ8 approximate-distance implementation at runtime (e.g. cortex's Rust
+ * SIMD `distance:sq8`). Called by `brainy.ts` when the provider is registered. Pass
+ * {@link distanceSQ8Js} to restore the JS default.
+ *
+ * @param fn - Native implementation; must match {@link SQ8DistanceFn} byte-for-byte.
+ */
+export function setSQ8DistanceImplementation(fn: SQ8DistanceFn): void {
+  activeSQ8Distance = fn
 }
 
 /**
