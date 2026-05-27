@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.25.0](https://github.com/soulcraftlabs/brainy/compare/v7.24.0...v7.25.0) (2026-05-27)
+
+- docs: remove stale distanceSQ8 JSDoc left by the SQ8 hook refactor (6099101)
+- feat: export provider contracts for the plugin surface brainy consumes (4b6f63e)
+- feat: hook native sort:topK provider into search result ranking (46fc7f2)
+- feat: hook native SQ8 distance provider into HNSW reranking (00d14cf)
+- merge: storage binary-blob primitive across all adapters (e23361c)
+- fix: code-point string collation in LSM SSTable, COW trees/refs, sorted queries (7493d8e)
+- feat(storage): add raw binary-blob primitive to every storage adapter (298b572)
+- fix: deterministic code-point string collation for column store + aggregation (547721a)
+- feat: exact percentile and distinctCount aggregation ops (fe4f5df)
+
+
 ### [7.24.0](https://github.com/soulcraftlabs/brainy/compare/v7.23.0...v7.24.0) (2026-05-26)
 
 - feat: array-unnest groupBy for aggregates + batch-embed entity extraction (c2e21b7)
