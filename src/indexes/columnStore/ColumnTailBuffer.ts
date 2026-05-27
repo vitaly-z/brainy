@@ -12,6 +12,7 @@
  */
 
 import { ValueType, DEFAULT_FLUSH_THRESHOLD } from './types.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 /**
  * Entry in the tail buffer: a (value, entityIntId) pair.
@@ -131,7 +132,7 @@ export class ColumnTailBuffer {
     const sorted = this.entries.slice()
     if (this.valueType === ValueType.String) {
       sorted.sort((a, b) => {
-        const cmp = String(a.value).localeCompare(String(b.value))
+        const cmp = compareCodePoints(String(a.value), String(b.value))
         return cmp !== 0 ? cmp : a.entityIntId - b.entityIntId
       })
     } else {

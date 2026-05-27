@@ -14,6 +14,7 @@
 import type { SegmentHeader } from './types.js'
 import { ValueType } from './types.js'
 import type { RoaringBitmap32 } from '../../utils/roaring/index.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 /**
  * Binary search result.
@@ -100,7 +101,7 @@ export class ColumnSegmentCursor {
     while (lo < hi) {
       const mid = (lo + hi) >>> 1
       const cmp = isString
-        ? String(this.values[mid]).localeCompare(String(target))
+        ? compareCodePoints(String(this.values[mid]), String(target))
         : (this.values[mid] as number) - (target as number)
 
       if (cmp < 0) {
@@ -136,7 +137,7 @@ export class ColumnSegmentCursor {
     while (endLo < endHi) {
       const mid = (endLo + endHi) >>> 1
       const cmp = isString
-        ? String(this.values[mid]).localeCompare(String(hi))
+        ? compareCodePoints(String(this.values[mid]), String(hi))
         : (this.values[mid] as number) - (hi as number)
       if (cmp <= 0) {
         endLo = mid + 1

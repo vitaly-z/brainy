@@ -26,6 +26,7 @@ import type {
   MetricState
 } from '../types/brainy.types.js'
 import { matchesMetadataFilter } from '../utils/metadataFilter.js'
+import { compareCodePoints } from '../utils/collation.js'
 import { bucketTimestamp } from './timeWindows.js'
 import { NounType } from '../types/graphTypes.js'
 
@@ -685,7 +686,7 @@ export class AggregationIndex {
         if (typeof aVal === 'number' && typeof bVal === 'number') {
           return (aVal - bVal) * dir
         }
-        return String(aVal).localeCompare(String(bVal)) * dir
+        return compareCodePoints(String(aVal), String(bVal)) * dir
       })
     }
 

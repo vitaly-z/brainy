@@ -30,6 +30,7 @@ import { ColumnManifest } from './ColumnManifest.js'
 import { ColumnSegmentCursor, TailBufferCursor, type CursorEntry } from './ColumnSegmentCursor.js'
 import { writeSegmentToBuffer, readSegmentFromBuffer } from './ColumnSegmentFormat.js'
 import { RoaringBitmap32 } from '../../utils/roaring/index.js'
+import { compareCodePoints } from '../../utils/collation.js'
 
 /**
  * Configuration for the ColumnStore.
@@ -554,7 +555,7 @@ export class ColumnStore implements ColumnStoreProvider {
     // Sort a copy for the cursor
     const sorted = entries.slice().sort((a, b) => {
       if (valueType === ValueType.String) {
-        return String(a.value).localeCompare(String(b.value))
+        return compareCodePoints(String(a.value), String(b.value))
       }
       return (a.value as number) - (b.value as number)
     })
@@ -615,7 +616,7 @@ export class ColumnStore implements ColumnStoreProvider {
     const compare = (a: HeapEntry, b: HeapEntry): number => {
       let cmp: number
       if (isString) {
-        cmp = String(a.value).localeCompare(String(b.value))
+        cmp = compareCodePoints(String(a.value), String(b.value))
       } else {
         cmp = (a.value as number) - (b.value as number)
       }
