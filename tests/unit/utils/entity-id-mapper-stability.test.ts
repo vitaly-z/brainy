@@ -22,7 +22,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { Brainy } from '../../src/brainy.js'
+import { Brainy } from '../../../src/brainy.js'
 
 const DIM = 384
 const makeVec = (seed = 1) =>

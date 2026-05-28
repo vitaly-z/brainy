@@ -254,6 +254,55 @@ export interface CacheProvider {
 // added here to avoid a duplicate, unwired contract.
 
 /**
+ * The `'vectorStore:mmap'` provider — a static factory class for an mmap-backed
+ * vector file. Brainy's HNSWIndex uses the static `.create()` / `.open()`
+ * factories to open a single-file store at a derived path on disk-resident
+ * storage adapters; non-FS adapters with no local-path support skip the mmap
+ * layer and fall back to per-entity vector reads.
+ *
+ * Cortex registers `NativeMmapVectorStore` as this provider — a Rust mmap'd
+ * f32 array with a header, batch read/write APIs, and madvise prefetch. Slot
+ * indices are the stable ints from `EntityIdMapper`; lazy migration on read
+ * miss writes back from per-entity storage into the slot, converging an
+ * upgraded install to the fast path without a big-bang step.
+ */
+export interface VectorStoreMmapProvider {
+  /** Create a new vector file with pre-allocated slot capacity. */
+  create(path: string, dim: number, capacity: number): VectorStoreMmapInstance
+  /** Open an existing vector file for read + write. */
+  open(path: string): VectorStoreMmapInstance
+  /** Open an existing vector file for read-only access. */
+  openReadOnly(path: string): VectorStoreMmapInstance
+}
+
+/**
+ * An open mmap-vector-store instance — the surface brainy's HNSWIndex consumes
+ * for batch vector reads + lazy migration from per-entity storage on miss.
+ */
+export interface VectorStoreMmapInstance {
+  /** Number of vectors written (highest written index + 1). */
+  readonly count: number
+  /** Maximum slot capacity before resize is needed. */
+  readonly capacity: number
+  /** Vector dimensionality. */
+  readonly dim: number
+  /** Write a single vector at `index`. Vector is f64 in JS, stored as f32. */
+  writeVector(index: number, vector: number[]): void
+  /** Write a flat batch starting at `startIndex`. Returns vectors written. */
+  writeVectorsBatch(startIndex: number, vectorsFlat: number[]): number
+  /** Read a single vector at `index`. Returns f64[]. */
+  readVector(index: number): number[]
+  /** Read multiple vectors by index. Returns flat f64[] of length n × dim. */
+  readVectorsBatch(indices: number[]): number[]
+  /** Prefetch via madvise(WILLNEED); no-op on unsupported platforms. */
+  prefetch(indices: number[]): void
+  /** Grow the vector file to a larger slot capacity. Re-maps the file. */
+  resize(newCapacity: number): void
+  /** msync — flush pending writes to disk. */
+  flush(): void
+}
+
+/**
  * Storage adapter factory — plugins register these to provide
  * new storage backends that users reference by name.
  *

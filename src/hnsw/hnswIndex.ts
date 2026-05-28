@@ -18,6 +18,7 @@ import { prodLog } from '../utils/logger.js'
 import { quantizeSQ8, distanceSQ8 } from '../utils/vectorQuantization.js'
 import type { SQ8QuantizedVector } from '../utils/vectorQuantization.js'
 import type { HnswProvider } from '../plugin.js'
+import { MmapVectorBackend } from './mmapVectorBackend.js'
 
 // Default HNSW parameters
 const DEFAULT_CONFIG: HNSWConfig = {
@@ -48,6 +49,13 @@ export class HNSWIndex implements HnswProvider {
   // Universal memory management
   private unifiedCache: UnifiedCache // Shared cache with Graph and Metadata indexes
   // Always-adaptive caching - no "mode" concept, system adapts automatically
+
+  // Optional mmap-vector backend (2.4.0 #2). When set, the read paths
+  // (preloadVectors, getVectorSafe) try the mmap layer before storage, and
+  // on a storage hit they write back into the mmap slot — a lazy migration
+  // that converges upgraded installs to the fast path under live traffic.
+  // Null on cloud storage adapters (no local path) and pre-injection init.
+  private vectorBackend: MmapVectorBackend | null = null
 
   // COW (Copy-on-Write) support
   private cowEnabled: boolean = false
@@ -99,6 +107,22 @@ export class HNSWIndex implements HnswProvider {
    */
   public setUseParallelization(useParallelization: boolean): void {
     this.useParallelization = useParallelization
+  }
+
+  /**
+   * @description Inject (or detach) the mmap-vector backend. When set, the
+   * vector read paths (`preloadVectors`, `getVectorSafe`) try the mmap layer
+   * before storage and lazily write back on storage hits — converging an
+   * upgraded install to the zero-copy fast path without a migration step.
+   * Setting to null reverts to the existing per-entity read path.
+   *
+   * Lifecycle: brainy.ts wires this after plugin activation when (a) the
+   * `vectorStore:mmap` provider is registered AND (b) the storage adapter
+   * resolves a real local path via `getBinaryBlobPath()`. Cloud adapters
+   * leave it null; HNSWIndex's behaviour is then identical to pre-2.4.0.
+   */
+  public setVectorBackend(backend: MmapVectorBackend | null): void {
+    this.vectorBackend = backend
   }
 
   /**
@@ -1073,7 +1097,23 @@ export class HNSWIndex implements HnswProvider {
     const cacheKey = `hnsw:vector:${noun.id}`
 
     const vector = await this.unifiedCache.get(cacheKey, async () => {
-      // Cache miss - load from storage
+      // Try the mmap-vector backend first when wired — zero-copy slot read,
+      // no per-entity object hydration.
+      if (this.vectorBackend) {
+        const fromMmap = this.vectorBackend.readByUuid(noun.id)
+        if (fromMmap) {
+          this.unifiedCache.set(
+            cacheKey,
+            fromMmap,
+            'hnsw',
+            fromMmap.length * 4,
+            50
+          )
+          return fromMmap
+        }
+      }
+
+      // Storage fallback — the canonical source of truth.
       if (!this.storage) {
         throw new Error('Storage not available for vector loading')
       }
@@ -1081,6 +1121,18 @@ export class HNSWIndex implements HnswProvider {
       const loaded = await this.storage.getNounVector(noun.id)
       if (!loaded) {
         throw new Error(`Vector not found for noun ${noun.id}`)
+      }
+
+      // Lazy migration: write back into the mmap slot so the next read is
+      // mmap-fast. Idempotent + resumable; a write failure is non-fatal —
+      // the field still serves this read, and the next storage hit re-tries
+      // the migration. (See mmapVectorBackend.ts for the contract.)
+      if (this.vectorBackend) {
+        try {
+          this.vectorBackend.writeByUuid(noun.id, loaded)
+        } catch (error) {
+          prodLog.debug(`MmapVectorBackend write-back failed for ${noun.id}`, error)
+        }
       }
 
       // Add to UnifiedCache with cost-aware eviction
@@ -1140,7 +1192,50 @@ export class HNSWIndex implements HnswProvider {
   private async preloadVectors(nodeIds: string[]): Promise<void> {
     if (nodeIds.length === 0) return
 
-    // Use UnifiedCache's request coalescing to prevent duplicate loads
+    // mmap-vector backend fast path: batched O(1) slot reads + lazy
+    // write-back migration on miss. Cache populated from both layers so
+    // subsequent in-session reads are O(1) memory.
+    if (this.vectorBackend) {
+      // Filter out ids already cached so we never re-read.
+      const uncachedIds: string[] = []
+      for (const id of nodeIds) {
+        if (this.unifiedCache.getSync(`hnsw:vector:${id}`) === undefined) {
+          uncachedIds.push(id)
+        }
+      }
+      if (uncachedIds.length === 0) return
+
+      const fromMmap = this.vectorBackend.readBatchByUuid(uncachedIds)
+      const misses: string[] = []
+      for (let i = 0; i < uncachedIds.length; i++) {
+        const id = uncachedIds[i]
+        const v = fromMmap[i]
+        if (v) {
+          this.unifiedCache.set(`hnsw:vector:${id}`, v, 'hnsw', v.length * 4, 50)
+        } else {
+          misses.push(id)
+        }
+      }
+      if (misses.length === 0) return
+
+      // Storage fallback for the misses, with concurrent lazy write-back.
+      await Promise.all(misses.map(async (id) => {
+        if (!this.storage) return
+        const vector = await this.storage.getNounVector(id)
+        if (!vector) return
+        if (this.vectorBackend) {
+          try {
+            this.vectorBackend.writeByUuid(id, vector)
+          } catch (error) {
+            prodLog.debug(`MmapVectorBackend write-back failed for ${id}`, error)
+          }
+        }
+        this.unifiedCache.set(`hnsw:vector:${id}`, vector, 'hnsw', vector.length * 4, 50)
+      }))
+      return
+    }
+
+    // Legacy path: per-entity storage load via UnifiedCache request coalescing.
     const promises = nodeIds.map(async (id) => {
       const cacheKey = `hnsw:vector:${id}`
       return this.unifiedCache.get(cacheKey, async () => {

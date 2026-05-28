@@ -37,7 +37,8 @@ import { setGlobalCache } from './utils/unifiedCache.js'
 import type { UnifiedCache } from './utils/unifiedCache.js'
 import { rankIndicesByScore, reorderByIndices } from './utils/resultRanking.js'
 import { PluginRegistry } from './plugin.js'
-import type { BrainyPlugin, BrainyPluginContext } from './plugin.js'
+import type { BrainyPlugin, BrainyPluginContext, VectorStoreMmapProvider } from './plugin.js'
+import { MmapVectorBackend } from './hnsw/mmapVectorBackend.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
 import {
   ValidationConfig,
@@ -558,6 +559,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ])
         this.graphIndex = graphIndex
       }
+
+      // Wire the mmap-vector backend (2.4.0 #2). When the vectorStore:mmap
+      // provider is registered AND the storage adapter resolves a real local
+      // path via getBinaryBlobPath(), open the mmap file there and inject the
+      // backend into HNSWIndex. Cloud adapters return null and skip silently;
+      // HNSWIndex's behaviour is then identical to pre-2.4.0 (per-entity reads
+      // from canonical storage). Failures are non-fatal — the index still
+      // works, just without the zero-copy fast path.
+      await this.wireMmapVectorBackend()
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
@@ -7714,6 +7724,72 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       })
 
     await this.lazyRebuildPromise
+  }
+
+  /**
+   * @description Open the mmap-vector backend and inject it into HNSWIndex.
+   * Called once during init after plugin activation, metadataIndex init, and
+   * graphIndex setup — so the idMapper is available and providers are wired.
+   *
+   * Activation conditions (ALL must hold; otherwise this is a no-op and the
+   * index falls back to per-entity storage reads, the pre-2.4.0 behaviour):
+   * 1. The `vectorStore:mmap` provider is registered (cortex registers this).
+   * 2. The storage adapter resolves a real local path via `getBinaryBlobPath()`
+   *    — cloud adapters return null and the mmap layer is skipped silently.
+   * 3. The metadata index exposes its idMapper (a stable UUID↔int map). The
+   *    mmap layout is keyed by these ints, so 2.4.0 #1 is the prerequisite.
+   *
+   * Vector dimensionality: read from `this.dimensions` if set; otherwise the
+   * default for the standard embedding model (384). The dim is fixed at
+   * file-creation time and cannot change later, so a wrong default would only
+   * matter on the very first init of a brand-new instance. After the first
+   * `add()` the in-memory `this.dimensions` is set, and any subsequent init
+   * (or a re-open) sees the correct value.
+   *
+   * Failures here are non-fatal: a debug-level log records the reason, and
+   * HNSWIndex continues without the mmap fast path.
+   */
+  private async wireMmapVectorBackend(): Promise<void> {
+    const provider = this.pluginRegistry.getProvider<VectorStoreMmapProvider>('vectorStore:mmap')
+    if (!provider) return
+
+    const storageWithBlob = this.storage as unknown as {
+      getBinaryBlobPath?: (key: string) => string | null
+    }
+    const vectorPath = storageWithBlob.getBinaryBlobPath?.('_vectors/main') ?? null
+    if (!vectorPath) return
+
+    const idMapper = this.metadataIndex.getIdMapper?.()
+    if (!idMapper) return
+
+    const dim = this.dimensions ?? 384
+    const initialCapacity = Math.max(idMapper.size * 2, 1024)
+
+    try {
+      const backend = await MmapVectorBackend.open(
+        provider,
+        vectorPath,
+        dim,
+        initialCapacity,
+        idMapper
+      )
+      this.index.setVectorBackend(backend)
+      if (!this.config.silent) {
+        console.log(
+          `[brainy] vector mmap backend wired (path=${vectorPath}, dim=${dim}, capacity=${initialCapacity})`
+        )
+      }
+    } catch (error) {
+      // Common cases: dim mismatch from a prior init at a different dimension,
+      // permission errors, disk full, file corruption. Index keeps working via
+      // the per-entity storage path; flag the cause for diagnosis.
+      if (!this.config.silent) {
+        console.warn(
+          `[brainy] mmap-vector backend not wired (${(error as Error).message}); ` +
+            `falling back to per-entity vector reads`
+        )
+      }
+    }
   }
 
   /**
