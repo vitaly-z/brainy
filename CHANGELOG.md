@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.27.0](https://github.com/soulcraftlabs/brainy/compare/v7.26.0...v7.27.0) (2026-05-28)
+
+- feat: content-type-aware compression policy in COW BlobStorage (2.5.0 #32) (178ff02)
+
+
 ### [7.26.0](https://github.com/soulcraftlabs/brainy/compare/v7.25.0...v7.26.0) (2026-05-28)
 
 - feat: graph link compression — delta-varint connections (2.4.0 #3) (617c156)
