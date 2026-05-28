@@ -2635,13 +2635,20 @@ export class MetadataIndexManager implements MetadataIndexProvider {
     this.verbCountsByTypeFixed.fill(0)
     this.typeFieldAffinity.clear()
 
-    // Clear EntityIdMapper
+    // Clear EntityIdMapper. This is the explicit destructive path: the caller
+    // asked for nuclear recovery of a corrupted index, so renumbering UUIDs is
+    // intentional. Persisted int-keyed data (vector-mmap slots, graph
+    // link-compression encodings) is invalidated by this op — the warning
+    // below makes that explicit. Rebuild on its own does NOT clear the mapper.
     await this.idMapper.clear()
 
     // Clear chunk manager cache
     this.chunkManager.clearCache()
 
     prodLog.info(`✅ Cleared ${deletedCount} field indexes and all in-memory state`)
+    prodLog.warn('⚠️ EntityIdMapper was cleared — any persisted int-keyed data ' +
+      '(vector mmap slots, graph link-compression encodings, etc.) is now stale ' +
+      'and must be rebuilt from canonical sources.')
     prodLog.info('⚠️ Run brain.index.rebuild() to recreate the index from entity data')
   }
 
@@ -3032,8 +3039,19 @@ export class MetadataIndexManager implements MetadataIndexProvider {
         prodLog.info(`Cleared ${existingFields.length} field indexes from storage`)
       }
 
-      // Clear EntityIdMapper to start fresh
-      await this.idMapper.clear()
+      // EntityIdMapper is intentionally NOT cleared here. Rebuild re-iterates
+      // every entity in storage and calls idMapper.getOrAssign(uuid), which
+      // returns the existing int for known UUIDs (no renumbering). This is the
+      // foundational stability guarantee — vector-mmap slot indices, graph
+      // link-compression encodings, and any other persisted int-keyed data
+      // remain valid across a rebuild. Previously this line reset nextId to 1
+      // and renumbered every UUID by re-insertion order, silently breaking
+      // any consumer that had persisted int-keyed data against the old map.
+      // Stale entries for UUIDs no longer in storage persist (harmless memory
+      // overhead); a dedicated prune step can be added if it ever matters.
+      // The destructive wipe is still available via clearAllIndexData() →
+      // idMapper.clear(), which is the explicit "recovery" path with the
+      // appropriate warning about invalidating persisted int-keyed data.
 
       // Clear chunk manager cache
       this.chunkManager.clearCache()

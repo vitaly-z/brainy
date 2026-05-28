@@ -1,14 +1,34 @@
 /**
- * EntityIdMapper - Bidirectional mapping between UUID strings and integer IDs for roaring bitmaps
+ * EntityIdMapper - Bidirectional mapping between UUID strings and integer IDs.
  *
- * Roaring bitmaps require 32-bit unsigned integers, but Brainy uses UUID strings as entity IDs.
- * This class provides efficient bidirectional mapping with persistence support.
+ * Roaring bitmaps require 32-bit unsigned integers, but Brainy uses UUID strings
+ * as canonical entity IDs. This class provides efficient O(1) bidirectional
+ * mapping with persistence — and, importantly, a stability guarantee that any
+ * persisted int-keyed data can rely on.
+ *
+ * **Stability guarantee (the foundation 2.4.0 vector-mmap, graph-link-compression,
+ * and column-store interchange all key off):**
+ *
+ * - `getOrAssign(uuid)` is **append-only**: once a UUID is assigned an int, the
+ *   mapping never changes. Subsequent `getOrAssign` calls for the same UUID
+ *   return the same int.
+ * - `nextId` is **monotonically increasing**. New UUIDs always get an int greater
+ *   than any previously assigned, so a removed-then-re-added UUID is treated as
+ *   a fresh entity (and gets a fresh int — there is no automatic "revive").
+ * - `remove(uuid)` removes the mapping but does **not** decrement `nextId` or
+ *   recycle the int. The removed int becomes a permanent hole in `intToUuid` —
+ *   downstream consumers seeing `getUuid(int) === undefined` know the entity
+ *   was deleted.
+ * - A metadata-index `rebuild()` does **not** clear the mapper (the rebuild path
+ *   re-iterates entities via `getOrAssign`, which returns existing ints unchanged).
+ *   Only the explicit `clear()` method renumbers — used by `clearAllIndexData()`
+ *   as the nuclear recovery path with a documented warning.
  *
  * Features:
- * - O(1) lookup in both directions
- * - Persistent storage via storage adapter
- * - Atomic counter for next ID
- * - Serialization/deserialization support
+ * - O(1) lookup in both directions.
+ * - Persistent storage via storage adapter.
+ * - Atomic, monotonic, append-only int counter.
+ * - Serialization/deserialization support.
  *
  * @module utils/entityIdMapper
  */
