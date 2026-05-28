@@ -19,6 +19,7 @@ import { quantizeSQ8, distanceSQ8 } from '../utils/vectorQuantization.js'
 import type { SQ8QuantizedVector } from '../utils/vectorQuantization.js'
 import type { HnswProvider } from '../plugin.js'
 import { MmapVectorBackend } from './mmapVectorBackend.js'
+import { ConnectionsCodec, compressedConnectionsKey } from './connectionsCodec.js'
 
 // Default HNSW parameters
 const DEFAULT_CONFIG: HNSWConfig = {
@@ -56,6 +57,16 @@ export class HNSWIndex implements HnswProvider {
   // that converges upgraded installs to the fast path under live traffic.
   // Null on cloud storage adapters (no local path) and pre-injection init.
   private vectorBackend: MmapVectorBackend | null = null
+
+  // Optional connections codec (2.4.0 #3). When set, node-persist writes the
+  // node's per-level connection sets as a single delta-varint-compressed
+  // binary blob (typically ~4× smaller than the legacy JSON-UUID-array
+  // shape), plus an empty `connections: {}` in saveHNSWData as the marker.
+  // The read path tries to load the blob first; missing blob → legacy
+  // connections field. Format convergence is lazy: pre-2.4.0 nodes still
+  // load via the legacy path, then write the compressed form on next dirty
+  // save, so the migration converges under live traffic with no big-bang.
+  private connectionsCodec: ConnectionsCodec | null = null
 
   // COW (Copy-on-Write) support
   private cowEnabled: boolean = false
@@ -126,6 +137,19 @@ export class HNSWIndex implements HnswProvider {
   }
 
   /**
+   * @description Inject (or detach) the connections codec. When set, node
+   * persistence writes a delta-varint-compressed binary blob alongside an
+   * empty `connections: {}` marker in saveHNSWData; the load path reads the
+   * blob and decodes. Null reverts to the legacy JSON-array path. Wiring is
+   * done by brainy.ts when the `graph:compression` provider is registered
+   * AND the storage adapter exposes the binary-blob primitive AND the
+   * metadata index has a stable idMapper.
+   */
+  public setConnectionsCodec(codec: ConnectionsCodec | null): void {
+    this.connectionsCodec = codec
+  }
+
+  /**
    * Get whether parallelization is enabled
    */
   public getUseParallelization(): boolean {
@@ -168,15 +192,7 @@ export class HNSWIndex implements HnswProvider {
           const noun = this.nouns.get(nodeId)
           if (!noun) return Promise.resolve() // Node was deleted
 
-          const connectionsObj: Record<string, string[]> = {}
-          for (const [level, nounIds] of noun.connections.entries()) {
-            connectionsObj[level.toString()] = Array.from(nounIds)
-          }
-
-          return this.storage!.saveHNSWData(nodeId, {
-            level: noun.level,
-            connections: connectionsObj
-          }).catch(error => {
+          return this.persistNodeConnections(nodeId, noun).catch(error => {
             console.error(`[HNSW flush] Failed to persist node ${nodeId}:`, error)
           })
         })
@@ -205,6 +221,94 @@ export class HNSWIndex implements HnswProvider {
     }
 
     return nodeCount
+  }
+
+  /**
+   * @description Persist one node's connections. When the connections codec is
+   * wired AND the storage adapter exposes `saveBinaryBlob`, the per-level
+   * connection sets are encoded into a single compact buffer and stored as a
+   * binary blob; `saveHNSWData` then records the node's level and an empty
+   * `connections: {}` as the marker. Otherwise the legacy JSON-array path is
+   * taken — the format every brainy release before 2.4.0 wrote. The two are
+   * intentionally NOT dual-written: one or the other, never both, so format
+   * convergence is unambiguous on the read side.
+   *
+   * Shared by all three save sites (deferred flush, immediate-mode new-entity
+   * persist, immediate-mode neighbor update) so the codec branch is exercised
+   * uniformly regardless of which path triggered the write.
+   */
+  private async persistNodeConnections(nodeId: string, noun: HNSWNoun): Promise<void> {
+    if (!this.storage) return
+
+    const storageWithBlob = this.storage as unknown as {
+      saveBinaryBlob?: (key: string, data: Buffer) => Promise<void>
+    }
+    const canCompress =
+      this.connectionsCodec !== null &&
+      typeof storageWithBlob.saveBinaryBlob === 'function'
+
+    if (canCompress) {
+      const encoded = this.connectionsCodec!.encode(noun.connections)
+      await storageWithBlob.saveBinaryBlob!(compressedConnectionsKey(nodeId), encoded)
+      await this.storage.saveHNSWData(nodeId, {
+        level: noun.level,
+        connections: {}
+      })
+      return
+    }
+
+    const connectionsObj: Record<string, string[]> = {}
+    for (const [level, nounIds] of noun.connections.entries()) {
+      connectionsObj[level.toString()] = Array.from(nounIds)
+    }
+    await this.storage.saveHNSWData(nodeId, {
+      level: noun.level,
+      connections: connectionsObj
+    })
+  }
+
+  /**
+   * @description Restore one node's connections from persisted storage. Tries
+   * the compressed-blob path first (when codec wired AND blob primitive
+   * available); a present non-empty buffer is decoded and populates
+   * `noun.connections`. A missing blob (no payload at the key) means this node
+   * was last persisted under the legacy format, so the legacy
+   * `hnswData.connections` field is used instead.
+   *
+   * On any decode error the legacy field is also used as a safety net — the
+   * codec's `decode` throws on truncated input, which would otherwise leave
+   * the node with an empty connections Map (orphaned from the graph).
+   */
+  private async restoreNodeConnections(
+    nodeId: string,
+    hnswData: { level: number; connections: Record<string, string[]> },
+    noun: HNSWNoun
+  ): Promise<void> {
+    const storageWithBlob = this.storage as unknown as {
+      loadBinaryBlob?: (key: string) => Promise<Buffer | null>
+    }
+    const canDecompress =
+      this.connectionsCodec !== null &&
+      typeof storageWithBlob.loadBinaryBlob === 'function'
+
+    if (canDecompress) {
+      try {
+        const buf = await storageWithBlob.loadBinaryBlob!(compressedConnectionsKey(nodeId))
+        if (buf && buf.length > 0) {
+          const decoded = this.connectionsCodec!.decode(buf)
+          noun.connections = decoded
+          return
+        }
+      } catch (error) {
+        prodLog.debug(`HNSW: compressed connections decode failed for ${nodeId}; falling back to legacy`, error)
+      }
+    }
+
+    // Legacy fallback: JSON UUID arrays in the HNSW data object.
+    for (const [levelStr, nounIds] of Object.entries(hnswData.connections)) {
+      const level = parseInt(levelStr, 10)
+      noun.connections.set(level, new Set<string>(nounIds as string[]))
+    }
   }
 
   /**
@@ -545,18 +649,12 @@ export class HNSWIndex implements HnswProvider {
         // In deferred mode, we track dirty nodes instead of persisting immediately
         // This reduces GCS operations from 70 to 2-3 per add() (30-50× faster)
         if (this.storage && this.persistMode === 'immediate') {
-          // IMMEDIATE MODE: Original behavior - persist each neighbor update
-          const neighborConnectionsObj: Record<string, string[]> = {}
-          for (const [lvl, nounIds] of neighbor.connections.entries()) {
-            neighborConnectionsObj[lvl.toString()] = Array.from(nounIds)
-          }
-
+          // IMMEDIATE MODE: Original behavior - persist each neighbor update.
+          // Goes through the per-node helper so the compressed-blob branch
+          // fires identically here vs. the deferred-flush path.
           neighborUpdates.push({
             neighborId,
-            promise: this.storage.saveHNSWData(neighborId, {
-              level: neighbor.level,
-              connections: neighborConnectionsObj
-            })
+            promise: this.persistNodeConnections(neighborId, neighbor)
           })
         } else if (this.persistMode === 'deferred') {
           // DEFERRED MODE: Track dirty nodes for later batch persistence
@@ -643,16 +741,10 @@ export class HNSWIndex implements HnswProvider {
     // Persist HNSW graph data to storage
     // Respect persistMode setting
     if (this.storage && this.persistMode === 'immediate') {
-      // IMMEDIATE MODE: Original behavior - persist new entity and system data
-      const connectionsObj: Record<string, string[]> = {}
-      for (const [level, nounIds] of noun.connections.entries()) {
-        connectionsObj[level.toString()] = Array.from(nounIds)
-      }
-
-      await this.storage.saveHNSWData(id, {
-        level: nounLevel,
-        connections: connectionsObj
-      }).catch((error) => {
+      // IMMEDIATE MODE: Original behavior - persist new entity and system data.
+      // Goes through the per-node helper so the compressed-blob branch fires
+      // identically here vs. the deferred-flush + neighbor-update paths.
+      await this.persistNodeConnections(id, noun).catch((error) => {
         console.error(`Failed to persist HNSW data for ${id}:`, error)
       })
 
@@ -1434,11 +1526,10 @@ export class HNSWIndex implements HnswProvider {
               noun.codebookMax = sq8.max
             }
 
-            // Restore connections from persisted data
-            for (const [levelStr, nounIds] of Object.entries(hnswData.connections)) {
-              const level = parseInt(levelStr, 10)
-              noun.connections.set(level, new Set<string>(nounIds as string[]))
-            }
+            // Restore connections from persisted data — compressed blob path
+            // first, legacy JSON-array fallback for indexes written before
+            // graph link compression landed.
+            await this.restoreNodeConnections(nounData.id, hnswData, noun)
 
             // Add to in-memory index
             this.nouns.set(nounData.id, noun)
@@ -1519,11 +1610,10 @@ export class HNSWIndex implements HnswProvider {
                 noun.codebookMax = sq8.max
               }
 
-              // Restore connections from persisted data
-              for (const [levelStr, nounIds] of Object.entries(hnswData.connections)) {
-                const level = parseInt(levelStr, 10)
-                noun.connections.set(level, new Set<string>(nounIds as string[]))
-              }
+              // Restore connections from persisted data — compressed blob path
+              // first, legacy JSON-array fallback for indexes written before
+              // graph link compression landed.
+              await this.restoreNodeConnections(nounData.id, hnswData, noun)
 
               // Add to in-memory index
               this.nouns.set(nounData.id, noun)

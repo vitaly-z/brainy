@@ -254,6 +254,32 @@ export interface CacheProvider {
 // added here to avoid a duplicate, unwired contract.
 
 /**
+ * The `'graph:compression'` provider — pure-function encode/decode for HNSW
+ * connection lists as compact delta-varint byte sequences (cortex's
+ * `encodeConnections` / `decodeConnections`).
+ *
+ * Brainy's `HNSWIndex` consumes this via a `ConnectionsCodec` that translates
+ * UUIDs to stable int slots via the `EntityIdMapper`, encodes, and persists
+ * the compressed bytes through the binary-blob primitive. On load, the blob
+ * is fetched + decoded back into UUID sets — `setConnectionsCodec()` on
+ * `HNSWIndex` is the injection point. Read path is dual-format: when no blob
+ * exists for a node, the connections fall back to the legacy JSON-array path
+ * embedded in `saveHNSWData`, so pre-2.4.0 indexes keep loading unchanged
+ * and convergence to the compressed form happens lazily on next save.
+ *
+ * Activated only when the storage adapter exposes the binary-blob primitive
+ * AND the metadata index resolves a stable idMapper. Cloud adapters that
+ * lack a real local-path resolution still benefit, since the blob primitive
+ * itself works across every adapter as of brainy 7.25.0.
+ */
+export interface GraphCompressionProvider {
+  /** Encode a list of u32 ints to compact delta-varint bytes. Sorts internally. */
+  encode(ids: number[]): Buffer
+  /** Decode delta-varint bytes back to a u32 list. */
+  decode(data: Buffer): number[]
+}
+
+/**
  * The `'vectorStore:mmap'` provider — a static factory class for an mmap-backed
  * vector file. Brainy's HNSWIndex uses the static `.create()` / `.open()`
  * factories to open a single-file store at a derived path on disk-resident

@@ -37,8 +37,14 @@ import { setGlobalCache } from './utils/unifiedCache.js'
 import type { UnifiedCache } from './utils/unifiedCache.js'
 import { rankIndicesByScore, reorderByIndices } from './utils/resultRanking.js'
 import { PluginRegistry } from './plugin.js'
-import type { BrainyPlugin, BrainyPluginContext, VectorStoreMmapProvider } from './plugin.js'
+import type {
+  BrainyPlugin,
+  BrainyPluginContext,
+  GraphCompressionProvider,
+  VectorStoreMmapProvider
+} from './plugin.js'
 import { MmapVectorBackend } from './hnsw/mmapVectorBackend.js'
+import { ConnectionsCodec } from './hnsw/connectionsCodec.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
 import {
   ValidationConfig,
@@ -568,6 +574,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // from canonical storage). Failures are non-fatal — the index still
       // works, just without the zero-copy fast path.
       await this.wireMmapVectorBackend()
+
+      // Wire the connections codec (2.4.0 #3). When the graph:compression
+      // provider is registered AND the metadata index exposes a stable
+      // idMapper, inject a codec that encodes HNSW connections as
+      // delta-varint blobs at save time and decodes on load. The blob
+      // primitive itself works on every brainy 7.25.0 adapter, so unlike the
+      // mmap-vector backend this layer engages even on cloud adapters.
+      this.wireConnectionsCodec()
 
       // Rebuild indexes if needed for existing data
       await this.rebuildIndexesIfNeeded()
@@ -7789,6 +7803,35 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             `falling back to per-entity vector reads`
         )
       }
+    }
+  }
+
+  /**
+   * @description Wire the HNSW connections codec (2.4.0 #3). Activates when
+   * BOTH (a) the `graph:compression` provider is registered (cortex registers
+   * `{ encode: encodeConnections, decode: decodeConnections }`), and (b) the
+   * metadata index exposes a stable idMapper. Failures are non-fatal: HNSW
+   * keeps working via the legacy JSON-array path.
+   *
+   * Unlike the mmap-vector backend, this layer does NOT require a real local
+   * path — the binary-blob primitive saves the compressed bytes through the
+   * storage adapter directly, so the codec is engaged on cloud adapters too.
+   * Format convergence is lazy: pre-2.4.0 nodes load via the legacy path,
+   * then the next dirty save writes the compressed form (and the legacy
+   * field of saveHNSWData becomes empty), so all reads converge over time
+   * without an explicit migration step.
+   */
+  private wireConnectionsCodec(): void {
+    const provider = this.pluginRegistry.getProvider<GraphCompressionProvider>('graph:compression')
+    if (!provider) return
+
+    const idMapper = this.metadataIndex.getIdMapper?.()
+    if (!idMapper) return
+
+    const codec = new ConnectionsCodec(provider, idMapper)
+    this.index.setConnectionsCodec(codec)
+    if (!this.config.silent) {
+      console.log('[brainy] graph link compression wired (delta-varint connections via graph:compression provider)')
     }
   }
 
