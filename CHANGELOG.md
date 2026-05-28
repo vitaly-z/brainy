@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.26.0](https://github.com/soulcraftlabs/brainy/compare/v7.25.0...v7.26.0) (2026-05-28)
+
+- feat: graph link compression — delta-varint connections (2.4.0 #3) (617c156)
+- feat: column-store JS↔native interchange — raw-blob unify (2.4.0 #4) (71bc30b)
+- feat: mmap-vector backend wiring — HNSWIndex consumes vectorStore:mmap (2.4.0 #2) (d4cb26c)
+- feat: stable EntityIdMapper — rebuild() no longer renumbers UUID→int (b2408cb)
+
+
 ### [7.25.0](https://github.com/soulcraftlabs/brainy/compare/v7.24.0...v7.25.0) (2026-05-27)
 
 - docs: remove stale distanceSQ8 JSDoc left by the SQ8 hook refactor (6099101)
