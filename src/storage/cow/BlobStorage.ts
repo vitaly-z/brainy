@@ -48,7 +48,71 @@ export interface BlobMetadata {
 export interface BlobWriteOptions {
   compression?: 'none' | 'zstd' | 'auto'  // Auto chooses based on type
   type?: 'vector' | 'metadata' | 'tree' | 'commit' | 'blob' | 'raw'
+  /**
+   * Content type of the payload (e.g. `image/jpeg`, `video/mp4`).
+   *
+   * When set on an `auto`-compression write, BlobStorage skips zstd for MIME
+   * types that are already heavily compressed (JPEG, PNG, WebP, MP4, WebM,
+   * MP3, ZIP, PDF, etc.). Gzip/zstd over these formats wastes CPU and rarely
+   * shaves more than a single-digit percent — usually it actually grows the
+   * payload because the entropy is already maximised by the format itself.
+   *
+   * Has no effect when `compression` is set to `'none'` or `'zstd'` explicitly
+   * — the caller is asserting the choice and BlobStorage honours it.
+   */
+  mimeType?: string
   skipVerification?: boolean  // Skip hash verification (faster, less safe)
+}
+
+/**
+ * MIME types whose payload is already heavily compressed. zstd over these is
+ * almost always a CPU-only loss — the bytes are already near entropy-maximal,
+ * so the output is the same size or slightly larger plus the cost of running
+ * the compressor. Used by `BlobStorage.selectCompression()` in `auto` mode.
+ *
+ * Conservative denylist (well-known formats only). Anything not in this set
+ * goes through the existing per-type heuristic. False negatives (compressing
+ * something we should have skipped) waste CPU; false positives (skipping
+ * something we could have compressed) waste a few percent of bytes. The
+ * denylist favours CPU-cycle safety because the formats listed here are the
+ * ones where gzip/zstd is reliably a net loss.
+ */
+const ALREADY_COMPRESSED_MIME_TYPES = new Set<string>([
+  // Images
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+  'image/avif', 'image/heic', 'image/heif', 'image/jp2',
+  // Video
+  'video/mp4', 'video/webm', 'video/x-matroska', 'video/quicktime',
+  'video/x-msvideo', 'video/mpeg', 'video/3gpp', 'video/x-ms-wmv',
+  // Audio
+  'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/webm',
+  'audio/opus', 'audio/flac', 'audio/x-ms-wma',
+  // Archives
+  'application/zip', 'application/gzip', 'application/x-gzip',
+  'application/x-bzip2', 'application/x-7z-compressed',
+  'application/x-rar-compressed', 'application/x-xz', 'application/x-zstd',
+  'application/x-compress', 'application/vnd.rar',
+  // Documents with internal compression
+  'application/pdf', 'application/epub+zip',
+  // Office formats (zip-based)
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation'
+])
+
+/**
+ * @description True when the MIME type names a payload format known to be
+ * already heavily compressed. Strips any `;charset=…` / `;boundary=…`
+ * parameters and lowercases the bare type/subtype before lookup, so
+ * `'IMAGE/JPEG; charset=binary'` and `'image/jpeg'` resolve identically.
+ */
+export function isAlreadyCompressedMimeType(mimeType: string | undefined): boolean {
+  if (!mimeType) return false
+  const bare = mimeType.split(';', 1)[0].trim().toLowerCase()
+  return ALREADY_COMPRESSED_MIME_TYPES.has(bare)
 }
 
 /**
@@ -547,6 +611,15 @@ export class BlobStorage {
     // Auto mode
     if (data.length < this.COMPRESSION_THRESHOLD) {
       return 'none'  // Too small to benefit
+    }
+
+    // Content-type policy (2.5.0 #32): skip already-compressed media. zstd
+    // over JPEG / MP4 / ZIP etc. is a CPU loss for no measurable byte savings,
+    // and on hot save paths (image / video uploads) it's the difference
+    // between fast and slow. Applies only to `auto`; explicit `'zstd'` is
+    // honoured because the caller is asserting the choice.
+    if (isAlreadyCompressedMimeType(options.mimeType)) {
+      return 'none'
     }
 
     // Compress metadata, trees, commits (text/JSON)
