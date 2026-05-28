@@ -518,6 +518,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         setSQ8DistanceImplementation(sq8DistanceProvider)
       }
 
+      // Provider: native SQ4 approximate distance (cortex's Rust). Same swap
+      // pattern as SQ8; signature is byte-compatible with the JS distanceSQ4
+      // (4-bit quantization range, packed nibbles). Used in HNSW SQ4 reranking
+      // when config.hnsw.quantization.bits === 4. Falls back to JS when absent.
+      const sq4DistanceProvider = this.pluginRegistry.getProvider<
+        (
+          a: Uint8Array, aMin: number, aMax: number, aDim: number,
+          b: Uint8Array, bMin: number, bMax: number, bDim: number
+        ) => number
+      >('distance:sq4')
+      if (sq4DistanceProvider) {
+        const { setSQ4DistanceImplementation } = await import('./utils/vectorQuantization.js')
+        setSQ4DistanceImplementation(sq4DistanceProvider)
+      }
+
       // Provider: sort:topK (e.g. cortex's native partial-sort / heap-select) — swaps the
       // JS result-ranking used by find() to pick the top `offset + limit` rows. The provider
       // returns indices into a scores array, ordered descending with stable ties, identical

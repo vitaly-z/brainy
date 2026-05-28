@@ -267,3 +267,315 @@ export function deserializeSQ8(buffer: ArrayBuffer): SQ8QuantizedVector {
   const quantized = new Uint8Array(buffer, 8)
   return { quantized, min, max }
 }
+
+// ===========================================================================
+// SQ4 — 4-bit scalar quantization (2.5.0 #30)
+//
+// Each dimension is mapped to [0, 15] (16 levels) and packed two-per-byte:
+// high nibble = vector[2i], low nibble = vector[2i+1]. Achieves 8× compression
+// vs float32 (vs 4× for SQ8) at the cost of higher quantization error.
+//
+// The format + arithmetic are byte-for-byte identical to cortex's Rust
+// `quantize_sq4` / `dequantize_sq4` / `cosine_distance_sq4` (see
+// `cortex/native/src/quantization.rs`). When a `distance:sq4` provider is
+// registered (cortex's SIMD Rust implementation), `setSQ4DistanceImplementation`
+// swaps the JS reference in for the native one; cross-language parity tests
+// verify the swap is recall-equivalent within float tolerance.
+// ===========================================================================
+
+/**
+ * @description 4-bit scalar-quantized vector. The `quantized` buffer is packed
+ * two nibbles per byte (high nibble = `vector[2i]`, low nibble = `vector[2i+1]`).
+ * Odd dimensions place the final value in the high nibble and leave the low
+ * nibble zero. `dim` must be recorded explicitly because packed byte length
+ * `ceil(dim/2)` doesn't encode whether the trailing low nibble is data or pad.
+ */
+export interface SQ4QuantizedVector {
+  /** Packed nibbles. Length = `ceil(dim / 2)`. */
+  quantized: Uint8Array
+  /** Codebook minimum (used to reconstruct the value range on dequantization). */
+  min: number
+  /** Codebook maximum. */
+  max: number
+  /** Original vector dimensionality (needed to detect the odd-dim pad nibble). */
+  dim: number
+}
+
+/**
+ * @description Quantize a float vector to SQ4. Each dimension is mapped to
+ * `[0, 15]` via `round((v - min) / range * 15)`, clamped, then packed
+ * two-per-byte. Zero-range vectors (all values identical) map to the midpoint
+ * `8` in every nibble — `0x88` in every byte.
+ *
+ * Byte-for-byte identical to cortex's `quantize_sq4` (Rust); cross-language
+ * parity tests confirm this. Use {@link distanceSQ4} for approximate cosine
+ * directly on the packed bytes — there's no need to {@link dequantizeSQ4}
+ * before computing distances.
+ *
+ * @param vector - Input float vector (length must be ≥ 1).
+ * @returns Packed SQ4 vector with codebook + original dimension.
+ * @throws If `vector` is empty.
+ */
+export function quantizeSQ4(vector: Vector): SQ4QuantizedVector {
+  const dim = vector.length
+  if (dim === 0) {
+    throw new Error('quantizeSQ4: vector cannot be empty')
+  }
+
+  let min = vector[0]
+  let max = vector[0]
+  for (let i = 1; i < dim; i++) {
+    const v = vector[i]
+    if (v < min) min = v
+    if (v > max) max = v
+  }
+
+  const packedLen = (dim + 1) >>> 1
+  const quantized = new Uint8Array(packedLen)
+  const range = max - min
+
+  if (range === 0) {
+    // All values identical — every nibble = 8 (midpoint of [0, 15]).
+    quantized.fill(0x88)
+    return { quantized, min, max, dim }
+  }
+
+  const invRange = 15 / range
+  let i = 0
+  let byteIdx = 0
+  while (i + 1 < dim) {
+    const hi = clampNibble(Math.round((vector[i] - min) * invRange))
+    const lo = clampNibble(Math.round((vector[i + 1] - min) * invRange))
+    quantized[byteIdx++] = (hi << 4) | lo
+    i += 2
+  }
+  if (i < dim) {
+    // Odd dimension: final value in the high nibble, low nibble = 0 pad.
+    const hi = clampNibble(Math.round((vector[i] - min) * invRange))
+    quantized[byteIdx] = hi << 4
+  }
+
+  return { quantized, min, max, dim }
+}
+
+/**
+ * @description Dequantize an SQ4 packed buffer back to a float vector.
+ * Reverses {@link quantizeSQ4}: each nibble is mapped back to
+ * `min + nibble * (max - min) / 15`. The trailing pad nibble of an odd-`dim`
+ * vector is correctly dropped (the result has length exactly `dim`).
+ *
+ * @param quantized - Packed SQ4 buffer (length `ceil(dim/2)`).
+ * @param min - Codebook minimum from {@link quantizeSQ4}.
+ * @param max - Codebook maximum from {@link quantizeSQ4}.
+ * @param dim - Original vector dimensionality.
+ * @returns Reconstructed float vector of length `dim`.
+ */
+export function dequantizeSQ4(
+  quantized: Uint8Array,
+  min: number,
+  max: number,
+  dim: number
+): Vector {
+  const result = new Array<number>(dim)
+  const range = max - min
+
+  if (range === 0) {
+    for (let i = 0; i < dim; i++) result[i] = min
+    return result
+  }
+
+  const scale = range / 15
+  let out = 0
+  for (let b = 0; b < quantized.length && out < dim; b++) {
+    const byte = quantized[b]
+    result[out++] = min + ((byte >>> 4) & 0x0f) * scale
+    if (out < dim) {
+      result[out++] = min + (byte & 0x0f) * scale
+    }
+  }
+
+  return result
+}
+
+/**
+ * @description Reference JS implementation of {@link distanceSQ4}: approximate
+ * cosine distance between two SQ4-quantized vectors. Unpacks nibbles inline,
+ * then accumulates the same `(sumA, sumB, sumAA, sumBB, sumAB)` integers SQ8
+ * uses and applies the SQ8 cosine-from-quantized formula with `15` (not `255`)
+ * as the quantization range. Result is byte-equivalent to cortex's
+ * `cosine_distance_sq4` (Rust) within float tolerance.
+ *
+ * Exported so callers can explicitly restore the JS default after a native
+ * swap, and so cross-language parity tests compare native output against this
+ * baseline.
+ */
+export function distanceSQ4Js(
+  a: Uint8Array,
+  aMin: number,
+  aMax: number,
+  aDim: number,
+  b: Uint8Array,
+  bMin: number,
+  bMax: number,
+  bDim: number
+): number {
+  if (aDim !== bDim) {
+    throw new Error(`distanceSQ4Js: dimension mismatch ${aDim} vs ${bDim}`)
+  }
+  if (aDim === 0) {
+    throw new Error('distanceSQ4Js: vectors cannot be empty')
+  }
+
+  let sumA = 0
+  let sumB = 0
+  let sumAB = 0
+  let sumAA = 0
+  let sumBB = 0
+
+  // Walk both packed buffers nibble-by-nibble, in lock-step.
+  let i = 0
+  let byteIdx = 0
+  while (i + 1 < aDim) {
+    const aByte = a[byteIdx]
+    const bByte = b[byteIdx]
+    const aHi = (aByte >>> 4) & 0x0f
+    const aLo = aByte & 0x0f
+    const bHi = (bByte >>> 4) & 0x0f
+    const bLo = bByte & 0x0f
+
+    sumA += aHi + aLo
+    sumB += bHi + bLo
+    sumAB += aHi * bHi + aLo * bLo
+    sumAA += aHi * aHi + aLo * aLo
+    sumBB += bHi * bHi + bLo * bLo
+
+    i += 2
+    byteIdx++
+  }
+  if (i < aDim) {
+    // Odd dim: only the high nibble of the final byte is data.
+    const aHi = (a[byteIdx] >>> 4) & 0x0f
+    const bHi = (b[byteIdx] >>> 4) & 0x0f
+    sumA += aHi
+    sumB += bHi
+    sumAB += aHi * bHi
+    sumAA += aHi * aHi
+    sumBB += bHi * bHi
+  }
+
+  const aScale = (aMax - aMin) / 15
+  const bScale = (bMax - bMin) / 15
+  const n = aDim
+
+  const dot =
+    n * aMin * bMin +
+    aMin * bScale * sumB +
+    bMin * aScale * sumA +
+    aScale * bScale * sumAB
+
+  const normASq =
+    n * aMin * aMin +
+    2 * aMin * aScale * sumA +
+    aScale * aScale * sumAA
+
+  const normBSq =
+    n * bMin * bMin +
+    2 * bMin * bScale * sumB +
+    bScale * bScale * sumBB
+
+  const denom = Math.sqrt(normASq) * Math.sqrt(normBSq)
+  if (denom === 0) return 1.0
+
+  const cosine = dot / denom
+  return 1 - Math.max(-1, Math.min(1, cosine))
+}
+
+/** Signature of the SQ4 approximate-distance function (quantized cosine distance). */
+export type SQ4DistanceFn = (
+  a: Uint8Array,
+  aMin: number,
+  aMax: number,
+  aDim: number,
+  b: Uint8Array,
+  bMin: number,
+  bMax: number,
+  bDim: number
+) => number
+
+/**
+ * Active SQ4 distance implementation. Defaults to the JS {@link distanceSQ4Js};
+ * swapped to cortex's SIMD Rust implementation by {@link setSQ4DistanceImplementation}
+ * when a `distance:sq4` provider is registered. The native implementation is
+ * byte-compatible (same quantized cosine formula with `15` as the quantization
+ * range), so results match within float tolerance.
+ */
+let activeSQ4Distance: SQ4DistanceFn = distanceSQ4Js
+
+/**
+ * @description Approximate cosine distance between two SQ4-quantized vectors,
+ * dispatched to the active implementation (JS by default, native when
+ * `distance:sq4` is registered). Used in the HNSW SQ4 reranking hot path when
+ * `config.quantization.bits === 4`.
+ */
+export function distanceSQ4(
+  a: Uint8Array,
+  aMin: number,
+  aMax: number,
+  aDim: number,
+  b: Uint8Array,
+  bMin: number,
+  bMax: number,
+  bDim: number
+): number {
+  return activeSQ4Distance(a, aMin, aMax, aDim, b, bMin, bMax, bDim)
+}
+
+/**
+ * @description Replace the SQ4 approximate-distance implementation at runtime
+ * (cortex's Rust SIMD `distance:sq4`). Called by `brainy.ts` when the provider
+ * is registered. Pass {@link distanceSQ4Js} to restore the JS default.
+ */
+export function setSQ4DistanceImplementation(fn: SQ4DistanceFn): void {
+  activeSQ4Distance = fn
+}
+
+/**
+ * @description Serialize an SQ4 quantized vector to a compact binary format.
+ *
+ * Layout: `[min: float32][max: float32][dim: uint32 LE][packed: uint8[]]`.
+ * Total size: `12 + ceil(dim/2)` bytes.
+ *
+ * The `dim` field is required (unlike SQ8) because the packed length alone
+ * doesn't disambiguate even-vs-odd original dimension. The 4-byte `dim`
+ * header keeps total overhead under 1% for typical 384-dim vectors.
+ */
+export function serializeSQ4(sq4: SQ4QuantizedVector): ArrayBuffer {
+  const packedLen = sq4.quantized.length
+  const buffer = new ArrayBuffer(12 + packedLen)
+  const view = new DataView(buffer)
+  view.setFloat32(0, sq4.min, true) // little-endian
+  view.setFloat32(4, sq4.max, true)
+  view.setUint32(8, sq4.dim, true)
+  new Uint8Array(buffer, 12).set(sq4.quantized)
+  return buffer
+}
+
+/**
+ * @description Deserialize an SQ4 quantized vector from the binary format
+ * written by {@link serializeSQ4}.
+ */
+export function deserializeSQ4(buffer: ArrayBuffer): SQ4QuantizedVector {
+  const view = new DataView(buffer)
+  const min = view.getFloat32(0, true)
+  const max = view.getFloat32(4, true)
+  const dim = view.getUint32(8, true)
+  const quantized = new Uint8Array(buffer, 12)
+  return { quantized, min, max, dim }
+}
+
+/** Clamp a value to `[0, 15]` and return as an integer in the 4-bit range. */
+function clampNibble(n: number): number {
+  if (n < 0) return 0
+  if (n > 15) return 15
+  return n | 0
+}
