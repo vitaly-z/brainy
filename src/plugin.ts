@@ -217,6 +217,31 @@ export interface HnswProvider {
 }
 
 /**
+ * The `'diskann'` provider — a billion-scale alternative to HNSW backed
+ * by cortex's pure-Rust Vamana + Product Quantization implementation
+ * (see ADR-002 in the cortex repo).
+ *
+ * Structurally a drop-in for [`HnswProvider`]: brainy calls the same
+ * `addItem` / `search` / `rebuild` surface and never needs to know
+ * which index is underneath. The differences are operational:
+ *
+ * - **Memory footprint**: ~16 GB RAM at 1 B vectors (PQ codes only).
+ *   HNSW would need ~1.5 TB to keep the full vectors resident.
+ * - **Build model**: build-once, query-many. Dynamic insertions buffer
+ *   to an in-memory delta brute-forced alongside the main index;
+ *   `rebuild()` folds them in.
+ * - **Storage**: requires a local filesystem path (NVMe SSD for the
+ *   published latency numbers). Cloud-storage adapters continue using
+ *   HNSW.
+ *
+ * Engagement is automatic when the cortex provider is registered, the
+ * storage adapter exposes `getBinaryBlobPath`, and the metadata index
+ * has a stable `idMapper`. Users force the legacy index via
+ * `config.index.type = 'hnsw'`.
+ */
+export type DiskAnnProvider = HnswProvider
+
+/**
  * The `'entityIdMapper'` provider — a drop-in for `EntityIdMapper`. Injected
  * into the TypeScript `MetadataIndexManager` when a native metadata index is
  * not also registered; that coordinator calls this full surface (incl.

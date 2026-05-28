@@ -369,6 +369,15 @@ export interface GraphVerb {
  * HNSW index configuration
  */
 export interface HNSWConfig {
+  /**
+   * Index engine selector. Defaults to auto-detect: cortex's DiskANN
+   * engages when registered + storage is local + a stable idMapper is
+   * available (ADR-002); otherwise HNSW. Set explicitly to override:
+   * - `'hnsw'` — force the in-memory HNSW index (the historical default).
+   * - `'diskann'` — require cortex's DiskANN; throw if conditions
+   *   aren't met rather than silently falling back.
+   */
+  type?: 'hnsw' | 'diskann'
   M: number // Maximum number of connections per noun
   efConstruction: number // Size of the dynamic candidate list during construction
   efSearch: number // Size of the dynamic candidate list during search
@@ -383,6 +392,29 @@ export interface HNSWConfig {
   }
   // Vector storage mode
   vectorStorage?: 'memory' | 'lazy'  // default: 'memory' — 'lazy' evicts vectors after insert
+  /**
+   * DiskANN-specific tuning. Only consulted when `type === 'diskann'`
+   * or auto-engagement selects DiskANN. Sensible defaults match the
+   * published Vamana paper (R=64, L=100, α=1.2, M=16, ksub=256).
+   */
+  diskann?: {
+    /** PQ subspaces. dim must be divisible by m. Default 16. */
+    pqM?: number
+    /** Centroids per subspace. Default 256 (8-bit codes). */
+    pqKsub?: number
+    /** Vamana max degree (R). Default 64. */
+    maxDegree?: number
+    /** Build-time candidate list size (L). Default 100. */
+    searchListSize?: number
+    /** α-pruning density factor. Default 1.2. */
+    alpha?: number
+    /** Use file-backed adjacency during build. Required >~100M nodes. */
+    useMmapAdjacency?: boolean
+    /** Scratch file path when useMmapAdjacency is true. */
+    mmapAdjacencyPath?: string
+    /** Index file path. Defaults to `<storageRoot>/_diskann/main.bin`. */
+    indexPath?: string
+  }
 }
 
 /**
