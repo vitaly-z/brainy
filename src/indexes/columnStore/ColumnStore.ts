@@ -125,12 +125,29 @@ export class ColumnStore implements ColumnStoreProvider {
           this.manifests.set(fieldName, manifest)
           this.fieldTypes.set(fieldName, manifest.valueType)
 
-          // Load global deleted bitmap if it exists
+          // Load global deleted bitmap if it exists. Raw blob preferred
+          // (2.4.0 #4 cortex-shared format); legacy envelope fallback for
+          // indexes written before format unification.
           try {
-            const deletedPath = `${this.basePath}/${fieldName}/DELETED.bin`
-            const stored = await (storage as any).readObjectFromPath(deletedPath)
-            if (stored && stored._binary && stored.data) {
-              const buf = Buffer.from(stored.data, 'base64')
+            let buf: Buffer | null = null
+
+            const adapter = storage as unknown as {
+              loadBinaryBlob?: (key: string) => Promise<Buffer | null>
+              readObjectFromPath: (path: string) => Promise<any>
+            }
+            if (typeof adapter.loadBinaryBlob === 'function') {
+              const key = `${this.basePath}/${fieldName}/DELETED`
+              const blob = await adapter.loadBinaryBlob(key)
+              if (blob && blob.length > 0) buf = blob
+            }
+            if (!buf) {
+              const deletedPath = `${this.basePath}/${fieldName}/DELETED.bin`
+              const stored = await adapter.readObjectFromPath(deletedPath)
+              if (stored && stored._binary && stored.data) {
+                buf = Buffer.from(stored.data, 'base64')
+              }
+            }
+            if (buf) {
               this.deletedEntities.set(fieldName, RoaringBitmap32.deserialize(buf, true))
             }
           } catch {
@@ -408,6 +425,23 @@ export class ColumnStore implements ColumnStoreProvider {
 
   /**
    * Flush a single field's tail buffer to a new L0 segment.
+   *
+   * Storage path (2.4.0 #4 / cortex-interchange contract):
+   *   When the storage adapter exposes the binary-blob primitive
+   *   (`saveBinaryBlob` — every brainy adapter ≥7.25.0 does), the segment
+   *   bytes are written as a raw blob at the shared cortex key
+   *   `_column_index/<field>/L<level>-NNNNNN` (suffix-free; the adapter
+   *   appends its own). This matches byte-for-byte what cortex's
+   *   `NativeColumnStore` writes, so JS- and native-written indexes
+   *   interchange without re-encoding.
+   *
+   *   When the adapter doesn't (older custom adapters that didn't follow
+   *   the 7.25.0 primitive surface), we fall back to the legacy
+   *   `writeObjectToPath` envelope — `{ _binary, data: <base64> }` at
+   *   `_column_index/<field>/L<level>-NNNNNN.cidx`. Cortex's 2.3.1
+   *   read-side fallback handles the legacy envelope on its end, so the
+   *   format mismatch is transparent in both directions during the
+   *   transition.
    */
   private async flushBuffer(field: string, buffer: ColumnTailBuffer): Promise<void> {
     const { values, entityIds, pendingRemovals } = buffer.drain()
@@ -416,10 +450,15 @@ export class ColumnStore implements ColumnStoreProvider {
     const manifest = this.manifests.get(field)
     if (!manifest) return
 
+    const storage = this.storage as unknown as {
+      saveBinaryBlob?: (key: string, data: Buffer) => Promise<void>
+      writeObjectToPath: (path: string, value: unknown) => Promise<void>
+    }
+    const canUseBlob = typeof storage.saveBinaryBlob === 'function'
+
     // Write segment if we have values
     if (values.length > 0) {
       const segId = manifest.nextSegmentId()
-      const segPath = manifest.segmentPath(0, segId)
 
       const segBuffer = writeSegmentToBuffer(
         {
@@ -435,13 +474,22 @@ export class ColumnStore implements ColumnStoreProvider {
         entityIds
       )
 
-      // Store segment as binary data
-      await (this.storage as any).writeObjectToPath(segPath, {
-        _binary: true,
-        data: segBuffer.toString('base64')
-      })
+      if (canUseBlob) {
+        // Raw blob, cortex-shared key convention.
+        const key = `${this.basePath}/${field}/L0-${String(segId).padStart(6, '0')}`
+        await storage.saveBinaryBlob!(key, segBuffer)
+      } else {
+        // Legacy envelope path for adapters without the binary-blob primitive.
+        const segPath = manifest.segmentPath(0, segId)
+        await storage.writeObjectToPath(segPath, {
+          _binary: true,
+          data: segBuffer.toString('base64')
+        })
+      }
 
-      // Register in manifest
+      // Register in manifest. The `.cidx` file name in the manifest is the
+      // legacy-format file the cortex 2.3.1 read-side fallback looks for; the
+      // raw-blob key derives from segId at read time. Both paths converge.
       manifest.addSegment({
         id: segId,
         level: 0,
@@ -465,15 +513,21 @@ export class ColumnStore implements ColumnStoreProvider {
       for (const id of pendingRemovals) deleted.add(id)
     }
 
-    // Persist the global deleted bitmap alongside the manifest
+    // Persist the global deleted bitmap alongside the manifest. Same
+    // raw-blob preference as segments — shared cortex key `<base>/<field>/DELETED`.
     const deleted = this.deletedEntities.get(field)
     if (deleted && deleted.size > 0) {
-      const deletedPath = `${this.basePath}/${field}/DELETED.bin`
       const serialized = deleted.serialize(true)
-      await (this.storage as any).writeObjectToPath(deletedPath, {
-        _binary: true,
-        data: Buffer.from(serialized).toString('base64')
-      })
+      if (canUseBlob) {
+        const deletedKey = `${this.basePath}/${field}/DELETED`
+        await storage.saveBinaryBlob!(deletedKey, Buffer.from(serialized))
+      } else {
+        const deletedPath = `${this.basePath}/${field}/DELETED.bin`
+        await storage.writeObjectToPath(deletedPath, {
+          _binary: true,
+          data: Buffer.from(serialized).toString('base64')
+        })
+      }
     }
 
     // Save manifest
@@ -508,24 +562,43 @@ export class ColumnStore implements ColumnStoreProvider {
 
   /**
    * Load a segment from storage and create a cursor.
+   *
+   * Reads the raw-blob layout first (the 2.4.0 #4 shared-with-cortex format),
+   * then falls back to the legacy `{ _binary, base64 }` envelope at the
+   * `.cidx` object-path so indexes written before the format unification keep
+   * loading correctly. Mirror of cortex's 2.3.1 read-side fallback.
    */
   private async loadSegmentCursor(field: string, seg: SegmentMeta): Promise<ColumnSegmentCursor | null> {
     const manifest = this.manifests.get(field)
     if (!manifest) return null
 
     try {
-      const segPath = manifest.segmentPath(seg.level, seg.id)
-      const stored = await (this.storage as any).readObjectFromPath(segPath)
-      if (!stored) return null
+      let buf: Buffer | null = null
 
-      // Handle binary storage format
-      let buf: Buffer
-      if (stored._binary && stored.data) {
-        buf = Buffer.from(stored.data, 'base64')
-      } else if (Buffer.isBuffer(stored)) {
-        buf = stored
-      } else {
-        return null
+      const storage = this.storage as unknown as {
+        loadBinaryBlob?: (key: string) => Promise<Buffer | null>
+        readObjectFromPath: (path: string) => Promise<any>
+      }
+
+      // Preferred: raw blob at the cortex-shared key.
+      if (typeof storage.loadBinaryBlob === 'function') {
+        const key = `${this.basePath}/${field}/L${seg.level}-${String(seg.id).padStart(6, '0')}`
+        const blob = await storage.loadBinaryBlob(key)
+        if (blob && blob.length > 0) buf = blob
+      }
+
+      // Legacy fallback: `{ _binary, base64 }` envelope at the .cidx object-path.
+      if (!buf) {
+        const segPath = manifest.segmentPath(seg.level, seg.id)
+        const stored = await storage.readObjectFromPath(segPath)
+        if (!stored) return null
+        if (stored._binary && stored.data) {
+          buf = Buffer.from(stored.data, 'base64')
+        } else if (Buffer.isBuffer(stored)) {
+          buf = stored
+        } else {
+          return null
+        }
       }
 
       const parsed = readSegmentFromBuffer(buf)
