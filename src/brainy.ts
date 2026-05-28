@@ -4076,6 +4076,169 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return this.migrateInternal(runner, options)
   }
 
+  // ─── Index engine migration (ADR-002) ────────────────────────────
+
+  /**
+   * Convert the current HNSW index to DiskANN for billion-scale
+   * search.
+   *
+   * The migration runs in three phases:
+   * 1. **Build**: stream every live noun's vector into a new DiskANN
+   *    file at the configured path. Existing HNSW continues serving
+   *    queries until the swap.
+   * 2. **Verify**: sample queries against both indexes; require recall
+   *    parity within the configured threshold before swapping.
+   * 3. **Swap**: atomically replace `this.index` with the DiskANN
+   *    wrapper.
+   *
+   * Reversible via {@link migrateToHnsw}. Both paths preserve the
+   * underlying canonical storage (entity JSON, metadata index) — only
+   * the search engine changes.
+   *
+   * @param options - Migration tuning. Defaults match ADR-002.
+   * @throws If the `'diskann'` provider isn't registered (load cortex
+   *         as a plugin) or if recall verification fails.
+   *
+   * @example
+   * ```typescript
+   * await brain.migrateToDiskAnn({ recallTarget: 0.95, paddingFactor: 1.2 })
+   * ```
+   */
+  async migrateToDiskAnn(options?: {
+    /** Minimum recall@10 vs HNSW required to accept the swap. Default 0.95. */
+    recallTarget?: number
+    /** PaddingFactor handed to DiskANN search at verify time. Default 1.2. */
+    paddingFactor?: number
+    /** Number of sampled queries used for recall verification. Default 100. */
+    verifySampleSize?: number
+    /** Build in parallel while old index serves queries. Default true. */
+    parallel?: boolean
+  }): Promise<{ recall: number; sampledQueries: number; newIndexPath: string }> {
+    await this.ensureInitialized()
+
+    const recallTarget = options?.recallTarget ?? 0.95
+    const paddingFactor = options?.paddingFactor ?? 1.2
+    const sampleSize = options?.verifySampleSize ?? 100
+
+    const diskannFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('diskann')
+    if (!diskannFactory) {
+      throw new Error(
+        'migrateToDiskAnn requires the cortex DiskANN provider. ' +
+        'Install + load @soulcraft/cortex as a brainy plugin.'
+      )
+    }
+    if (!this.diskAnnAutoEngageConditionsMet()) {
+      throw new Error(
+        'migrateToDiskAnn requires a local filesystem storage adapter ' +
+        'and a stable idMapper. See ADR-002.'
+      )
+    }
+
+    const oldIndex = this.index
+    const newIndex = this.instantiateDiskAnn(diskannFactory, this.resolveHNSWPersistMode())
+
+    // Phase 1: stream every live noun's vector into the new index's delta.
+    let vectorCount = 0
+    const idMapper = this.metadataIndex.getIdMapper?.()
+    if (!idMapper) {
+      throw new Error('migrateToDiskAnn: metadata index has no idMapper')
+    }
+    for (const intId of idMapper.getAllIntIds()) {
+      const uuid = idMapper.getUuid(intId)
+      if (!uuid) continue
+      const noun = await this.storage.getNoun(uuid)
+      const vec = noun?.vector
+      if (!vec) continue
+      await newIndex.addItem({ id: uuid, vector: vec } as any)
+      vectorCount++
+    }
+    await newIndex.rebuild()
+
+    // Phase 2: recall verification. Sample random vectors from the live
+    // set; for each, search both indexes at k=10 and compute Jaccard.
+    let totalHits = 0
+    let queriesRun = 0
+    const allIds = idMapper.getAllIntIds()
+    const stride = Math.max(1, Math.floor(allIds.length / sampleSize))
+    for (let i = 0; i < allIds.length && queriesRun < sampleSize; i += stride) {
+      const uuid = idMapper.getUuid(allIds[i])
+      if (!uuid) continue
+      const noun = await this.storage.getNoun(uuid)
+      const vec = noun?.vector
+      if (!vec) continue
+      const truth = await oldIndex.search(vec, 10)
+      const got = await newIndex.search(vec, 10, undefined, { rerank: { multiplier: paddingFactor } })
+      const truthSet = new Set(truth.map(([id]) => id))
+      const overlap = got.filter(([id]) => truthSet.has(id)).length
+      totalHits += overlap / Math.max(1, truth.length)
+      queriesRun++
+    }
+    const recall = queriesRun > 0 ? totalHits / queriesRun : 0
+
+    if (recall < recallTarget) {
+      throw new Error(
+        `migrateToDiskAnn aborted: recall ${recall.toFixed(3)} < target ${recallTarget}. ` +
+        'Old HNSW index left in place. Retry with looser params (larger ' +
+        'paddingFactor, larger searchListSize) or accept lower recall.'
+      )
+    }
+
+    // Phase 3: atomic swap.
+    this.index = newIndex as any
+    if (!this.config.silent) {
+      console.log(
+        `[brainy] migrated to DiskANN — ${vectorCount} vectors, ` +
+        `recall=${recall.toFixed(3)} on ${queriesRun} sample queries`
+      )
+    }
+    return {
+      recall,
+      sampledQueries: queriesRun,
+      newIndexPath: (newIndex as any).config?.indexPath ?? '',
+    }
+  }
+
+  /**
+   * Reverse {@link migrateToDiskAnn}: rebuild the in-memory HNSW index
+   * from the current vector set and swap it back in. Contract from
+   * ADR-002: this is always available so users can roll back from
+   * production issues.
+   */
+  async migrateToHnsw(): Promise<{ vectorCount: number }> {
+    await this.ensureInitialized()
+
+    const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
+    const persistMode = this.resolveHNSWPersistMode()
+    const newIndex = hnswFactory
+      ? hnswFactory(
+          { ...this.config.index, distanceFunction: this.distance },
+          this.distance,
+          { storage: this.storage, persistMode }
+        )
+      : this.setupIndex()
+
+    let vectorCount = 0
+    const idMapper = this.metadataIndex.getIdMapper?.()
+    if (!idMapper) {
+      throw new Error('migrateToHnsw: metadata index has no idMapper')
+    }
+    for (const intId of idMapper.getAllIntIds()) {
+      const uuid = idMapper.getUuid(intId)
+      if (!uuid) continue
+      const noun = await this.storage.getNoun(uuid)
+      const vec = noun?.vector
+      if (!vec) continue
+      await newIndex.addItem({ id: uuid, vector: vec } as any)
+      vectorCount++
+    }
+
+    this.index = newIndex as any
+    if (!this.config.silent) {
+      console.log(`[brainy] migrated to HNSW — ${vectorCount} vectors`)
+    }
+    return { vectorCount }
+  }
+
   /**
    * Check for pending migrations during init().
    * Runs inline for small datasets if autoMigrate is enabled,
@@ -7570,13 +7733,50 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
-   * Create an HNSW index, using plugin factory when available.
+   * Create the vector index, using plugin factories when available.
    * Shared by init(), fork(), checkout(), and clear() to avoid duplication.
+   *
+   * Selection order (first match wins):
+   * 1. `config.index.type === 'diskann'` (explicit opt-in):
+   *    require the `'diskann'` provider; throw if absent.
+   * 2. Auto-engage DiskANN when ALL of these hold:
+   *    - `'diskann'` provider is registered.
+   *    - The storage adapter exposes a local path via
+   *      `getBinaryBlobPath('_diskann/main')`.
+   *    - The metadata index has a stable `idMapper`.
+   *    - `config.index.type !== 'hnsw'` (no explicit opt-out).
+   * 3. `'hnsw'` provider if registered (cortex's native HNSW).
+   * 4. Brainy's built-in TS HNSWIndex (the always-available fallback).
+   *
+   * See ADR-002 in the cortex repo for the engagement rationale.
    */
   private createIndex(): HNSWIndex {
+    const persistMode = this.resolveHNSWPersistMode()
+    const indexType = (this.config.index as any)?.type as 'hnsw' | 'diskann' | undefined
+
+    const diskannFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('diskann')
+
+    if (indexType === 'diskann') {
+      if (!diskannFactory) {
+        throw new Error(
+          "config.index.type='diskann' was requested but the 'diskann' provider " +
+          'is not registered. Load cortex as a plugin (it ships the DiskANN engine) ' +
+          'or remove the explicit type to fall back to HNSW.'
+        )
+      }
+      return this.instantiateDiskAnn(diskannFactory, persistMode)
+    }
+
+    if (
+      indexType !== 'hnsw' &&
+      diskannFactory &&
+      this.diskAnnAutoEngageConditionsMet()
+    ) {
+      return this.instantiateDiskAnn(diskannFactory, persistMode)
+    }
+
     const hnswFactory = this.pluginRegistry.getProvider<(config: any, distance: DistanceFunction, options: any) => any>('hnsw')
     if (hnswFactory) {
-      const persistMode = this.resolveHNSWPersistMode()
       return hnswFactory(
         { ...this.config.index, distanceFunction: this.distance },
         this.distance,
@@ -7584,6 +7784,58 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       )
     }
     return this.setupIndex()
+  }
+
+  /**
+   * Auto-engagement guard for DiskANN (see {@link createIndex}).
+   * Conservative on purpose — we only engage when the deployment shape
+   * is the one DiskANN was designed for (local SSD + stable idMapper).
+   */
+  private diskAnnAutoEngageConditionsMet(): boolean {
+    const storageWithBlob = this.storage as unknown as {
+      getBinaryBlobPath?: (key: string) => string | null
+    }
+    const indexPath = storageWithBlob.getBinaryBlobPath?.('_diskann/main') ?? null
+    if (!indexPath) return false
+    const idMapper = this.metadataIndex?.getIdMapper?.()
+    if (!idMapper) return false
+    return true
+  }
+
+  /**
+   * Call the DiskANN factory with the right config shape. Pulled out of
+   * {@link createIndex} so the explicit-opt-in and auto-engage paths
+   * share one construction site.
+   */
+  private instantiateDiskAnn(
+    factory: (config: any, distance: DistanceFunction, options: any) => any,
+    persistMode: 'immediate' | 'deferred'
+  ): HNSWIndex {
+    const storageWithBlob = this.storage as unknown as {
+      getBinaryBlobPath?: (key: string) => string | null
+    }
+    const indexPath =
+      (this.config.index as any)?.diskann?.indexPath ??
+      storageWithBlob.getBinaryBlobPath?.('_diskann/main') ??
+      '_diskann/main.bin'
+    const dim = this.dimensions ?? 384
+    const cfgIn = (this.config.index as any)?.diskann ?? {}
+    const cfg = {
+      dimensions: dim,
+      indexPath,
+      distanceFunction: this.distance,
+      ...cfgIn,
+    }
+    if (!this.config.silent) {
+      console.log(
+        `[brainy] DiskANN engaged (path=${indexPath}, dim=${dim}). ` +
+        'Override with config.index.type=\'hnsw\' to disable.'
+      )
+    }
+    return factory(cfg, this.distance, {
+      storage: this.storage,
+      persistMode,
+    })
   }
 
   /**
