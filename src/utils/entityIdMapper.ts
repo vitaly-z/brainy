@@ -36,6 +36,51 @@
 import type { StorageAdapter } from '../coreTypes.js'
 import type { EntityIdMapperProvider } from '../plugin.js'
 
+/**
+ * The largest entity int the JS fallback `EntityIdMapper` will allocate.
+ * The metadata index's roaring bitmaps are 32-bit-keyed (`Roaring32`), so
+ * allowing the JS counter past this point would silently corrupt every
+ * downstream bitmap. The cortex 3.0 binary mapper supports a U64 IdSpace
+ * for brains above this ceiling — see the
+ * [`EntityIdSpaceExceeded`](#EntityIdSpaceExceeded) message for the
+ * migration pointer.
+ */
+export const U32_ENTITY_ID_MAX = 0xffff_ffff
+
+/**
+ * Thrown by the JS fallback `EntityIdMapper` when `nextId` would exceed
+ * [`U32_ENTITY_ID_MAX`](#U32_ENTITY_ID_MAX). The JS path is the
+ * cortex-free fallback; once a brain has more than ~4.29 B entities,
+ * callers MUST install the cortex 3.0 `NativeBinaryEntityIdMapper` with
+ * `idSpace: 'u64'` (mmap-backed extendible-hash KV; persists the full
+ * u64 range losslessly).
+ *
+ * Brainy 8.0 surfaces this loudly rather than silently widening past
+ * u32::MAX, because the metadata index's roaring bitmaps would silently
+ * truncate entity ids and zero-out query results.
+ */
+export class EntityIdSpaceExceeded extends Error {
+  /** The u32 entity-id ceiling. */
+  readonly ceiling: number = U32_ENTITY_ID_MAX
+  /**
+   * The would-be `nextId` value the mapper was about to assign — always
+   * `U32_ENTITY_ID_MAX + 1`.
+   */
+  readonly attempted: number
+
+  constructor(attempted: number) {
+    super(
+      `EntityIdMapper: nextId ${attempted} would exceed u32::MAX ` +
+        `(${U32_ENTITY_ID_MAX}). The JS fallback mapper caps at u32 to ` +
+        `match the metadata index's Roaring32 bitmap width. For >4.29 B ` +
+        `entities, install @soulcraft/cortex and configure the binary ` +
+        `mapper with idSpace: 'u64' (mmap-backed extendible-hash KV).`,
+    )
+    this.name = 'EntityIdSpaceExceeded'
+    this.attempted = attempted
+  }
+}
+
 export interface EntityIdMapperOptions {
   storage: StorageAdapter
   storageKey?: string
@@ -109,7 +154,13 @@ export class EntityIdMapper implements EntityIdMapperProvider {
   }
 
   /**
-   * Get integer ID for UUID, assigning a new ID if not exists
+   * Get integer ID for UUID, assigning a new ID if not exists.
+   *
+   * The JS fallback mapper caps at [`U32_ENTITY_ID_MAX`](#U32_ENTITY_ID_MAX)
+   * to match the metadata index's Roaring32 bitmap width — once `nextId`
+   * would exceed that, throws {@link EntityIdSpaceExceeded} so the caller
+   * loudly migrates to cortex's binary mapper with `idSpace: 'u64'`
+   * rather than silently truncating entity ids.
    */
   getOrAssign(uuid: string): number {
     const existing = this.uuidToInt.get(uuid)
@@ -118,6 +169,9 @@ export class EntityIdMapper implements EntityIdMapperProvider {
     }
 
     // Assign new ID
+    if (this.nextId > U32_ENTITY_ID_MAX) {
+      throw new EntityIdSpaceExceeded(this.nextId)
+    }
     const newId = this.nextId++
     this.uuidToInt.set(uuid, newId)
     this.intToUuid.set(newId, uuid)
