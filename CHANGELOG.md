@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.29.0](https://github.com/soulcraftlabs/brainy/compare/v7.28.0...v7.29.0) (2026-06-04)
+
+- feat: subtype top-level field + trackField + migrateField (2cdf70e)
+- feat(8.0): EntityIdMapper U32 ceiling + EntityIdSpaceExceeded error (e47fea0)
+- feat: DiskANN auto-engagement + migrateToDiskAnn/migrateToHnsw (8f130d3)
+- feat(plugin): DiskAnnProvider contract + HNSWConfig.type/diskann knobs (f885f81)
+
+
 ### [7.28.0](https://github.com/soulcraftlabs/brainy/compare/v7.27.0...v7.28.0) (2026-05-28)
 
 - feat: SQ4 (4-bit) scalar quantization + native distance hook (2.5.0 #30) (73e7e39)
