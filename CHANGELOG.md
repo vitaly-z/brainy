@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.30.0](https://github.com/soulcraftlabs/brainy/compare/v7.29.0...v7.30.0) (2026-06-05)
+
+- feat: verb subtype + updateRelation + requireSubtype enforcement (c0d326b)
+
+
 ### [7.29.0](https://github.com/soulcraftlabs/brainy/compare/v7.28.0...v7.29.0) (2026-06-04)
 
 - feat: subtype top-level field + trackField + migrateField (2cdf70e)
