@@ -39,15 +39,19 @@ That's it. Brainy auto-configures storage, loads the embedding model, and builds
 const reactId: string = await brain.add({
   data: 'React is a JavaScript library for building user interfaces',
   type: NounType.Concept,
+  subtype: 'library',                                  // Sub-classification within Concept
   metadata: { category: 'frontend', year: 2013 }
 })
 
 const nextId: string = await brain.add({
   data: 'Next.js framework for React with server-side rendering',
   type: NounType.Concept,
+  subtype: 'framework',
   metadata: { category: 'framework', year: 2016 }
 })
 ```
+
+`type` is one of Brainy's 42 stable NounTypes. `subtype` is your free-form sub-classification within that type — flat string, no hierarchy, indexed on the fast path. See **[Subtypes & Facets](./subtypes-and-facets.md)** for the full guide.
 
 ## 4. Create Relationships
 

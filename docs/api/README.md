@@ -109,11 +109,12 @@ Add a single entity to the database.
 
 ```typescript
 const id = await brain.add({
- data: 'JavaScript is a programming language', // Text or pre-computed vector
- type: NounType.Concept, // Required: Entity type
- metadata: { // Optional metadata
- category: 'programming',
- year: 1995
+ data: 'JavaScript is a programming language',  // Text or pre-computed vector
+ type: NounType.Concept,                        // Required: Entity type
+ subtype: 'language',                           // Optional: sub-classification
+ metadata: {                                    // Optional: queryable fields
+   category: 'programming',
+   year: 1995
  }
 })
 ```
@@ -121,6 +122,7 @@ const id = await brain.add({
 **Parameters:**
 - `data`: `string | number[]` - Content to embed (text auto-embeds) or pre-computed vector
 - `type`: `NounType` - Entity type (required)
+- `subtype?`: `string` - Per-product sub-classification within the NounType (top-level standard field, indexed on the fast path). See [Subtypes & Facets](../guides/subtypes-and-facets.md).
 - `metadata?`: `object` - Structured queryable fields (indexed by MetadataIndex, used in `where` filters)
 - `id?`: `string` - Custom ID (auto-generated UUID if not provided)
 - `vector?`: `number[]` - Pre-computed vector (skips auto-embedding)
@@ -158,15 +160,20 @@ Update an existing entity.
 ```typescript
 await brain.update({
  id: entityId,
- data: 'Updated content', // Optional: new data
- metadata: { updated: true } // Optional: new metadata (merges)
+ data: 'Updated content',         // Optional: new data
+ subtype: 'archived',              // Optional: change sub-classification
+ metadata: { updated: true }       // Optional: new metadata (merges)
 })
 ```
 
 **Parameters:**
 - `id`: `string` - Entity ID
 - `data?`: `string | number[]` - New data/vector
-- `metadata?`: `object` - Metadata to merge
+- `type?`: `NounType` - Change entity type
+- `subtype?`: `string` - Change subtype (omit to preserve existing)
+- `metadata?`: `object` - Metadata to merge (or replace with `merge: false`)
+- `confidence?`: `number` - Update classification confidence
+- `weight?`: `number` - Update entity importance
 
 **Returns:** `Promise<void>`
 
@@ -221,6 +228,7 @@ const results = await brain.find({
 **FindParams:**
 - `query?`: `string` - Text for semantic + hybrid search (searches `data` via HNSW + text index)
 - `type?`: `NounType | NounType[]` - Filter by entity type(s). Alias for `where.noun`.
+- `subtype?`: `string | string[]` - Filter by sub-classification (top-level standard field, fast path). Single string for equality, array for set membership.
 - `where?`: `object` - Metadata filters. See **[Query Operators](../QUERY_OPERATORS.md)** for all operators.
 - `connected?`: `object` - Graph traversal options
  - `to?`: `string` - Target entity ID
@@ -1925,6 +1933,86 @@ Get total relationship count.
 ```typescript
 const count = await brain.getVerbCount()
 ```
+
+---
+
+### Subtype & facet APIs
+
+Full guide: **[Subtypes & Facets](../guides/subtypes-and-facets.md)**.
+
+#### `counts.bySubtype(type, subtype?)` → `Record<string, number> | number`
+
+O(1) subtype counts for a NounType (backed by the persisted rollup).
+
+```typescript
+brain.counts.bySubtype(NounType.Person)
+// → { employee: 12, customer: 847, vendor: 34 }
+
+brain.counts.bySubtype(NounType.Person, 'employee')
+// → 12
+```
+
+#### `counts.topSubtypes(type, n=10)` → `Array<[subtype, count]>`
+
+Top N subtypes ranked by count.
+
+```typescript
+brain.counts.topSubtypes(NounType.Person, 3)
+// → [['customer', 847], ['employee', 12], ['vendor', 34]]
+```
+
+#### `subtypesOf(type)` → `string[]`
+
+Sorted distinct subtypes seen for a NounType.
+
+```typescript
+brain.subtypesOf(NounType.Person)
+// → ['customer', 'employee', 'vendor']
+```
+
+#### `trackField(name, options?)` → `void`
+
+Register a metadata field for cardinality + per-NounType breakdown stats. With `values: [...]`, validates against the whitelist on `add()`/`update()`.
+
+```typescript
+brain.trackField('status')                                   // basic
+brain.trackField('status', { perType: true })                // with per-NounType breakdown
+brain.trackField('priority', { values: ['low', 'med', 'high'] })  // strict vocabulary
+```
+
+#### `counts.byField(name, options?)` → `Promise<Record<string, number>>`
+
+Counts by value for a tracked field. Requires `perType: true` registration if filtering by NounType.
+
+```typescript
+await brain.counts.byField('status')
+// → { todo: 12, doing: 3, done: 47 }
+
+await brain.counts.byField('status', { type: NounType.Task })
+// → { todo: 8, doing: 2, done: 30 }
+```
+
+#### `migrateField(options)` → `Promise<MigrationSummary>`
+
+Stream-and-rewrite a field across the brain. Supports `metadata.X`, `data.X`, and top-level paths. Idempotent.
+
+```typescript
+// One-shot rewrite
+await brain.migrateField({ from: 'metadata.kind', to: 'subtype' })
+
+// Deprecation window — keep source field readable
+await brain.migrateField({ from: 'data.kind', to: 'subtype', readBoth: true })
+
+// With progress reporting
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  batchSize: 500,
+  onProgress: ({ scanned, migrated }) => console.log(`${scanned} / ${migrated}`)
+})
+```
+
+Returns `{ scanned: number, migrated: number, skipped: number, errors: Array<{id, error}> }`.
 
 ---
 

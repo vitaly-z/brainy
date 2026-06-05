@@ -214,6 +214,14 @@ export interface HNSWNounWithMetadata {
   // TYPE (required, explicit)
   type: NounType
 
+  // SUBTYPE — optional per-product sub-classification within a NounType (e.g. a Person
+  // entity might have subtype 'employee' / 'customer' / 'vendor'; an Event might have
+  // subtype 'meeting' / 'milestone'). Flat string (no hierarchy) — consumers decide the
+  // vocabulary. Indexed and rolled up into per-NounType statistics so it's queryable
+  // (`find({ type, subtype })`) and aggregable (`groupBy:['subtype']`) on the standard-field
+  // fast path, never falling through to the metadata fallback.
+  subtype?: string
+
   // QUALITY METRICS (top-level, explicit)
   confidence?: number
   weight?: number
@@ -250,6 +258,7 @@ export const STANDARD_ENTITY_FIELDS: ReadonlySet<string> = new Set([
   'connections',
   'level',
   'type',
+  'subtype',
   'confidence',
   'weight',
   'createdAt',

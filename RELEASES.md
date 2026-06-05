@@ -11,6 +11,139 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.29.0 — 2026-06-04
+
+**Affected products:** anyone modeling entities with per-product sub-classification — every
+consumer that's been reaching for `metadata.kind`, a custom `metadata.subtype` field, a
+`data.kind` shape inside the payload, or similar ad-hoc conventions. Additive; drop-in from
+7.28.x. No deprecations.
+
+### New — `subtype` promoted to a top-level standard field
+
+`subtype?: string` is now a first-class standard field on every entity, alongside `type` /
+`confidence` / `weight`. Use it as the platform-standard primitive for sub-classifying entities
+within a NounType (`Person` → `'employee'` / `'customer'`; `Document` → `'invoice'` / `'contract'`;
+`Event` → `'milestone'` / `'meeting'`):
+
+```typescript
+await brain.add({
+  data: 'Avery Brooks — runs the AI lab',
+  type: NounType.Person,
+  subtype: 'employee',                  // top-level write param
+  metadata: { department: 'ai-lab' }
+})
+
+// Fast-path filter — column-store hit, not metadata fallback:
+const employees = await brain.find({ type: NounType.Person, subtype: 'employee' })
+
+// Set membership:
+const internal = await brain.find({
+  type: NounType.Person,
+  subtype: ['employee', 'contractor']
+})
+```
+
+Flat string, no hierarchy — your vocabulary, your choice. Brainy stores and counts, never validates.
+
+### New — O(1) subtype counts via the persisted rollup
+
+A new `_system/subtype-statistics.json` rollup is maintained incrementally as entities are added,
+updated, and deleted — mirroring the existing `nounCountsByType` machinery with the same self-heal
+behavior on poison detection. Counts are O(1) at billion scale:
+
+```typescript
+brain.counts.bySubtype(NounType.Person)
+// → { employee: 12, customer: 847, vendor: 34 }
+
+brain.counts.bySubtype(NounType.Person, 'employee')   // O(1) point count
+// → 12
+
+brain.counts.topSubtypes(NounType.Person, 3)
+// → [['customer', 847], ['employee', 12], ['vendor', 34]]
+
+brain.subtypesOf(NounType.Person)
+// → ['customer', 'employee', 'vendor']
+```
+
+### New — `brain.trackField()` for other metadata facets
+
+For facets that aren't the *primary* sub-classification (`status`, `source`, `role`, `paradigm`),
+`trackField` registers a field for cardinality + per-NounType breakdown stats without promoting
+each one to a top-level slot. Piggybacks on the existing aggregation engine, so backfill-on-define
+applies — registering on a populated brain scans existing entities on the first query:
+
+```typescript
+brain.trackField('status', { perType: true })
+
+await brain.counts.byField('status')
+// → { todo: 12, doing: 3, done: 47 }
+
+await brain.counts.byField('status', { type: NounType.Task })
+// → { todo: 8, doing: 2, done: 30 }
+
+// Opt-in vocabulary validation:
+brain.trackField('priority', { values: ['low', 'medium', 'high'] })
+// brain.add({ ..., metadata: { priority: 'urgent' } }) → throws
+```
+
+### New — generic `brain.migrateField()` for one-shot rewrites
+
+Streams every entity and copies a value from one field path to another. Supports top-level
+standard fields, `metadata.*`, and `data.*` paths; idempotent; with optional `readBoth: true`
+deprecation window that preserves the source field alongside the new one:
+
+```typescript
+// Phase 1: dual-populate (legacy readers still work)
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  readBoth: true
+})
+
+// ...readers migrate to subtype at their own pace...
+
+// Phase 2: clear the source field
+await brain.migrateField({ from: 'metadata.kind', to: 'subtype' })
+// → { scanned: 1500, migrated: 1500, skipped: 0, errors: [] }
+```
+
+Supports `batchSize` and `onProgress` for large brains.
+
+### Aggregation composition
+
+`subtype` is a standard-field group-by dimension out of the box — no `where:` wrapper, no
+metadata-fallback overhead:
+
+```typescript
+await brain.find({
+  aggregate: {
+    groupBy: ['type', 'subtype'],
+    metrics: { count: { op: 'COUNT' } }
+  }
+})
+// [
+//   { groupKey: { type: 'person',   subtype: 'customer' }, count: 847 },
+//   { groupKey: { type: 'person',   subtype: 'employee' }, count: 12 },
+//   { groupKey: { type: 'document', subtype: 'invoice'  }, count: 2103 },
+//   ...
+// ]
+```
+
+### Cortex compatibility
+
+Subtype works under Cortex out of the box via auto-field-indexing. Cortex will land its own
+native-side query-planner recognition + `subtypeCountsByType` native rollup in the next Cortex
+release for full parity with `type`'s fast path. Not a Brainy blocker — subtype reads/writes
+function correctly with current Cortex.
+
+### Docs
+
+Full guide: `docs/guides/subtypes-and-facets.md`. Subtype is documented as a core primitive
+throughout `README.md`, `docs/DATA_MODEL.md`, `docs/architecture/finite-type-system.md`,
+`docs/api/README.md`, and `docs/QUERY_OPERATORS.md`.
+
+---
+
 ## v7.24.0 — 2026-05-26
 
 **Affected products:** aggregation/reporting users + anyone calling `extractEntities` on

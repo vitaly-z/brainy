@@ -26,6 +26,13 @@ export interface Entity<T = any> {
   vector: Vector
   /** Entity type classification (NounType enum) */
   type: NounType
+  /**
+   * Per-product sub-classification within the NounType (e.g. a `Person` entity might
+   * have `subtype: 'employee'` or `'customer'`; a `Document` might have `subtype: 'invoice'`).
+   * Flat string, no hierarchy. Top-level standard field — indexed on the fast path and
+   * rolled into per-NounType statistics.
+   */
+  subtype?: string
   /** Opaque content — used for embeddings and semantic search. Not indexed by MetadataIndex. */
   data?: any
   /** User-defined structured fields — indexed and queryable via `where` filters. */
@@ -105,6 +112,7 @@ export interface Result<T = any> {
 
   // Convenience: Common entity fields flattened to top level
   type?: NounType      // Entity type (from entity.type)
+  subtype?: string     // Per-product sub-classification (from entity.subtype)
   metadata?: T         // Entity metadata (from entity.metadata)
   data?: any           // Entity data (from entity.data)
   confidence?: number  // Type classification confidence (from entity.confidence)
@@ -158,6 +166,14 @@ export interface AddParams<T = any> {
   data: any | Vector
   /** Entity type classification (required) */
   type: NounType
+  /**
+   * Per-product sub-classification within the NounType (e.g. a `Person` entity might have
+   * `subtype: 'employee'` or `'customer'`; a `Document` might have `subtype: 'invoice'`).
+   * Flat string, no hierarchy — consumers choose the vocabulary. Indexed and rolled up into
+   * per-NounType statistics for fast `find({ type, subtype })` filtering and `groupBy:['subtype']`
+   * aggregation on the standard-field fast path.
+   */
+  subtype?: string
   /** Structured queryable fields — indexed by MetadataIndex, used in `where` filters */
   metadata?: T
   /** Custom entity ID (auto-generated UUID v4 if not provided) */
@@ -181,6 +197,7 @@ export interface UpdateParams<T = any> {
   id: string                   // Entity to update
   data?: any                   // New content to re-embed
   type?: NounType             // Change type
+  subtype?: string            // Change subtype (set to '' or null-equivalent via dedicated unset is future work)
   metadata?: Partial<T>        // Metadata to update
   merge?: boolean             // Merge or replace metadata (default: true)
   vector?: Vector             // New pre-computed vector
@@ -252,6 +269,13 @@ export interface FindParams<T = any> {
   // Metadata Intelligence
   /** Filter by entity type(s). Alias for `where.noun`. */
   type?: NounType | NounType[]
+  /**
+   * Filter by per-product subtype (top-level standard field — uses the fast path, not the
+   * metadata fallback). Pass a single string for equality, or an array for set membership
+   * (e.g. `subtype: ['employee', 'contractor']`). For operator-form predicates (e.g.
+   * `{ exists: true }`, `{ missing: true }`) use `where: { subtype: { …operators… } }`.
+   */
+  subtype?: string | string[]
   /** Metadata filters using BFO operators (e.g., `{ year: { greaterThan: 2020 } }`) */
   where?: Partial<T>
   

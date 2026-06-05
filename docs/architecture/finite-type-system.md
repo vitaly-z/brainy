@@ -449,6 +449,26 @@ brain.registerNounType('chemical_compound', {
 })
 ```
 
+### 1a. Subtypes — sub-classification without hierarchy
+
+The 42-type taxonomy is intentionally coarse. Per-product vocabulary fits on the **`subtype`** axis — a top-level standard string field on every entity. Flat by design — no hierarchy, no parent chain, no recursive resolution. That preserves the Uint32Array-backed O(1) type stats while giving consumers a place to put `'employee'` / `'customer'` / `'invoice'` / `'milestone'` without burning a slot in the global enum.
+
+```typescript
+// Same NounType, different subtypes:
+await brain.add({ type: NounType.Person,   subtype: 'employee' })
+await brain.add({ type: NounType.Person,   subtype: 'customer' })
+await brain.add({ type: NounType.Document, subtype: 'invoice'  })
+
+// Fast path — column-store hit, not metadata fallback:
+await brain.find({ type: NounType.Person, subtype: 'employee' })
+
+// Per-NounType-per-subtype counts maintained incrementally:
+brain.counts.bySubtype(NounType.Person)
+// → { employee: 12, customer: 847 }
+```
+
+Subtype has its own statistics rollup (`_system/subtype-statistics.json`) maintained alongside `nounCountsByType`, so per-subtype counts stay O(1) at billion scale. Full guide: **[Subtypes & Facets](../guides/subtypes-and-facets.md)**.
+
 ### 2. Semantic not Structural
 
 ```typescript

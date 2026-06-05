@@ -11,7 +11,7 @@ import { HNSWIndex } from './hnsw/hnswIndex.js'
 // for the 99% of queries that don't filter by type (avoids searching 42 separate graphs)
 import { createStorage } from './storage/storageFactory.js'
 import { BaseStorage } from './storage/baseStorage.js'
-import { StorageAdapter, Vector, DistanceFunction, EmbeddingFunction, GraphVerb } from './coreTypes.js'
+import { StorageAdapter, Vector, DistanceFunction, EmbeddingFunction, GraphVerb, STANDARD_ENTITY_FIELDS } from './coreTypes.js'
 import {
   defaultEmbeddingFunction,
   cosineDistance,
@@ -97,7 +97,7 @@ import {
   BrainyStats,
   ScoreExplanation
 } from './types/brainy.types.js'
-import { NounType, VerbType } from './types/graphTypes.js'
+import { NounType, VerbType, TypeUtils } from './types/graphTypes.js'
 import { BrainyInterface } from './types/brainyInterface.js'
 import type { IntegrationHub } from './integrations/core/IntegrationHub.js'
 import { MigrationRunner } from './migration/MigrationRunner.js'
@@ -189,6 +189,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   private _pendingMigrationRunner?: MigrationRunner  // Deferred migration runner for large datasets
   private _aggregationIndex?: AggregationIndex       // Incremental aggregation engine
   private _materializer?: AggregateMaterializer      // Debounced materialization of aggregate results
+  /**
+   * Fields registered via `brain.trackField()` — drives optional value validation on
+   * `add()`/`update()` and powers `brain.counts.byField()`. Outer key is the field
+   * name (`'status'`, `'paradigm'`, `'role'`, ...); inner record carries the per-NounType
+   * flag and an optional value whitelist (when provided, writes with off-vocabulary
+   * values are rejected).
+   */
+  private _trackedFields: Map<string, { perType: boolean; values?: Set<string> }> = new Map()
 
   // State
   private initialized = false
@@ -1016,6 +1024,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateAddParams(params)
 
+    // Tracked-field vocabulary enforcement (Layer 2). Walks both bags so a
+    // tracked field declared at top level (e.g. 'subtype') and one declared in
+    // metadata (e.g. 'status') both validate.
+    this.enforceTrackedFieldValues(params.metadata as Record<string, unknown> | undefined, 'metadata')
+    this.enforceTrackedFieldValues(
+      { subtype: params.subtype } as Record<string, unknown>,
+      'top-level'
+    )
+
     // Generate ID if not provided
     const id = params.id || uuidv4()
 
@@ -1038,6 +1055,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...params.metadata,
         data: params.data,
         noun: params.type,
+        ...(params.subtype !== undefined && { subtype: params.subtype }),
         service: params.service,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1057,6 +1075,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         connections: new Map(),
         level: 0,
         type: params.type,
+        ...(params.subtype !== undefined && { subtype: params.subtype }),
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
         createdAt: Date.now(),
@@ -1329,6 +1348,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       score,
       // Flatten common entity fields to top level
       type: entity.type,
+      subtype: entity.subtype,
       metadata: entity.metadata,
       data: entity.data,
       confidence: entity.confidence,
@@ -1357,6 +1377,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       id: noun.id,
       vector: noun.vector,
       type: noun.type || NounType.Thing,
+      subtype: noun.subtype,
 
       // Standard fields at top-level
       confidence: noun.confidence,
@@ -1398,12 +1419,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Extract standard fields, rest are custom metadata
     // Same destructuring as baseStorage.getNoun() to ensure consistency
-    const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
     const entity: Entity<T> = {
       id,
       vector: [],  // Stub vector (empty array - vectors not loaded for metadata-only)
       type: noun as NounType || NounType.Thing,
+      subtype,
 
       // Standard fields from metadata
       confidence,
@@ -1478,6 +1500,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateUpdateParams(params)
 
+    // Tracked-field vocabulary enforcement (Layer 2). Same as add() — the
+    // metadata bag carries fields registered via trackField(), and subtype is
+    // a tracked top-level candidate.
+    this.enforceTrackedFieldValues(params.metadata as Record<string, unknown> | undefined, 'metadata')
+    if (params.subtype !== undefined) {
+      this.enforceTrackedFieldValues(
+        { subtype: params.subtype } as Record<string, unknown>,
+        'top-level'
+      )
+    }
+
     // Get existing entity with vectors (fix for regression)
       // We need includeVectors: true because:
       // 1. SaveNounOperation requires the vector
@@ -1513,7 +1546,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
         ...(params.confidence === undefined && existing.confidence !== undefined && { confidence: existing.confidence }),
-        ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight })
+        ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight }),
+        // Update subtype if provided, otherwise preserve existing
+        ...(params.subtype !== undefined && { subtype: params.subtype }),
+        ...(params.subtype === undefined && existing.subtype !== undefined && { subtype: existing.subtype })
       }
 
       // Build entity structure for metadata index (with top-level fields)
@@ -1523,6 +1559,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         connections: new Map(),
         level: 0,
         type: params.type || existing.type,
+        subtype: params.subtype !== undefined ? params.subtype : existing.subtype,
         confidence: params.confidence !== undefined ? params.confidence : existing.confidence,
         weight: params.weight !== undefined ? params.weight : existing.weight,
         createdAt: existing.createdAt,
@@ -2292,6 +2329,104 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Register a field for cardinality + per-NounType breakdown stats.
+   *
+   * Layer 2 of the subtype-and-facets primitive: a lightweight wrapper over the
+   * aggregation engine that auto-defines an internal `__fieldCounts__<name>`
+   * aggregate so consumers can query value frequencies without writing the
+   * aggregate definition themselves. Backfill-on-define (shipped 7.23.0) means
+   * existing entities are scanned on the first query, not at registration time.
+   *
+   * Use this for facets that don't warrant top-level promotion (e.g. `status`,
+   * `source`, `role`). For sub-classification within a NounType, prefer the
+   * top-level `subtype` field — it takes the standard-field fast path and has
+   * its own statistics rollup.
+   *
+   * @param name - Field name to track. Resolves via the standard-fields-first /
+   *   metadata-fallback path, so both `'subtype'` (top-level) and `'status'`
+   *   (metadata) work the same way.
+   * @param options - `perType` adds `noun` to the groupBy so counts are split
+   *   by NounType; `values` registers a whitelist that rejects writes containing
+   *   off-vocabulary values (validated in `add()`/`update()`).
+   *
+   * @example Track status without per-type breakdown
+   * brain.trackField('status')
+   * const counts = await brain.counts.byField('status')
+   * // → { todo: 12, doing: 3, done: 47 }
+   *
+   * @example Track status with per-NounType breakdown
+   * brain.trackField('status', { perType: true })
+   * const taskCounts = await brain.counts.byField('status', { type: NounType.Task })
+   * // → { todo: 8, doing: 2, done: 30 }
+   *
+   * @example Strict vocabulary
+   * brain.trackField('priority', { values: ['low', 'medium', 'high'] })
+   * // brain.add({ ..., metadata: { priority: 'urgent' } }) throws
+   */
+  trackField(
+    name: string,
+    options: { perType?: boolean; values?: string[] } = {}
+  ): void {
+    if (!name || typeof name !== 'string') {
+      throw new Error('trackField: name must be a non-empty string')
+    }
+    const perType = options.perType === true
+    const valuesSet = options.values && options.values.length > 0
+      ? new Set(options.values)
+      : undefined
+    this._trackedFields.set(name, { perType, values: valuesSet })
+
+    // Auto-define the backing aggregate. groupBy uses 'noun' (storage field name
+    // for type) when perType is on, so the column-store key matches the persisted
+    // shape and resolveEntityField doesn't need to rewrite the dimension.
+    this.ensureAggregationIndex()
+    const aggregateName = this.fieldCountsAggregateName(name)
+    if (!this._aggregationIndex!.hasAggregate(aggregateName)) {
+      this._aggregationIndex!.defineAggregate({
+        name: aggregateName,
+        source: {},
+        groupBy: perType ? [name, 'noun'] : [name],
+        metrics: { count: { op: 'count' } }
+      })
+    }
+  }
+
+  /**
+   * Internal aggregate name for a tracked field. Centralized so `trackField()`
+   * and `counts.byField()` agree on the convention.
+   */
+  private fieldCountsAggregateName(name: string): string {
+    return `__fieldCounts__${name}`
+  }
+
+  /**
+   * Validate a metadata bag (or top-level field assignment) against any registered
+   * value whitelists. Called from `add()`/`update()` after the standard zero-config
+   * validation. Throws on the first off-vocabulary value to fail fast.
+   *
+   * Tracked fields with no `values` whitelist are skipped — registration alone
+   * does not imply validation.
+   */
+  private enforceTrackedFieldValues(
+    bag: Record<string, unknown> | undefined,
+    bagLabel: 'metadata' | 'top-level'
+  ): void {
+    if (!bag || this._trackedFields.size === 0) return
+    for (const [field, def] of this._trackedFields.entries()) {
+      if (!def.values) continue
+      if (!(field in bag)) continue
+      const value = bag[field]
+      if (value === undefined || value === null) continue
+      const asString = typeof value === 'string' ? value : String(value)
+      if (!def.values.has(asString)) {
+        throw new Error(
+          `trackField('${field}') rejected ${bagLabel} value '${asString}': not in registered vocabulary [${Array.from(def.values).join(', ')}]`
+        )
+      }
+    }
+  }
+
+  /**
    * Remove a named aggregate and clean up its state.
    *
    * @param name - Name of the aggregate to remove
@@ -2373,7 +2508,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Distinguish between search criteria (need vector search) and filter criteria (metadata only)
       // Treat empty string query as no query
       const hasVectorSearchCriteria = (params.query && params.query.trim() !== '') || params.vector || params.near
-      const hasFilterCriteria = params.where || params.type || params.service
+      const hasFilterCriteria = params.where || params.type || params.subtype || params.service
       const hasGraphCriteria = params.connected
 
       // Handle metadata-only queries (no vector search needed)
@@ -2389,6 +2524,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
         if (params.service) filter.service = params.service
+
+        // Subtype (top-level standard field — fast path, not metadata fallback).
+        // Must be assigned BEFORE the type-array expansion below so the spread
+        // into each anyOf branch carries it through.
+        if (params.subtype !== undefined) {
+          filter.subtype = Array.isArray(params.subtype)
+            ? { oneOf: params.subtype }
+            : params.subtype
+        }
 
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
@@ -2528,7 +2672,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       let preResolvedMetadataIds: string[] | null = null
       let preResolvedFilter: any = null
 
-      if (params.where || params.type || params.service || params.excludeVFS) {
+      if (params.where || params.type || params.subtype || params.service || params.excludeVFS) {
         preResolvedFilter = {}
         if (params.where) {
           Object.assign(preResolvedFilter, params.where)
@@ -2542,6 +2686,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         if (params.excludeVFS === true) {
           preResolvedFilter.vfsType = { exists: false }
           preResolvedFilter.isVFSEntity = { ne: true }
+        }
+        // Subtype (top-level standard field — fast path).
+        // Must be assigned BEFORE the type-array expansion below.
+        if (params.subtype !== undefined) {
+          preResolvedFilter.subtype = Array.isArray(params.subtype)
+            ? { oneOf: params.subtype }
+            : params.subtype
         }
         if (params.type) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
@@ -5776,13 +5927,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Get total count for pagination UI (O(1) when possible)
       count: async (params: Omit<FindParams<T>, 'limit' | 'offset'>) => {
         // For simple type queries, use O(1) index counting
-        if (params.type && !params.query && !params.where && !params.connected) {
+        if (params.type && !params.subtype && !params.query && !params.where && !params.connected) {
           const types = Array.isArray(params.type) ? params.type : [params.type]
           return types.reduce((sum, type) => sum + this.metadataIndex.getEntityCountByType(type), 0)
         }
 
         // For complex queries, use metadata index for efficient counting
-        if (params.where || params.service) {
+        if (params.where || params.subtype || params.service) {
           let filter: any = {}
           if (params.where) {
             Object.assign(filter, params.where)
@@ -5793,6 +5944,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
           if (params.service) filter.service = params.service
+          if (params.subtype !== undefined) {
+            filter.subtype = Array.isArray(params.subtype)
+              ? { oneOf: params.subtype }
+              : params.subtype
+          }
           if (params.type) {
             const types = Array.isArray(params.type) ? params.type : [params.type]
             if (types.length === 1) {
@@ -5846,7 +6002,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return {
       // Stream all entities with optional filtering
       entities: async function* (this: Brainy<T>, filter?: Partial<FindParams<T>>) {
-        if (filter?.type || filter?.where || filter?.service) {
+        if (filter?.type || filter?.subtype || filter?.where || filter?.service) {
           // Use MetadataIndexManager for efficient filtered streaming
           let filterObj: any = {}
           if (filter.where) {
@@ -5858,6 +6014,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
           if (filter.service) filterObj.service = filter.service
+          if (filter.subtype !== undefined) {
+            filterObj.subtype = Array.isArray(filter.subtype)
+              ? { oneOf: filter.subtype }
+              : filter.subtype
+          }
           if (filter.type) {
             const types = Array.isArray(filter.type) ? filter.type : [filter.type]
             if (types.length === 1) {
@@ -6042,6 +6203,70 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return this.metadataIndex.getTopNounTypes(n)
       },
 
+      /**
+       * O(1) subtype counts for a given NounType.
+       *
+       * Returns the count for a single (type, subtype) pair when `subtype` is
+       * passed; returns the full subtype → count map for that NounType when omitted.
+       * Backed by the persisted `_system/subtype-statistics.json` rollup — no
+       * scan, no storage round-trip.
+       *
+       * @param type - The NounType to count subtypes within
+       * @param subtype - Optional specific subtype string for O(1) point count
+       * @returns A number when `subtype` is given, otherwise a `Record<subtype, count>` (empty `{}` if none)
+       *
+       * @example Get all subtypes of Person
+       * const counts = brain.counts.bySubtype(NounType.Person)
+       * // → { employee: 56, customer: 847, vendor: 34 }
+       *
+       * @example O(1) point count
+       * const employees = brain.counts.bySubtype(NounType.Person, 'employee')
+       * // → 56
+       */
+      bySubtype: (type: NounType, subtype?: string): number | Record<string, number> => {
+        const subtypeMap = typeof (this.storage as any).getSubtypeCountsByType === 'function'
+          ? (this.storage as any).getSubtypeCountsByType() as Map<number, Map<string, number>>
+          : null
+        if (!subtypeMap) {
+          return subtype !== undefined ? 0 : {}
+        }
+        const typeIdx = TypeUtils.getNounIndex(type)
+        const inner = subtypeMap.get(typeIdx)
+        if (!inner) {
+          return subtype !== undefined ? 0 : {}
+        }
+        if (subtype !== undefined) {
+          return inner.get(subtype) || 0
+        }
+        const result: Record<string, number> = {}
+        for (const [k, v] of inner.entries()) result[k] = v
+        return result
+      },
+
+      /**
+       * Top N subtypes for a NounType, sorted by count (descending).
+       *
+       * @param type - The NounType to rank subtypes within
+       * @param n - Maximum number of (subtype, count) pairs to return (default: 10)
+       * @returns Array of `[subtype, count]` tuples, highest count first
+       *
+       * @example
+       * const top3 = brain.counts.topSubtypes(NounType.Person, 3)
+       * // → [['customer', 847], ['employee', 56], ['vendor', 34]]
+       */
+      topSubtypes: (type: NounType, n: number = 10): Array<[string, number]> => {
+        const subtypeMap = typeof (this.storage as any).getSubtypeCountsByType === 'function'
+          ? (this.storage as any).getSubtypeCountsByType() as Map<number, Map<string, number>>
+          : null
+        if (!subtypeMap) return []
+        const typeIdx = TypeUtils.getNounIndex(type)
+        const inner = subtypeMap.get(typeIdx)
+        if (!inner) return []
+        return Array.from(inner.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, n)
+      },
+
       // Phase 1b: Get top N verb types by count
       topVerbTypes: (n: number = 10) => {
         return this.metadataIndex.getTopVerbTypes(n)
@@ -6069,6 +6294,60 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // O(1) count by field-value criteria
       byCriteria: async (field: string, value: any) => {
         return this.metadataIndex.getCountForCriteria(field, value)
+      },
+
+      /**
+       * Counts by value for a field registered via `brain.trackField()`. Reads
+       * from the backing `__fieldCounts__<name>` aggregate (Layer 2 of the
+       * subtype-and-facets primitive). Backfill-on-define means the first call
+       * scans existing entities, subsequent calls are O(groups).
+       *
+       * Without `options.type`: returns the cross-NounType total per value.
+       * With `options.type`: returns per-value counts for that NounType only —
+       * requires the field to have been registered with `perType: true`.
+       *
+       * @param name - The tracked field name
+       * @param options.type - Optional NounType filter (requires perType registration)
+       * @returns `{ value: count }` map. Empty when the field wasn't tracked
+       *   (no aggregate exists) or no entities have set it yet.
+       * @throws If `options.type` is passed but the field was not registered with `perType: true`
+       *
+       * @example
+       * brain.trackField('status', { perType: true })
+       * await brain.add({ data: 'Ship it', type: NounType.Task, metadata: { status: 'todo' } })
+       * await brain.counts.byField('status')
+       * // → { todo: 1 }
+       * await brain.counts.byField('status', { type: NounType.Task })
+       * // → { todo: 1 }
+       */
+      byField: async (
+        name: string,
+        options?: { type?: NounType }
+      ): Promise<Record<string, number>> => {
+        const tracked = this._trackedFields.get(name)
+        if (!tracked) return {}
+        if (options?.type !== undefined && !tracked.perType) {
+          throw new Error(
+            `counts.byField('${name}'): per-type breakdown requested but the field was registered without perType:true. Re-call trackField('${name}', { perType: true }).`
+          )
+        }
+        const aggregateName = this.fieldCountsAggregateName(name)
+        if (!this._aggregationIndex || !this._aggregationIndex.hasAggregate(aggregateName)) {
+          return {}
+        }
+        const rows = await this.queryAggregate(aggregateName)
+        const result: Record<string, number> = {}
+        for (const row of rows) {
+          const value = row.groupKey?.[name]
+          // Skip the aggregation engine's "missing-value" sentinel: entities that
+          // don't have the tracked field at all (e.g. the VFS root) bucket under
+          // '__null__' and would otherwise pollute the count map.
+          if (value === undefined || value === null || value === '__null__') continue
+          if (options?.type !== undefined && row.groupKey?.['noun'] !== options.type) continue
+          const key = String(value)
+          result[key] = (result[key] || 0) + (typeof row.metrics?.count === 'number' ? row.metrics.count : row.count)
+        }
+        return result
       },
 
       // Get all type counts as Map for performance-critical operations
@@ -6130,6 +6409,255 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   async getStats(options?: { excludeVFS?: boolean }) {
     return this.counts.getStats(options)
+  }
+
+  /**
+   * Distinct subtypes seen for a given NounType.
+   *
+   * Reads from the subtype-statistics rollup — no scan, no storage round-trip.
+   * The returned list is the vocabulary actually observed in the data, not a
+   * registered schema (Brainy doesn't validate subtype vocabulary; that's a
+   * consumer concern).
+   *
+   * @param type - The NounType to enumerate subtypes for
+   * @returns Sorted list of distinct subtype strings (empty if none)
+   *
+   * @example
+   * const personSubtypes = brain.subtypesOf(NounType.Person)
+   * // → ['customer', 'employee', 'vendor']
+   */
+  subtypesOf(type: NounType): string[] {
+    const subtypeMap = typeof (this.storage as any).getSubtypeCountsByType === 'function'
+      ? (this.storage as any).getSubtypeCountsByType() as Map<number, Map<string, number>>
+      : null
+    if (!subtypeMap) return []
+    const typeIdx = TypeUtils.getNounIndex(type)
+    const inner = subtypeMap.get(typeIdx)
+    if (!inner) return []
+    return Array.from(inner.keys()).sort()
+  }
+
+  /**
+   * Stream-and-rewrite a field across every entity in the brain.
+   *
+   * Layer 3 of the subtype-and-facets primitive. Reads the value at `from`,
+   * writes it to `to`, and (unless `readBoth: true`) clears the source. Use this
+   * when migrating between field-name conventions or moving a value from
+   * `metadata.*` / `data.*` up to a top-level standard field like `subtype`.
+   *
+   * **Path forms:**
+   * - `'subtype'`, `'type'`, `'confidence'`, etc. — top-level standard fields
+   *   (whatever appears in `STANDARD_ENTITY_FIELDS`)
+   * - `'metadata.X'` — a key under `entity.metadata`
+   * - `'data.X'` — a key under `entity.data` (when `data` is an object)
+   * - `'X'` (bare, not standard) — shorthand for `metadata.X`
+   *
+   * **Behavior:**
+   * - Streams entities in batches and rewrites in-place via `brain.update()`.
+   *   Aggregations and indexes refresh automatically.
+   * - Entities where the source path is absent or where the target already
+   *   holds the same value are skipped (idempotent — safe to re-run).
+   * - With `readBoth: true`, the source value is preserved alongside the new
+   *   target so legacy consumers can keep querying the old path during a
+   *   deprecation window. Re-run with `readBoth: false` when ready to clear.
+   *
+   * @param options.from - Source path
+   * @param options.to - Destination path
+   * @param options.readBoth - If true, leave the source value in place (default false → source cleared)
+   * @param options.batchSize - Entities per batch (default 100)
+   * @param options.onProgress - Optional callback invoked after each batch
+   * @returns Migration summary — counts and per-entity errors
+   *
+   * @example One-shot migration
+   * await brain.migrateField({ from: 'metadata.kind', to: 'subtype' })
+   * // → { scanned: 1500, migrated: 1500, skipped: 0, errors: [] }
+   *
+   * @example Deprecation window — keep both fields readable
+   * await brain.migrateField({ from: 'data.kind', to: 'subtype', readBoth: true })
+   * // ...consumers switch reads to subtype over time...
+   * await brain.migrateField({ from: 'data.kind', to: 'subtype' })
+   * // ...source cleared in the final sweep.
+   */
+  async migrateField(options: {
+    from: string
+    to: string
+    readBoth?: boolean
+    batchSize?: number
+    onProgress?: (progress: { scanned: number; migrated: number }) => void
+  }): Promise<{
+    scanned: number
+    migrated: number
+    skipped: number
+    errors: Array<{ id: string; error: string }>
+  }> {
+    this.assertWritable('migrateField')
+    await this.ensureInitialized()
+
+    if (!options.from || typeof options.from !== 'string') {
+      throw new Error('migrateField: `from` must be a non-empty string path')
+    }
+    if (!options.to || typeof options.to !== 'string') {
+      throw new Error('migrateField: `to` must be a non-empty string path')
+    }
+    if (options.from === options.to) {
+      throw new Error('migrateField: `from` and `to` are identical — nothing to do')
+    }
+
+    const fromPath = this.parseMigrationPath(options.from)
+    const toPath = this.parseMigrationPath(options.to)
+    const batchSize = Math.max(1, options.batchSize ?? 100)
+    const readBoth = options.readBoth === true
+
+    let scanned = 0
+    let migrated = 0
+    let skipped = 0
+    const errors: Array<{ id: string; error: string }> = []
+    let offset = 0
+
+    // Stream via storage pagination — same shape used by streaming.entities()
+    // when no filter is set. Avoids a full in-memory load on large brains.
+    while (true) {
+      const page = await this.storage.getNouns({ pagination: { offset, limit: batchSize } })
+      if (page.items.length === 0) break
+
+      for (const noun of page.items) {
+        scanned++
+        try {
+          const entity = await this.convertNounToEntity(noun as any)
+          const sourceValue = this.readPath(entity, fromPath)
+          if (sourceValue === undefined || sourceValue === null) {
+            skipped++
+            continue
+          }
+          const targetValue = this.readPath(entity, toPath)
+          const sourceCleared = readBoth || fromPath.kind === toPath.kind && fromPath.field === toPath.field
+          if (targetValue === sourceValue && (readBoth || !this.pathExists(entity, fromPath))) {
+            // Already migrated and (readBoth || source already gone) → no-op
+            skipped++
+            continue
+          }
+
+          const update = this.buildMigrationUpdate(entity, fromPath, toPath, sourceValue, readBoth)
+          await this.update(update)
+          migrated++
+          void sourceCleared
+        } catch (err) {
+          errors.push({
+            id: (noun as any).id ?? '<unknown>',
+            error: err instanceof Error ? err.message : String(err)
+          })
+        }
+      }
+
+      if (options.onProgress) {
+        options.onProgress({ scanned, migrated })
+      }
+      if (!page.hasMore) break
+      offset += page.items.length
+    }
+
+    return { scanned, migrated, skipped, errors }
+  }
+
+  /**
+   * Parse a dotted path used by `migrateField` into its routing kind + field name.
+   * `'subtype'` → top-level standard; `'metadata.X'` → metadata; `'data.X'` → data;
+   * bare non-standard names → metadata (matching `resolveEntityField`'s fallback).
+   */
+  private parseMigrationPath(path: string): { kind: 'top' | 'metadata' | 'data'; field: string } {
+    const dotIdx = path.indexOf('.')
+    if (dotIdx === -1) {
+      if (STANDARD_ENTITY_FIELDS.has(path)) return { kind: 'top', field: path }
+      return { kind: 'metadata', field: path }
+    }
+    const head = path.slice(0, dotIdx)
+    const tail = path.slice(dotIdx + 1)
+    if (!tail) throw new Error(`migrateField: invalid path '${path}' (trailing dot)`)
+    if (head === 'metadata') return { kind: 'metadata', field: tail }
+    if (head === 'data') return { kind: 'data', field: tail }
+    throw new Error(
+      `migrateField: unsupported path prefix '${head}'. Supported: 'metadata.X', 'data.X', or a bare field name.`
+    )
+  }
+
+  /** Read the value at a parsed migration path. Returns `undefined` if absent. */
+  private readPath(entity: Entity<T>, path: { kind: 'top' | 'metadata' | 'data'; field: string }): unknown {
+    if (path.kind === 'top') return (entity as any)[path.field]
+    if (path.kind === 'metadata') {
+      const bag = entity.metadata as unknown as Record<string, unknown> | undefined
+      return bag?.[path.field]
+    }
+    const data = entity.data
+    if (data && typeof data === 'object') {
+      return (data as Record<string, unknown>)[path.field]
+    }
+    return undefined
+  }
+
+  /** Whether a parsed path resolves to a defined (non-undefined) value. */
+  private pathExists(entity: Entity<T>, path: { kind: 'top' | 'metadata' | 'data'; field: string }): boolean {
+    return this.readPath(entity, path) !== undefined
+  }
+
+  /**
+   * Build an `UpdateParams` payload that copies the value from the source path
+   * to the destination, and (unless `readBoth`) clears the source. Uses
+   * `merge: false` on the metadata bag when clearing so we can omit the source
+   * key authoritatively instead of relying on `undefined` round-trip behavior.
+   */
+  private buildMigrationUpdate(
+    entity: Entity<T>,
+    from: { kind: 'top' | 'metadata' | 'data'; field: string },
+    to: { kind: 'top' | 'metadata' | 'data'; field: string },
+    value: unknown,
+    readBoth: boolean
+  ): UpdateParams<T> {
+    const id = entity.id
+    const update: UpdateParams<T> = { id }
+
+    // Apply destination write.
+    if (to.kind === 'top') {
+      ;(update as any)[to.field] = value
+    } else if (to.kind === 'metadata') {
+      const base = (entity.metadata as unknown as Record<string, unknown>) ?? {}
+      const nextMeta: Record<string, unknown> = { ...base, [to.field]: value }
+      if (!readBoth && from.kind === 'metadata') {
+        delete nextMeta[from.field]
+      }
+      update.metadata = nextMeta as T
+      update.merge = false
+    } else {
+      // data path — only meaningful when data is an object
+      const base = (entity.data && typeof entity.data === 'object') ? { ...(entity.data as Record<string, unknown>) } : {}
+      base[to.field] = value
+      if (!readBoth && from.kind === 'data') {
+        delete base[from.field]
+      }
+      update.data = base
+    }
+
+    // Apply source clear if not already handled by the destination bag write.
+    if (!readBoth) {
+      if (from.kind === 'metadata' && to.kind !== 'metadata') {
+        const base = (entity.metadata as unknown as Record<string, unknown>) ?? {}
+        const nextMeta: Record<string, unknown> = { ...base }
+        delete nextMeta[from.field]
+        update.metadata = nextMeta as T
+        update.merge = false
+      } else if (from.kind === 'data' && to.kind !== 'data') {
+        const base = (entity.data && typeof entity.data === 'object') ? { ...(entity.data as Record<string, unknown>) } : null
+        if (base) {
+          delete base[from.field]
+          update.data = base
+        }
+      } else if (from.kind === 'top' && (from.field === 'subtype')) {
+        // Only subtype currently supports clearing at the top level via UpdateParams.
+        // Other standard fields aren't user-mutable through this path.
+        ;(update as any).subtype = undefined
+      }
+    }
+
+    return update
   }
 
   // ============= NEW EMBEDDING & ANALYSIS APIs =============

@@ -186,6 +186,7 @@ When you add an entity, Brainy stores these standard fields in the metadata obje
 | Field | Set By | Description |
 |-------|--------|-------------|
 | `noun` | System | Entity type (NounType enum value) |
+| `subtype` | User | Per-NounType sub-classification (e.g. `'employee'`, `'invoice'`, `'milestone'`). Flat string, no hierarchy. Indexed on the fast path and rolled into per-NounType statistics. |
 | `data` | System | The raw `data` value (stored opaquely) |
 | `createdAt` | System | Creation timestamp |
 | `updatedAt` | System | Last update timestamp |
@@ -195,6 +196,30 @@ When you add an entity, Brainy stores these standard fields in the metadata obje
 | `createdBy` | User/System | Source augmentation |
 
 On read, these standard fields are extracted to top-level Entity properties. The `metadata` field on the returned Entity contains **only your custom fields**.
+
+### Subtype — sub-classification within a NounType
+
+`type` (NounType) is a stable 42-value enum. `subtype` is the consumer-chosen string vocabulary *within* a type:
+
+```typescript
+// A Person who is an employee:
+await brain.add({
+  data: 'Avery Brooks — runs the AI lab',
+  type: NounType.Person,
+  subtype: 'employee',
+  metadata: { department: 'ai-lab' }
+})
+
+// A Document that is an invoice:
+await brain.add({
+  data: 'INV-2026-001',
+  type: NounType.Document,
+  subtype: 'invoice',
+  metadata: { amount: 1500 }
+})
+```
+
+`subtype` lives at the **top level** — NOT inside `metadata`, NOT inside `data`. That's how `find({ type, subtype })` routes through the standard-field fast path (column-store hit) instead of the metadata fallback. See **[Subtypes & Facets](./guides/subtypes-and-facets.md)** for the full guide including `trackField()` and `migrateField()`.
 
 ---
 

@@ -373,7 +373,15 @@ export function validateUpdateParams(params: UpdateParams): void {
   }
   
   // Universal truth: must update something
-  if (!params.data && !params.metadata && !params.type && !params.vector) {
+  if (
+    !params.data &&
+    !params.metadata &&
+    !params.type &&
+    !params.vector &&
+    params.subtype === undefined &&
+    params.confidence === undefined &&
+    params.weight === undefined
+  ) {
     throw new Error('must specify at least one field to update')
   }
   

@@ -225,6 +225,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected verbCountsByType = new Uint32Array(VERB_TYPE_COUNT) // 508 bytes (Stage 3: 127 types)
 
   /**
+   * Per-NounType-per-subtype counts. Outer key is the NounType index (matching
+   * `nounCountsByType` indexing); inner key is the subtype string. Populated
+   * incrementally as entities are saved and decremented on delete; persisted
+   * to `_system/subtype-statistics.json` alongside type-statistics.
+   *
+   * Memory: one Map entry per (type, subtype) pair actually used — typically
+   * tens of inner entries per NounType in production. Sparse by design — types
+   * with no subtype-bearing entities have no outer entry.
+   */
+  protected subtypeCountsByType = new Map<number, Map<string, number>>()
+
+  /**
    * In-memory map from noun id → its `noun` (NounType) value, populated when
    * `saveNounMetadata_internal()` runs. `saveNoun_internal()` consults this
    * to attribute the entity to the correct slot in `nounCountsByType` so the
@@ -238,6 +250,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * its lifetime and prunes on delete.
    */
   protected nounTypeByIdCache = new Map<string, NounType>()
+
+  /**
+   * In-memory map from noun id → its `subtype` string (when set). Parallel to
+   * `nounTypeByIdCache`. Lets `deleteNounMetadata()` decrement the correct
+   * subtype bucket without re-reading metadata. Sparse — only ids with a
+   * non-empty subtype get an entry.
+   */
+  protected nounSubtypeByIdCache = new Map<string, string>()
   // Total: 676 bytes (99.2% reduction vs Map-based tracking)
 
   // Type caches REMOVED - ID-first paths eliminate need for type lookups!
@@ -364,6 +384,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     try {
       // Load type statistics from storage (if they exist)
       await this.loadTypeStatistics()
+      await this.loadSubtypeStatistics()
 
       // GraphAdjacencyIndex is now SINGLETON via getGraphIndex()
       // - Removed direct creation here to fix dual-ownership bug
@@ -864,7 +885,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWNounWithMetadata - Extract standard fields to top-level
-    const { noun, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
     return {
       id: vector.id,
@@ -873,6 +894,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       level: vector.level,
       // Standard fields at top-level
       type: (noun as NounType) || NounType.Thing,
+      subtype: subtype as string | undefined,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
       confidence: confidence as number | undefined,
@@ -901,12 +923,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     for (const noun of nouns) {
       const metadata = await this.getNounMetadata(noun.id)
       if (metadata) {
-        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
         nounsWithMetadata.push({
           ...noun,
           // Standard fields at top-level
           type: (nounType as NounType) || NounType.Thing,
+          subtype: subtype as string | undefined,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -2202,6 +2225,27 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       this.nounTypeByIdCache.set(id, metadata.noun as NounType)
     }
 
+    // Track subtype changes: on type or subtype change via update(), decrement
+    // the prior bucket before incrementing the new one. Symmetric with the
+    // delete-path decrement in `deleteNounMetadata()`.
+    const priorSubtype = this.nounSubtypeByIdCache.get(id)
+    const priorTypeForSubtype = isNew ? undefined : (existingMetadata?.noun as NounType | undefined)
+    const newSubtype = typeof metadata.subtype === 'string' && metadata.subtype.length > 0
+      ? metadata.subtype as string
+      : undefined
+    const newType = metadata.noun as NounType | undefined
+
+    if (priorSubtype && priorTypeForSubtype && (priorSubtype !== newSubtype || priorTypeForSubtype !== newType)) {
+      this.decrementSubtypeCount(priorTypeForSubtype, priorSubtype)
+    }
+    if (newSubtype && newType && (isNew || priorSubtype !== newSubtype || priorTypeForSubtype !== newType)) {
+      this.incrementSubtypeCount(newType, newSubtype)
+      this.nounSubtypeByIdCache.set(id, newSubtype)
+    } else if (!newSubtype && priorSubtype) {
+      // Subtype cleared by an update — drop the cache entry (decrement already done above)
+      this.nounSubtypeByIdCache.delete(id)
+    }
+
     // CRITICAL FIX: Increment count for new entities
     // This runs AFTER metadata is saved, guaranteeing type information is available
     // Uses synchronous increment since storage operations are already serialized
@@ -2385,7 +2429,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const noun = this.deserializeNoun(vectorData)
 
         // Extract standard fields to top-level
-        const { noun: nounType, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
 
         results.set(id, {
           id: noun.id,
@@ -2394,6 +2438,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           level: noun.level,
           // Standard fields at top-level
           type: (nounType as NounType) || NounType.Thing,
+          subtype: subtype as string | undefined,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -2602,6 +2647,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       if (this.nounCountsByType[idx] > 0) {
         this.nounCountsByType[idx]--
       }
+
+      // Symmetric subtype decrement
+      const priorSubtype = this.nounSubtypeByIdCache.get(id)
+      if (priorSubtype) {
+        this.nounSubtypeByIdCache.delete(id)
+        this.decrementSubtypeCount(priorType, priorSubtype)
+      }
     }
   }
 
@@ -2799,6 +2851,121 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Increment the (type, subtype) count, creating the inner map on first use.
+   * Indexed by NounType index so it lines up with `nounCountsByType` and can
+   * be reduced into per-type totals without re-keying.
+   */
+  protected incrementSubtypeCount(type: NounType, subtype: string): void {
+    const typeIdx = TypeUtils.getNounIndex(type)
+    if (typeIdx < 0) return
+    let inner = this.subtypeCountsByType.get(typeIdx)
+    if (!inner) {
+      inner = new Map<string, number>()
+      this.subtypeCountsByType.set(typeIdx, inner)
+    }
+    inner.set(subtype, (inner.get(subtype) || 0) + 1)
+  }
+
+  /**
+   * Decrement the (type, subtype) count. Deletes the inner key when it reaches
+   * 0 and the outer entry when its inner map is empty, so the persisted shape
+   * stays compact across heavy churn.
+   */
+  protected decrementSubtypeCount(type: NounType, subtype: string): void {
+    const typeIdx = TypeUtils.getNounIndex(type)
+    if (typeIdx < 0) return
+    const inner = this.subtypeCountsByType.get(typeIdx)
+    if (!inner) return
+    const next = (inner.get(subtype) || 0) - 1
+    if (next <= 0) {
+      inner.delete(subtype)
+      if (inner.size === 0) this.subtypeCountsByType.delete(typeIdx)
+    } else {
+      inner.set(subtype, next)
+    }
+  }
+
+  /**
+   * Load `_system/subtype-statistics.json` into `subtypeCountsByType`.
+   * Persisted shape: `{ counts: { [typeIdx]: { [subtype]: count } }, updatedAt }`.
+   * Missing file or parse error → start from empty (matches loadTypeStatistics).
+   */
+  protected async loadSubtypeStatistics(): Promise<void> {
+    try {
+      const stats = await this.readObjectFromPath(`${SYSTEM_DIR}/subtype-statistics.json`)
+      if (stats && stats.counts && typeof stats.counts === 'object') {
+        this.subtypeCountsByType.clear()
+        for (const [typeKey, subtypeMap] of Object.entries(stats.counts as Record<string, Record<string, number>>)) {
+          const typeIdx = Number(typeKey)
+          if (!Number.isInteger(typeIdx) || typeIdx < 0 || typeIdx >= NOUN_TYPE_COUNT) continue
+          const inner = new Map<string, number>()
+          for (const [subtype, count] of Object.entries(subtypeMap)) {
+            if (typeof count === 'number' && count > 0) inner.set(subtype, count)
+          }
+          if (inner.size > 0) this.subtypeCountsByType.set(typeIdx, inner)
+        }
+      }
+    } catch {
+      // No existing subtype statistics, starting fresh.
+    }
+  }
+
+  /**
+   * Save subtype statistics to storage. Mirrors the type-statistics persistence
+   * cadence (called from `flushCounts()` and the periodic save in
+   * `saveNoun_internal`).
+   */
+  protected async saveSubtypeStatistics(): Promise<void> {
+    const counts: Record<string, Record<string, number>> = {}
+    for (const [typeIdx, inner] of this.subtypeCountsByType.entries()) {
+      const innerObj: Record<string, number> = {}
+      for (const [subtype, count] of inner.entries()) innerObj[subtype] = count
+      counts[String(typeIdx)] = innerObj
+    }
+    await this.writeObjectToPath(`${SYSTEM_DIR}/subtype-statistics.json`, {
+      counts,
+      updatedAt: Date.now()
+    })
+  }
+
+  /**
+   * Rebuild subtype counts from on-disk metadata. Companion to `rebuildTypeCounts()`
+   * — used for poison recovery and explicit repair via `brainy inspect repair`.
+   * O(N) over all nouns.
+   */
+  public async rebuildSubtypeCounts(): Promise<void> {
+    prodLog.info('[BaseStorage] Rebuilding subtype counts from storage...')
+    this.subtypeCountsByType.clear()
+    this.nounSubtypeByIdCache.clear()
+
+    for (let shard = 0; shard < 256; shard++) {
+      const shardHex = shard.toString(16).padStart(2, '0')
+      const shardDir = `entities/nouns/${shardHex}`
+      try {
+        const paths = await this.listObjectsInBranch(shardDir)
+        for (const path of paths) {
+          if (!path.includes('/metadata.json')) continue
+          try {
+            const metadata = await this.readWithInheritance(path)
+            if (metadata && metadata.noun && typeof metadata.subtype === 'string' && metadata.subtype.length > 0) {
+              this.incrementSubtypeCount(metadata.noun as NounType, metadata.subtype)
+              // Path is `entities/nouns/<shard>/<id>/metadata.json` — extract id segment.
+              const segments = path.split('/')
+              const idSeg = segments[segments.length - 2]
+              if (idSeg) this.nounSubtypeByIdCache.set(idSeg, metadata.subtype)
+            }
+          } catch { /* skip unreadable entities */ }
+        }
+      } catch { /* skip missing shards */ }
+    }
+
+    await this.saveSubtypeStatistics()
+    const totals = Array.from(this.subtypeCountsByType.values())
+      .reduce((sum, inner) => sum + Array.from(inner.values()).reduce((s, n) => s + n, 0), 0)
+    prodLog.info(`[BaseStorage] Rebuilt subtype counts: ${totals} entities across ${this.subtypeCountsByType.size} NounTypes`)
+  }
+
+  /**
    * Persist both counter systems atomically when an explicit flush is
    * requested. `super.flushCounts()` writes `entityCounts` (the Map in
    * `BaseStorageAdapter`); we additionally write `nounCountsByType` /
@@ -2814,6 +2981,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   public async flushCounts(): Promise<void> {
     await super.flushCounts()
     await this.saveTypeStatistics()
+    await this.saveSubtypeStatistics()
   }
 
   /**
@@ -2823,6 +2991,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public getNounCountsByType(): Uint32Array {
     return this.nounCountsByType
+  }
+
+  /**
+   * Get subtype counts by NounType (O(1) access to subtype statistics).
+   * Returned map is the live in-memory view — callers must treat it as
+   * read-only. Outer key: NounType index. Inner map: subtype → count.
+   *
+   * @returns Map keyed by NounType index → Map of subtype → count
+   */
+  public getSubtypeCountsByType(): Map<number, Map<string, number>> {
+    return this.subtypeCountsByType
   }
 
   /**

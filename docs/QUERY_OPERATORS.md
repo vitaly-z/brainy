@@ -194,6 +194,26 @@ brain.find({ where: { noun: NounType.Person } })
 brain.find({ type: [NounType.Person, NounType.Agent] })
 ```
 
+### Filter by subtype
+
+`subtype` is a top-level standard field — takes the column-store fast path, not the metadata fallback. Pair with `type` for the typical "Person who is an employee" query:
+
+```typescript
+// Equality on subtype:
+brain.find({ type: NounType.Person, subtype: 'employee' })
+
+// Set membership:
+brain.find({ type: NounType.Person, subtype: ['employee', 'contractor'] })
+
+// Operator-form predicates use `where`:
+brain.find({
+  type: NounType.Person,
+  where: { subtype: { exists: true } }
+})
+```
+
+See the **[Subtypes & Facets guide](./guides/subtypes-and-facets.md)** for the full surface.
+
 ### Combine semantic search with filters
 
 ```typescript

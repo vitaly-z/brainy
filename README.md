@@ -247,6 +247,27 @@ Plugins are opt-in. Brainy never auto-imports packages unless listed in `plugins
 
 Model any domain — healthcare (`Patient → diagnoses → Condition`), finance (`Account → transfers → Transaction`), education (`Student → completes → Course`), or your own.
 
+### Subtypes — sub-classification within a NounType
+
+The 42 NounTypes are intentionally coarse. Use the top-level `subtype` field to sub-classify entities within a type — flat string, no hierarchy, your choice of vocabulary:
+
+```javascript
+await brain.add({
+  data: 'Avery Brooks — runs the AI lab',
+  type: NounType.Person,
+  subtype: 'employee'                 // 'customer', 'vendor', 'contractor', …
+})
+
+// Filter on the fast path — column-store hit, not metadata fallback:
+const employees = await brain.find({ type: NounType.Person, subtype: 'employee' })
+
+// O(1) counts via the persisted rollup:
+brain.counts.bySubtype(NounType.Person)
+// → { employee: 12, customer: 847, vendor: 34 }
+```
+
+For other facets you want counted (`status`, `source`, `role`), register them with `brain.trackField(name)`. Renaming an existing convention to `subtype`? Use `brain.migrateField({from, to})`. Full guide: **[Subtypes & Facets](docs/guides/subtypes-and-facets.md)**.
+
 **[Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)** | **[Stage 3 Canonical Reference](docs/STAGE3-CANONICAL-TAXONOMY.md)**
 
 ---
