@@ -608,9 +608,10 @@ Create a typed relationship between entities.
 const relId = await brain.relate({
  from: sourceId,
  to: targetId,
- type: VerbType.RelatedTo,
- data: 'Collaborated on the research paper',  // Optional: content for this edge
- metadata: {    // Optional: structured edge fields
+ type: VerbType.ReportsTo,
+ subtype: 'direct',                              // Optional: sub-classification
+ data: 'Collaborated on the research paper',     // Optional: content for this edge
+ metadata: {                                     // Optional: structured edge fields
   strength: 0.9,
   role: 'primary author'
  }
@@ -621,6 +622,7 @@ const relId = await brain.relate({
 - `from`: `string` - Source entity ID (must exist)
 - `to`: `string` - Target entity ID (must exist)
 - `type`: `VerbType` - Relationship type
+- `subtype?`: `string` - Per-product sub-classification within the VerbType (top-level standard field, fast-path indexed). See [Subtypes & Facets](../guides/subtypes-and-facets.md).
 - `data?`: `any` - Content for the relationship (overrides auto-computed vector)
 - `metadata?`: `object` - Structured edge fields
 - `weight?`: `number` - Connection strength (0-1, default: 1.0)
@@ -628,6 +630,35 @@ const relId = await brain.relate({
 - `confidence?`: `number` - Relationship certainty (0-1)
 
 **Returns:** `Promise<string>` - Relationship ID
+
+---
+
+### `updateRelation(params)` → `Promise<void>`
+
+Update an existing relationship. Mirror of `update()` for verbs — closed a long-standing gap (verbs had no update path before 7.30).
+
+```typescript
+// Change the subtype on an existing relationship
+await brain.updateRelation({ id: relId, subtype: 'dotted-line' })
+
+// Update weight + confidence
+await brain.updateRelation({ id: relId, weight: 0.7, confidence: 0.9 })
+
+// Change verb type (re-indexes in graph adjacency, id preserved)
+await brain.updateRelation({ id: relId, type: VerbType.WorksWith })
+```
+
+**Parameters:**
+- `id`: `string` - Relationship ID (required)
+- `type?`: `VerbType` - Change verb type (re-indexes in graph adjacency)
+- `subtype?`: `string` - Change sub-classification (omit to preserve existing)
+- `weight?`: `number` - New weight (0-1)
+- `confidence?`: `number` - New confidence (0-1)
+- `data?`: `any` - New content
+- `metadata?`: `object` - Metadata to merge (or replace with `merge: false`)
+- `merge?`: `boolean` - Merge or replace metadata (default: true)
+
+**Returns:** `Promise<void>`
 
 ---
 
@@ -647,14 +678,32 @@ const related = await brain.getRelations({
  from: entityId,
  type: VerbType.Contains
 })
+
+// Filter by subtype (fast path, column-store hit)
+const direct = await brain.getRelations({
+ from: entityId,
+ type: VerbType.ReportsTo,
+ subtype: 'direct'
+})
+
+// Set membership on subtype
+const all = await brain.getRelations({
+ from: entityId,
+ type: VerbType.ReportsTo,
+ subtype: ['direct', 'dotted-line']
+})
 ```
 
 **Parameters:**
 - `from?`: `string` - Source entity ID
 - `to?`: `string` - Target entity ID
-- `type?`: `VerbType` - Filter by relationship type
+- `type?`: `VerbType | VerbType[]` - Filter by relationship type
+- `subtype?`: `string | string[]` - Filter by VerbType subtype (top-level standard field, fast path)
+- `service?`: `string` - Multi-tenancy filter
+- `limit?`: `number` - Pagination limit (default: 100)
+- `offset?`: `number` - Pagination offset
 
-**Returns:** `Promise<Relation[]>` - Matching relationships
+**Returns:** `Promise<Relation[]>` - Matching relationships (each with `subtype` at top level when set)
 
 ---
 
@@ -1969,6 +2018,81 @@ Sorted distinct subtypes seen for a NounType.
 brain.subtypesOf(NounType.Person)
 // → ['customer', 'employee', 'vendor']
 ```
+
+#### `counts.byRelationshipSubtype(verb, subtype?)` → `Record<string, number> | number`
+
+Verb-side mirror of `counts.bySubtype`. O(1) per-VerbType-per-subtype counts.
+
+```typescript
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo)
+// → { direct: 12, 'dotted-line': 3 }
+
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo, 'direct')
+// → 12
+```
+
+#### `counts.topRelationshipSubtypes(verb, n=10)` → `Array<[subtype, count]>`
+
+Top N subtypes for a `VerbType` ranked by count.
+
+```typescript
+brain.counts.topRelationshipSubtypes(VerbType.ReportsTo, 3)
+// → [['direct', 12], ['dotted-line', 3]]
+```
+
+#### `relationshipSubtypesOf(verb)` → `string[]`
+
+Sorted distinct subtypes seen for a `VerbType`.
+
+```typescript
+brain.relationshipSubtypesOf(VerbType.ReportsTo)
+// → ['direct', 'dotted-line']
+```
+
+#### `requireSubtype(type, options?)` → `void`
+
+Register subtype enforcement for a specific `NounType` or `VerbType`. Unified API for nouns and verbs. Composes with the brain-wide `requireSubtype` constructor flag.
+
+```typescript
+// Lock down Person sub-classification
+brain.requireSubtype(NounType.Person, {
+  values: ['employee', 'customer', 'vendor'],
+  required: true
+})
+
+// Lock down management edges
+brain.requireSubtype(VerbType.ReportsTo, {
+  values: ['direct', 'dotted-line'],
+  required: true
+})
+```
+
+**Parameters:**
+- `type`: `NounType | VerbType` - The type to register
+- `options.values?`: `string[]` - Vocabulary whitelist (rejects off-vocab values)
+- `options.required?`: `boolean` - Whether subtype is required (default: `true`)
+
+#### Brain-wide strict mode — `new Brainy({ requireSubtype })`
+
+Constructor option that enforces subtype on every `add()` / `addMany()` / `update()` / `relate()` / `relateMany()` / `updateRelation()` for every type:
+
+```typescript
+// Every write must include subtype
+const brain = new Brainy({ requireSubtype: true })
+
+// Exempt specific types (e.g. catch-all Thing)
+const brain2 = new Brainy({
+  requireSubtype: { except: [NounType.Thing, NounType.Custom] }
+})
+```
+
+When strict mode is on:
+- Every public write path checks the pairing guarantee.
+- `addMany()` / `relateMany()` validate all items BEFORE any storage write — atomic-fail, no partial writes.
+- Brainy's own VFS infrastructure writes bypass via the `metadata.isVFSEntity: true` marker.
+- Per-type registrations always apply regardless of the brain-wide flag.
+
+Becomes the default in 8.0.0.
 
 #### `trackField(name, options?)` → `void`
 

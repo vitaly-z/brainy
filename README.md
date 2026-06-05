@@ -247,26 +247,49 @@ Plugins are opt-in. Brainy never auto-imports packages unless listed in `plugins
 
 Model any domain — healthcare (`Patient → diagnoses → Condition`), finance (`Account → transfers → Transaction`), education (`Student → completes → Course`), or your own.
 
-### Subtypes — sub-classification within a NounType
+### Subtypes — sub-classification within a NounType *or* VerbType
 
-The 42 NounTypes are intentionally coarse. Use the top-level `subtype` field to sub-classify entities within a type — flat string, no hierarchy, your choice of vocabulary:
+Both noun types and verb types are intentionally coarse. Use the top-level `subtype` field to sub-classify entities AND relationships within a type — flat string, no hierarchy, your choice of vocabulary:
 
 ```javascript
+// Nouns: sub-classify entities
 await brain.add({
   data: 'Avery Brooks — runs the AI lab',
   type: NounType.Person,
   subtype: 'employee'                 // 'customer', 'vendor', 'contractor', …
 })
 
+// Verbs: sub-classify relationships
+await brain.relate({
+  from: ceoId,
+  to: vpId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'                   // 'dotted-line', 'matrix', …
+})
+
 // Filter on the fast path — column-store hit, not metadata fallback:
 const employees = await brain.find({ type: NounType.Person, subtype: 'employee' })
+const directReports = await brain.getRelations({ from: ceoId, subtype: 'direct' })
 
-// O(1) counts via the persisted rollup:
+// O(1) counts via the persisted rollups:
 brain.counts.bySubtype(NounType.Person)
 // → { employee: 12, customer: 847, vendor: 34 }
+
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo)
+// → { direct: 12, 'dotted-line': 3 }
 ```
 
-For other facets you want counted (`status`, `source`, `role`), register them with `brain.trackField(name)`. Renaming an existing convention to `subtype`? Use `brain.migrateField({from, to})`. Full guide: **[Subtypes & Facets](docs/guides/subtypes-and-facets.md)**.
+**Enforce the pairing.** Register a vocabulary per type or turn on brain-wide strict mode to ensure every entity AND relationship has both `type` AND `subtype`:
+
+```javascript
+// Per-type rule with vocabulary
+brain.requireSubtype(NounType.Person, { values: ['employee', 'customer'], required: true })
+
+// Or brain-wide strict mode
+const brain = new Brainy({ requireSubtype: true })
+```
+
+For other facets you want counted (`status`, `source`, `role`), register them with `brain.trackField(name)`. Renaming an existing convention to `subtype`? Use `brain.migrateField({from, to, entityKind: 'both'})` to walk nouns AND verbs in one pass. Full guide: **[Subtypes & Facets](docs/guides/subtypes-and-facets.md)**.
 
 **[Noun-Verb Taxonomy](docs/architecture/noun-verb-taxonomy.md)** | **[Stage 3 Canonical Reference](docs/STAGE3-CANONICAL-TAXONOMY.md)**
 

@@ -68,6 +68,15 @@ export interface Relation<T = any> {
   to: string
   /** Relationship type classification (VerbType enum) */
   type: VerbType
+  /**
+   * Per-product sub-classification within the VerbType (e.g. a `Manages`
+   * relationship might have `subtype: 'direct'` vs `'dotted-line'`; a `RelatedTo`
+   * edge might carry `'spouse'` / `'sibling'` / `'colleague'`). Flat string, no
+   * hierarchy. Top-level standard field — indexed on the fast path and rolled into
+   * per-VerbType statistics so queries like `getRelations({ verb, subtype })` hit
+   * the column-store directly.
+   */
+  subtype?: string
   /** Connection strength (0-1, default: 1.0) */
   weight?: number
   /** Opaque content for the relationship (overrides auto-computed vector if provided) */
@@ -220,6 +229,14 @@ export interface RelateParams<T = any> {
   to: string
   /** Relationship type classification (required) */
   type: VerbType
+  /**
+   * Per-product sub-classification within the VerbType (e.g. a `Manages`
+   * relationship might have `subtype: 'direct'` or `'dotted-line'`; a `RelatedTo`
+   * edge might carry `'spouse'` or `'colleague'`). Flat string, no hierarchy.
+   * Indexed and rolled up into per-VerbType statistics for fast filtering
+   * (`getRelations({ verb, subtype })`) and aggregation (`groupBy:['subtype']`).
+   */
+  subtype?: string
   /** Connection strength (0-1, default: 1.0) */
   weight?: number
   /** Content for the relationship (optional — overrides auto-computed vector) */
@@ -241,7 +258,10 @@ export interface RelateParams<T = any> {
  */
 export interface UpdateRelationParams<T = any> {
   id: string                 // Relation to update
+  type?: VerbType            // Change verb type
+  subtype?: string           // Change sub-classification (omit to preserve existing)
   weight?: number            // New weight
+  confidence?: number        // New confidence (0-1)
   data?: any                 // New content
   metadata?: Partial<T>      // Metadata to update
   merge?: boolean            // Merge or replace metadata
@@ -334,6 +354,13 @@ export interface GraphConstraints {
   from?: string              // Connected from this entity
   via?: VerbType | VerbType[] // Via these relationship types
   type?: VerbType | VerbType[] // Alias for via
+  /**
+   * Filter traversal edges by VerbType subtype. Single string for equality,
+   * array for set membership. Composes with `via` — `{ via: 'manages', subtype:
+   * 'direct' }` traverses only direct-management edges, not dotted-line. Edges
+   * without a subtype value are excluded when this filter is set.
+   */
+  subtype?: string | string[]
   depth?: number             // Max traversal depth (default: 1)
   direction?: 'in' | 'out' | 'both' // Direction of traversal (default: 'both')
   bidirectional?: boolean    // Consider both directions
@@ -422,6 +449,15 @@ export interface GetRelationsParams {
    * Can be a single VerbType or array of VerbTypes.
    */
   type?: VerbType | VerbType[]
+
+  /**
+   * Filter by VerbType subtype
+   *
+   * Top-level standard field — uses the fast path, not the metadata fallback.
+   * Pass a single string for equality (e.g. `subtype: 'direct'`), or an array
+   * for set membership (e.g. `subtype: ['direct', 'dotted-line']`).
+   */
+  subtype?: string | string[]
 
   /**
    * Maximum number of results to return
@@ -1098,6 +1134,26 @@ export interface BrainyConfig {
   // - false/undefined (default): Log warning if pending migrations exist, but don't auto-run
   // - true: Automatically run pending migrations during init() for small datasets (<10K entities)
   autoMigrate?: boolean
+
+  /**
+   * Brain-wide subtype enforcement mode.
+   *
+   * Opt-in in 7.30.0 (default: `false`); becomes the default in 8.0.0.
+   *
+   * - `false` / `undefined` (default): no brain-wide check. Per-type rules
+   *   registered via `brain.requireSubtype(type, options)` still apply.
+   * - `true`: every `add()` / `addMany()` / `update()` / `relate()` /
+   *   `relateMany()` / `updateRelation()` rejects writes where the entity's
+   *   NounType (or relationship's VerbType) has no non-empty `subtype` value.
+   * - `{ except: [NounType.Thing, NounType.Custom] }`: same as `true`, but
+   *   the listed types are allowed through without a subtype. Use for genuine
+   *   catch-all types where no subtype makes sense.
+   *
+   * Per-type registrations always compose with the brain-wide flag — a type
+   * registered with `requireSubtype(type, { required: true })` is always
+   * enforced regardless of this flag.
+   */
+  requireSubtype?: boolean | { except: Array<import('../types/graphTypes.js').NounType | import('../types/graphTypes.js').VerbType> }
 
   /**
    * Process role for multi-process safety on filesystem storage.

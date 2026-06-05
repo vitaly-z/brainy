@@ -5,7 +5,7 @@
  * Only enforces universal truths, learns everything else
  */
 
-import { FindParams, AddParams, UpdateParams, RelateParams } from '../types/brainy.types.js'
+import { FindParams, AddParams, UpdateParams, RelateParams, UpdateRelationParams } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
 
 // Dynamic import for Node.js os and fs modules
@@ -407,7 +407,7 @@ export function validateRelateParams(params: RelateParams): void {
   if (!params.from) {
     throw new Error('from entity ID is required')
   }
-  
+
   if (!params.to) {
     throw new Error('to entity ID is required')
   }
@@ -421,12 +421,46 @@ export function validateRelateParams(params: RelateParams): void {
   } else if (!Object.values(VerbType).includes(params.type)) {
     throw new Error(`invalid VerbType: ${params.type}`)
   }
-  
+
   // Universal truth: weight must be 0-1
   if (params.weight !== undefined) {
     if (params.weight < 0 || params.weight > 1) {
       throw new Error('weight must be between 0 and 1')
     }
+  }
+}
+
+/**
+ * Validate UpdateRelationParams. Mirror of validateUpdateParams for verbs —
+ * requires id + at least one field to change; bounds-checks weight/confidence;
+ * accepts type/subtype/weight/confidence/data/metadata changes.
+ */
+export function validateUpdateRelationParams(params: UpdateRelationParams): void {
+  if (!params.id) {
+    throw new Error('id is required for updateRelation')
+  }
+
+  if (
+    !params.data &&
+    !params.metadata &&
+    !params.type &&
+    params.subtype === undefined &&
+    params.weight === undefined &&
+    params.confidence === undefined
+  ) {
+    throw new Error('updateRelation: must specify at least one field to update')
+  }
+
+  if (params.type !== undefined && !Object.values(VerbType).includes(params.type)) {
+    throw new Error(`invalid VerbType: ${params.type}`)
+  }
+
+  if (params.weight !== undefined && (params.weight < 0 || params.weight > 1)) {
+    throw new Error('weight must be between 0 and 1')
+  }
+
+  if (params.confidence !== undefined && (params.confidence < 0 || params.confidence > 1)) {
+    throw new Error('confidence must be between 0 and 1')
   }
 }
 

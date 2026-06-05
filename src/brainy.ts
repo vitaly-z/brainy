@@ -51,6 +51,7 @@ import {
   validateAddParams,
   validateUpdateParams,
   validateRelateParams,
+  validateUpdateRelationParams,
   validateFindParams,
   recordQueryPerformance
 } from './utils/paramValidation.js'
@@ -66,6 +67,7 @@ import {
   RemoveFromMetadataIndexOperation,
   RemoveFromGraphIndexOperation,
   UpdateNounMetadataOperation,
+  UpdateVerbMetadataOperation,
   DeleteNounMetadataOperation,
   DeleteVerbMetadataOperation
 } from './transaction/operations/index.js'
@@ -85,6 +87,7 @@ import {
   AddParams,
   UpdateParams,
   RelateParams,
+  UpdateRelationParams,
   FindParams,
   SimilarParams,
   GetRelationsParams,
@@ -197,6 +200,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * values are rejected).
    */
   private _trackedFields: Map<string, { perType: boolean; values?: Set<string> }> = new Map()
+
+  /**
+   * Per-NounType / per-VerbType subtype enforcement rules registered via
+   * `brain.requireSubtype(type, options)`. When `required` is true the matching
+   * write path throws if subtype is missing; when `values` is set the matching
+   * write path throws if the value is off-vocabulary. Composes with the
+   * brain-wide `requireSubtype` constructor flag.
+   */
+  private _requiredSubtypes: Map<string, { required: boolean; values?: Set<string> }> = new Map()
 
   // State
   private initialized = false
@@ -1033,6 +1045,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       'top-level'
     )
 
+    // Subtype pairing enforcement (Layer 3 — 7.30.0). Per-type rules registered
+    // via brain.requireSubtype() compose with the brain-wide strict-mode flag.
+    // Metadata is passed so infrastructure writes (VFS) can bypass the
+    // missing-subtype check via the `isVFSEntity` marker.
+    this.enforceSubtypeOnAdd('add', params.type, params.subtype, params.metadata)
+
     // Generate ID if not provided
     const id = params.id || uuidv4()
 
@@ -1511,6 +1529,16 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       )
     }
 
+    // Subtype pairing enforcement on update (7.30.0). The effective NounType after
+    // the update is `params.type ?? existing.type`; we look it up if needed.
+    if (params.subtype !== undefined || params.type !== undefined) {
+      const existing = await this.get(params.id)
+      const effectiveType = params.type ?? existing?.type
+      const effectiveSubtype = params.subtype !== undefined ? params.subtype : existing?.subtype
+      const effectiveMetadata = params.metadata ?? existing?.metadata
+      this.enforceSubtypeOnAdd('update', effectiveType, effectiveSubtype, effectiveMetadata)
+    }
+
     // Get existing entity with vectors (fix for regression)
       // We need includeVectors: true because:
       // 1. SaveNounOperation requires the vector
@@ -1853,6 +1881,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateRelateParams(params)
 
+    // Subtype pairing enforcement (Layer 3 — 7.30.0). Per-type rules registered
+    // via brain.requireSubtype() compose with the brain-wide strict-mode flag.
+    // Metadata is passed so infrastructure edges (VFS containment) can bypass
+    // the missing-subtype check via the `isVFSEntity` / `isVFS` marker.
+    this.enforceSubtypeOnRelate('relate', params.type, params.subtype, params.metadata)
+
     // Verify entities exist
     const fromEntity = await this.get(params.from)
     const toEntity = await this.get(params.to)
@@ -1898,6 +1932,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       const verbMetadata = {
         ...(params.metadata || {}),
         verb: params.type,
+        ...(params.subtype !== undefined && { subtype: params.subtype }),
         weight: params.weight ?? 1.0,
         createdAt: Date.now(),
         ...((params as any).data !== undefined && { data: (params as any).data })
@@ -1913,6 +1948,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         target: params.to,
         verb: params.type,
         type: params.type,
+        ...(params.subtype !== undefined && { subtype: params.subtype }),
         weight: params.weight ?? 1.0,
         metadata: params.metadata,
         data: (params as any).data,
@@ -2022,6 +2058,115 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Update an existing relationship.
+   *
+   * Mirror of `update()` for relationships. Supports changing the verb type, the
+   * sub-classification (`subtype`), weight/confidence, the opaque `data` payload, and
+   * structured metadata (merge by default; set `merge: false` to replace).
+   *
+   * If `type` changes, the relationship is re-indexed in the graph adjacency
+   * (`RemoveFromGraphIndex` + `AddToGraphIndex`) so traversal by verb type stays
+   * consistent. The relationship ID is preserved across the type change.
+   *
+   * @param params - Update parameters (`id` required; at least one field to change)
+   * @throws If the relationship doesn't exist
+   *
+   * @example Change subtype
+   * await brain.updateRelation({ id: relId, subtype: 'dotted-line' })
+   *
+   * @example Merge metadata
+   * await brain.updateRelation({ id: relId, metadata: { startDate: '2026-Q3' } })
+   *
+   * @example Replace metadata entirely
+   * await brain.updateRelation({ id: relId, metadata: { only: 'this' }, merge: false })
+   */
+  async updateRelation(params: UpdateRelationParams<T>): Promise<void> {
+    this.assertWritable('updateRelation')
+    await this.ensureInitialized()
+
+    validateUpdateRelationParams(params)
+
+    const existing = await this.storage.getVerb(params.id)
+    if (!existing) {
+      throw new Error(`Relation ${params.id} not found`)
+    }
+
+    const existingAny = existing as any
+    const newVerbType = params.type ?? existingAny.verb ?? existingAny.type
+
+    // Subtype pairing enforcement on update (7.30.0). The effective verb type after
+    // the update may have changed; we check against the new type and the resulting
+    // subtype value (explicit param or preserved existing).
+    if (params.subtype !== undefined || params.type !== undefined) {
+      const effectiveSubtype = params.subtype !== undefined
+        ? params.subtype
+        : (existingAny.subtype as string | undefined)
+      const effectiveMetadata = params.metadata ?? (existingAny.metadata as unknown)
+      this.enforceSubtypeOnRelate('updateRelation', newVerbType as VerbType, effectiveSubtype, effectiveMetadata)
+    }
+    const typeChanged = params.type !== undefined && params.type !== (existingAny.verb ?? existingAny.type)
+
+    // Merge metadata (mirror of update() for nouns)
+    const newMetadata = params.merge !== false
+      ? { ...(existingAny.metadata || {}), ...(params.metadata || {}) }
+      : (params.metadata as any) || existingAny.metadata
+
+    // Build updated stored metadata. System fields ALWAYS win — same shape as relate().
+    const updatedMetadata = {
+      ...newMetadata,
+      verb: newVerbType,
+      ...(params.subtype !== undefined
+        ? { subtype: params.subtype }
+        : existingAny.subtype !== undefined && { subtype: existingAny.subtype }),
+      weight: params.weight ?? existingAny.weight ?? 1.0,
+      ...(params.confidence !== undefined
+        ? { confidence: params.confidence }
+        : existingAny.confidence !== undefined && { confidence: existingAny.confidence }),
+      createdAt: existingAny.createdAt,
+      updatedAt: Date.now(),
+      ...(params.data !== undefined
+        ? { data: params.data }
+        : existingAny.data !== undefined && { data: existingAny.data })
+    }
+
+    // Build the verb view used by the graph index — top-level fields mirror relate()'s.
+    const verbForIndex: GraphVerb = {
+      id: params.id,
+      vector: existingAny.vector,
+      sourceId: existingAny.sourceId,
+      targetId: existingAny.targetId,
+      source: existingAny.sourceId,
+      target: existingAny.targetId,
+      verb: newVerbType,
+      type: newVerbType,
+      ...(params.subtype !== undefined
+        ? { subtype: params.subtype }
+        : existingAny.subtype !== undefined && { subtype: existingAny.subtype }),
+      weight: updatedMetadata.weight,
+      metadata: newMetadata,
+      data: updatedMetadata.data,
+      createdAt: existingAny.createdAt
+    }
+
+    await this.transactionManager.executeTransaction(async (tx) => {
+      tx.addOperation(
+        new UpdateVerbMetadataOperation(this.storage, params.id, updatedMetadata)
+      )
+
+      // If the verb type changed, re-index in graph adjacency so traversal-by-type
+      // stays consistent. The id is preserved across the swap.
+      if (typeChanged) {
+        tx.addOperation(
+          new RemoveFromGraphIndexOperation(this.graphIndex, existing as any)
+        )
+        tx.addOperation(
+          new AddToGraphIndexOperation(this.graphIndex, verbForIndex)
+        )
+      }
+    })
+  }
+
+  /**
    * Get relationships between entities
    *
    * Supports multiple query patterns:
@@ -2085,6 +2230,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     if (params.type) {
       filter.verbType = Array.isArray(params.type) ? params.type : [params.type]
+    }
+
+    if (params.subtype !== undefined) {
+      filter.subtype = Array.isArray(params.subtype) ? params.subtype : [params.subtype]
     }
 
     if (params.service) {
@@ -2397,6 +2546,180 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   private fieldCountsAggregateName(name: string): string {
     return `__fieldCounts__${name}`
+  }
+
+  /**
+   * Register subtype enforcement for a specific NounType or VerbType.
+   *
+   * Two complementary mechanisms shipped together in 7.30.0:
+   *
+   * 1. **Per-type enforcement** (this method): mark a specific type as requiring
+   *    a subtype, optionally with a fixed vocabulary. Writes targeting that
+   *    type without a matching subtype throw at the boundary.
+   *
+   * 2. **Brain-wide strict mode**: enable via `new Brainy({ requireSubtype: true })`.
+   *    Every public write path checks the strict-mode rule. See
+   *    `BrainyConfig.requireSubtype`.
+   *
+   * Both compose: a per-type registration always applies regardless of the
+   * brain-wide flag.
+   *
+   * @param type - The `NounType` or `VerbType` to register
+   * @param options.values - Optional vocabulary whitelist (rejects off-vocab values)
+   * @param options.required - When `true`, subtype is required on `add()`/`relate()`/`update()`/`updateRelation()` for this type (default: `true`)
+   *
+   * @example Lock down Person sub-classification
+   * brain.requireSubtype(NounType.Person, {
+   *   values: ['employee', 'customer', 'vendor'],
+   *   required: true
+   * })
+   *
+   * @example Lock down management relationships
+   * brain.requireSubtype(VerbType.Manages, {
+   *   values: ['direct', 'dotted-line'],
+   *   required: true
+   * })
+   */
+  requireSubtype(
+    type: NounType | VerbType,
+    options: { values?: string[]; required?: boolean } = {}
+  ): void {
+    if (type === undefined || type === null) {
+      throw new Error('requireSubtype: type must be a valid NounType or VerbType')
+    }
+    const required = options.required !== false
+    const valuesSet = options.values && options.values.length > 0
+      ? new Set(options.values)
+      : undefined
+    this._requiredSubtypes.set(String(type), { required, values: valuesSet })
+  }
+
+  /**
+   * Resolve the per-type subtype rule for a given NounType or VerbType.
+   * Returns `null` when no rule is registered for the type. Used by the
+   * write-path enforcement hooks (`enforceSubtypeOnAdd`, `enforceSubtypeOnRelate`).
+   */
+  private getSubtypeRule(type: NounType | VerbType | undefined): { required: boolean; values?: Set<string> } | null {
+    if (type === undefined || type === null) return null
+    return this._requiredSubtypes.get(String(type)) ?? null
+  }
+
+  /**
+   * Check whether brain-wide strict mode is on for a given type. Brain-wide
+   * `requireSubtype: true` enforces on every type; the `{ except: [...] }`
+   * form allows the listed types through. Used by the write-path enforcement
+   * hooks for both nouns and verbs.
+   */
+  private brainWideStrictRequiresSubtype(type: NounType | VerbType | undefined): boolean {
+    const flag = this.config.requireSubtype
+    if (!flag) return false
+    if (flag === true) return true
+    // { except: [...] } form — strict except for listed types
+    if (typeof flag === 'object' && Array.isArray((flag as any).except)) {
+      if (type === undefined || type === null) return true
+      return !(flag as any).except.includes(type)
+    }
+    return false
+  }
+
+  /**
+   * Whether a write should bypass subtype enforcement because it represents
+   * internal Brainy infrastructure rather than user data. Currently triggers on:
+   *
+   * - `metadata.isVFSEntity === true` — Virtual File System root + directories
+   *   + file entities. These are platform plumbing and follow their own
+   *   subtype conventions (`'vfs-root'`, `'vfs-directory'`, `'vfs-file'`).
+   * - `metadata.isVFS === true` — same intent; older marker.
+   *
+   * If user code sets these flags, they opt out of enforcement and accept the
+   * responsibility. Documented as such on `AddParams.metadata` JSDoc.
+   */
+  private isInfrastructureWrite(metadata: unknown): boolean {
+    if (!metadata || typeof metadata !== 'object') return false
+    const m = metadata as Record<string, unknown>
+    return m.isVFSEntity === true || m.isVFS === true
+  }
+
+  /**
+   * Enforce subtype rules for a noun write (`add` / `update`).
+   *
+   * Walks the per-type registration AND the brain-wide strict-mode flag, and
+   * throws with a descriptive message on missing or off-vocabulary values.
+   * Called from `add()` / `addMany()` / `update()` before the storage write.
+   *
+   * Skips infrastructure writes (see `isInfrastructureWrite`) so Brainy's own
+   * VFS root + directories + file entities don't get rejected when strict mode
+   * is on. Vocabulary rules still apply to user-supplied subtypes — the bypass
+   * only covers the missing-subtype case for internal plumbing.
+   *
+   * @param op - 'add' or 'update' (for error messages)
+   * @param type - The NounType being written
+   * @param subtype - The subtype value (or undefined)
+   * @param metadata - The metadata bag (checked for infrastructure markers)
+   */
+  private enforceSubtypeOnAdd(
+    op: 'add' | 'update',
+    type: NounType | undefined,
+    subtype: string | undefined,
+    metadata?: unknown
+  ): void {
+    const rule = this.getSubtypeRule(type)
+    const strict = this.brainWideStrictRequiresSubtype(type)
+    const isInfra = this.isInfrastructureWrite(metadata)
+
+    if (!rule && !strict) return
+
+    if (subtype === undefined || subtype === null || subtype === '') {
+      if ((rule?.required || strict) && !isInfra) {
+        throw new Error(
+          `${op}(): NounType.${type} requires subtype but got ${subtype === undefined ? 'undefined' : 'empty'}. ` +
+          (rule?.values ? `Allowed values: [${Array.from(rule.values).join(', ')}].` : 'Register vocabulary via brain.requireSubtype().')
+        )
+      }
+      return
+    }
+
+    if (rule?.values && !rule.values.has(subtype)) {
+      throw new Error(
+        `${op}(): NounType.${type} subtype '${subtype}' is not in registered vocabulary ` +
+        `[${Array.from(rule.values).join(', ')}].`
+      )
+    }
+  }
+
+  /**
+   * Enforce subtype rules for a verb write (`relate` / `updateRelation`).
+   * Mirror of `enforceSubtypeOnAdd` for relationships. Skips infrastructure
+   * edges (VFS containment, etc.) — same `isVFSEntity` / `isVFS` markers.
+   */
+  private enforceSubtypeOnRelate(
+    op: 'relate' | 'updateRelation',
+    verb: VerbType | undefined,
+    subtype: string | undefined,
+    metadata?: unknown
+  ): void {
+    const rule = this.getSubtypeRule(verb)
+    const strict = this.brainWideStrictRequiresSubtype(verb)
+    const isInfra = this.isInfrastructureWrite(metadata)
+
+    if (!rule && !strict) return
+
+    if (subtype === undefined || subtype === null || subtype === '') {
+      if ((rule?.required || strict) && !isInfra) {
+        throw new Error(
+          `${op}(): VerbType.${verb} requires subtype but got ${subtype === undefined ? 'undefined' : 'empty'}. ` +
+          (rule?.values ? `Allowed values: [${Array.from(rule.values).join(', ')}].` : 'Register vocabulary via brain.requireSubtype().')
+        )
+      }
+      return
+    }
+
+    if (rule?.values && !rule.values.has(subtype)) {
+      throw new Error(
+        `${op}(): VerbType.${verb} subtype '${subtype}' is not in registered vocabulary ` +
+        `[${Array.from(rule.values).join(', ')}].`
+      )
+    }
   }
 
   /**
@@ -3115,6 +3438,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     this.assertWritable('addMany')
     await this.ensureInitialized()
 
+    // Pre-validate every item against per-type + brain-wide subtype rules BEFORE
+    // any storage write — atomic-fail semantics: a missing-subtype anywhere in
+    // the batch fails the whole call, no partial writes. (7.30.0)
+    for (let i = 0; i < params.items.length; i++) {
+      const item = params.items[i]
+      try {
+        this.enforceSubtypeOnAdd('add', item.type, item.subtype, item.metadata)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`addMany(): item[${i}] failed subtype enforcement: ${msg}`)
+      }
+    }
+
     // Get optimal batch configuration from storage adapter
     // This automatically adapts to storage characteristics:
     // - GCS: 50 batch size, 100ms delay, sequential
@@ -3464,6 +3800,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   async relateMany(params: RelateManyParams<T>): Promise<string[]> {
     this.assertWritable('relateMany')
     await this.ensureInitialized()
+
+    // Pre-validate every item against per-type + brain-wide subtype rules BEFORE
+    // any storage write — atomic-fail semantics: a missing-subtype anywhere in
+    // the batch fails the whole call, no partial writes. (7.30.0)
+    for (let i = 0; i < params.items.length; i++) {
+      const item = params.items[i]
+      try {
+        this.enforceSubtypeOnRelate('relate', item.type, item.subtype, item.metadata)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new Error(`relateMany(): item[${i}] failed subtype enforcement: ${msg}`)
+      }
+    }
 
     // Get optimal batch configuration from storage adapter
     // Automatically adapts to storage characteristics
@@ -6291,6 +6640,63 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         return Object.fromEntries(this.graphIndex.getAllRelationshipCounts())
       },
 
+      /**
+       * O(1) subtype counts for a given VerbType. Verb-side mirror of
+       * `bySubtype`. Returns the count for a single (verb, subtype) pair when
+       * `subtype` is passed; returns the full subtype → count map when omitted.
+       * Backed by the persisted `_system/verb-subtype-statistics.json` rollup.
+       *
+       * @param verb - The VerbType to count subtypes within
+       * @param subtype - Optional specific subtype string for O(1) point count
+       *
+       * @example
+       * brain.counts.byRelationshipSubtype(VerbType.Manages)
+       * // → { direct: 12, 'dotted-line': 3 }
+       *
+       * brain.counts.byRelationshipSubtype(VerbType.Manages, 'direct')
+       * // → 12
+       */
+      byRelationshipSubtype: (verb: VerbType, subtype?: string): number | Record<string, number> => {
+        const verbSubtypeMap = typeof (this.storage as any).getVerbSubtypeCountsByType === 'function'
+          ? (this.storage as any).getVerbSubtypeCountsByType() as Map<number, Map<string, number>>
+          : null
+        if (!verbSubtypeMap) {
+          return subtype !== undefined ? 0 : {}
+        }
+        const verbIdx = TypeUtils.getVerbIndex(verb)
+        const inner = verbSubtypeMap.get(verbIdx)
+        if (!inner) {
+          return subtype !== undefined ? 0 : {}
+        }
+        if (subtype !== undefined) {
+          return inner.get(subtype) || 0
+        }
+        const result: Record<string, number> = {}
+        for (const [k, v] of inner.entries()) result[k] = v
+        return result
+      },
+
+      /**
+       * Top N subtypes for a VerbType, sorted by count (descending). Mirror of
+       * `topSubtypes` for verbs.
+       *
+       * @example
+       * brain.counts.topRelationshipSubtypes(VerbType.Manages, 5)
+       * // → [['direct', 12], ['dotted-line', 3]]
+       */
+      topRelationshipSubtypes: (verb: VerbType, n: number = 10): Array<[string, number]> => {
+        const verbSubtypeMap = typeof (this.storage as any).getVerbSubtypeCountsByType === 'function'
+          ? (this.storage as any).getVerbSubtypeCountsByType() as Map<number, Map<string, number>>
+          : null
+        if (!verbSubtypeMap) return []
+        const verbIdx = TypeUtils.getVerbIndex(verb)
+        const inner = verbSubtypeMap.get(verbIdx)
+        if (!inner) return []
+        return Array.from(inner.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, n)
+      },
+
       // O(1) count by field-value criteria
       byCriteria: async (field: string, value: any) => {
         return this.metadataIndex.getCountForCriteria(field, value)
@@ -6438,6 +6844,30 @@ export class Brainy<T = any> implements BrainyInterface<T> {
   }
 
   /**
+   * Distinct subtypes seen for a given VerbType. Mirror of `subtypesOf` for
+   * relationships. Reads from the verb subtype-statistics rollup — no scan, no
+   * storage round-trip. Vocabulary is observed (what's actually in the data),
+   * not registered.
+   *
+   * @param verb - The VerbType to enumerate subtypes for
+   * @returns Sorted list of distinct subtype strings (empty if none)
+   *
+   * @example
+   * const variants = brain.relationshipSubtypesOf(VerbType.Manages)
+   * // → ['direct', 'dotted-line']
+   */
+  relationshipSubtypesOf(verb: VerbType): string[] {
+    const verbSubtypeMap = typeof (this.storage as any).getVerbSubtypeCountsByType === 'function'
+      ? (this.storage as any).getVerbSubtypeCountsByType() as Map<number, Map<string, number>>
+      : null
+    if (!verbSubtypeMap) return []
+    const verbIdx = TypeUtils.getVerbIndex(verb)
+    const inner = verbSubtypeMap.get(verbIdx)
+    if (!inner) return []
+    return Array.from(inner.keys()).sort()
+  }
+
+  /**
    * Stream-and-rewrite a field across every entity in the brain.
    *
    * Layer 3 of the subtype-and-facets primitive. Reads the value at `from`,
@@ -6484,6 +6914,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     readBoth?: boolean
     batchSize?: number
     onProgress?: (progress: { scanned: number; migrated: number }) => void
+    /**
+     * Which entity kind to walk. Defaults to `'noun'` for backward compat with
+     * 7.29.0. Use `'verb'` to migrate relationship fields, or `'both'` to walk
+     * nouns then verbs in one pass. Path forms (`'subtype'`, `'metadata.X'`,
+     * `'data.X'`) are identical on both sides.
+     */
+    entityKind?: 'noun' | 'verb' | 'both'
   }): Promise<{
     scanned: number
     migrated: number
@@ -6507,56 +6944,175 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const toPath = this.parseMigrationPath(options.to)
     const batchSize = Math.max(1, options.batchSize ?? 100)
     const readBoth = options.readBoth === true
+    const entityKind = options.entityKind ?? 'noun'
 
     let scanned = 0
     let migrated = 0
     let skipped = 0
     const errors: Array<{ id: string; error: string }> = []
-    let offset = 0
 
-    // Stream via storage pagination — same shape used by streaming.entities()
-    // when no filter is set. Avoids a full in-memory load on large brains.
-    while (true) {
-      const page = await this.storage.getNouns({ pagination: { offset, limit: batchSize } })
-      if (page.items.length === 0) break
-
-      for (const noun of page.items) {
-        scanned++
-        try {
-          const entity = await this.convertNounToEntity(noun as any)
-          const sourceValue = this.readPath(entity, fromPath)
-          if (sourceValue === undefined || sourceValue === null) {
-            skipped++
-            continue
-          }
-          const targetValue = this.readPath(entity, toPath)
-          const sourceCleared = readBoth || fromPath.kind === toPath.kind && fromPath.field === toPath.field
-          if (targetValue === sourceValue && (readBoth || !this.pathExists(entity, fromPath))) {
-            // Already migrated and (readBoth || source already gone) → no-op
-            skipped++
-            continue
-          }
-
-          const update = this.buildMigrationUpdate(entity, fromPath, toPath, sourceValue, readBoth)
-          await this.update(update)
-          migrated++
-          void sourceCleared
-        } catch (err) {
-          errors.push({
-            id: (noun as any).id ?? '<unknown>',
-            error: err instanceof Error ? err.message : String(err)
-          })
-        }
-      }
-
+    const reportProgress = (): void => {
       if (options.onProgress) {
         options.onProgress({ scanned, migrated })
       }
-      if (!page.hasMore) break
-      offset += page.items.length
+    }
+
+    // Walk nouns when entityKind is 'noun' or 'both'.
+    if (entityKind === 'noun' || entityKind === 'both') {
+      let offset = 0
+      while (true) {
+        const page = await this.storage.getNouns({ pagination: { offset, limit: batchSize } })
+        if (page.items.length === 0) break
+        for (const noun of page.items) {
+          scanned++
+          try {
+            const entity = await this.convertNounToEntity(noun as any)
+            const sourceValue = this.readPath(entity, fromPath)
+            if (sourceValue === undefined || sourceValue === null) {
+              skipped++
+              continue
+            }
+            const targetValue = this.readPath(entity, toPath)
+            if (targetValue === sourceValue && (readBoth || !this.pathExists(entity, fromPath))) {
+              skipped++
+              continue
+            }
+            const update = this.buildMigrationUpdate(entity, fromPath, toPath, sourceValue, readBoth)
+            await this.update(update)
+            migrated++
+          } catch (err) {
+            errors.push({
+              id: (noun as any).id ?? '<unknown>',
+              error: err instanceof Error ? err.message : String(err)
+            })
+          }
+        }
+        reportProgress()
+        if (!page.hasMore) break
+        offset += page.items.length
+      }
+    }
+
+    // Walk verbs when entityKind is 'verb' or 'both'. Mirror of the noun loop —
+    // the path forms (`'subtype'`, `'metadata.X'`, `'data.X'`) and the
+    // readPath / buildMigrationUpdate helpers all work for verbs because
+    // `Relation<T>` carries the same shape (top-level standard fields +
+    // metadata bag + optional data object). updateRelation() is the verb-side
+    // mutator.
+    if (entityKind === 'verb' || entityKind === 'both') {
+      let offset = 0
+      while (true) {
+        const page = await this.storage.getVerbs({ pagination: { offset, limit: batchSize } })
+        if (page.items.length === 0) break
+        for (const verb of page.items) {
+          scanned++
+          try {
+            const edge = this.verbToRelationLike(verb as any)
+            const sourceValue = this.readPath(edge, fromPath)
+            if (sourceValue === undefined || sourceValue === null) {
+              skipped++
+              continue
+            }
+            const targetValue = this.readPath(edge, toPath)
+            if (targetValue === sourceValue && (readBoth || !this.pathExists(edge, fromPath))) {
+              skipped++
+              continue
+            }
+            const update = this.buildRelationMigrationUpdate(edge, fromPath, toPath, sourceValue, readBoth)
+            await this.updateRelation(update)
+            migrated++
+          } catch (err) {
+            errors.push({
+              id: (verb as any).id ?? '<unknown>',
+              error: err instanceof Error ? err.message : String(err)
+            })
+          }
+        }
+        reportProgress()
+        if (!page.hasMore) break
+        offset += page.items.length
+      }
     }
 
     return { scanned, migrated, skipped, errors }
+  }
+
+  /**
+   * Project a storage verb shape onto the Entity<T>-shaped surface that
+   * `readPath` / `pathExists` already understand. The migration helpers were
+   * written for nouns; making them work for verbs is just a shape projection —
+   * `subtype` / `metadata` / `data` live at the same paths on both sides.
+   */
+  private verbToRelationLike(verb: any): Entity<T> {
+    return {
+      id: verb.id,
+      vector: verb.vector,
+      type: (verb.verb ?? verb.type) as any,
+      subtype: verb.subtype,
+      data: verb.data,
+      metadata: verb.metadata as T,
+      service: verb.service,
+      createdAt: verb.createdAt,
+      updatedAt: verb.updatedAt,
+      createdBy: verb.createdBy,
+      confidence: verb.confidence,
+      weight: verb.weight
+    }
+  }
+
+  /**
+   * Build an `UpdateRelationParams` payload that mirrors `buildMigrationUpdate`
+   * for verbs. Top-level path → top-level on update; metadata path → metadata
+   * bag with merge:false; data path → data bag.
+   */
+  private buildRelationMigrationUpdate(
+    edge: Entity<T>,
+    from: { kind: 'top' | 'metadata' | 'data'; field: string },
+    to: { kind: 'top' | 'metadata' | 'data'; field: string },
+    value: unknown,
+    readBoth: boolean
+  ): UpdateRelationParams<T> {
+    const id = edge.id
+    const update: UpdateRelationParams<T> = { id }
+
+    if (to.kind === 'top') {
+      ;(update as any)[to.field] = value
+    } else if (to.kind === 'metadata') {
+      const base = (edge.metadata as unknown as Record<string, unknown>) ?? {}
+      const nextMeta: Record<string, unknown> = { ...base, [to.field]: value }
+      if (!readBoth && from.kind === 'metadata') {
+        delete nextMeta[from.field]
+      }
+      update.metadata = nextMeta as any
+      update.merge = false
+    } else {
+      const base = (edge.data && typeof edge.data === 'object') ? { ...(edge.data as Record<string, unknown>) } : {}
+      base[to.field] = value
+      if (!readBoth && from.kind === 'data') {
+        delete base[from.field]
+      }
+      update.data = base
+    }
+
+    if (!readBoth) {
+      if (from.kind === 'metadata' && to.kind !== 'metadata') {
+        const base = (edge.metadata as unknown as Record<string, unknown>) ?? {}
+        const nextMeta: Record<string, unknown> = { ...base }
+        delete nextMeta[from.field]
+        update.metadata = nextMeta as any
+        update.merge = false
+      } else if (from.kind === 'data' && to.kind !== 'data') {
+        const base = (edge.data && typeof edge.data === 'object') ? { ...(edge.data as Record<string, unknown>) } : null
+        if (base) {
+          delete base[from.field]
+          update.data = base
+        }
+      } else if (from.kind === 'top' && from.field === 'subtype') {
+        ;(update as any).subtype = undefined
+      }
+    }
+
+    return update
   }
 
   /**
@@ -7609,6 +8165,18 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     const { from, to, depth, direction = 'both' } = params.connected
     const via = params.connected.via ?? params.connected.type
+    const subtypeFilter = params.connected.subtype
+
+    // Multi-hop subtype filtering would require per-hop edge enumeration in JS, which doesn't
+    // scale. The native fast path lands in the next Cortex release (see CTX-SUBTYPE-PARITY-V2).
+    // For 7.30.0 JS, restrict subtype filtering to depth-1 — explicit error beats silent
+    // incorrect results.
+    if (subtypeFilter !== undefined && depth !== undefined && depth > 1) {
+      throw new Error(
+        'find({ connected: { subtype, depth > 1 } }) is not yet supported on the JS path. ' +
+        'Use depth: 1, or wait for Cortex native traversal (CTX-SUBTYPE-PARITY-V2).'
+      )
+    }
 
     // GraphConstraints speaks 'in' | 'out' | 'both'; neighbors() speaks 'incoming' | 'outgoing' | 'both'.
     const toNeighborDir = (d: 'in' | 'out' | 'both'): 'incoming' | 'outgoing' | 'both' =>
@@ -7629,6 +8197,30 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (to) {
       const reverse: 'in' | 'out' | 'both' = direction === 'in' ? 'out' : direction === 'out' ? 'in' : 'both'
       for (const id of await collect(to, toNeighborDir(reverse))) connectedIds.add(id)
+    }
+
+    // Subtype filter (depth-1 only — see guard above). Intersect connectedIds with the set of
+    // {to} ids whose edge from the anchor carries the matching subtype.
+    if (subtypeFilter !== undefined) {
+      const subtypeArr = Array.isArray(subtypeFilter) ? subtypeFilter : [subtypeFilter]
+      const validIds = new Set<string>()
+      const matchAnchor = async (anchor: string, reverseLookup: boolean): Promise<void> => {
+        // Pull all edges from anchor that match via + subtype, then intersect.
+        const edges = await this.getRelations({
+          ...(reverseLookup ? { to: anchor } : { from: anchor }),
+          ...(via && { type: via as VerbType | VerbType[] }),
+          subtype: subtypeArr,
+          limit: 10000
+        })
+        for (const e of edges) {
+          validIds.add(reverseLookup ? e.from : e.to)
+        }
+      }
+      if (from) await matchAnchor(from, false)
+      if (to) await matchAnchor(to, true)
+      for (const id of [...connectedIds]) {
+        if (!validIds.has(id)) connectedIds.delete(id)
+      }
     }
 
     // Filter existing results to only connected entities
@@ -7921,17 +8513,21 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * Convert verbs to relations (read from top-level)
    */
   private verbsToRelations(verbs: GraphVerb[]): Relation<T>[] {
-    return verbs.map((v) => ({
-      id: v.id,
-      from: v.sourceId,
-      to: v.targetId,
-      type: (v.verb || v.type) as VerbType,
-      weight: v.weight ?? 1.0,
-      data: v.data,
-      metadata: v.metadata,
-      service: v.service as string,
-      createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()
-    }))
+    return verbs.map((v) => {
+      const va = v as any
+      return {
+        id: v.id,
+        from: v.sourceId,
+        to: v.targetId,
+        type: (v.verb || v.type) as VerbType,
+        ...(va.subtype !== undefined && { subtype: va.subtype as string }),
+        weight: v.weight ?? 1.0,
+        data: v.data,
+        metadata: v.metadata,
+        service: v.service as string,
+        createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now()
+      }
+    })
   }
 
   /**
@@ -8463,6 +9059,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       integrations: config?.integrations ?? undefined as any,
       // Migration — disabled by default, opt-in for automatic migration
       autoMigrate: config?.autoMigrate ?? false,
+      // Subtype pairing enforcement (7.30.0) — opt-in.
+      // false: only per-type rules registered via brain.requireSubtype() apply.
+      // true: every public write path requires subtype on every type.
+      // { except: [...] }: strict, but listed types may omit subtype.
+      // Becomes the default in 8.0.0.
+      requireSubtype: config?.requireSubtype ?? false,
       // Multi-process safety
       mode: config?.mode ?? 'writer',
       force: config?.force ?? false

@@ -11,6 +11,190 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.30.0 — 2026-06-05
+
+**Affected products:** consumers modeling typed relationships with sub-classification
+(direct vs dotted-line management; spouse / sibling / colleague; collaborator vs competitor;
+etc.), and anyone wanting to enforce the pairing of `type` + `subtype` on every write.
+Additive; drop-in from 7.29.x. No deprecations.
+
+### Symmetric — `subtype` on relationships (parity with 7.29.0 nouns)
+
+`subtype?: string` is now a first-class standard field on every relationship, mirroring the
+noun-side work shipped in 7.29.0. Verbs and nouns are now first-class peers — every API
+available on the noun side has a verb-side mirror.
+
+```typescript
+const ceoId = await brain.add({ type: NounType.Person, subtype: 'employee', data: 'Avery' })
+const vpId = await brain.add({ type: NounType.Person, subtype: 'employee', data: 'Jordan' })
+
+await brain.relate({
+  from: ceoId,
+  to: vpId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'                    // sub-classification on the edge
+})
+```
+
+**Read & filter:**
+
+```typescript
+// Fast-path filter — column-store hit, not metadata fallback
+const direct = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'
+})
+
+// Set membership
+const all = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: ['direct', 'dotted-line']
+})
+
+// Traversal filter (depth-1 in JS; multi-hop lands on Cortex native)
+const reports = await brain.find({
+  connected: { from: ceoId, via: VerbType.ReportsTo, subtype: 'direct', depth: 1 }
+})
+```
+
+### New — `updateRelation()` closes a long-standing gap
+
+Verbs previously had no update method — the only way to change a relationship was
+delete-then-recreate, which lost the relation id. 7.30 ships `brain.updateRelation()`:
+
+```typescript
+await brain.updateRelation({ id: relId, subtype: 'dotted-line' })
+await brain.updateRelation({ id: relId, weight: 0.5, confidence: 0.9 })
+
+// Change verb type — re-indexes in graph adjacency, id preserved
+await brain.updateRelation({ id: relId, type: VerbType.WorksWith })
+```
+
+### New — O(1) verb subtype counts via the persisted rollup
+
+`_system/verb-subtype-statistics.json` mirrors the noun-side rollup shipped in 7.29.0.
+Per-VerbType-per-subtype counts are maintained incrementally and persisted; reads are O(1):
+
+```typescript
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo)
+// → { direct: 12, 'dotted-line': 3 }
+
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo, 'direct')   // O(1) point
+// → 12
+
+brain.counts.topRelationshipSubtypes(VerbType.ReportsTo, 3)
+// → [['direct', 12], ['dotted-line', 3]]
+
+brain.relationshipSubtypesOf(VerbType.ReportsTo)
+// → ['direct', 'dotted-line']
+```
+
+### New — `brain.requireSubtype(type, options)` per-type enforcement
+
+Unified API for noun OR verb types — register specific types as requiring a subtype,
+optionally with a fixed vocabulary:
+
+```typescript
+brain.requireSubtype(NounType.Person, {
+  values: ['employee', 'customer', 'vendor'],
+  required: true
+})
+
+brain.requireSubtype(VerbType.ReportsTo, {
+  values: ['direct', 'dotted-line'],
+  required: true
+})
+
+// Now this throws — Person requires subtype:
+await brain.add({ type: NounType.Person, data: 'no subtype' })
+
+// And this throws — 'matrix' isn't in the registered vocabulary:
+await brain.relate({ from: a, to: b, type: VerbType.ReportsTo, subtype: 'matrix' })
+```
+
+### New — Brain-wide strict mode
+
+`new Brainy({ requireSubtype: true })` enforces subtype on every public write across the
+whole brain. Composes with per-type rules; per-type rules win when both apply.
+
+```typescript
+// Every write must include subtype
+const brain = new Brainy({ requireSubtype: true })
+
+// Exempt specific types (e.g. catch-all Thing)
+const brain2 = new Brainy({
+  requireSubtype: { except: [NounType.Thing, NounType.Custom] }
+})
+```
+
+When strict mode is on:
+- Every `add()` / `addMany()` / `update()` / `relate()` / `relateMany()` / `updateRelation()`
+  rejects writes missing a subtype on a non-exempt type.
+- `addMany()` and `relateMany()` validate every item BEFORE any storage write —
+  atomic-fail semantics, no partial writes.
+- Brainy's own infrastructure writes (VFS root, directories, files) bypass via the
+  `metadata.isVFSEntity: true` marker so existing consumers' VFS usage continues to work.
+
+The brain-wide flag becomes the default in 8.0.0; the type-level `subtype` field becomes
+required at the type system level. The full 8.0 contract upgrade is coordinated through the
+internal platform handoff (`CTX-SUBTYPE-8.0-CONTRACT`).
+
+### `migrateField()` extended to verbs
+
+The migration helper shipped in 7.29.0 now walks verbs too via the new `entityKind` option:
+
+```typescript
+// Migrate verb-side metadata.kind → top-level subtype
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  entityKind: 'verb'
+})
+
+// Or walk nouns and verbs in one pass
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  entityKind: 'both'
+})
+```
+
+Default is `entityKind: 'noun'` (backward-compatible).
+
+### Symmetry — noun + verb capability matrix
+
+7.30 closes every gap between nouns and verbs. Every capability available on the noun side
+has a verb-side mirror:
+
+| Capability | Nouns | Verbs |
+|---|---|---|
+| `subtype` top-level field | ✓ (7.29) | ✓ (7.30 new) |
+| Standard-field set | `STANDARD_ENTITY_FIELDS` | `STANDARD_VERB_FIELDS` (new) |
+| Field resolver helper | `resolveEntityField` | `resolveVerbField` (new) |
+| Statistics rollup | `_system/subtype-statistics.json` | `_system/verb-subtype-statistics.json` (new) |
+| Counts breakdown | `counts.bySubtype` / `topSubtypes` / `subtypesOf` | `counts.byRelationshipSubtype` / `topRelationshipSubtypes` / `relationshipSubtypesOf` (new) |
+| Fast-path filter | `find({type, subtype})` | `getRelations({type, subtype})` + `find({connected, subtype})` (new) |
+| Update method | `update()` | `updateRelation()` (new — closed pre-7.30 gap) |
+| Migration helper | `migrateField()` | `migrateField({entityKind: 'verb'\|'both'})` (new) |
+| Enforcement | `requireSubtype(NounType, ...)` | `requireSubtype(VerbType, ...)` — one unified API |
+| Brain-wide strict mode | `new Brainy({ requireSubtype })` covers both | same |
+
+### Cortex compatibility
+
+Verb subtype works under Cortex out of the box via auto-field-indexing. Cortex parity items
+for the verb side (native query planner recognition, `verbSubtypeCountsByType` native rollup,
+per-edge subtype on native graph adjacency for multi-hop traversal filtering) ship in the
+next Cortex release. Not a Brainy blocker.
+
+### Docs
+
+Full guide: `docs/guides/subtypes-and-facets.md` (extended with Layer V + Enforcement
+sections). The verb subtype + enforcement APIs are documented in `docs/api/README.md`.
+
+---
+
 ## v7.29.0 — 2026-06-04
 
 **Affected products:** anyone modeling entities with per-product sub-classification — every

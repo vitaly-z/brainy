@@ -237,6 +237,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   protected subtypeCountsByType = new Map<number, Map<string, number>>()
 
   /**
+   * Per-VerbType-per-subtype counts. Verb-side mirror of `subtypeCountsByType`.
+   * Outer key is the VerbType index (matching `verbCountsByType` indexing);
+   * inner key is the subtype string. Populated incrementally as relationships
+   * are saved and decremented on delete; persisted to
+   * `_system/verb-subtype-statistics.json` (same shape as the noun-side rollup
+   * — `{ counts: { [verbTypeIdx]: { [subtype]: count } }, updatedAt }`).
+   */
+  protected verbSubtypeCountsByType = new Map<number, Map<string, number>>()
+
+  /**
    * In-memory map from noun id → its `noun` (NounType) value, populated when
    * `saveNounMetadata_internal()` runs. `saveNoun_internal()` consults this
    * to attribute the entity to the correct slot in `nounCountsByType` so the
@@ -258,6 +268,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    * non-empty subtype get an entry.
    */
   protected nounSubtypeByIdCache = new Map<string, string>()
+
+  /**
+   * In-memory map from verb id → `{ verb, subtype }` pair. Verb-side mirror of
+   * `nounTypeByIdCache` + `nounSubtypeByIdCache`. Lets `deleteVerbMetadata` and
+   * `updateRelation` decrement the right bucket without a re-read of metadata.
+   * Sparse — only ids with a non-empty subtype get an entry.
+   */
+  protected verbSubtypeByIdCache = new Map<string, { verb: VerbType; subtype: string }>()
   // Total: 676 bytes (99.2% reduction vs Map-based tracking)
 
   // Type caches REMOVED - ID-first paths eliminate need for type lookups!
@@ -385,6 +403,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Load type statistics from storage (if they exist)
       await this.loadTypeStatistics()
       await this.loadSubtypeStatistics()
+      await this.loadVerbSubtypeStatistics()
 
       // GraphAdjacencyIndex is now SINGLETON via getGraphIndex()
       // - Removed direct creation here to fix dual-ownership bug
@@ -1002,7 +1021,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWVerbWithMetadata - Extract standard fields to top-level
-    const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
 
     return {
       id: verb.id,
@@ -1012,6 +1031,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       sourceId: verb.sourceId,
       targetId: verb.targetId,
       // Standard fields at top-level
+      subtype: subtype as string | undefined,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
       confidence: confidence as number | undefined,
@@ -1076,7 +1096,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const verb = this.deserializeVerb(vectorData)
 
         // Extract standard fields to top-level
-        const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+        const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
 
         results.set(id, {
           id: verb.id,
@@ -1086,6 +1106,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           sourceId: verb.sourceId,
           targetId: verb.targetId,
           // Standard fields at top-level
+          subtype: subtype as string | undefined,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -1548,6 +1569,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const filterTargetIds = filter?.targetId
       ? new Set(Array.isArray(filter.targetId) ? filter.targetId : [filter.targetId])
       : null
+    const filterSubtypes = (filter as any)?.subtype
+      ? new Set(
+          Array.isArray((filter as any).subtype)
+            ? (filter as any).subtype
+            : [(filter as any).subtype]
+        )
+      : null
 
     // Iterate by shards (0x00-0xFF) instead of types - single pass!
     for (let shard = 0; shard < 256 && collectedVerbs.length < targetCount; shard++) {
@@ -1586,9 +1614,18 @@ export abstract class BaseStorage extends BaseStorageAdapter {
             // Load metadata
             const metadata = await this.getVerbMetadata(verb.id)
 
+            // Apply subtype filter (requires metadata — checked AFTER load)
+            if (filterSubtypes) {
+              const subtype = (metadata as any)?.subtype as string | undefined
+              if (!subtype || !filterSubtypes.has(subtype)) {
+                continue
+              }
+            }
+
             // Combine verb + metadata
             collectedVerbs.push({
               ...verb,
+              subtype: (metadata as any)?.subtype as string | undefined,
               weight: metadata?.weight,
               confidence: metadata?.confidence,
               createdAt: metadata?.createdAt
@@ -1656,8 +1693,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const offset = pagination.offset || 0
     const cursor = pagination.cursor
 
-    // Optimize for common filter cases to avoid loading all verbs
-    if (options?.filter) {
+    // Optimize for common filter cases to avoid loading all verbs.
+    // NOTE: subtype filter intentionally disqualifies the fast paths and forces
+    // fallthrough to the full shard scan (which loads metadata and applies the
+    // subtype check after the load). Subtype is not stored on the raw HNSWVerb;
+    // it's a metadata field. The graph-index fast paths return verbs without
+    // metadata, so they can't apply subtype filtering correctly.
+    if (options?.filter && !(options.filter as any).subtype) {
       // CRITICAL VFS FIX: If filtering by sourceId + verbType (most common VFS pattern!)
       // This is the query PathResolver.getChildren() uses: getRelations({ from: dirId, type: VerbType.Contains })
       if (
@@ -2703,6 +2745,34 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Cache verb type for faster lookups
 
+    // Track verb subtype changes: on type or subtype change via updateRelation(),
+    // decrement the prior bucket before incrementing the new one. Symmetric with
+    // the delete-path decrement in `deleteVerbMetadata()`.
+    const priorEntry = this.verbSubtypeByIdCache.get(id)
+    const priorVerbForSubtype = isNew ? undefined : (existingMetadata?.verb as VerbType | undefined)
+    const newSubtype = typeof metadata.subtype === 'string' && metadata.subtype.length > 0
+      ? metadata.subtype as string
+      : undefined
+
+    if (priorEntry && (priorEntry.subtype !== newSubtype || priorEntry.verb !== verbType)) {
+      this.decrementVerbSubtypeCount(priorEntry.verb, priorEntry.subtype)
+    } else if (!priorEntry && priorVerbForSubtype && !isNew) {
+      // Edge case: cache miss but metadata existed with a subtype (e.g. reader process startup).
+      const priorSubFromMeta = (existingMetadata as any)?.subtype as string | undefined
+      if (priorSubFromMeta && (priorSubFromMeta !== newSubtype || priorVerbForSubtype !== verbType)) {
+        this.decrementVerbSubtypeCount(priorVerbForSubtype, priorSubFromMeta)
+      }
+    }
+    if (newSubtype) {
+      if (!priorEntry || priorEntry.subtype !== newSubtype || priorEntry.verb !== verbType) {
+        this.incrementVerbSubtypeCount(verbType, newSubtype)
+      }
+      this.verbSubtypeByIdCache.set(id, { verb: verbType, subtype: newSubtype })
+    } else if (priorEntry) {
+      // Subtype cleared by an update — drop the cache entry (decrement done above)
+      this.verbSubtypeByIdCache.delete(id)
+    }
+
     // CRITICAL FIX: Increment verb count for new relationships
     // This runs AFTER metadata is saved
     // Uses synchronous increment since storage operations are already serialized
@@ -2744,6 +2814,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // Direct O(1) delete with ID-first path
     const path = getVerbMetadataPath(id)
     await this.deleteObjectFromBranch(path)
+
+    // Symmetric verb subtype decrement
+    const priorEntry = this.verbSubtypeByIdCache.get(id)
+    if (priorEntry) {
+      this.verbSubtypeByIdCache.delete(id)
+      this.decrementVerbSubtypeCount(priorEntry.verb, priorEntry.subtype)
+    }
   }
 
   // ============================================================================
@@ -2966,6 +3043,124 @@ export abstract class BaseStorage extends BaseStorageAdapter {
   }
 
   /**
+   * Increment the (verb, subtype) count, creating the inner map on first use.
+   * Verb-side mirror of `incrementSubtypeCount`. Indexed by VerbType index so it
+   * lines up with `verbCountsByType` and can be reduced into per-verb totals
+   * without re-keying.
+   */
+  protected incrementVerbSubtypeCount(verb: VerbType, subtype: string): void {
+    const verbIdx = TypeUtils.getVerbIndex(verb)
+    if (verbIdx < 0) return
+    let inner = this.verbSubtypeCountsByType.get(verbIdx)
+    if (!inner) {
+      inner = new Map<string, number>()
+      this.verbSubtypeCountsByType.set(verbIdx, inner)
+    }
+    inner.set(subtype, (inner.get(subtype) || 0) + 1)
+  }
+
+  /**
+   * Decrement the (verb, subtype) count. Mirror of `decrementSubtypeCount`.
+   * Deletes the inner key when it reaches 0 and the outer entry when its inner
+   * map is empty, so the persisted shape stays compact across heavy churn.
+   */
+  protected decrementVerbSubtypeCount(verb: VerbType, subtype: string): void {
+    const verbIdx = TypeUtils.getVerbIndex(verb)
+    if (verbIdx < 0) return
+    const inner = this.verbSubtypeCountsByType.get(verbIdx)
+    if (!inner) return
+    const next = (inner.get(subtype) || 0) - 1
+    if (next <= 0) {
+      inner.delete(subtype)
+      if (inner.size === 0) this.verbSubtypeCountsByType.delete(verbIdx)
+    } else {
+      inner.set(subtype, next)
+    }
+  }
+
+  /**
+   * Load `_system/verb-subtype-statistics.json` into `verbSubtypeCountsByType`.
+   * Persisted shape mirrors the noun-side rollup:
+   * `{ counts: { [verbIdx]: { [subtype]: count } }, updatedAt }`. Missing file
+   * or parse error → start from empty.
+   */
+  protected async loadVerbSubtypeStatistics(): Promise<void> {
+    try {
+      const stats = await this.readObjectFromPath(`${SYSTEM_DIR}/verb-subtype-statistics.json`)
+      if (stats && stats.counts && typeof stats.counts === 'object') {
+        this.verbSubtypeCountsByType.clear()
+        for (const [verbKey, subtypeMap] of Object.entries(stats.counts as Record<string, Record<string, number>>)) {
+          const verbIdx = Number(verbKey)
+          if (!Number.isInteger(verbIdx) || verbIdx < 0 || verbIdx >= VERB_TYPE_COUNT) continue
+          const inner = new Map<string, number>()
+          for (const [subtype, count] of Object.entries(subtypeMap)) {
+            if (typeof count === 'number' && count > 0) inner.set(subtype, count)
+          }
+          if (inner.size > 0) this.verbSubtypeCountsByType.set(verbIdx, inner)
+        }
+      }
+    } catch {
+      // No existing verb subtype statistics, starting fresh.
+    }
+  }
+
+  /**
+   * Save verb subtype statistics to storage. Mirrors `saveSubtypeStatistics`.
+   * Same persistence cadence (flushCounts + periodic saves alongside other
+   * type-statistics).
+   */
+  protected async saveVerbSubtypeStatistics(): Promise<void> {
+    const counts: Record<string, Record<string, number>> = {}
+    for (const [verbIdx, inner] of this.verbSubtypeCountsByType.entries()) {
+      const innerObj: Record<string, number> = {}
+      for (const [subtype, count] of inner.entries()) innerObj[subtype] = count
+      counts[String(verbIdx)] = innerObj
+    }
+    await this.writeObjectToPath(`${SYSTEM_DIR}/verb-subtype-statistics.json`, {
+      counts,
+      updatedAt: Date.now()
+    })
+  }
+
+  /**
+   * Rebuild verb subtype counts from on-disk metadata. Companion to
+   * `rebuildSubtypeCounts()`. O(N) over all verbs. Used for poison recovery
+   * and explicit repair via `brainy inspect repair`.
+   */
+  public async rebuildVerbSubtypeCounts(): Promise<void> {
+    prodLog.info('[BaseStorage] Rebuilding verb subtype counts from storage...')
+    this.verbSubtypeCountsByType.clear()
+    this.verbSubtypeByIdCache.clear()
+
+    for (let shard = 0; shard < 256; shard++) {
+      const shardHex = shard.toString(16).padStart(2, '0')
+      const shardDir = `entities/verbs/${shardHex}`
+      try {
+        const paths = await this.listObjectsInBranch(shardDir)
+        for (const path of paths) {
+          if (!path.includes('/metadata.json')) continue
+          try {
+            const metadata = await this.readWithInheritance(path)
+            if (metadata && metadata.verb && typeof metadata.subtype === 'string' && metadata.subtype.length > 0) {
+              const verb = metadata.verb as VerbType
+              const subtype = metadata.subtype as string
+              this.incrementVerbSubtypeCount(verb, subtype)
+              const segments = path.split('/')
+              const idSeg = segments[segments.length - 2]
+              if (idSeg) this.verbSubtypeByIdCache.set(idSeg, { verb, subtype })
+            }
+          } catch { /* skip unreadable verbs */ }
+        }
+      } catch { /* skip missing shards */ }
+    }
+
+    await this.saveVerbSubtypeStatistics()
+    const totals = Array.from(this.verbSubtypeCountsByType.values())
+      .reduce((sum, inner) => sum + Array.from(inner.values()).reduce((s, n) => s + n, 0), 0)
+    prodLog.info(`[BaseStorage] Rebuilt verb subtype counts: ${totals} relationships across ${this.verbSubtypeCountsByType.size} VerbTypes`)
+  }
+
+  /**
    * Persist both counter systems atomically when an explicit flush is
    * requested. `super.flushCounts()` writes `entityCounts` (the Map in
    * `BaseStorageAdapter`); we additionally write `nounCountsByType` /
@@ -2982,6 +3177,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     await super.flushCounts()
     await this.saveTypeStatistics()
     await this.saveSubtypeStatistics()
+    await this.saveVerbSubtypeStatistics()
   }
 
   /**
@@ -3002,6 +3198,15 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   public getSubtypeCountsByType(): Map<number, Map<string, number>> {
     return this.subtypeCountsByType
+  }
+
+  /**
+   * Get verb subtype counts (O(1) access). Verb-side mirror of
+   * `getSubtypeCountsByType`. Outer key: VerbType index. Inner map: subtype → count.
+   * Returned map is the live in-memory view — callers must treat it as read-only.
+   */
+  public getVerbSubtypeCountsByType(): Map<number, Map<string, number>> {
+    return this.verbSubtypeCountsByType
   }
 
   /**
@@ -3447,6 +3652,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
             results.push({
               ...verb,
+              subtype: (metadata as any).subtype as string | undefined,
               weight: metadata.weight,
               confidence: metadata.confidence,
               createdAt: metadata.createdAt
@@ -3501,6 +3707,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
               results.push({
                 ...verb,
+                subtype: (metadata as any)?.subtype as string | undefined,
                 weight: metadata?.weight,
                 confidence: metadata?.confidence,
                 createdAt: metadata?.createdAt
@@ -3675,6 +3882,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           if (verb && metadata) {
             results.push({
               ...verb,
+              subtype: (metadata as any).subtype as string | undefined,
               weight: metadata.weight,
               confidence: metadata.confidence,
               createdAt: metadata.createdAt
@@ -3722,6 +3930,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
               results.push({
                 ...verb,
+                subtype: (metadata as any)?.subtype as string | undefined,
                 weight: metadata?.weight,
                 confidence: metadata?.confidence,
                 createdAt: metadata?.createdAt
@@ -3779,7 +3988,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
             // Extract standard fields from metadata to top-level
             const metadataObj = (metadata || {}) as VerbMetadata
-            const { createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+            const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
 
             const verbWithMetadata: HNSWVerbWithMetadata = {
               id: hnswVerb.id,
@@ -3788,6 +3997,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
               verb: hnswVerb.verb,
               sourceId: hnswVerb.sourceId,
               targetId: hnswVerb.targetId,
+              subtype: subtype as string | undefined,
               createdAt: (createdAt as number) || Date.now(),
               updatedAt: (updatedAt as number) || Date.now(),
               confidence: confidence as number | undefined,

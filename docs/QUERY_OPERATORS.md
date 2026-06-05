@@ -214,6 +214,37 @@ brain.find({
 
 See the **[Subtypes & Facets guide](./guides/subtypes-and-facets.md)** for the full surface.
 
+### Filter relationships by subtype (7.30+)
+
+Verbs are first-class peers — `getRelations()` and graph traversal both honor subtype filters on the fast path:
+
+```typescript
+// Filter relationships by VerbType subtype
+const direct = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'
+})
+
+// Set membership on verb subtype
+const all = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: ['direct', 'dotted-line']
+})
+
+// Graph traversal — subtype filters traversal edges (depth-1 in 7.30 JS path;
+// multi-hop subtype filtering lands on Cortex native)
+const reports = await brain.find({
+  connected: {
+    from: ceoId,
+    via: VerbType.ReportsTo,
+    subtype: 'direct',
+    depth: 1
+  }
+})
+```
+
 ### Combine semantic search with filters
 
 ```typescript

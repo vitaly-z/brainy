@@ -221,6 +221,47 @@ await brain.add({
 
 `subtype` lives at the **top level** — NOT inside `metadata`, NOT inside `data`. That's how `find({ type, subtype })` routes through the standard-field fast path (column-store hit) instead of the metadata fallback. See **[Subtypes & Facets](./guides/subtypes-and-facets.md)** for the full guide including `trackField()` and `migrateField()`.
 
+### Subtype — sub-classification within a VerbType (7.30+)
+
+Relationships are first-class citizens too. Every verb (`VerbType`) gets the same `subtype` primitive — a `ReportsTo` relationship might carry `subtype: 'direct'` vs `'dotted-line'`; a `RelatedTo` edge might carry `'spouse'` / `'sibling'` / `'colleague'`. Same shape as the noun side: flat string, no hierarchy, top-level standard field on `HNSWVerbWithMetadata` and on the public `Relation<T>`:
+
+```typescript
+await brain.relate({
+  from: ceoId,
+  to: vpId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct',                  // top-level standard field
+  metadata: { since: '2025-Q1' }      // user-custom fields stay in metadata
+})
+```
+
+Fast-path filter on the verb side:
+
+```typescript
+const direct = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'
+})
+```
+
+The verb-side rollup at `_system/verb-subtype-statistics.json` mirrors the noun-side `_system/subtype-statistics.json` — same shape, same self-heal machinery. Per-VerbType-per-subtype counts are O(1) via `brain.counts.byRelationshipSubtype()`.
+
+Verbs and nouns now have full capability parity — every API on the noun side has a verb-side mirror, including the new `brain.updateRelation()` (which closed a pre-7.30 gap where relationships had no update path).
+
+### Standard verb fields
+
+The verb-side equivalent of `STANDARD_ENTITY_FIELDS` is `STANDARD_VERB_FIELDS`, exported from `src/coreTypes.ts`. Verb-specific standard fields:
+
+| Field | Description |
+|---|---|
+| `verb` | The VerbType enum value |
+| `sourceId` / `targetId` | The two endpoints of the relationship |
+| `subtype` | Sub-classification within the VerbType (7.30+) |
+| `confidence`, `weight`, `createdAt`, `updatedAt`, `service`, `createdBy`, `data` | Same semantics as the noun-side standard fields |
+
+The companion `resolveVerbField(verb, field)` helper resolves field paths the same way `resolveEntityField` does for nouns: standard fields first, metadata fallback for everything else.
+
 ---
 
 ## See Also

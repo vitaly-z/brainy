@@ -245,6 +245,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         id: rootId,  // Fixed ID - storage ensures uniqueness
         data: '/',
         type: NounType.Collection,
+        subtype: 'vfs-root',  // Standard subtype for the VFS root collection (7.30+)
         metadata: this.getRootMetadata()
       })
 
@@ -511,6 +512,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       const entity = await this.brain.add({
         data: embeddingData,  // Always provide string for embeddings
         type: this.getFileNounType(mimeType),
+        subtype: 'vfs-file',  // Standard subtype for VFS file entities (7.30+)
         metadata
       })
 
@@ -519,6 +521,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         from: parentId,
         to: entity,
         type: VerbType.Contains,
+        subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
         metadata: { isVFS: true }  // Mark as VFS relationship
       })
 
@@ -890,6 +893,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       const entity = await this.brain.add({
         data: path,  // Directory path as string content
         type: NounType.Collection,
+        subtype: 'vfs-directory',  // Standard subtype for VFS directory entities (7.30+)
         metadata
       })
 

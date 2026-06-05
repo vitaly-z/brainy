@@ -467,7 +467,11 @@ brain.counts.bySubtype(NounType.Person)
 // → { employee: 12, customer: 847 }
 ```
 
-Subtype has its own statistics rollup (`_system/subtype-statistics.json`) maintained alongside `nounCountsByType`, so per-subtype counts stay O(1) at billion scale. Full guide: **[Subtypes & Facets](../guides/subtypes-and-facets.md)**.
+Subtype has its own statistics rollup (`_system/subtype-statistics.json`) maintained alongside `nounCountsByType`, so per-subtype counts stay O(1) at billion scale.
+
+The same principle applies to **VerbTypes** (7.30+): the 127-verb taxonomy is intentionally coarse, and `subtype` is the per-product axis for relationships too. A `ReportsTo` relationship might carry `subtype: 'direct'` vs `'dotted-line'`; a `RelatedTo` edge might carry `'spouse'` / `'colleague'`. Verb-side rollup lives at `_system/verb-subtype-statistics.json` with identical shape to the noun-side rollup. Per-VerbType-per-subtype counts are O(1) via `brain.counts.byRelationshipSubtype()`. Brainy's design is fully symmetric — nouns and verbs are first-class peers with identical capability surfaces.
+
+Full guide: **[Subtypes & Facets](../guides/subtypes-and-facets.md)**.
 
 ### 2. Semantic not Structural
 

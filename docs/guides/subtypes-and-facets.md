@@ -271,7 +271,198 @@ await brain.counts.byField('status', { type: NounType.Event })
 await brain.migrateField({ from: 'metadata.kind', to: 'subtype' })
 ```
 
+## Layer V — `subtype` on relationships (verbs)
+
+Relationships are first-class citizens too. Every verb (`VerbType`) gets the same `subtype` primitive: a `ReportsTo` relationship might carry `subtype: 'direct'` vs `'dotted-line'`; a `RelatedTo` edge might carry `'spouse'` / `'sibling'` / `'colleague'`. Same shape as the noun side: flat string, no hierarchy, top-level standard field, indexed on the fast path.
+
+### Write
+
+```typescript
+const ceoId = await brain.add({ type: NounType.Person, subtype: 'employee', data: 'Avery' })
+const vpId = await brain.add({ type: NounType.Person, subtype: 'employee', data: 'Jordan' })
+const matrixId = await brain.add({ type: NounType.Person, subtype: 'contractor', data: 'Sam' })
+
+await brain.relate({
+  from: ceoId,
+  to: vpId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'
+})
+
+await brain.relate({
+  from: ceoId,
+  to: matrixId,
+  type: VerbType.ReportsTo,
+  subtype: 'dotted-line'
+})
+```
+
+### Read & filter
+
+```typescript
+// Direct reports — fast path filter (column-store hit, not metadata fallback)
+const direct = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: 'direct'
+})
+
+// Set membership
+const allReports = await brain.getRelations({
+  from: ceoId,
+  type: VerbType.ReportsTo,
+  subtype: ['direct', 'dotted-line']
+})
+```
+
+### Update (new — `updateRelation()`)
+
+Verbs previously had no update method — the only way to change a relationship was delete-then-recreate. 7.30 closes that gap:
+
+```typescript
+// Promote a dotted-line report to direct without losing the edge id
+await brain.updateRelation({ id: relationId, subtype: 'direct' })
+
+// Or change weight/confidence
+await brain.updateRelation({ id: relationId, weight: 0.5, confidence: 0.9 })
+```
+
+### Traversal filter
+
+`find({ connected, subtype })` filters traversal edges by their subtype. Composes with `via` (verb-type filter):
+
+```typescript
+// All direct reports two hops deep (will be supported in Cortex; for now depth-1)
+const directChain = await brain.find({
+  connected: {
+    from: ceoId,
+    via: VerbType.ReportsTo,
+    subtype: 'direct',
+    depth: 1
+  }
+})
+```
+
+Multi-hop subtype filtering (`depth > 1`) lights up on the Cortex native path; the JS path throws today rather than return incorrect partial results.
+
+### Counts
+
+Same shape as the noun-side counts API:
+
+```typescript
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo)
+// → { direct: 12, 'dotted-line': 3 }
+
+brain.counts.byRelationshipSubtype(VerbType.ReportsTo, 'direct')   // O(1) point
+// → 12
+
+brain.counts.topRelationshipSubtypes(VerbType.ReportsTo, 3)
+// → [['direct', 12], ['dotted-line', 3]]
+
+brain.relationshipSubtypesOf(VerbType.ReportsTo)
+// → ['direct', 'dotted-line']
+```
+
+These are O(1) lookups backed by the persisted `_system/verb-subtype-statistics.json` rollup — same self-heal machinery as the noun-side rollup.
+
+### Migrate verb fields
+
+`migrateField()` now walks verbs too:
+
+```typescript
+// Migrate verb-side metadata.kind → top-level subtype
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  entityKind: 'verb'
+})
+
+// Or migrate both nouns and verbs in one pass
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  entityKind: 'both'
+})
+```
+
+Default is `entityKind: 'noun'` (backward-compatible with 7.29).
+
+## Enforcement — `requireSubtype()` + brain-wide strict mode
+
+By default (7.30) subtype is optional. Two complementary opt-in mechanisms let you enforce the pairing of type + subtype on every write:
+
+### Per-type registration
+
+Mark a specific `NounType` or `VerbType` as requiring a subtype, optionally with a fixed vocabulary:
+
+```typescript
+brain.requireSubtype(NounType.Person, {
+  values: ['employee', 'customer', 'vendor'],
+  required: true
+})
+
+brain.requireSubtype(VerbType.ReportsTo, {
+  values: ['direct', 'dotted-line'],
+  required: true
+})
+
+// Now this throws — Person requires a subtype:
+await brain.add({ type: NounType.Person, data: 'no subtype' })
+
+// And this throws — 'matrix' isn't in the registered vocabulary:
+await brain.relate({
+  from: a,
+  to: b,
+  type: VerbType.ReportsTo,
+  subtype: 'matrix'
+})
+```
+
+### Brain-wide strict mode
+
+Enforce on every write across the whole brain:
+
+```typescript
+const brain = new Brainy({ requireSubtype: true })
+
+// Allow specific types to omit subtype (e.g. catch-all `Thing`)
+const brain2 = new Brainy({
+  requireSubtype: { except: [NounType.Thing, NounType.Custom] }
+})
+```
+
+When strict mode is on:
+
+- Every `add()` / `addMany()` / `update()` / `relate()` / `relateMany()` / `updateRelation()` rejects writes missing a subtype on a non-exempt type.
+- `addMany()` and `relateMany()` validate every item BEFORE any storage write — atomic-fail semantics, no partial writes.
+- Per-type rules registered via `requireSubtype()` compose with the brain-wide flag; specific rules win when both apply.
+- Brainy's own internal writes (VFS root, VFS directories, VFS file entities) bypass enforcement via the `metadata.isVFSEntity: true` infrastructure marker.
+
+### Migrating to strict mode on an existing brain
+
+`brain.migrateField()` is your friend — populate `subtype` from an existing convention before flipping strict mode on:
+
+```typescript
+// Step 1: backfill subtype from your existing metadata.kind convention
+await brain.migrateField({
+  from: 'metadata.kind',
+  to: 'subtype',
+  entityKind: 'both'
+})
+
+// Step 2: register the vocabulary
+brain.requireSubtype(NounType.Person, {
+  values: ['employee', 'customer', 'vendor'],
+  required: true
+})
+
+// Step 3: future writes must have a subtype matching the vocabulary
+await brain.add({ type: NounType.Person, subtype: 'employee', data: '...' })
+```
+
 ## Reference
+
+### Layer 1 — `subtype` (nouns)
 
 - `brain.add({ ..., subtype: 'value' })` — write the field
 - `brain.update({ id, subtype: 'value' })` — change the field
@@ -280,6 +471,29 @@ await brain.migrateField({ from: 'metadata.kind', to: 'subtype' })
 - `brain.counts.bySubtype(type, subtype?)` — O(1) counts
 - `brain.counts.topSubtypes(type, n?)` — top N by count
 - `brain.subtypesOf(type)` — distinct subtype list
+
+### Layer V — `subtype` (verbs / relationships)
+
+- `brain.relate({ ..., subtype: 'value' })` — write the field
+- `brain.updateRelation({ id, subtype, type?, weight?, ... })` — change a relationship
+- `brain.getRelations({ subtype })` — filter (fast path)
+- `brain.getRelations({ subtype: ['a', 'b'] })` — set membership
+- `brain.find({ connected: { via, subtype, depth } })` — traversal filter
+- `brain.counts.byRelationshipSubtype(verb, subtype?)` — O(1) counts
+- `brain.counts.topRelationshipSubtypes(verb, n?)` — top N by count
+- `brain.relationshipSubtypesOf(verb)` — distinct subtype list
+
+### Layer 2 — generic facets
+
 - `brain.trackField(name, { perType?, values? })` — register a facet
 - `brain.counts.byField(name, { type? })` — facet counts
-- `brain.migrateField({ from, to, readBoth?, batchSize?, onProgress? })` — rewrite a field
+
+### Layer 3 — migration
+
+- `brain.migrateField({ from, to, readBoth?, batchSize?, onProgress?, entityKind? })` — rewrite a field (nouns, verbs, or both)
+
+### Enforcement
+
+- `brain.requireSubtype(type, { values?, required })` — per-`NounType` / `VerbType` rule
+- `new Brainy({ requireSubtype: true })` — brain-wide strict mode
+- `new Brainy({ requireSubtype: { except: [type, ...] } })` — strict with exemptions

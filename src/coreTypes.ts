@@ -303,6 +303,63 @@ export function resolveEntityField(
 }
 
 /**
+ * Standard top-level fields on `HNSWVerbWithMetadata`. Parallel to
+ * `STANDARD_ENTITY_FIELDS` — the source of truth that drives `resolveVerbField`'s
+ * fast-path branch and the storage destructure-and-resurface pattern in
+ * `baseStorage.getVerb()`. Verb-specific entries: `verb` (the VerbType),
+ * `sourceId`, `targetId`. `subtype` is the 7.30 addition.
+ */
+export const STANDARD_VERB_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'vector',
+  'connections',
+  'verb',
+  'sourceId',
+  'targetId',
+  'subtype',
+  'confidence',
+  'weight',
+  'createdAt',
+  'updatedAt',
+  'service',
+  'createdBy',
+  'data'
+])
+
+/**
+ * Resolve a field value off a verb by name. Mirror of `resolveEntityField` for
+ * `HNSWVerbWithMetadata`: standard fields at the top level, custom user fields
+ * in `verb.metadata`.
+ *
+ * Includes the same `type` / `verb` alias treatment as the noun helper
+ * (`resolveEntityField`'s `noun`/`type` alias) — relation shapes that carry `type`
+ * instead of `verb` (e.g. the public `Relation<T>` API surface) resolve correctly
+ * for sorts/groupBys/filters that ask for `verb`.
+ *
+ * @param verb - The verb to read from
+ * @param field - The field name to resolve
+ * @returns The field value, or undefined if not present
+ *
+ * @example
+ * resolveVerbField(edge, 'createdAt')  // reads edge.createdAt (top-level)
+ * resolveVerbField(edge, 'subtype')    // reads edge.subtype (top-level — fast path)
+ * resolveVerbField(edge, 'customTag')  // reads edge.metadata?.customTag
+ */
+export function resolveVerbField(
+  verb: HNSWVerbWithMetadata,
+  field: string
+): unknown {
+  if (field === 'verb' || field === 'type') {
+    const v = verb as unknown as Record<string, unknown>
+    return v.verb ?? v.type
+  }
+  if (STANDARD_VERB_FIELDS.has(field)) {
+    return (verb as unknown as Record<string, unknown>)[field]
+  }
+  return verb.metadata?.[field]
+}
+
+/**
  * Combined verb structure for transport/API boundaries
  *
  * Standard fields moved to top-level
@@ -321,6 +378,15 @@ export interface HNSWVerbWithMetadata {
   verb: VerbType
   sourceId: string
   targetId: string
+
+  // SUBTYPE — optional per-product sub-classification within a VerbType (e.g. a
+  // `Manages` relationship might have subtype 'direct' vs 'dotted-line'; a `RelatedTo`
+  // edge might carry 'spouse' / 'sibling' / 'colleague'). Flat string (no hierarchy) —
+  // consumers decide the vocabulary. Indexed and rolled up into per-VerbType statistics
+  // so it's queryable (`getRelations({ verb, subtype })`) and aggregable
+  // (`groupBy:['subtype']`) on the standard-field fast path, never falling through to
+  // the metadata fallback.
+  subtype?: string
 
   // QUALITY METRICS (top-level, explicit)
   weight?: number
@@ -354,6 +420,7 @@ export interface GraphVerb {
   vector: Vector // Vector representation of the relationship
   connections?: Map<number, Set<string>> // Optional connections from HNSW index
   type?: string // Optional type of the relationship
+  subtype?: string // Optional sub-classification within the VerbType (7.30+)
   weight?: number // Optional weight of the relationship
   confidence?: number // Optional confidence score (0-1)
   metadata?: any // Optional metadata for the verb
