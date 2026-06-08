@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.30.2](https://github.com/soulcraftlabs/brainy/compare/v7.30.1...v7.30.2) (2026-06-08)
+
+- fix: recalibrate find({ limit }) cap + two-tier enforcement + caller location (9e307e4)
+
+
 ### [7.30.1](https://github.com/soulcraftlabs/brainy/compare/v7.30.0...v7.30.1) (2026-06-08)
 
 - fix: internal subtype consistency + brain.audit() diagnostic + improved enforcement errors (5f3a2ca)
