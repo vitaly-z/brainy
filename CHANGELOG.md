@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.30.1](https://github.com/soulcraftlabs/brainy/compare/v7.30.0...v7.30.1) (2026-06-08)
+
+- fix: internal subtype consistency + brain.audit() diagnostic + improved enforcement errors (5f3a2ca)
+
+
 ### [7.30.0](https://github.com/soulcraftlabs/brainy/compare/v7.29.0...v7.30.0) (2026-06-05)
 
 - feat: verb subtype + updateRelation + requireSubtype enforcement (c0d326b)
