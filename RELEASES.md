@@ -1,13 +1,144 @@
 # @soulcraft/brainy — Release Notes for Consumers
 
-This file is the **quick reference for Soulcraft product sessions** tracking Brainy changes.
+This file is the **quick reference for downstream sessions** tracking Brainy changes.
 Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/soulcraftlabs/brainy/releases
 
-**How to use:** Brainy is the underlying data engine for Workshop, Venue, Academy, and
-Collective. The SDK wraps it — most products never call Brainy directly. Read this when:
-- Upgrading `@soulcraft/brainy` in the SDK or a product
+**How to use:** Brainy is the underlying data engine for downstream applications. Read this when:
+- Upgrading `@soulcraft/brainy` in your application
 - Debugging data, query, or storage behaviour
-- A new Brainy feature is available that SDK should expose
+- A new Brainy feature is available that you want to adopt
+
+---
+
+## v7.30.2 — 2026-06-08
+
+**Affected products:** any consumer with `find({ limit })` call sites that pass values
+≥ ~9000 — a common safety-cap pattern in production code (`limit: 10_000` against
+type-filtered queries that typically return 10–500 entities). Additive; drop-in
+from 7.30.1.
+
+### Why
+
+Brainy 7.30 introduced a memory-derived cap on `find({ limit })` to prevent OOM
+from runaway queries. The cap was sound in intent but **~4× too conservative in
+calibration**: the formula assumed 100 KB per result while typical entity footprint
+is 7-10 KB (384-dim float32 vector ≈ 1.5 KB + standard fields + metadata). On a 900 MB
+free-memory box this capped `limit` at 9000, breaking production dashboards where
+cascading 500s from queries with `limit: 10_000` silently degraded the `Promise.all`
+loading the canvas.
+
+7.30.2 recalibrates the formula and changes the enforcement from synchronous-throw
+to two-tier (warn-then-throw) so existing pre-7.30 code doesn't break on upgrade.
+
+### Recalibrated formula — `25 KB` per result (was `100 KB`)
+
+The auto-configured cap now uses a realistic per-result size:
+
+| Memory source | 7.30.0–7.30.1 cap | 7.30.2 cap |
+|---|---|---|
+| 4 GB Cloud Run container | 10 000 | 40 000 |
+| 2 GB container | 5 000 | 20 000 |
+| 900 MB free system memory | 9 000 | ~36 000 |
+| `reservedQueryMemory: 1 GB` | 10 000 | 40 000 |
+
+Hard ceiling stays at 100 000. Existing `BrainyConfig.maxQueryLimit` /
+`reservedQueryMemory` overrides continue to work unchanged.
+
+### Two-tier enforcement — warn, then throw
+
+**Below cap (`limit ≤ maxLimit`):** silent pass. No signal, no friction. Unchanged.
+
+**Soft tier (`maxLimit < limit ≤ 2 × maxLimit`)** *NEW*: one-time warning per call
+site (dedup keyed on stack location + limit value), query proceeds. Pre-7.30.2 code
+that relied on the cap silently allowing safety-cap limits keeps working — the
+warning teaches the recipe so consumers can fix it intentionally.
+
+**Hard tier (`limit > 2 × maxLimit`)** *NEW*: throw with the same message format the
+warning uses. Real OOM territory; the cap stops being a recommendation and becomes
+a guardrail.
+
+The 2× soft margin is chosen to absorb existing safety-cap patterns (`limit: 10_000`
+against a 9 K-cap box) without disabling OOM protection. Real OOM territory on a JS
+in-memory brain is hundreds of thousands of results, not 10× the safety cap.
+
+### Improved error / warning message (mirrors the 7.30.1 enforcement-error format)
+
+Before (7.30 → 7.30.1):
+```
+limit exceeds auto-configured maximum of 9000 (based on available memory)
+```
+
+After (7.30.2):
+```
+find({ limit: 10000 }) exceeds the auto-configured query limit of 9000 (basis:
+available free memory). Choose one:
+  • Increase the cap: new Brainy({ maxQueryLimit: 10000 })
+  • Reserve more memory: new Brainy({ reservedQueryMemory: 256000000 })
+  • Paginate: split the query with { limit, offset } pages
+  at OrderService.loadDashboard (/app/src/orders/dashboard.ts:142:18)
+Docs: https://soulcraft.com/docs/guides/find-limits
+```
+
+Caller location comes from the same `findCallerLocation()` helper introduced in
+7.30.1 (now extracted to `src/utils/callerLocation.ts` so both subtype enforcement
+and limit enforcement share it).
+
+### New docs
+
+New `docs/guides/subtypes-and-facets.md`-style guide at
+`docs/guides/find-limits.md` (public, indexed) — explains the cap, the four memory
+sources the auto-config considers, the three escape valves (`maxQueryLimit`,
+`reservedQueryMemory`, pagination), and when to use which. Explicit "pagination is
+the future-proof pattern" callout — the cap can get tighter in 8.0 (Datomic-style
+`Db.find()` may make per-call limits stricter to keep snapshot semantics cheap),
+but pagination keeps working unchanged.
+
+`docs/api/README.md` `find()` entry gets a one-paragraph `limit` tip + pointer
+to the new guide.
+
+### Tests
+
+- **New `tests/integration/find-limits.test.ts`** (9 tests): below-cap silent
+  pass; soft-tier warns once per call site (dedup verified by exercising same vs.
+  different source lines); soft-tier message format (names all three escape
+  valves + docs link); soft-tier message includes caller location; hard-tier
+  throws; hard-tier message format same as soft-tier; consumer `maxQueryLimit`
+  override raises the cap and shifts both tiers accordingly; **the pre-7.30.2
+  regression scenario** explicitly covered — `limit: 10_000` against a
+  `maxQueryLimit: 9000` cap now warns and passes instead of throwing.
+- Existing unit tests in `tests/unit/utils/memoryLimits.test.ts` updated to
+  reflect the recalibrated formula (5 tests: hardcoded values for
+  container / reserved / free-memory paths bumped 4×).
+- Existing `paramValidation.test.ts` "should auto-limit based on system memory"
+  test extended to cover the new three-tier semantics (below-cap pass /
+  soft-tier silent / hard-tier throw).
+- All prior suites still green: subtype-and-facets 26/26, verb-subtype-and-
+  enforcement 30/30, strict-mode-self-test 13/13. Unit 1468/1468.
+
+### Cortex compatibility
+
+**No Cortex changes required for 7.30.2.** Every change is JS-side: formula
+recalibration runs in `ValidationConfig.constructor()`, two-tier enforcement runs
+in `validateFindParams()`, both fire before any storage/index/Cortex call. Cortex
+2.x and the pending Cortex 3.0 work both stay compatible without code changes.
+
+The new `docs/guides/find-limits.md` calls out that 8.0's Datomic-style `Db.find()`
+may tighten per-call limits; that's a Brainy 8.0 / Cortex 3.0 coordination point
+documented in `.strategy/BRAINY-8.0-SUBTYPE-CONTRACT.md` (open question #4 covers
+the rollout staging, which now also applies to query limits).
+
+### What consumers should do
+
+- **If you've been carrying a `limit: 9000` workaround for the 7.30.0–7.30.1
+  cap:** drop it on bump to 7.30.2 — existing `limit: 10_000` patterns now
+  warn (teaching the recipe) but no longer throw. The warning is
+  one-time-per-call-site, so production logs don't spam.
+- **All other consumers:** no action required if no enforcement-error was being
+  hit. If you see new `[Brainy]` warnings in logs after upgrade, follow the
+  recipe in the warning or read `docs/guides/find-limits.md`.
+- **SDK wrappers:** wrapper-level pools that auto-construct `Brainy` instances
+  should consider surfacing `maxQueryLimit` / `reservedQueryMemory` as
+  consumer-facing config; Brainy now documents the knob explicitly.
 
 ---
 
@@ -72,8 +203,8 @@ add(): NounType.Event requires subtype but got undefined. Register vocabulary vi
 After:
 ```
 add(): NounType.event requires subtype but got undefined.
-  at BookingDraftService.getOrCreateByToken (/app/src/booking/draft.ts:42:23)
-  Pass one of: booking, session, milestone.
+  at OrderService.getOrCreateByToken (/app/src/orders/draft.ts:42:23)
+  Pass one of: standard, recurring, milestone.
   Migration recipe: https://soulcraft.com/docs/guides/subtypes-and-facets#strict-mode
 ```
 
@@ -171,7 +302,7 @@ adds a strict-mode tip to the `add()` / `relate()` reference entries.
 ### Tests
 
 - **New `tests/integration/strict-mode-self-test.test.ts`** (13 tests): creates a brain under
-  the exact SDK_CORE_VOCABULARY shape Venue hit + brain-wide strict mode, then exercises every
+  a realistic consumer vocabulary shape + brain-wide strict mode, then exercises every
   internal Brainy path (VFS root/mkdir/writeFile/cp/mv/ln, aggregation engine, audit
   diagnostic, error-message UX). Zero rejections expected.
 - Existing 7.30.0 + 7.29.0 integration suites unchanged: 26/26 + 30/30.
@@ -658,7 +789,7 @@ open of a directory poisoned by 7.20.0/7.21.0 fixes it.
 7.21.0 added new storage-adapter methods (`supportsMultiProcessLocking`,
 `acquireWriterLock`, etc.) and called them unconditionally. Cortex 2.2.0's
 mmap storage adapter bundles a pre-7.21 `BaseStorage` and doesn't define
-them, so Venue's 7.21.0 upgrade attempt threw
+them, so a consumer's 7.21.0 upgrade attempt threw
 `TypeError: this.storage.supportsMultiProcessLocking is not a function`
 at boot.
 
@@ -702,7 +833,7 @@ internal platform handoff.
 
 ## v7.21.0 — 2026-05-15
 
-**Affected products:** All consumers using filesystem storage (Venue, Workshop dev,
+**Affected products:** All consumers using filesystem storage (production deploys,
 local development).
 
 ### Multi-process safety + first-class read-only inspector
@@ -807,7 +938,7 @@ and Cortex. Read-only inspectors mmap Cortex segments with zero coordination.
 
 ## v7.19.10 — 2026-02-24
 
-**Affected products:** All Bun/ESM consumers (Workshop, Venue, Academy, SDK)
+**Affected products:** All Bun/ESM consumers
 
 ### ESM crypto fix in SSTable
 
@@ -834,7 +965,7 @@ No API changes. If you were seeing ghost results in filtered queries, this fixes
 
 ## v7.18.0 — 2026-02-16
 
-**Affected products:** Workshop, Venue, Academy (analytics, reporting, session summaries)
+**Affected products:** Analytics, reporting, and session-summary consumers
 
 ### Aggregation engine
 

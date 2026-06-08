@@ -2,7 +2,7 @@
  * VFS Import Verification Test
  *
  * This test verifies that brain.import() creates VFS entities correctly.
- * Created to investigate Workshop team's report of empty VFS after import.
+ * Created to investigate a consumer's report of empty VFS after import.
  *
  * Expected behavior:
  * 1. Import with vfsPath creates directory entities
@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { Brainy } from '../../src/brainy.js'
 import * as XLSX from 'xlsx'
 
-describe('VFS Import Verification (Workshop Bug Investigation)', () => {
+describe('VFS Import Verification (VFS import bug investigation)', () => {
   let brain: Brainy
 
   beforeEach(async () => {
@@ -26,7 +26,7 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
   })
 
   it('should create VFS entities during import with vfsPath', async () => {
-    // Create test Excel file (matching Workshop scenario)
+    // Create test Excel file (matching the reported scenario)
     const testData = [
       {
         'Term': 'Alice',
@@ -204,8 +204,8 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
     }
   }, 60000)
 
-  it('should match Workshop scenario exactly', async () => {
-    // Replicate Workshop team's exact scenario
+  it('should match the reported scenario exactly', async () => {
+    // Replicate a consumer's exact scenario
     const testData = [
       { 'Term': 'Westland', 'Definition': 'Ancient kingdom', 'Type': 'Place' },
       { 'Term': 'Capital City', 'Definition': 'Main city', 'Type': 'Place' },
@@ -217,7 +217,7 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Glossary')
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
 
-    console.log('📥 Importing (Workshop scenario)...')
+    console.log('📥 Importing (the reported scenario)...')
     const filename = 'Tales from Talifar Glossary.xlsx'
     const timestamp = Date.now()
 
@@ -236,12 +236,12 @@ describe('VFS Import Verification (Workshop Bug Investigation)', () => {
     console.log(`   - Graph edges: ${result.stats.graphEdgesCreated}`)
     console.log(`   - VFS files: ${result.stats.vfsFilesCreated}`)
 
-    // Workshop team's check: Initialize VFS
-    console.log('\n📂 Initializing VFS (Workshop fix)...')
+    // Consumer's check: Initialize VFS
+    console.log('\n📂 Initializing VFS (post-fix)...')
     const vfs = brain.vfs
     await vfs.init()
 
-    // Workshop team's check: Query root
+    // a consumer's check: Query root
     console.log('🔍 Querying root directory...')
     const rootItems = await vfs.getDirectChildren('/')
     console.log(`   - Items in root: ${rootItems.length}`)

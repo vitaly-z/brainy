@@ -1,7 +1,7 @@
 /**
  * VFS Multiple Init() Diagnostic Test
  *
- * Tests Workshop team's issue: Does calling vfs.init() multiple times
+ * Tests a consumer's issue: Does calling vfs.init() multiple times
  * create duplicate root entities?
  *
  * Scenario:
@@ -72,8 +72,8 @@ describe('VFS Multiple Init Diagnostic', () => {
     expect(roots.length).toBe(1)
   })
 
-  it('should not create duplicate roots when creating MULTIPLE VFS instances (Workshop scenario)', async () => {
-    // Simulate Workshop's scenario: Getting VFS on multiple requests
+  it('should not create duplicate roots when creating MULTIPLE VFS instances (the reported scenario)', async () => {
+    // Simulate the reported scenario: Getting VFS on multiple requests
     // brain.vfs returns cached instance, so this should be safe
     const vfs1 = brain.vfs
     const vfs2 = brain.vfs
@@ -107,7 +107,7 @@ describe('VFS Multiple Init Diagnostic', () => {
 
   it('should handle NEW brain instances gracefully (per-user scenario)', async () => {
     // Simulate creating separate brain instances per user
-    // This is closer to Workshop's getUserBrainy() pattern
+    // This is closer to a consumer's getUserBrainy() pattern
     const brain2 = new Brainy({
       storage: {
         type: 'filesystem',

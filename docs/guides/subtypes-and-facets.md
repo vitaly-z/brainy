@@ -464,7 +464,7 @@ await brain.add({ type: NounType.Person, subtype: 'employee', data: '...' })
 
 When a platform layer like the Soulcraft SDK registers `requireSubtype()` rules on behalf of every consumer's brain, every downstream product that calls `brain.add()` / `brain.relate()` against those types must pass a matching `subtype`. Skipping the field — or passing one outside the registered vocabulary — throws at the boundary.
 
-This pattern is powerful but surfaces a class of latent bug: any `brain.add()` call site that was written before strict-mode adoption starts rejecting writes. The Venue team hit this in production on 2026-06-08 when their `/book` flow 500'd on every request because `BookingDraftService.getOrCreateByToken` called `brain.add({ type: NounType.Event, ... })` without subtype.
+This pattern is powerful but surfaces a class of latent bug: any `brain.add()` call site that was written before strict-mode adoption starts rejecting writes. A representative production incident: a booking flow started returning 500 on every request because a service method called `brain.add({ type: NounType.Event, ... })` without subtype, and an SDK layer had just registered `requireSubtype()` for `NounType.Event` on every brain instance.
 
 The fix is a four-step migration recipe — and Brainy 7.30.1+ ships diagnostic tools to make it deterministic.
 
@@ -488,7 +488,7 @@ The fix is a four-step migration recipe — and Brainy 7.30.1+ ships diagnostic 
 2. **Bulk-migrate any existing convention** with `brain.migrateField()` if a legacy field can be lifted:
 
    ```typescript
-   // Venue chose subtype = same string as metadata.entityType:
+   // Common pattern: subtype mirrors a discriminator field already in metadata
    await brain.migrateField({
      from: 'metadata.entityType',
      to: 'subtype',
@@ -496,7 +496,7 @@ The fix is a four-step migration recipe — and Brainy 7.30.1+ ships diagnostic 
    })
    ```
 
-3. **Hand-fix the remaining call sites.** The exact list is in `report.entitiesWithoutSubtype`. For each call site, add `subtype: '<value>'` to the `brain.add()` / `brain.relate()` params. Choose a stable convention (Venue chose `subtype = metadata.entityType`; any rule that's deterministic from the data works).
+3. **Hand-fix the remaining call sites.** The exact list is in `report.entitiesWithoutSubtype`. For each call site, add `subtype: '<value>'` to the `brain.add()` / `brain.relate()` params. Choose a stable convention (e.g. mirror `metadata.entityType` if you have one; any rule that's deterministic from the data works).
 
 4. **Verify with `brain.audit()` again.** Re-run; total should be `0`. If you turn on brain-wide strict mode at this point, all future writes are protected.
 

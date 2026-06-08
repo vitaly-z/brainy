@@ -70,7 +70,7 @@ describe('v5.7.0 Deadlock Regression', () => {
   })
 
   it('should handle imports without 12+ second delays per entity', async () => {
-    // Simulate import workflow (like Workshop Excel import)
+    // Simulate import workflow (like A consumer's Excel import)
     const start = Date.now()
 
     // Import 5 entities with relationships

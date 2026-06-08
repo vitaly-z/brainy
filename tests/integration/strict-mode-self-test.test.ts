@@ -5,7 +5,7 @@
  * registers on every consumer's brain. This suite is the canary that detects
  * any internal path which silently omits subtype.
  *
- * The SDK_CORE_VOCABULARY shape that surfaced Venue's `/book` 500 (2026-06-08)
+ * The SDK_CORE_VOCABULARY shape from the consumer regression (2026-06-08)
  * registers `brain.requireSubtype()` rules on six NounTypes:
  *   - NounType.Event
  *   - NounType.Collection
@@ -17,7 +17,7 @@
  * If Brainy's own VFS / aggregation / extraction / importer / integration /
  * MCP paths skip subtype anywhere, the enforcement hook fires and Brainy itself
  * starts rejecting its own infrastructure writes. This test exercises every
- * such path under the exact shape Venue hit + brain-wide strict mode, and
+ * such path under the exact shape the consumer hit + brain-wide strict mode, and
  * asserts: zero rejections.
  *
  * @since 7.30.1
@@ -32,7 +32,7 @@ describe('Brainy strict-mode self-test (7.30.1)', () => {
 
   beforeEach(async () => {
     // Brain-wide strict mode ON + the exact SDK_CORE_VOCABULARY shape that
-    // Venue hit. If any internal Brainy path skips subtype, the writes here
+    // the consumer hit. If any internal Brainy path skips subtype, the writes here
     // will throw and fail the test.
     brain = new Brainy({
       storage: { type: 'memory' },

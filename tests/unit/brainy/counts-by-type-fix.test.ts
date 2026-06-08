@@ -49,7 +49,7 @@ describe('counts.byType() fix (v6.2.2)', () => {
     })
 
     it('should not return empty when entities exist (the original bug)', async () => {
-      // This test reproduces the original bug from Workshop
+      // This test reproduces the original bug from a consumer report
       // counts.byType({ excludeVFS: true }) returned {} even with 48 entities
 
       // Arrange - Add a single entity
@@ -68,7 +68,7 @@ describe('counts.byType() fix (v6.2.2)', () => {
     })
 
     it('should match counts from find() (the workaround)', async () => {
-      // The Workshop workaround was to use find() and count manually
+      // The consumer workaround was to use find() and count manually
       // Our fix should make both approaches return the same counts
 
       // Arrange

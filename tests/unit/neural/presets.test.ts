@@ -508,7 +508,7 @@ describe('Presets', () => {
   })
 
   describe('real-world scenarios', () => {
-    it('should handle Workshop glossary correctly', () => {
+    it('should handle glossary correctly', () => {
       const context: ImportContext = {
         fileType: 'excel',
         rowCount: 567,

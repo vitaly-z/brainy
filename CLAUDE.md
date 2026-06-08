@@ -165,6 +165,24 @@ After a successful release, remind the user:
 
 Do NOT deploy portal from here. Portal is always deployed separately from within the portal project.
 
+## Closed-Source Product Names — HARD RULE
+
+Brainy is the only Soulcraft open-source project. Nothing in this repo — code, JSDoc, tests,
+docs, RELEASES.md, CHANGELOG.md, commit messages — may reference closed-source Soulcraft
+products by name (Workshop, Venue, Memory, Muse, Hall, Forge, Academy, Pulse, Heart,
+Collective, SDK) or by their specific class/method names (`BookingDraftService`,
+`getDemandHeatmap`, `systemKind`, etc.).
+
+When recording a consumer-reported bug, regression scenario, or release note:
+- Refer to "a consumer", "a downstream application", "a production deployment", or "an
+  internal report" — never name the product.
+- All doc examples must use generic domain values (`'employee'`, `'customer'`, `'invoice'`,
+  `'milestone'`, `OrderService`, `/orders/...`), not product-specific schemas.
+- Internal session artifacts (`.strategy/`, `~/.claude/plans/`, handoff files outside the
+  repo) MAY name products — those are not public.
+
+If you catch yourself typing a product name into a tracked file, stop and rephrase.
+
 ## Performance Claims
 
 When documenting performance characteristics:

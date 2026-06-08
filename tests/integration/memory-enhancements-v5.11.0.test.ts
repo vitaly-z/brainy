@@ -40,7 +40,7 @@ describe('Memory Enhancements Integration (v5.11.0)', () => {
     })
   })
 
-  describe('Production Workflow: Workshop Snapshot Timeline', () => {
+  describe('Production Workflow: Consumer Snapshot Timeline', () => {
     it('should stream 1000 snapshots efficiently', async () => {
       const brain = new Brainy({
         storage: {

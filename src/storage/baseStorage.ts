@@ -719,7 +719,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // CRITICAL FIX: COW metadata (_cow/*) must NEVER be branch-scoped
     // Refs, commits, and blobs are global metadata with their own internal branching.
     // Branch-scoping COW paths causes fork() to write refs to wrong locations,
-    // leading to "Branch does not exist" errors on checkout (see Workshop bug report).
+    // leading to "Branch does not exist" errors on checkout.
     if (basePath.startsWith('_cow/')) {
       return basePath  // COW metadata is global across all branches
     }

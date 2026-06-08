@@ -1,5 +1,5 @@
 /**
- * Workshop VFS Diagnostic Test
+ * VFS Multi-instance Diagnostic Test
  *
  * Tests to verify VFS import behavior and identify if VFS creates only wrappers or also graph entities
  */
@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { Brainy, NounType } from '../../src/index.js'
 
-describe('Workshop VFS Diagnostic', () => {
+describe('VFS Multi-instance Diagnostic', () => {
   let brain: Brainy
 
   beforeEach(async () => {
@@ -18,7 +18,7 @@ describe('Workshop VFS Diagnostic', () => {
   })
 
   it('should verify VFS creates document wrappers AND allows entity filtering', async () => {
-    console.log('\n🔬 Workshop VFS Diagnostic Test\n')
+    console.log('\n🔬 VFS Multi-instance Diagnostic Test\n')
     console.log('='.repeat(70))
 
     // Step 1: Add entities directly (control group)
@@ -162,7 +162,7 @@ describe('Workshop VFS Diagnostic', () => {
     console.log('   - filter({ type: "person" }) → returns graph entities')
     console.log('   - filter({ type: "document" }) → returns VFS wrappers')
     console.log('')
-    console.log('If Workshop gets 0 results, likely causes:')
+    console.log('If a consumer gets 0 results, likely causes:')
     console.log('   ❌ Only VFS wrappers created (createEntities: false)')
     console.log('   ❌ Import not completing before query')
     console.log('   ❌ Querying different Brainy instance')

@@ -67,7 +67,7 @@ describe('VFS Debug', () => {
     const rootContents = await vfs.readdir('/')
     console.log(`  Root contents: ${rootContents.join(', ')}`)
 
-    // Try getDirectChildren (Workshop's method)
+    // Try getDirectChildren (the consumer's method)
     const children = await vfs.getDirectChildren('/')
     console.log(`  Direct children: ${children.length}`)
     children.forEach(child => {

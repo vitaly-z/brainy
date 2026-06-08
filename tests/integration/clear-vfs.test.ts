@@ -1,7 +1,7 @@
 /**
  * Integration tests for clear() VFS reinitialization fix (v7.3.1)
  *
- * Bug report: Workshop team reported that brain.clear() breaks VFS operations.
+ * Bug report: a consumer team reported that brain.clear() breaks VFS operations.
  * After calling clear(), VFS operations fail with:
  * "Error: Source entity 00000000-0000-0000-0000-000000000000 not found"
  *

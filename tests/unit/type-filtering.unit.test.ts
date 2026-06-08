@@ -1,5 +1,5 @@
 /**
- * Type Filtering Tests - Workshop Team Issue
+ * Type Filtering Tests - A Consumer Team Issue
  *
  * Tests to verify that brain.find({ type: NounType.X }) correctly filters entities
  */
@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { Brainy, NounType } from '../../src/index.js'
 
-describe('Type Filtering (Workshop Team Issue)', () => {
+describe('Type Filtering (A Consumer Team Issue)', () => {
   let brain: Brainy
 
   beforeEach(async () => {

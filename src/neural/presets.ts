@@ -183,7 +183,7 @@ export const ACCURATE_PRESET: PresetConfig = {
  * - Fast, deterministic results
  * - Perfect for Excel/CSV with "Related Terms" columns
  *
- * Use case: Workshop glossary, structured taxonomies
+ * Use case: structured taxonomies and glossaries from spreadsheet sources
  * Performance: ~5ms per row
  * Accuracy: ~99% (high confidence)
  */
@@ -290,7 +290,7 @@ export function autoDetectPreset(context: ImportContext = {}): PresetConfig {
   }
 
   // Rule 3: Structured data with explicit relationships → explicit preset
-  // Perfect for Workshop bug fix!
+  // (Handles spreadsheet imports where relationships are encoded in columns.)
   if (hasExplicitColumns && (fileType === 'excel' || fileType === 'csv')) {
     return EXPLICIT_PRESET
   }

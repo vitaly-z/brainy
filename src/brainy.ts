@@ -55,6 +55,7 @@ import {
   validateFindParams,
   recordQueryPerformance
 } from './utils/paramValidation.js'
+import { findCallerLocation } from './utils/callerLocation.js'
 import {
   SaveNounMetadataOperation,
   SaveNounOperation,
@@ -2773,7 +2774,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     strict: boolean
   }): string {
     const typeLabel = opts.kind === 'noun' ? 'NounType' : 'VerbType'
-    const callSite = this.findCallerLocation()
+    const callSite = findCallerLocation()
     const vocab = opts.rule?.values ? Array.from(opts.rule.values).join(', ') : null
 
     let head: string
@@ -2803,28 +2804,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     return [head, callerLine, guidance, docLink].filter(Boolean).join('\n')
   }
 
-  /**
-   * Extract the first non-Brainy frame from the current stack so error messages
-   * can point at the consumer's call site instead of Brainy internals. Returns
-   * `null` if the stack isn't available (some runtimes) or only contains Brainy
-   * frames.
-   */
-  private findCallerLocation(): string | null {
-    const stack = new Error().stack
-    if (!stack) return null
-    const lines = stack.split('\n').slice(1)  // drop the `Error` line
-    for (const raw of lines) {
-      const line = raw.trim()
-      // Skip frames inside Brainy's own files. We don't want to point the user
-      // at `brainy.ts:XXXX` — they need their own call site.
-      if (line.includes('/src/brainy.ts') || line.includes('/dist/brainy.js')) continue
-      if (line.includes('enforceSubtypeOn') || line.includes('formatSubtypeError')) continue
-      if (line.includes('findCallerLocation')) continue
-      // Strip leading `at ` if present so the caller can format consistently.
-      return line.replace(/^at /, '')
-    }
-    return null
-  }
+  // findCallerLocation is now exported from src/utils/callerLocation.ts so
+  // both the subtype enforcement errors here and the query-limit warnings in
+  // paramValidation.ts can share it without re-importing brainy.ts.
 
   /**
    * Validate a metadata bag (or top-level field assignment) against any registered
@@ -4163,9 +4145,10 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Step 2: Copy storage ref (COW layer - instant!)
       await refManager.copyRef(currentBranch, branchName)
 
-      // CRITICAL FIX: Verify branch was actually created to prevent silent failures
-      // Without this check, fork() could complete successfully but branch wouldn't exist,
-      // causing subsequent checkout() calls to fail (see Workshop bug report).
+      // CRITICAL FIX: Verify branch was actually created to prevent silent failures.
+      // Without this check, fork() could complete successfully but the branch wouldn't
+      // exist on disk, causing subsequent checkout() calls to fail with a
+      // "Branch does not exist" error.
       const verifyBranch = await refManager.getRef(branchName)
       if (!verifyBranch) {
         throw new Error(
@@ -4553,7 +4536,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * - Subsequent queries: Same as normal Brainy (uses rebuilt indexes)
    * - Memory overhead: Snapshot has separate in-memory indexes
    *
-   * Use case: Workshop app - render file tree at historical commit
+   * Use case: rendering a file tree (or any indexed view) at a historical commit
    *
    * @param commitId - Commit hash to snapshot from
    * @returns Read-only Brainy instance with historical state
@@ -5379,7 +5362,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
   /**
    * Extract entities from text (alias for extract())
-   * Added for API clarity and Workshop team request
+   * Added for API clarity — `extractEntities()` reads more naturally at call sites
    *
    * Uses NeuralEntityExtractor with SmartExtractor ensemble (4-signal architecture):
    * - ExactMatch (40%) - Dictionary lookups

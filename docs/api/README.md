@@ -251,6 +251,8 @@ const results = await brain.find({
 - `hybridAlpha?`: `number` - Balance between text (0.0) and semantic (1.0) search. Auto-detected by query length if not specified.
 - `excludeVFS?`: `boolean` - Exclude VFS entities from results (default: false)
 
+> **`limit` tip:** Brainy caps `limit` against an auto-configured maximum (based on container/free memory, ~25 KB per result). Above the cap you get a one-time warning per call site; above 2× the cap it throws. To raise the cap, pass `new Brainy({ maxQueryLimit: N })` or `{ reservedQueryMemory: bytes }`. For queries that need ALL matches, paginate with `{ limit, offset }` — that's the only pattern guaranteed to keep working across Brainy versions. See [Query Limits & Pagination](../guides/find-limits.md).
+
 **Returns:** `Promise<Result[]>` - Matching entities with scores
 
 ---

@@ -508,8 +508,8 @@ describe('ExactMatchSignal', () => {
   })
 
   describe('real-world scenarios', () => {
-    it('should handle Workshop glossary import', async () => {
-      // Simulate Workshop glossary with 567 terms
+    it('should handle glossary import', async () => {
+      // Simulate glossary with 567 terms
       const terms = [
         { text: 'Eldoria', type: NounType.Location },
         { text: 'Shadowfen', type: NounType.Location },

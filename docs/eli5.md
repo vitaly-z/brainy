@@ -150,12 +150,6 @@ Add Cortex and you also unlock memory-mapped storage — aggregate state lives d
 - **Safe experiments** — Let teams branch the knowledge base, experiment independently, and merge when ready — just like branching code.
 - **Unified business platforms** — Combine booking, CRM, inventory, and analytics in one queryable knowledge graph with no sync pipeline.
 
-### Built with Brainy
+### What Brainy is good at
 
-Real products built on Brainy — live in production at Soulcraft:
-
-- **Workshop** — AI-powered IDE and creation studio where imagination meets creation.
-- **Venue** — Unified physical + digital business operations, from food truck to franchise.
-- **Memory** — Infinite context for AI agents that never forgets.
-- **Collective** — Multi-agent coordination with shared knowledge and automatic task routing.
-- **Heart** — Emotional intelligence and empathy layer for AI communication.
+Brainy is the engine underneath production systems that need to combine semantic search, structured filtering, and graph traversal in a single query — agent memory, knowledge-base platforms, business operations consoles, multi-agent coordination, and more. The combination of vector + graph + metadata search in one indexed call is what differentiates it from running three engines side by side.

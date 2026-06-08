@@ -643,7 +643,7 @@ v7.0.0 introduced **breaking changes** to the embedding system:
 | copy 15 files | ~120s | ~20-40s | 3-6x faster |
 | move 15 files | ~240s | ~40-60s | 4-6x faster |
 
-Requested by: Soulcraft Workshop team (BRAINY-VFS-RMDIR-PERFORMANCE)
+Requested by: a consumer team (BRAINY-VFS-RMDIR-PERFORMANCE)
 
 ### [6.3.2](https://github.com/soulcraftlabs/brainy/compare/v6.3.1...v6.3.2) (2025-12-09)
 
@@ -686,7 +686,7 @@ Requested by: Soulcraft Workshop team (BRAINY-VFS-RMDIR-PERFORMANCE)
 **Fixed VFS tree operations on cloud storage (GCS, S3, Azure, R2, OPFS)**
 
 **Issue:** Despite v6.1.0's PathResolver optimization, `vfs.getTreeStructure()` remained critically slow on cloud storage:
-- **Workshop Production (GCS):** 5,304ms for tree with maxDepth=2
+- **Production (GCS) deployment:** 5,304ms for tree with maxDepth=2
 - **Root Cause:** Tree traversal made 111+ separate storage calls (one per directory)
 - **Why v6.1.0 didn't help:** v6.1.0 optimized path→ID resolution, but tree traversal still called `getChildren()` 111+ times
 
@@ -714,7 +714,7 @@ Result: 111 storage calls → 1 storage call
 - `src/vfs/VirtualFileSystem.ts:730-762` - Updated `getDescendants()` to use batch fetch
 
 **Impact:**
-- ✅ Workshop file explorer now loads instantly on GCS
+- ✅ Consumer file explorer now loads instantly on GCS
 - ✅ Clean architecture: one code path, no fallbacks
 - ✅ Production-scale: uses in-memory graph + single batch fetch
 - ✅ Works for ALL storage adapters (GCS, S3, Azure, R2, OPFS, FileSystem)
@@ -1053,7 +1053,7 @@ for (const id of pageIds) {
 **Fix:** Set `isInitialized = true` at the START of `BaseStorage.init()` (before any initialization work) to prevent recursive calls. Flag is reset to `false` on error to allow retries.
 
 **Impact:**
-- ✅ Fixes production blocker reported by Workshop team
+- ✅ Fixes production blocker reported by a consumer team
 - ✅ All 8 storage adapters fixed (FileSystem, Memory, S3, R2, GCS, Azure, OPFS, Historical)
 - ✅ Init completes in ~1 second on fresh installation (was hanging indefinitely)
 - ✅ No new test failures introduced (1178 tests passing)
@@ -1333,7 +1333,7 @@ See comprehensive guides:
 v5.10.0 reintroduced a critical bug where `BlobStorage.read()` was hashing wrapped binary data instead of unwrapped content, causing all blob integrity checks to fail:
 - **Symptom**: `Blob integrity check failed: <hash>` errors on every VFS file read
 - **Root Cause**: Missing defense-in-depth unwrap verification in `BlobStorage.read()`
-- **Impact**: 100% failure rate for VFS file operations in Workshop application
+- **Impact**: 100% failure rate for VFS file operations in A consumer application
 
 ### The Fix (v5.10.1)
 1. **Defense-in-Depth Unwrapping**: Added unwrap verification in `BlobStorage.read()` before hash check
@@ -1481,7 +1481,7 @@ Reverted storage internals to v5.6.3 implementation:
 - ✅ No 12+ second delays per entity
 
 ### Verification
-Workshop team (production users) should upgrade immediately:
+a consumer team (production users) should upgrade immediately:
 ```bash
 npm install @soulcraft/brainy@5.7.1
 ```
@@ -1616,10 +1616,10 @@ Expected behavior after upgrade:
   - Impact: All relationship queries via `getRelations()`, `getRelationships()`
   - Reference: `src/storage/baseStorage.ts:2030-2040`, `src/storage/baseStorage.ts:2081-2091`
 
-* **Workshop blob integrity**: Verified v5.4.0 lazy-loading asOf() prevents corruption
+* **Consumer blob integrity**: Verified v5.4.0 lazy-loading asOf() prevents corruption
   - HistoricalStorageAdapter eliminates race conditions
   - Snapshots created on-demand (no commit-time snapshot)
-  - Verified with 570-entity test matching Workshop production scale
+  - Verified with 570-entity test matching consumer production scale
 
 ### ⚡ Performance Adjustments
 
@@ -1912,7 +1912,7 @@ v5.1.0 delivers a significantly improved developer experience:
   - **Problem**: In v5.0.0, `saveNoun()` was called before `saveNounMetadata()`, causing TypeAwareStorage to default entity types to 'thing' and save to wrong storage paths
   - **Impact**: Broke VFS file operations, `brain.get()`, `brain.relate()`, and all features depending on entity metadata
   - **Solution**: Reversed save order - now saves metadata FIRST, then noun vector
-  - **Fixes**: [Workshop Bug Report](https://github.com/soulcraftlabs/brain-cloud/issues/VFS-METADATA-MISSING)
+  - **Fixes**: VFS metadata-missing regression (internal tracker)
 
 **Fork API: Lazy COW Initialization**
 
@@ -1939,7 +1939,7 @@ v5.1.0 delivers a significantly improved developer experience:
 
 ### 📊 Impact
 
-* **Unblocks**: Workshop team and all VFS users
+* **Unblocks**: a consumer team and all VFS users
 * **Fixes**: All metadata-dependent features (get, relate, find, VFS)
 * **Maintains**: Full backward compatibility with v4.x data
 
@@ -2287,7 +2287,7 @@ This release transforms Brainy imports from entity extractors into true knowledg
   - **Relationship Type Metadata**: All relationships tagged as `vfs`, `semantic`, or `provenance` for filtering
   - **Enhanced Column Detection**: 7 relationship types (vs 1 previously) - Location, Owner, Creator, Uses, Member, Friend, Related
   - **Type-Based Inference**: Smart relationship classification based on entity types and context analysis
-  - **Impact**: Workshop import now creates ~3,900 relationships (vs 581), with 5-20+ connections per entity
+  - **Impact**: A consumer import now creates ~3,900 relationships (vs 581), with 5-20+ connections per entity
 
 * **import**: New configuration option `createProvenanceLinks` (defaults to `true`)
   - Enables/disables provenance relationship creation
@@ -2329,7 +2329,7 @@ Graph: Rich network, 5-20+ connections per entity
 
 ### [4.7.4](https://github.com/soulcraftlabs/brainy/compare/v4.7.3...v4.7.4) (2025-10-27)
 
-**CRITICAL SYSTEMIC VFS BUG FIX - Workshop Team Unblocked!**
+**CRITICAL SYSTEMIC VFS BUG FIX - A consumer team Unblocked!**
 
 This hotfix resolves a systemic bug affecting ALL storage adapters that caused VFS queries to return empty results even when data existed.
 
@@ -2341,7 +2341,7 @@ This hotfix resolves a systemic bug affecting ALL storage adapters that caused V
   - **Bug Pattern**: `if (!metadata) continue` in getNouns()/getVerbs() methods
   - **Fixed Locations**: 12 bug sites across 7 adapters (TypeAware, Memory, FileSystem, GCS, S3, R2, OPFS, Azure)
   - **Solution**: Allow optional metadata with `metadata: (metadata || {}) as NounMetadata`
-  - **Result**: Workshop team UNBLOCKED - VFS entities now queryable
+  - **Result**: a consumer team UNBLOCKED - VFS entities now queryable
 
 * **neural**: Fix SmartExtractor weighted score threshold bug (28 test failures → 4)
   - **Root Cause**: Single signal with 0.8 confidence × 0.2 weight = 0.16 < 0.60 threshold
@@ -2409,7 +2409,7 @@ Clean separation between VFS (Virtual File System) entities and knowledge graph 
 ### 🐛 Critical Bug Fixes
 
 * **vfs.initializeRoot()**: add includeVFS to prevent duplicate root creation
-  - **Critical Fix**: VFS init was creating ~10 duplicate root entities (Workshop team issue)
+  - **Critical Fix**: VFS init was creating ~10 duplicate root entities (a consumer team issue)
   - **Root Cause**: `initializeRoot()` called `brain.find()` without `includeVFS: true`, never found existing VFS root
   - **Impact**: Every `vfs.init()` created a new root, causing empty `readdir('/')` results
   - **Solution**: Added `includeVFS: true` to root entity lookup (line 171)
@@ -2503,7 +2503,7 @@ const files = await vfs.search('documentation')
   - **Root Cause**: HNSW `rebuild()` and Graph `rebuild()` methods still called `getNounsWithPagination()`/`getVerbsWithPagination()` repeatedly
     - Each pagination call triggered `getAllShardedFiles()` reading all 256 shard directories
     - For 1,157 entities: MetadataIndex (2-3s) + HNSW (~20s) + Graph (~10s) = **30-35 seconds total**
-    - Workshop team reported: "v4.2.3 is at batch 7 after ~60 seconds" - still far from claimed 100x improvement
+    - a consumer team reported: "v4.2.3 is at batch 7 after ~60 seconds" - still far from claimed 100x improvement
   - **Solution**: Apply v4.2.3 adaptive loading pattern to ALL 3 indexes
     - **FileSystemStorage/MemoryStorage/OPFSStorage**: Load all entities at once (limit: 10000000)
     - **Cloud storage (GCS/S3/R2/Azure)**: Keep pagination (native APIs are efficient)
@@ -2524,7 +2524,7 @@ const files = await vfs.search('documentation')
     - Graph Index: Loads all verbs at once for local, paginated for cloud (lines 300-361)
     - Pattern matches v4.2.3 MetadataIndex implementation exactly
     - Zero config: Completely automatic based on storage adapter type
-  - **Resolution**: Fully resolves Workshop team's v4.2.x performance regression
+  - **Resolution**: Fully resolves a consumer team's v4.2.x performance regression
   - **Files Changed**:
     - `src/hnsw/hnswIndex.ts` (updated rebuild() with adaptive loading)
     - `src/graph/graphAdjacencyIndex.ts` (updated rebuild() with adaptive loading)
@@ -2549,7 +2549,7 @@ const files = await vfs.search('documentation')
     - Pagination was designed for cloud storage socket exhaustion
     - FileSystem doesn't need pagination - can handle loading thousands of entities at once
     - Eliminates repeated directory scans: 3 batches × 256 dirs → 1 batch × 256 dirs
-  - **Workshop Team**: This resolves the v4.2.2 stalling issue - rebuild will now complete in seconds
+  - **A consumer team**: This resolves the v4.2.2 stalling issue - rebuild will now complete in seconds
   - **Files Changed**: `src/utils/metadataIndex.ts` (rebuilt() method with adaptive loading strategy)
 
 ### [4.2.2](https://github.com/soulcraftlabs/brainy/compare/v4.2.1...v4.2.2) (2025-10-23)
@@ -2591,7 +2591,7 @@ const files = await vfs.search('documentation')
     - Universal: All storage adapters (FileSystem, GCS, S3, R2, Memory, OPFS)
   - **Zero Config**: Completely automatic, no configuration needed
   - **Self-Healing**: Gracefully handles missing/corrupt registry (rebuilds once)
-  - **Impact**: Fixes Workshop team bug report - production-ready at billion scale
+  - **Impact**: Fixes a consumer team bug report - production-ready at billion scale
   - **Files Changed**: `src/utils/metadataIndex.ts` (added saveFieldRegistry/loadFieldRegistry methods, updated init/flush)
 
 ### [4.2.0](https://github.com/soulcraftlabs/brainy/compare/v4.1.4...v4.2.0) (2025-10-23)
@@ -2635,7 +2635,7 @@ const files = await vfs.search('documentation')
   - Fixed property access bugs: `verb.target` → `verb.to`, `verb.verb` → `verb.type`
   - Added comprehensive integration tests (14 tests covering all query patterns)
   - Updated JSDoc documentation with usage examples
-  - **Impact**: Resolves Workshop team bug where 524 imported relationships were inaccessible
+  - **Impact**: Resolves a consumer team bug where 524 imported relationships were inaccessible
   - **Breaking**: None - fully backward compatible
 
 ### [4.1.2](https://github.com/soulcraftlabs/brainy/compare/v4.1.1...v4.1.2) (2025-10-21)

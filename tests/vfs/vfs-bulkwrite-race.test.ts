@@ -122,7 +122,7 @@ describe('VFS bulkWrite Race Condition Fix', () => {
       }
     })
 
-    it('should handle the Workshop template creation scenario', async () => {
+    it('should handle the Consumer template creation scenario', async () => {
       // Exact scenario from bug report: template creation with mixed ops
       const operations = [
         { type: 'mkdir' as const, path: '/project/src' },

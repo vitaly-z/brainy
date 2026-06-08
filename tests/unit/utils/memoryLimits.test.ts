@@ -98,9 +98,10 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
 
       const config = ValidationConfig.getInstance()
 
-      // 4GB * 0.25 = 1GB for queries
-      // 1GB / 100MB = 10 units * 1000 = 10,000 limit
-      expect(config.maxLimit).toBe(10000)
+      // 4 GB × 0.25 = 1 GB for queries; at 25 KB / result (7.30.2 calibration)
+      // → 1 GB / 25 KB = ~40_960 → floor to 40 × 1000 = 40_000.
+      // Pre-7.30.2 used 100 KB / result and returned 10_000 here.
+      expect(config.maxLimit).toBe(40000)
     })
 
     it('should respect absolute maximum of 100k', () => {
@@ -134,12 +135,14 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
     })
 
     it('should respect reservedQueryMemory override', () => {
-      // Reserve 1GB for queries
+      // Reserve 1 GB for queries; at 25 KB / result (7.30.2) → 1 GB / 25 KB
+      // = ~40_960 → floor to 40 × 1000 = 40_000. Pre-7.30.2 used 100 KB /
+      // result and this returned 10_000.
       const config = ValidationConfig.getInstance({
         reservedQueryMemory: 1 * 1024 * 1024 * 1024
       })
 
-      expect(config.maxLimit).toBe(10000) // 1GB / 100MB * 1000
+      expect(config.maxLimit).toBe(40000)
       expect(config.limitBasis).toBe('reservedMemory')
     })
 
@@ -213,7 +216,7 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
     it('should configure reserved memory via Brain constructor', async () => {
       const brain = new Brainy({
         storage: { type: 'memory' },
-        reservedQueryMemory: 500 * 1024 * 1024, // 500MB
+        reservedQueryMemory: 500 * 1024 * 1024, // 500 MB
         silent: true
       })
 
@@ -221,8 +224,9 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
 
       const stats = brain.getMemoryStats()
 
-      // 500MB / 100MB * 1000 = 5000
-      expect(stats.limits.maxQueryLimit).toBe(5000)
+      // 500 MB / 25 KB per result (7.30.2 calibration) = ~20_000.
+      // Pre-7.30.2 used 100 KB / result and this returned 5000.
+      expect(stats.limits.maxQueryLimit).toBe(20000)
       expect(stats.limits.basis).toBe('reservedMemory')
       expect(stats.config.reservedQueryMemory).toBe(500 * 1024 * 1024)
 
@@ -243,8 +247,10 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
 
       expect(stats.memory.containerLimit).toBe(2 * 1024 * 1024 * 1024)
       expect(stats.limits.basis).toBe('containerMemory')
-      // 2GB * 0.25 = 500MB -> 5000 limit
-      expect(stats.limits.maxQueryLimit).toBe(5000)
+      // 2 GB × 0.25 = 512 MB query budget; at 25 KB per result (7.30.2) →
+      // 512 MB / 25 KB = ~20_971 → floor to 20 × 1000 = 20_000. Pre-7.30.2
+      // used 100 KB per result and this returned 5_000.
+      expect(stats.limits.maxQueryLimit).toBe(20000)
 
       await brain.close()
     })
@@ -341,9 +347,11 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
 
       const stats = brain.getMemoryStats()
 
-      // Should allocate 1GB (25% of 4GB) for queries
+      // Allocates 1 GB (25% of 4 GB) for queries; at 25 KB per result
+      // (7.30.2 calibration) → 1 GB / 25 KB = ~40_960 → floor to 40 × 1000 =
+      // 40_000. Pre-7.30.2 used 100 KB per result and this returned 10_000.
       expect(stats.memory.containerLimit).toBe(4 * 1024 * 1024 * 1024)
-      expect(stats.limits.maxQueryLimit).toBe(10000)
+      expect(stats.limits.maxQueryLimit).toBe(40000)
       expect(stats.limits.basis).toBe('containerMemory')
 
       await brain.close()

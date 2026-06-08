@@ -1,7 +1,7 @@
 /**
  * Integration tests for clear() bug fix (v5.10.4)
  *
- * Bug report: Workshop team reported that brain.clear() doesn't fully delete persistent storage.
+ * Bug report: a consumer team reported that brain.clear() doesn't fully delete persistent storage.
  * After calling clear() and creating a new Brainy instance, all data was restored from _cow/ directory.
  *
  * Root cause: Setting cowEnabled = false on old instance doesn't affect new instances.
@@ -33,7 +33,7 @@ describe('Clear Persistence Bug Fix (v5.10.4)', () => {
     }
   })
 
-  it('should fully clear persistent storage (Workshop scenario)', async () => {
+  it('should fully clear persistent storage (the reported scenario)', async () => {
     // Step 1: Create and populate instance
     const brain1 = new Brainy({
       storage: {

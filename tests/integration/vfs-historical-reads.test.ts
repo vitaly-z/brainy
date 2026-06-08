@@ -7,7 +7,7 @@
  * - stat(path, { commitId })
  * - exists(path, { commitId })
  *
- * This is the CRITICAL test for Workshop's time-travel feature.
+ * This is the CRITICAL test for a consumer's time-travel feature.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'

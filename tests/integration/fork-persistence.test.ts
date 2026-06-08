@@ -3,7 +3,7 @@
  *
  * Tests the complete fork() → listBranches() → checkout() workflow
  * to prevent regression of the v5.3.6 bug where fork() silently failed
- * to persist branches to storage (Workshop bug report).
+ * to persist branches to storage (internal bug report).
  *
  * @see https://github.com/soulcraftlabs/brainy/issues/XXX
  */
@@ -153,23 +153,23 @@ describe('Fork Persistence (v5.3.6 Bug Fix)', () => {
     expect(forkBranches).toContain(validBranch)
   })
 
-  it('should handle snapshot naming convention (Workshop use case)', async () => {
-    // Reproduce exact Workshop snapshot workflow
+  it('should handle snapshot naming convention (consumer use case)', async () => {
+    // Reproduce exact Consumer snapshot workflow
     await brain.add({ data: { test: true }, type: 'concept' })
 
     const commitId = await brain.commit({
-      message: 'Workshop snapshot test',
+      message: 'Consumer snapshot test',
       author: 'workshop@example.com'
     })
 
-    // Use Workshop's exact naming convention
+    // Use the consumer's exact naming convention
     const timestamp = Date.now()
     const snapshotBranch = `snapshot-${timestamp}`
 
-    // Create snapshot branch (this is what failed in Workshop)
+    // Create snapshot branch (this is what failed in the consumer report)
     await brain.fork(snapshotBranch, {
       author: 'workshop@example.com',
-      message: `Snapshot: Workshop test`,
+      message: `Snapshot: Consumer test`,
       metadata: {
         timestamp,
         userId: 'test-user',

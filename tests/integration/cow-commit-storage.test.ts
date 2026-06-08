@@ -6,7 +6,7 @@
  * commit objects on disk.
  *
  * Related bugs:
- * - Workshop team report: BRAINY_V5.3.0_SNAPSHOT_BUG_REPORT.md
+ * - v5.3.0 snapshot regression filed via consumer bug report (BRAINY_V5.3.0_SNAPSHOT_BUG_REPORT.md, internal)
  * - Root cause: BlobStorage.ts hardcoded 'blob:' prefix in 9 locations
  */
 

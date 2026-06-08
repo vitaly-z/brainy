@@ -373,17 +373,17 @@ describe('getRelations() Fix (v4.1.3)', () => {
     })
   })
 
-  describe('Comparison with Workshop Bug Report', () => {
-    it('should reproduce and fix the Workshop team bug scenario', async () => {
+  describe('Comparison with Internal Bug Report', () => {
+    it('should reproduce and fix the a consumer team bug scenario', async () => {
       // Reproduce the exact scenario from the bug report:
       // - 524 relationships exist in GraphAdjacencyIndex
       // - brain.getRelations() was returning empty array
 
-      // Create entities similar to Workshop import
+      // Create entities similar to Consumer import
       const entities = []
       for (let i = 0; i < 50; i++) {
         entities.push(await brain.add({
-          data: `Workshop Entity ${i}`,
+          data: `Consumer Entity ${i}`,
           type: NounType.Document
         }))
       }

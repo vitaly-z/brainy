@@ -7,6 +7,8 @@
 
 import { FindParams, AddParams, UpdateParams, RelateParams, UpdateRelationParams } from '../types/brainy.types.js'
 import { NounType, VerbType } from '../types/graphTypes.js'
+import { prodLog } from './logger.js'
+import { findCallerLocation } from './callerLocation.js'
 
 // Dynamic import for Node.js os and fs modules
 let os: any = null
@@ -117,6 +119,43 @@ const getContainerMemoryLimit = (): number | null => {
 }
 
 /**
+ * Memory budget per query result, in KB. Used by the auto-configured
+ * `maxLimit` formula across all three memory-derived priorities (reserved /
+ * container / free).
+ *
+ * Calibration history:
+ * - Pre-7.30.2: `100` (assumed 100 KB per result). Way too conservative —
+ *   actual entity footprint in Brainy is 7-10 KB (384-dim float32 vector ≈
+ *   1.5 KB + standard fields + metadata). On a 900 MB free-memory box this
+ *   capped `limit` at 9_000, breaking common safety-cap call patterns like
+ *   `find({ type, where, limit: 10_000 })` that typically return 10-500
+ *   entities. Surfaced as `BR-MAXLIMIT-9000` in PLATFORM-HANDOFF.md.
+ * - 7.30.2+: `25` (assumes 25 KB per result). Generous over typical (7-10 KB),
+ *   comfortably under the worst case (~20 KB with large metadata blobs).
+ *   Same 900 MB box now gives ~36_000 — typical 10_000 limits pass silently,
+ *   the warning tier surfaces around 36-72 K (encouraging pagination), and
+ *   the throw tier still fires before OOM territory (72 K+).
+ */
+const MAX_LIMIT_KB_PER_RESULT = 25
+
+/**
+ * One-time-per-call-site warning dedup. Keyed on the caller location returned
+ * by `findCallerLocation()` plus the exceeding limit value so the warning fires
+ * once per offending source line (not once per query). Survives the lifetime of
+ * the process — that's intentional: the warning is a teaching signal, not a
+ * recurring nag. Used by the two-tier limit enforcement in `validateFindParams`.
+ */
+const seenLimitWarnings = new Set<string>()
+
+/**
+ * Reset the limit-warning dedup. For tests that need a clean slate; production
+ * code should never call this.
+ */
+export function resetLimitWarningCache(): void {
+  seenLimitWarnings.clear()
+}
+
+/**
  * Configuration options for ValidationConfig
  */
 export interface ValidationConfigOptions {
@@ -174,7 +213,7 @@ export class ValidationConfig {
     if (options?.reservedQueryMemory !== undefined) {
       this.maxLimit = Math.min(
         100000,
-        Math.floor(options.reservedQueryMemory / (1024 * 1024 * 100)) * 1000
+        Math.floor(options.reservedQueryMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
       )
       this.limitBasis = 'reservedMemory'
 
@@ -193,7 +232,7 @@ export class ValidationConfig {
 
       this.maxLimit = Math.min(
         100000,
-        Math.floor(queryMemory / (1024 * 1024 * 100)) * 1000
+        Math.floor(queryMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
       )
       this.limitBasis = 'containerMemory'
 
@@ -209,7 +248,7 @@ export class ValidationConfig {
 
     this.maxLimit = Math.min(
       100000,
-      Math.floor(availableMemory / (1024 * 1024 * 100)) * 1000
+      Math.floor(availableMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
     )
     this.limitBasis = 'freeMemory'
 
@@ -264,6 +303,95 @@ export class ValidationConfig {
 }
 
 /**
+ * Two-tier limit enforcement for `find({ limit })`. Compares the requested
+ * limit against the auto-configured (or consumer-overridden) `maxLimit` and
+ * picks one of three outcomes:
+ *
+ * 1. **Pass** — `limit <= maxLimit`. The configured cap was set with this
+ *    consumer's use case in mind; no signal, no friction.
+ *
+ * 2. **Warn** — `maxLimit < limit <= 2 * maxLimit`. The consumer is asking
+ *    for more than the cap, but not enough to be in OOM territory. Log a
+ *    one-time warning per call site (dedup keyed on stack location + limit
+ *    value) explaining the cap, the three escape valves, and the docs link.
+ *    The query proceeds. Pre-7.30.2 code that relied on the cap silently
+ *    allowing typical safety-cap limits (`10_000`) keeps working; the
+ *    warning teaches the migration.
+ *
+ * 3. **Throw** — `limit > 2 * maxLimit`. Real OOM danger territory. Throw
+ *    with the same message format the warning uses so the consumer gets
+ *    consistent guidance whether they hit the soft or hard threshold.
+ *
+ * The 2× soft margin is chosen to absorb existing safety-cap patterns
+ * (`limit: 10_000` against a `maxLimit: 9_000` box, common case at 7.30 GA)
+ * without disabling OOM protection. Real OOM territory on a JS in-memory
+ * brain is hundreds of thousands of results, not 10× the safety cap.
+ *
+ * Both warning and throw paths use the same formatter so the rendered message
+ * is identical — consumers see the same recipe regardless of which threshold
+ * they crossed.
+ *
+ * @param limit - The requested `limit` value (already validated non-negative)
+ * @param config - The active ValidationConfig (carries `maxLimit` + basis)
+ * @throws When `limit > 2 * config.maxLimit`
+ *
+ * @since 7.30.2 (replaced the unconditional throw added in 7.30.0)
+ */
+function enforceLimitCap(limit: number, config: ValidationConfig): void {
+  if (limit <= config.maxLimit) return
+
+  const message = formatLimitMessage(limit, config)
+  const hardCeiling = config.maxLimit * 2
+
+  if (limit > hardCeiling) {
+    // OOM danger zone — throw to prevent runaway memory allocation
+    throw new Error(message)
+  }
+
+  // Soft margin: warn once per call site + limit value, then let the query proceed.
+  // Survives the lifetime of the process; the goal is to teach the migration recipe,
+  // not to spam the log every query.
+  const caller = findCallerLocation(['validateFindParams', 'enforceLimitCap', 'formatLimitMessage']) ?? '<unknown caller>'
+  const dedupKey = `${caller}|${limit}`
+  if (!seenLimitWarnings.has(dedupKey)) {
+    seenLimitWarnings.add(dedupKey)
+    prodLog.warn('[Brainy] ' + message)
+  }
+}
+
+/**
+ * Render the user-facing message used by both the warning tier and the throw
+ * tier of `enforceLimitCap`. Same body shape as the 7.30.1 enforcement-error
+ * messages: state the problem, name the recipe, point at the call site, link
+ * the docs.
+ */
+function formatLimitMessage(limit: number, config: ValidationConfig): string {
+  const cap = config.maxLimit
+  const basis = config.limitBasis
+  const basisLabel: Record<string, string> = {
+    override: 'consumer-supplied `maxQueryLimit`',
+    reservedMemory: 'consumer-supplied `reservedQueryMemory`',
+    containerMemory: 'detected container memory limit',
+    freeMemory: 'available free memory'
+  }
+  const basisText = basisLabel[basis] ?? 'available memory'
+  const caller = findCallerLocation(['enforceLimitCap', 'formatLimitMessage'])
+
+  const lines = [
+    `find({ limit: ${limit} }) exceeds the auto-configured query limit of ${cap} (basis: ${basisText}). Choose one:`,
+    `  • Increase the cap: new Brainy({ maxQueryLimit: ${Math.min(limit, 100000)} })`,
+    `  • Reserve more memory: new Brainy({ reservedQueryMemory: ${limit * MAX_LIMIT_KB_PER_RESULT * 1024} })`,
+    '  • Paginate: split the query with { limit, offset } pages'
+  ]
+  if (caller) {
+    lines.push(`  at ${caller}`)
+  }
+  lines.push('Docs: https://soulcraft.com/docs/guides/find-limits')
+
+  return lines.join('\n')
+}
+
+/**
  * Universal validations - things that are always invalid
  * These are mathematical/logical truths, not configuration
  */
@@ -275,9 +403,7 @@ export function validateFindParams(params: FindParams): void {
     if (params.limit < 0) {
       throw new Error('limit must be non-negative')
     }
-    if (params.limit > config.maxLimit) {
-      throw new Error(`limit exceeds auto-configured maximum of ${config.maxLimit} (based on available memory)`)
-    }
+    enforceLimitCap(params.limit, config)
   }
   
   if (params.offset !== undefined && params.offset < 0) {

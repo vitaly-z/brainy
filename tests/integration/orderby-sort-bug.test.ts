@@ -10,7 +10,7 @@
  * Fix: centralized `resolveEntityField` helper + `BUCKETED_INDEX_FIELDS`
  * set in coreTypes.ts, used by getFieldValueForEntity.
  *
- * Reported by Muse team 2026-04-09 (handoff action BR-ORDERBY-TS).
+ * Reported by a consumer 2026-04-09.
  *
  * NOTE: These tests cover FILTERED sort, which is the only supported path.
  * Unfiltered `find({ orderBy })` is explicitly rejected until the dedicated
@@ -39,7 +39,7 @@ describe('find({ orderBy }) sort bug regression', () => {
   })
 
   /**
-   * Muse's real use case: filtered sort of chat sessions.
+   * Real consumer use case: filtered sort of chat sessions.
    * Before the fix, this returned the OLDEST entity instead of the newest
    * because getFieldValueForEntity was reading createdAt from the wrong
    * location on the entity.

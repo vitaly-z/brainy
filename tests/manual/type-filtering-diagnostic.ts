@@ -1,5 +1,5 @@
 /**
- * Manual test to reproduce Workshop team's type filtering issue
+ * Manual test to reproduce a consumer's type filtering issue
  *
  * This test verifies that brain.find({ type: NounType.Person }) actually works
  * as documented in the API.
@@ -8,7 +8,7 @@
 import { Brainy, NounType } from '../../src/index.js'
 
 async function testTypeFiltering() {
-  console.log('\n🔬 Testing Type Filtering Issue from Workshop Team\n')
+  console.log('\n🔬 Testing Type Filtering Issue from A Consumer Team\n')
   console.log('=' .repeat(60))
 
   // Create in-memory instance for testing
@@ -156,12 +156,12 @@ async function testTypeFiltering() {
 
   if (passedCount === totalCount) {
     console.log('\n🎉 All tests passed! Type filtering works correctly.')
-    console.log('\n💡 The Workshop team might be experiencing a different issue.')
+    console.log('\n💡 The a consumer team might be experiencing a different issue.')
     console.log('   Check: storage persistence, Brainy instance reuse, or data migration')
   } else {
     console.log('\n❌ Type filtering is BROKEN in Brainy!')
     console.log('\n🐛 This is a bug that needs to be fixed.')
-    console.log('   Workshop team was right - it\'s not user error.')
+    console.log('   a consumer team was right - it\'s not user error.')
   }
 
   console.log('\n' + '='.repeat(60) + '\n')

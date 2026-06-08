@@ -93,18 +93,27 @@ describe('Zero-Config Parameter Validation', () => {
       })).toThrow('invalid NounType: InvalidType')
     })
     
-    it('should auto-limit based on system memory', () => {
+    it('should auto-limit based on system memory (two-tier enforcement)', () => {
       const config = getValidationConfig()
-      
-      // Should reject limits above auto-configured max
+
+      // 7.30.2+ design: the cap fires in two tiers.
+      // - Below cap (`limit <= maxLimit`): silent pass, no signal.
+      // - Soft tier (`maxLimit < limit <= 2 * maxLimit`): one-time warning
+      //   per call site, query proceeds. No throw.
+      // - Hard tier (`limit > 2 * maxLimit`): real OOM danger zone, throw.
+
+      // Below cap → pass
+      expect(() => validateFindParams({ limit: config.maxLimit })).not.toThrow()
+
+      // Soft tier → no throw (just a warn we don't assert here — proper coverage
+      // lives in the find-limits integration suite which can intercept the log).
+      expect(() => validateFindParams({ limit: config.maxLimit + 1 })).not.toThrow()
+      expect(() => validateFindParams({ limit: config.maxLimit * 2 })).not.toThrow()
+
+      // Hard tier → throw with the new message format
       expect(() => validateFindParams({
-        limit: config.maxLimit + 1
-      })).toThrow(`limit exceeds auto-configured maximum of ${config.maxLimit}`)
-      
-      // Should accept limits at or below max
-      expect(() => validateFindParams({
-        limit: config.maxLimit
-      })).not.toThrow()
+        limit: config.maxLimit * 2 + 1
+      })).toThrow(/exceeds the auto-configured query limit/)
     })
     
     it('should auto-limit query length', () => {
