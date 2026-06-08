@@ -2672,8 +2672,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (subtype === undefined || subtype === null || subtype === '') {
       if ((rule?.required || strict) && !isInfra) {
         throw new Error(
-          `${op}(): NounType.${type} requires subtype but got ${subtype === undefined ? 'undefined' : 'empty'}. ` +
-          (rule?.values ? `Allowed values: [${Array.from(rule.values).join(', ')}].` : 'Register vocabulary via brain.requireSubtype().')
+          this.formatSubtypeError({
+            op,
+            kind: 'noun',
+            typeName: String(type),
+            issue: subtype === undefined ? 'undefined' : 'empty',
+            rule,
+            strict
+          })
         )
       }
       return
@@ -2681,8 +2687,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     if (rule?.values && !rule.values.has(subtype)) {
       throw new Error(
-        `${op}(): NounType.${type} subtype '${subtype}' is not in registered vocabulary ` +
-        `[${Array.from(rule.values).join(', ')}].`
+        this.formatSubtypeError({
+          op,
+          kind: 'noun',
+          typeName: String(type),
+          issue: 'off-vocabulary',
+          offValue: subtype,
+          rule,
+          strict
+        })
       )
     }
   }
@@ -2707,8 +2720,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (subtype === undefined || subtype === null || subtype === '') {
       if ((rule?.required || strict) && !isInfra) {
         throw new Error(
-          `${op}(): VerbType.${verb} requires subtype but got ${subtype === undefined ? 'undefined' : 'empty'}. ` +
-          (rule?.values ? `Allowed values: [${Array.from(rule.values).join(', ')}].` : 'Register vocabulary via brain.requireSubtype().')
+          this.formatSubtypeError({
+            op,
+            kind: 'verb',
+            typeName: String(verb),
+            issue: subtype === undefined ? 'undefined' : 'empty',
+            rule,
+            strict
+          })
         )
       }
       return
@@ -2716,10 +2735,95 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     if (rule?.values && !rule.values.has(subtype)) {
       throw new Error(
-        `${op}(): VerbType.${verb} subtype '${subtype}' is not in registered vocabulary ` +
-        `[${Array.from(rule.values).join(', ')}].`
+        this.formatSubtypeError({
+          op,
+          kind: 'verb',
+          typeName: String(verb),
+          issue: 'off-vocabulary',
+          offValue: subtype,
+          rule,
+          strict
+        })
       )
     }
+  }
+
+  /**
+   * Build the user-facing enforcement-error message.
+   *
+   * Three goals:
+   *
+   * 1. Diagnose: name the operation, the type, and what went wrong (missing,
+   *    empty, or off-vocabulary).
+   * 2. Locate: include the first non-Brainy frame from the current stack so
+   *    the caller knows which line of THEIR code triggered the rejection —
+   *    eliminates the "grep your repo for `brain.add`" debugging step.
+   * 3. Teach: include the canonical migration recipe URL so the next consumer
+   *    learns the SDK-vocabulary pattern from the error, not a postmortem.
+   *
+   * Added 7.30.1.
+   */
+  private formatSubtypeError(opts: {
+    op: string
+    kind: 'noun' | 'verb'
+    typeName: string
+    issue: 'undefined' | 'empty' | 'off-vocabulary'
+    offValue?: string
+    rule: { required: boolean; values?: Set<string> } | null
+    strict: boolean
+  }): string {
+    const typeLabel = opts.kind === 'noun' ? 'NounType' : 'VerbType'
+    const callSite = this.findCallerLocation()
+    const vocab = opts.rule?.values ? Array.from(opts.rule.values).join(', ') : null
+
+    let head: string
+    if (opts.issue === 'off-vocabulary') {
+      head = `${opts.op}(): ${typeLabel}.${opts.typeName} subtype '${opts.offValue}' is not in registered vocabulary [${vocab}].`
+    } else {
+      head = `${opts.op}(): ${typeLabel}.${opts.typeName} requires subtype but got ${opts.issue}.`
+    }
+
+    const callerLine = callSite ? `  at ${callSite}` : null
+
+    let guidance: string
+    if (vocab) {
+      // The consumer (or a platform layer like the SDK) registered a specific
+      // vocabulary. Tell them what to pass.
+      guidance = `  Pass one of: ${vocab}.`
+    } else if (opts.strict) {
+      // Brain-wide strict mode is on without per-type values. Caller picks the
+      // subtype string but it must be non-empty.
+      guidance = '  Brain-wide strict mode (`requireSubtype: true`) is on — pass a non-empty `subtype` on every write, or add this type to `requireSubtype.except`.'
+    } else {
+      guidance = '  Register vocabulary via `brain.requireSubtype()` or pass a `subtype` value.'
+    }
+
+    const docLink = '  Migration recipe: https://soulcraft.com/docs/guides/subtypes-and-facets#strict-mode'
+
+    return [head, callerLine, guidance, docLink].filter(Boolean).join('\n')
+  }
+
+  /**
+   * Extract the first non-Brainy frame from the current stack so error messages
+   * can point at the consumer's call site instead of Brainy internals. Returns
+   * `null` if the stack isn't available (some runtimes) or only contains Brainy
+   * frames.
+   */
+  private findCallerLocation(): string | null {
+    const stack = new Error().stack
+    if (!stack) return null
+    const lines = stack.split('\n').slice(1)  // drop the `Error` line
+    for (const raw of lines) {
+      const line = raw.trim()
+      // Skip frames inside Brainy's own files. We don't want to point the user
+      // at `brainy.ts:XXXX` — they need their own call site.
+      if (line.includes('/src/brainy.ts') || line.includes('/dist/brainy.js')) continue
+      if (line.includes('enforceSubtypeOn') || line.includes('formatSubtypeError')) continue
+      if (line.includes('findCallerLocation')) continue
+      // Strip leading `at ` if present so the caller can format consistently.
+      return line.replace(/^at /, '')
+    }
+    return null
   }
 
   /**
@@ -6865,6 +6969,125 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const inner = verbSubtypeMap.get(verbIdx)
     if (!inner) return []
     return Array.from(inner.keys()).sort()
+  }
+
+  /**
+   * Find entities and relationships missing a `subtype` value, grouped by type.
+   *
+   * The diagnostic pair to `migrateField()` / `fillSubtypes()` — answers the
+   * question "what would break if I enabled strict subtype enforcement?". Run
+   * this before adopting an SDK that registers `requireSubtype()` rules on
+   * common NounTypes, or before upgrading to Brainy 8.0 (which makes
+   * `requireSubtype: true` the default).
+   *
+   * Streams the brain via the same paginated `storage.getNouns()` /
+   * `storage.getVerbs()` pattern `migrateField()` uses — safe for large brains
+   * but linear in `O(N)`. Cortex 3.0+ may proxy this through the native
+   * column-store null-subtype bitmap for sub-linear performance on billion-scale
+   * brains (tracked in `CTX-SUBTYPE-8.0-CONTRACT`).
+   *
+   * @param options.includeVFS - When `false` (default), entities marked with
+   *   `metadata.isVFSEntity` or `metadata.isVFS` are excluded from the report —
+   *   these bypass enforcement anyway, so counting them is noise. Pass `true`
+   *   to include them.
+   * @param options.batchSize - Pagination batch size (default `200`).
+   * @param options.onProgress - Optional progress callback invoked after each batch.
+   * @returns Report with per-type counts of entities/relationships without a
+   *   subtype, plus the overall total and a one-line recommendation pointing at
+   *   `migrateField()` (7.x) or `fillSubtypes()` (8.0).
+   *
+   * @example Find pre-existing gaps before turning on strict mode
+   * const report = await brain.audit()
+   * if (report.total > 0) {
+   *   console.warn('Found ' + report.total + ' entities/edges without subtype:')
+   *   console.warn(report.entitiesWithoutSubtype)
+   *   console.warn(report.relationshipsWithoutSubtype)
+   * }
+   *
+   * @since 7.30.1
+   */
+  async audit(options: {
+    includeVFS?: boolean
+    batchSize?: number
+    onProgress?: (progress: { scanned: number; missingSubtype: number }) => void
+  } = {}): Promise<{
+    entitiesWithoutSubtype: Record<string, number>
+    relationshipsWithoutSubtype: Record<string, number>
+    total: number
+    scanned: number
+    recommendation: string
+  }> {
+    await this.ensureInitialized()
+
+    const includeVFS = options.includeVFS === true
+    const batchSize = Math.max(1, options.batchSize ?? 200)
+
+    const entitiesWithoutSubtype: Record<string, number> = {}
+    const relationshipsWithoutSubtype: Record<string, number> = {}
+    let scanned = 0
+    let missingSubtype = 0
+
+    const reportProgress = (): void => {
+      if (options.onProgress) options.onProgress({ scanned, missingSubtype })
+    }
+
+    // Scan nouns
+    let offset = 0
+    while (true) {
+      const page = await this.storage.getNouns({ pagination: { offset, limit: batchSize } })
+      if (page.items.length === 0) break
+      for (const noun of page.items) {
+        scanned++
+        const n = noun as any
+        // Skip VFS infrastructure entities unless includeVFS is set — they
+        // bypass enforcement via the isVFSEntity marker anyway, so listing
+        // them in the report would mislead consumers into thinking they have
+        // a migration gap they actually don't.
+        if (!includeVFS && (n.metadata?.isVFSEntity === true || n.metadata?.isVFS === true)) continue
+        const subtype = typeof n.subtype === 'string' ? n.subtype : undefined
+        if (!subtype || subtype.length === 0) {
+          missingSubtype++
+          const typeKey = String(n.type ?? n.noun ?? 'unknown')
+          entitiesWithoutSubtype[typeKey] = (entitiesWithoutSubtype[typeKey] || 0) + 1
+        }
+      }
+      reportProgress()
+      if (!page.hasMore) break
+      offset += page.items.length
+    }
+
+    // Scan verbs
+    offset = 0
+    while (true) {
+      const page = await this.storage.getVerbs({ pagination: { offset, limit: batchSize } })
+      if (page.items.length === 0) break
+      for (const verb of page.items) {
+        scanned++
+        const v = verb as any
+        if (!includeVFS && (v.metadata?.isVFSEntity === true || v.metadata?.isVFS === true)) continue
+        const subtype = typeof v.subtype === 'string' ? v.subtype : undefined
+        if (!subtype || subtype.length === 0) {
+          missingSubtype++
+          const verbKey = String(v.verb ?? v.type ?? 'unknown')
+          relationshipsWithoutSubtype[verbKey] = (relationshipsWithoutSubtype[verbKey] || 0) + 1
+        }
+      }
+      reportProgress()
+      if (!page.hasMore) break
+      offset += page.items.length
+    }
+
+    const recommendation = missingSubtype === 0
+      ? 'No subtype gaps detected — this brain is strict-mode-ready.'
+      : 'Found ' + missingSubtype + ' entries without subtype. Migrate via `brain.migrateField()` (7.x) — or wait for `brain.fillSubtypes()` (8.0) which closes the same gap with caller-supplied rules.'
+
+    return {
+      entitiesWithoutSubtype,
+      relationshipsWithoutSubtype,
+      total: missingSubtype,
+      scanned,
+      recommendation
+    }
   }
 
   /**

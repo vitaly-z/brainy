@@ -501,6 +501,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: parentId,
           to: existingId,
           type: VerbType.Contains,
+          subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
           metadata: { isVFS: true }  // Mark as VFS relationship
         })
       }
@@ -903,6 +904,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: parentId,
           to: entity,
           type: VerbType.Contains,
+          subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
           metadata: {
             isVFS: true,  // Mark as VFS relationship
             relationshipType: 'vfs'  // Standardized relationship type metadata
@@ -1692,6 +1694,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: newParentId,
           to: entityId,
           type: VerbType.Contains,
+          subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
           metadata: { isVFS: true }  // Mark as VFS relationship
         })
       }
@@ -1747,9 +1750,13 @@ export class VirtualFileSystem implements IVirtualFileSystem {
   }
 
   private async copyFile(srcEntity: Entity, destPath: string, options?: CopyOptions): Promise<void> {
-    // Create new entity with same content but different path
+    // Create new entity with same content but different path. Preserve the source
+    // entity's subtype when it has one (so a vfs-file stays vfs-file); fall back
+    // to 'vfs-file' for the rare case of a VFS entity without subtype (pre-7.30
+    // legacy data path that hits the copy operation).
     const newEntity = await this.brain.add({
       type: srcEntity.type,
+      subtype: (srcEntity as any).subtype ?? 'vfs-file',
       data: srcEntity.data,
       vector: options?.preserveVector ? srcEntity.vector : undefined,
       metadata: {
@@ -1770,6 +1777,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         from: parentId,
         to: newEntity,
         type: VerbType.Contains,
+        subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
         metadata: { isVFS: true }  // Mark as VFS relationship
       })
     }
@@ -1884,6 +1892,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           from: parentId,
           to: result.successful[i],
           type: VerbType.Contains,
+          subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
           metadata: { isVFS: true }
         }
       })
@@ -1939,6 +1948,8 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       name,
       parent: parentId,
       vfsType: 'symlink',
+      isVFS: true,            // Infrastructure-bypass marker for strict-mode enforcement
+      isVFSEntity: true,
       symlinkTarget: target,
       size: 0,
       permissions: 0o777,
@@ -1951,6 +1962,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
     const entity = await this.brain.add({
       data: `symlink:${target}`,
       type: NounType.File,  // Symlinks are special files
+      subtype: 'vfs-symlink',  // Distinct from 'vfs-file' so consumers can find symlinks (7.30.1+)
       metadata
     })
 
@@ -1959,6 +1971,7 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       from: parentId,
       to: entity,
       type: VerbType.Contains,
+      subtype: 'vfs-contains',  // Standard subtype for VFS containment edges (7.30+)
       metadata: { isVFS: true }  // Mark as VFS relationship
     })
 

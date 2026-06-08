@@ -500,8 +500,12 @@ export class GoogleSheetsIntegration
       return this.errorResponse(400, 'Missing required field: type')
     }
 
+    // Honor caller-supplied `subtype` from the Sheets request; fall back to
+    // the integration-default `'imported-from-sheets'` so enforcement
+    // consumers don't get rejected on Sheets-driven writes (added 7.30.1).
     const entity = await this.context.brain.add({
       type: body.type as NounType,
+      subtype: (body.subtype as string | undefined) ?? 'imported-from-sheets',
       data: body.data,
       metadata: body.metadata,
       confidence: body.confidence,
@@ -570,8 +574,10 @@ export class GoogleSheetsIntegration
       try {
         switch (op.action) {
           case 'add':
+            // Same subtype-precedence as the single-entity handler (7.30.1).
             const added = await this.context.brain.add({
               type: op.type as NounType,
+              subtype: (op.subtype as string | undefined) ?? 'imported-from-sheets',
               data: op.data,
               metadata: op.metadata
             })
@@ -628,10 +634,13 @@ export class GoogleSheetsIntegration
       return this.errorResponse(400, 'Missing required fields: from, to, type')
     }
 
+    // Same subtype precedence as entity writes: caller-supplied → default
+    // `'imported-from-sheets'` (added 7.30.1).
     const relation = await this.context.brain.relate({
       from: body.from,
       to: body.to,
       type: body.type as VerbType,
+      subtype: (body.subtype as string | undefined) ?? 'imported-from-sheets',
       weight: body.weight,
       metadata: body.metadata
     })

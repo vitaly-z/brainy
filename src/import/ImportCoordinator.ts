@@ -144,6 +144,23 @@ export interface ValidImportOptions {
   customMetadata?: Record<string, any>
 
   /**
+   * Default subtype for imported entities when the extractor doesn't set one.
+   *
+   * The importer resolves subtype in this precedence order:
+   *
+   * 1. Extractor-set subtype on the extracted entity (highest priority — the
+   *    extractor knows the entity's true sub-classification).
+   * 2. `defaultSubtype` from this option (caller's choice — useful for tagging
+   *    a whole import batch, e.g. `'customer-upload-2026q2'`).
+   * 3. Brainy-default `'imported'` (lowest priority — safety net so enforcement
+   *    doesn't fire on entities the consumer forgot to classify).
+   *
+   * Added 7.30.1 so importers behave correctly under brain-wide strict mode and
+   * SDK_CORE_VOCABULARY-style enforcement consumers register.
+   */
+  defaultSubtype?: string
+
+  /**
    * Progress callback for tracking import progress
    *
    * **Streaming Architecture** (always enabled):
@@ -946,9 +963,14 @@ export class ImportCoordinator {
     if (sourceInfo && options.createProvenanceLinks !== false) {
       console.log(`📄 Creating document entity for import source: ${sourceInfo.sourceFilename}`)
 
+      // Subtype `import-source` distinguishes the synthetic Document entity that
+      // represents the import operation itself (the file being imported) from
+      // entities extracted from its contents. Also satisfies enforcement when a
+      // consumer registers a vocabulary on NounType.Document (added 7.30.1).
       documentEntityId = await this.brain.add({
         data: sourceInfo.sourceFilename,
         type: NounType.Document,
+        subtype: 'import-source',
         metadata: {
           name: sourceInfo.sourceFilename,
           sourceFile: sourceInfo.sourceFilename,
@@ -981,7 +1003,9 @@ export class ImportCoordinator {
       // FAST PATH: Batch creation without deduplication (recommended for imports > 100 entities)
       const importSource = vfsResult.rootPath
 
-      // Prepare all entity parameters upfront
+      // Prepare all entity parameters upfront. Mirror the subtype resolution from
+      // the deduplication path above: preserve extractor-set subtype if any, else
+      // fall back to caller-supplied default, else `'imported'` (added 7.30.1).
       const entityParams = rows.map((row: any) => {
         const entity = row.entity || row
         const vfsFile = vfsResult.files.find((f: any) => f.entityId === entity.id)
@@ -989,6 +1013,7 @@ export class ImportCoordinator {
         return {
           data: entity.description || entity.name,
           type: entity.type,
+          subtype: entity.subtype ?? options.defaultSubtype ?? 'imported',
           metadata: {
             ...entity.metadata,
             name: entity.name,
@@ -1091,10 +1116,14 @@ export class ImportCoordinator {
           let entityId: string
 
           // No deduplication during import (12-24x speedup)
-          // Background deduplication runs 5 minutes after import completes
+          // Background deduplication runs 5 minutes after import completes.
+          // Preserves any subtype the extractor already set on the entity; falls back
+          // to the caller-supplied `options.defaultSubtype` or to the Brainy-default
+          // `'imported'` so enforcement doesn't fire (added 7.30.1).
           entityId = await this.brain.add({
             data: entity.description || entity.name,
             type: entity.type,
+            subtype: entity.subtype ?? options.defaultSubtype ?? 'imported',
             metadata: {
               ...entity.metadata,
               name: entity.name,
@@ -1186,11 +1215,15 @@ export class ImportCoordinator {
                 }
 
                 // STEP 3: If still not found, create placeholder entity ONCE
-                // The placeholder is added to entities array, so future searches will find it
+                // The placeholder is added to entities array, so future searches will find it.
+                // Subtype `import-placeholder` marks these as synthetic targets (not real
+                // imports) so downstream queries can distinguish them and dedup runs can
+                // safely consolidate them with real entities later (added 7.30.1).
                 if (!targetEntityId) {
                   targetEntityId = await this.brain.add({
                     data: rel.to,
                     type: NounType.Thing,
+                    subtype: 'import-placeholder',
                     metadata: {
                       name: rel.to,
                       placeholder: true,

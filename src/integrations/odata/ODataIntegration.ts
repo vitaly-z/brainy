@@ -448,8 +448,12 @@ export class ODataIntegration extends IntegrationBase implements HTTPIntegration
       return this.errorResponse(400, 'Missing required field: Type')
     }
 
+    // Honor caller-supplied `Subtype` from the OData request; fall back to the
+    // integration-default `'imported-from-odata'` so enforcement consumers
+    // don't get rejected on OData-driven writes (added 7.30.1).
     const entity = await this.context.brain.add({
       type: body.Type as NounType,
+      subtype: (body.Subtype as string | undefined) ?? 'imported-from-odata',
       data: body.Data ? JSON.parse(body.Data) : undefined,
       metadata: this.extractMetadata(body),
       confidence: body.Confidence,
@@ -616,10 +620,12 @@ export class ODataIntegration extends IntegrationBase implements HTTPIntegration
       )
     }
 
+    // Same subtype precedence as entity writes (added 7.30.1).
     const relation = await this.context.brain.relate({
       from: body.FromId,
       to: body.ToId,
       type: body.Type,
+      subtype: (body.Subtype as string | undefined) ?? 'imported-from-odata',
       weight: body.Weight,
       confidence: body.Confidence,
       metadata: body.Metadata ? JSON.parse(body.Metadata) : undefined,

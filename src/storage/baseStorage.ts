@@ -1479,10 +1479,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
                   }
                 }
 
-                // Combine noun + metadata
+                // Combine noun + metadata. Subtype is surfaced to top-level here
+                // (mirrors what `getNoun()` already does) so callers — including
+                // the 7.30.1 `brain.audit()` diagnostic — see a consistent shape
+                // regardless of which getter path they reach.
                 collectedNouns.push({
                   ...deserialized,
                   type: (metadata.noun || 'thing') as NounType,
+                  subtype: (metadata as any).subtype as string | undefined,
                   confidence: metadata.confidence,
                   weight: metadata.weight,
                   createdAt: metadata.createdAt

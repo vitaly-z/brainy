@@ -131,6 +131,8 @@ const id = await brain.add({
 
 > **`data`** is embedded into vectors for semantic search. **`metadata`** is indexed for `where` filters. See [Data Model](../DATA_MODEL.md).
 
+> **Strict-mode tip:** if a vocabulary is registered for your `type` (via `brain.requireSubtype()` or by an SDK that wraps Brainy), you must pass a matching `subtype`. Run `await brain.audit()` to inventory pre-existing gaps before enabling strict mode; see the [migration recipe](../guides/subtypes-and-facets.md#strict-mode-in-practice-for-sdk-style-vocabulary-consumers).
+
 **Returns:** `Promise<string>` - Entity ID
 
 ---
@@ -628,6 +630,8 @@ const relId = await brain.relate({
 - `weight?`: `number` - Connection strength (0-1, default: 1.0)
 - `bidirectional?`: `boolean` - Create reverse edge too (default: false)
 - `confidence?`: `number` - Relationship certainty (0-1)
+
+> **Strict-mode tip:** same as `add()` — if a vocabulary is registered for your `type`, pass a matching `subtype`. Run `await brain.audit()` first to surface pre-existing gaps.
 
 **Returns:** `Promise<string>` - Relationship ID
 
@@ -2048,6 +2052,28 @@ Sorted distinct subtypes seen for a `VerbType`.
 brain.relationshipSubtypesOf(VerbType.ReportsTo)
 // → ['direct', 'dotted-line']
 ```
+
+#### `audit(options?)` → `Promise<AuditReport>` (7.30.1+)
+
+Diagnostic — find entities and relationships missing a `subtype` value, grouped by type. The companion to `migrateField()` / `fillSubtypes()` — answers "what would break if I enabled strict subtype enforcement?".
+
+```typescript
+const report = await brain.audit()
+// {
+//   entitiesWithoutSubtype: { event: 24, document: 3 },
+//   relationshipsWithoutSubtype: { relatedTo: 1402 },
+//   total: 1429,
+//   scanned: 8400,
+//   recommendation: 'Found 1429 entries without subtype. ...'
+// }
+```
+
+**Parameters:**
+- `options.includeVFS?`: `boolean` — When `false` (default), VFS infrastructure entities (`metadata.isVFSEntity` / `metadata.isVFS`) are excluded. They bypass enforcement anyway, so counting them is noise.
+- `options.batchSize?`: `number` — Pagination batch size (default 200).
+- `options.onProgress?`: `(progress: { scanned, missingSubtype }) => void` — Progress callback per batch.
+
+Run before adopting an SDK that registers `requireSubtype()` rules, or before upgrading to Brainy 8.0 (which makes strict mode the default). See the [Strict mode in practice](../guides/subtypes-and-facets.md#strict-mode-in-practice-for-sdk-style-vocabulary-consumers) guide for the full migration recipe.
 
 #### `requireSubtype(type, options?)` → `void`
 

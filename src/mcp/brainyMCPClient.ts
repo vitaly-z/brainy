@@ -7,6 +7,7 @@
 
 import WebSocket from 'ws'
 import { Brainy } from '../brainy.js'
+import { NounType } from '../types/graphTypes.js'
 import { v4 as uuidv4 } from '../universal/uuid.js'
 
 interface ClientOptions {
@@ -119,19 +120,25 @@ export class BrainyMCPClient {
    * Handle incoming message
    */
   private async handleMessage(message: Message) {
-    // Store in Brainy for persistent memory
+    // Store in Brainy for persistent memory. Subtype `'mcp-message'` marks
+    // these as MCP-protocol messages so consumers can filter / count them via
+    // `find({ type: NounType.Message, subtype: 'mcp-message' })` and so
+    // enforcement consumers registering a vocabulary on NounType.Message don't
+    // reject MCP traffic (added 7.30.1; also fixes the pre-existing missing
+    // `data` field by aliasing from the prior `text` field).
     if (this.brainy && message.type === 'message') {
       try {
         await this.brainy.add({
-          text: `${message.from}: ${JSON.stringify(message.data)}`,
+          data: `${message.from}: ${JSON.stringify(message.data)}`,
+          type: NounType.Message,
+          subtype: 'mcp-message',
           metadata: {
             messageId: message.id,
             from: message.from,
             to: message.to,
             timestamp: message.timestamp,
-            type: message.type,
-            event: message.event,
-            category: 'Message'
+            messageType: message.type,
+            event: message.event
           }
         })
       } catch (error) {
@@ -142,15 +149,16 @@ export class BrainyMCPClient {
     // Handle sync messages (receive history)
     if (message.type === 'sync' && message.data.history) {
       console.log(`📜 ${this.options.name} received ${message.data.history.length} historical messages`)
-      
-      // Store history in Brainy
+
+      // Store history in Brainy with the same subtype as live messages.
       if (this.brainy) {
         for (const histMsg of message.data.history) {
           await this.brainy.add({
-            text: `${histMsg.from}: ${JSON.stringify(histMsg.data)}`,
+            data: `${histMsg.from}: ${JSON.stringify(histMsg.data)}`,
+            type: NounType.Message,
+            subtype: 'mcp-message',
             metadata: {
-              ...histMsg,
-              category: 'Message'
+              ...histMsg
             }
           })
         }

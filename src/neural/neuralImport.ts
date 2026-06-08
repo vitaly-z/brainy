@@ -77,6 +77,14 @@ export interface NeuralImportOptions {
   validateOnly: boolean
   categoryFilter?: string[]
   skipDuplicates: boolean
+  /**
+   * Default subtype tag for entities + relationships when the neural extractor
+   * doesn't set one. Precedence: extractor → this default → Brainy default
+   * `'extracted'`. Use this to tag a whole neural pass (e.g.
+   * `'extracted-from-uploads'`) so consumers can query its output later.
+   * Added 7.30.1.
+   */
+  defaultSubtype?: string
 }
 
 /**
@@ -776,11 +784,14 @@ export class NeuralImport {
     const spinner = ora(`${this.emojis.gear} Executing neural import...`).start()
     
     try {
-      // Add entities to Brainy
+      // Add entities to Brainy. Subtype precedence: extractor-set → caller's
+      // `options.defaultSubtype` → Brainy default `'extracted'` so enforcement
+      // consumers don't get rejected on neural-extraction writes (added 7.30.1).
       for (const entity of result.detectedEntities) {
         await this.brainy.add({
           data: this.extractMainText(entity.originalData),
           type: entity.nounType as NounType,
+          subtype: (entity as any).subtype ?? options.defaultSubtype ?? 'extracted',
           metadata: {
             ...entity.originalData,
             confidence: entity.confidence,
@@ -789,12 +800,13 @@ export class NeuralImport {
         })
       }
 
-      // Add relationships to Brainy
+      // Add relationships to Brainy. Same subtype precedence as the entity side.
       for (const relationship of result.detectedRelationships) {
         await this.brainy.relate({
           from: relationship.sourceId,
           to: relationship.targetId,
           type: relationship.verbType as VerbType,
+          subtype: (relationship as any).subtype ?? options.defaultSubtype ?? 'extracted',
           weight: relationship.weight,
           metadata: {
             confidence: relationship.confidence,

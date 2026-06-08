@@ -460,6 +460,82 @@ brain.requireSubtype(NounType.Person, {
 await brain.add({ type: NounType.Person, subtype: 'employee', data: '...' })
 ```
 
+## Strict mode in practice (for SDK-style vocabulary consumers)
+
+When a platform layer like the Soulcraft SDK registers `requireSubtype()` rules on behalf of every consumer's brain, every downstream product that calls `brain.add()` / `brain.relate()` against those types must pass a matching `subtype`. Skipping the field — or passing one outside the registered vocabulary — throws at the boundary.
+
+This pattern is powerful but surfaces a class of latent bug: any `brain.add()` call site that was written before strict-mode adoption starts rejecting writes. The Venue team hit this in production on 2026-06-08 when their `/book` flow 500'd on every request because `BookingDraftService.getOrCreateByToken` called `brain.add({ type: NounType.Event, ... })` without subtype.
+
+The fix is a four-step migration recipe — and Brainy 7.30.1+ ships diagnostic tools to make it deterministic.
+
+### Migration recipe
+
+1. **Inventory the gap with `brain.audit()`** — returns the deterministic list of which NounTypes and VerbTypes have entities/relationships missing subtype, grouped by type:
+
+   ```typescript
+   const report = await brain.audit()
+   //   {
+   //     entitiesWithoutSubtype: { event: 24, document: 3, ... },
+   //     relationshipsWithoutSubtype: { relatedTo: 1402 },
+   //     total: 1429,
+   //     scanned: 8400,
+   //     recommendation: 'Found 1429 entries without subtype. ...'
+   //   }
+   ```
+
+   By default, VFS infrastructure entities are excluded (they bypass enforcement anyway via the `metadata.isVFSEntity` marker). Pass `{ includeVFS: true }` to surface them too.
+
+2. **Bulk-migrate any existing convention** with `brain.migrateField()` if a legacy field can be lifted:
+
+   ```typescript
+   // Venue chose subtype = same string as metadata.entityType:
+   await brain.migrateField({
+     from: 'metadata.entityType',
+     to: 'subtype',
+     readBoth: true  // safety: keep the source field readable during cutover
+   })
+   ```
+
+3. **Hand-fix the remaining call sites.** The exact list is in `report.entitiesWithoutSubtype`. For each call site, add `subtype: '<value>'` to the `brain.add()` / `brain.relate()` params. Choose a stable convention (Venue chose `subtype = metadata.entityType`; any rule that's deterministic from the data works).
+
+4. **Verify with `brain.audit()` again.** Re-run; total should be `0`. If you turn on brain-wide strict mode at this point, all future writes are protected.
+
+### Brainy's own infrastructure subtype labels (reference)
+
+Brainy's internal write paths set subtype on every entity and edge they create. Consumers don't need to do anything for these — they're documented here so you understand the data shape:
+
+| Code path | NounType / VerbType | Subtype label |
+|---|---|---|
+| VFS root directory `/` | `NounType.Collection` | `'vfs-root'` |
+| VFS subdirectories | `NounType.Collection` | `'vfs-directory'` |
+| VFS files | (mime-driven, e.g. `Document`/`Code`/`Image`) | `'vfs-file'` |
+| VFS symlinks | `NounType.File` | `'vfs-symlink'` |
+| VFS Contains edges | `VerbType.Contains` | `'vfs-contains'` |
+| Aggregation materialized output | `NounType.Measurement` | `'materialized-aggregate'` |
+| Import-document provenance entity | `NounType.Document` | `'import-source'` |
+| Importer-extracted entities (no caller default) | extractor-driven | `'imported'` |
+| Importer placeholder targets | `NounType.Thing` | `'import-placeholder'` |
+| Neural extraction (no caller default) | extractor-driven | `'extracted'` |
+| GoogleSheets API entity writes | request-driven | `'imported-from-sheets'` |
+| OData API entity writes | request-driven | `'imported-from-odata'` |
+| MCP client message storage | `NounType.Message` | `'mcp-message'` |
+| `brainy add` CLI (no `--subtype` flag) | user-supplied type | `'cli-add'` |
+| `brainy relate` CLI (no `--subtype` flag) | user-supplied verb | `'cli-relate'` |
+
+You can query these directly: `await brain.find({ subtype: 'vfs-file' })` returns every VFS-managed file regardless of NounType. `await brain.counts.bySubtype(NounType.Document)` shows you the import-source / imported / extracted / vfs-file breakdown.
+
+Importer and extraction paths accept a caller-supplied `defaultSubtype` option so you can tag a whole batch with your own provenance label (e.g. `'customer-upload-2026q2'`) instead of the Brainy default `'imported'` / `'extracted'`.
+
+### Looking ahead — Brainy 8.0
+
+Brainy 8.0 ships:
+
+- **`brain.fillSubtypes(rules)`** — the bulk migration helper that pairs with `audit()`. Given caller-supplied rules per NounType / VerbType, it walks the brain and fills in missing subtypes via `update()`. Pre-8.0 brains run this once before upgrading to clear migration debt.
+- **`subtype: string` (non-optional)** on `AddParams<T>` and `RelateParams<T>`. TypeScript catches missing subtype at compile time, not just runtime.
+- **`new Brainy({ requireSubtype: true })` becomes the default.** Consumers explicitly opt out with `{ requireSubtype: false }` during migration.
+
+7.30.1's `audit()` is the diagnostic; 8.0's `fillSubtypes()` is the bulk fixer. Together they close the migration gap deterministically.
+
 ## Reference
 
 ### Layer 1 — `subtype` (nouns)

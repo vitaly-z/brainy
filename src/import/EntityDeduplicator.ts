@@ -215,10 +215,13 @@ export class EntityDeduplicator {
       return await this.mergeEntity(duplicate.existingId, candidate, importSource)
     }
 
-    // No duplicate found, create new entity
+    // No duplicate found, create new entity. Preserve any subtype the candidate
+    // carried (set by the extractor or upstream importer), else fall back to
+    // `'imported'` so enforcement doesn't fire (added 7.30.1).
     const entityId = await this.brain.add({
       data: candidate.description || candidate.name,
       type: candidate.type,
+      subtype: (candidate as any).subtype ?? 'imported',
       metadata: {
         ...candidate.metadata,
         name: candidate.name,

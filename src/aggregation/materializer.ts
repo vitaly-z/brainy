@@ -23,6 +23,8 @@ export interface MaterializerBrainAccess {
   add(params: {
     data: string
     type: NounType
+    /** Sub-classification of the materialized entity (7.30.1+). */
+    subtype?: string
     metadata: Record<string, unknown>
     id?: string
     service?: string
@@ -31,6 +33,7 @@ export interface MaterializerBrainAccess {
   update(params: {
     id: string
     data?: string
+    subtype?: string
     metadata?: Record<string, unknown>
     merge?: boolean
   }): Promise<void>
@@ -197,9 +200,15 @@ export class AggregateMaterializer {
     } else {
       // Create new materialized entity
       // NounType.Measurement = 'measurement'
+      // Subtype `materialized-aggregate` distinguishes engine-emitted Measurement entities
+      // from any user-authored ones, and makes them queryable: `brain.find({ type: 'measurement',
+      // subtype: 'materialized-aggregate' })` enumerates every active aggregate output. Also
+      // ensures the aggregation engine itself doesn't trip enforcement when a consumer
+      // registers a vocabulary on NounType.Measurement (added 7.30.1).
       const id = await this.brain.add({
         data: dataString,
         type: 'measurement' as NounType,
+        subtype: 'materialized-aggregate',
         metadata,
         service: 'brainy:aggregation'
       })

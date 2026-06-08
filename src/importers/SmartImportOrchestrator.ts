@@ -37,6 +37,14 @@ export interface SmartImportOptions extends SmartExcelOptions {
 
   /** Source filename */
   filename?: string
+
+  /**
+   * Default subtype tag for entities + relationships this importer creates when
+   * the extractor doesn't set one. See `ValidImportOptions.defaultSubtype` —
+   * same semantics, same precedence (extractor > caller default > `'imported'`).
+   * Added 7.30.1.
+   */
+  defaultSubtype?: string
 }
 
 export interface SmartImportProgress {
@@ -180,10 +188,12 @@ export class SmartImportOrchestrator {
           const extracted = result.extraction.rows[i]
 
           try {
-            // Create main entity
+            // Create main entity. Subtype precedence: extractor-set → caller default
+            // → Brainy default `'imported'` (added 7.30.1).
             const entityId = await this.brain.add({
               data: extracted.entity.description,
               type: extracted.entity.type,
+              subtype: (extracted.entity as any).subtype ?? options.defaultSubtype ?? 'imported',
               metadata: {
                 ...extracted.entity.metadata,
                 name: extracted.entity.name,
@@ -230,7 +240,7 @@ export class SmartImportOrchestrator {
         }
 
         // Collect all relationship parameters
-        const relationshipParams: Array<{from: string; to: string; type: VerbType; metadata?: any}> = []
+        const relationshipParams: Array<{from: string; to: string; type: VerbType; subtype?: string; metadata?: any}> = []
 
         for (const extracted of result.extraction.rows) {
           for (const rel of extracted.relationships) {
@@ -247,11 +257,14 @@ export class SmartImportOrchestrator {
                 }
               }
 
-              // If not found, create a placeholder entity
+              // If not found, create a placeholder entity. `import-placeholder` marks
+              // these as synthetic targets so consumers can distinguish them from real
+              // imports and downstream dedup can consolidate (added 7.30.1).
               if (!toEntityId) {
                 toEntityId = await this.brain.add({
                   data: rel.to,
                   type: NounType.Thing,
+                  subtype: 'import-placeholder',
                   metadata: {
                     name: rel.to,
                     placeholder: true,
@@ -261,11 +274,13 @@ export class SmartImportOrchestrator {
                 result.entityIds.push(toEntityId)
               }
 
-              // Collect relationship parameter
+              // Collect relationship parameter. Subtype precedence: extractor-set rel
+              // subtype → caller default → Brainy default `'imported'` (added 7.30.1).
               relationshipParams.push({
                 from: extracted.entity.id,
                 to: toEntityId,
                 type: rel.type,
+                subtype: (rel as any).subtype ?? options.defaultSubtype ?? 'imported',
                 metadata: {
                   confidence: rel.confidence,
                   evidence: rel.evidence
@@ -582,9 +597,11 @@ export class SmartImportOrchestrator {
       for (let i = 0; i < result.extraction.rows.length; i++) {
         const extracted = result.extraction.rows[i]
         try {
+          // Subtype precedence: extractor → caller default → `'imported'` (7.30.1).
           const entityId = await this.brain.add({
             data: extracted.entity.description,
             type: extracted.entity.type,
+            subtype: (extracted.entity as any).subtype ?? options.defaultSubtype ?? 'imported',
             metadata: { ...extracted.entity.metadata, name: extracted.entity.name, confidence: extracted.entity.confidence, importedFrom: 'smart-import' }
           })
           result.entityIds.push(entityId)
@@ -600,7 +617,7 @@ export class SmartImportOrchestrator {
       onProgress?.({ phase: 'creating', message: 'Preparing relationships...', processed: 0, total: result.extraction.rows.length, entities: result.entityIds.length, relationships: 0 })
 
       // Collect all relationship parameters
-      const relationshipParams: Array<{from: string; to: string; type: VerbType; metadata?: any}> = []
+      const relationshipParams: Array<{from: string; to: string; type: VerbType; subtype?: string; metadata?: any}> = []
 
       for (const extracted of result.extraction.rows) {
         for (const rel of extracted.relationships) {
@@ -613,10 +630,12 @@ export class SmartImportOrchestrator {
               }
             }
             if (!toEntityId) {
-              toEntityId = await this.brain.add({ data: rel.to, type: NounType.Thing, metadata: { name: rel.to, placeholder: true, extractedFrom: extracted.entity.name } })
+              // Subtype `import-placeholder` marks synthetic targets (7.30.1).
+              toEntityId = await this.brain.add({ data: rel.to, type: NounType.Thing, subtype: 'import-placeholder', metadata: { name: rel.to, placeholder: true, extractedFrom: extracted.entity.name } })
               result.entityIds.push(toEntityId)
             }
-            relationshipParams.push({ from: extracted.entity.id, to: toEntityId, type: rel.type, metadata: { confidence: rel.confidence, evidence: rel.evidence } })
+            // Relationship subtype precedence: extractor → caller default → `'imported'` (7.30.1).
+            relationshipParams.push({ from: extracted.entity.id, to: toEntityId, type: rel.type, subtype: (rel as any).subtype ?? options.defaultSubtype ?? 'imported', metadata: { confidence: rel.confidence, evidence: rel.evidence } })
           } catch (error: any) {
             result.errors.push(`Failed to prepare relationship: ${error.message}`)
           }

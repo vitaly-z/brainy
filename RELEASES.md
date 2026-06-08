@@ -11,6 +11,174 @@ Collective. The SDK wraps it — most products never call Brainy directly. Read 
 
 ---
 
+## v7.30.1 — 2026-06-08
+
+**Affected products:** anyone running a brain where a platform layer (SDK, framework wrapper)
+has registered `brain.requireSubtype()` rules on common NounTypes, AND anyone preparing for
+the upcoming Brainy 8.0 default-on strict mode. Additive; drop-in from 7.30.0. No behavior
+change for consumers not using strict-mode enforcement.
+
+### Why
+
+Production incident 2026-06-08: a consumer using SDK 3.20.0 (which registers
+`requireSubtype()` rules on `NounType.{Event, Collection, Message, Contract, Media, Document}`)
+saw their booking flow start returning 500s because `brain.add({ type: NounType.Event, ... })`
+calls in their codebase lacked `subtype`. An audit of Brainy's OWN source revealed 14 HIGH-risk
+internal write paths that also omit subtype — VFS move/copy/symlink edges, aggregation
+materializer, neural extraction, importers, integrations (Sheets/OData), MCP client, CLI.
+Any consumer running `requireSubtype()` rules on those NounTypes was one step away from breaking
+Brainy's own infrastructure paths, not just their own code. 7.30.1 closes both gaps before
+8.0 ships and makes strict mode the default.
+
+### New — `brain.audit()` diagnostic
+
+Find entities and relationships missing a `subtype` value, grouped by type. The companion to
+`migrateField()` (and to 8.0's `fillSubtypes()`): answers "what would break if I enabled
+strict subtype enforcement?".
+
+```typescript
+const report = await brain.audit()
+// {
+//   entitiesWithoutSubtype: { event: 24, document: 3 },
+//   relationshipsWithoutSubtype: { relatedTo: 1402 },
+//   total: 1429,
+//   scanned: 8400,
+//   recommendation: 'Found 1429 entries without subtype. Migrate via `brain.migrateField()`
+//                    (7.x) — or wait for `brain.fillSubtypes()` (8.0) which closes the same
+//                    gap with caller-supplied rules.'
+// }
+```
+
+VFS infrastructure entities are excluded by default (they bypass enforcement via
+`metadata.isVFSEntity` markers). Pass `{ includeVFS: true }` to surface them.
+
+### New — Improved enforcement error messages
+
+The error fired when subtype enforcement rejects a write now includes:
+
+1. **The caller's source location** — extracted from the JavaScript stack so you see your own
+   call site, not a Brainy internal frame. Eliminates the "grep your repo for `brain.add`" step.
+2. **Specific guidance** — points at the registered vocabulary when one exists; mentions
+   brain-wide strict mode and the `except` escape valve when not; otherwise the
+   `brain.requireSubtype()` registration recipe.
+3. **A documentation link** — `https://soulcraft.com/docs/guides/subtypes-and-facets#strict-mode`
+   for the canonical migration recipe.
+
+Before:
+```
+add(): NounType.Event requires subtype but got undefined. Register vocabulary via brain.requireSubtype().
+```
+
+After:
+```
+add(): NounType.event requires subtype but got undefined.
+  at BookingDraftService.getOrCreateByToken (/app/src/booking/draft.ts:42:23)
+  Pass one of: booking, session, milestone.
+  Migration recipe: https://soulcraft.com/docs/guides/subtypes-and-facets#strict-mode
+```
+
+### Internal subtype labels — Brainy's own infrastructure paths
+
+Every internal Brainy write path now sets a stable, queryable `subtype`. Consumers don't need
+to do anything for these — they're documented here so you can query Brainy-managed data:
+
+| Code path | NounType / VerbType | Subtype label |
+|---|---|---|
+| VFS root directory `/` | `Collection` | `'vfs-root'` |
+| VFS subdirectories | `Collection` | `'vfs-directory'` |
+| VFS files | mime-driven (e.g. `Document`/`Code`/`Image`) | `'vfs-file'` |
+| VFS symlinks | `File` | `'vfs-symlink'` (NEW — distinct from `'vfs-file'`) |
+| VFS Contains edges (create + move/copy/symlink/batch) | `Contains` | `'vfs-contains'` |
+| Aggregation materialized output | `Measurement` | `'materialized-aggregate'` |
+| Import-source provenance entity | `Document` | `'import-source'` |
+| Importer-extracted entities | extractor-driven type | `'imported'` |
+| Importer placeholder targets | `Thing` | `'import-placeholder'` |
+| Neural extraction | extractor-driven type | `'extracted'` |
+| GoogleSheets API entity writes | request-driven | `'imported-from-sheets'` |
+| OData API entity writes | request-driven | `'imported-from-odata'` |
+| MCP message storage | `Message` | `'mcp-message'` |
+| `brainy add` CLI default | user-supplied type | `'cli-add'` |
+| `brainy relate` CLI default | user-supplied verb | `'cli-relate'` |
+
+Query examples:
+
+```typescript
+// Every VFS-managed file in your brain
+await brain.find({ subtype: 'vfs-file' })
+
+// Document breakdown — distinguishes import-source from extracted/imported/user content
+brain.counts.bySubtype(NounType.Document)
+// → { 'import-source': 12, 'imported': 847, 'extracted': 34, 'vfs-file': 102, ... }
+```
+
+### Caller-supplied `defaultSubtype` on importers and extraction
+
+Importer + extraction paths now accept a caller-supplied `defaultSubtype` config so consumers
+can tag a whole batch with their own provenance label instead of the Brainy default:
+
+```typescript
+// SmartImportOrchestrator / ImportCoordinator / NeuralImport all accept this
+await brain.importer.import(file, {
+  defaultSubtype: 'customer-upload-2026q2',  // your batch label
+  // ...
+})
+```
+
+Precedence: extractor-set subtype (highest) → caller's `defaultSubtype` → Brainy default
+(`'imported'` for importers, `'extracted'` for extractors).
+
+### CLI `--subtype` flag
+
+`brainy add` and `brainy relate` gain a `--subtype <value>` (`-s`) flag for use with
+strict-mode brains:
+
+```bash
+brainy add "Avery Brooks — runs the AI lab" --type person --subtype employee
+brainy relate alice manages bob --subtype direct
+```
+
+When the flag isn't supplied, the CLI uses `'cli-add'` / `'cli-relate'` as defaults so
+ad-hoc CLI usage still works against strict-mode brains.
+
+### Cortex compatibility
+
+**No Cortex changes required for 7.30.1.** Every change is JS-side: internal subtype labels are
+arbitrary strings stored transparently by Cortex; `brain.audit()` runs purely on JS via existing
+`storage.getNouns()` / `getVerbs()` pagination; the CLI is JS-only; error messages fire in
+Brainy before any native call.
+
+**For Cortex 3.0 (forward-looking, not blocking):**
+
+- **Native `audit()` proxy.** For billion-scale brains, `audit()` walks every entity (O(N)).
+  A native implementation reading from a "null-subtype" bitmap in the column store would be
+  O(buckets). Listed as the 6th open question in the
+  [Brainy 8.0 spec doc](`/media/dpsifr/storage/home/Projects/brainy/.strategy/BRAINY-8.0-SUBTYPE-CONTRACT.md`).
+- **Strict-mode parity test.** Cortex should mirror Brainy's new
+  `tests/integration/strict-mode-self-test.test.ts` against their native paths to catch any
+  latent bug where native writes bypass JS validation.
+- **Reserved-label awareness (optional).** Brainy's internal labels (`'vfs-*'`,
+  `'materialized-aggregate'`, `'imported'`, `'extracted'`, `'mcp-message'`, `'cli-*'`) become
+  a documented part of the 8.0 contract; useful for telemetry that surfaces "X% of entities are
+  Brainy-managed infrastructure".
+
+### Docs
+
+Updated `docs/guides/subtypes-and-facets.md` with a new "Strict mode in practice" section
+covering the SDK_CORE_VOCABULARY pattern, a 4-step migration recipe, the Brainy-internal label
+reference table, and an 8.0 forward-look. `docs/api/README.md` documents `brain.audit()` and
+adds a strict-mode tip to the `add()` / `relate()` reference entries.
+
+### Tests
+
+- **New `tests/integration/strict-mode-self-test.test.ts`** (13 tests): creates a brain under
+  the exact SDK_CORE_VOCABULARY shape Venue hit + brain-wide strict mode, then exercises every
+  internal Brainy path (VFS root/mkdir/writeFile/cp/mv/ln, aggregation engine, audit
+  diagnostic, error-message UX). Zero rejections expected.
+- Existing 7.30.0 + 7.29.0 integration suites unchanged: 26/26 + 30/30.
+- Unit suite unchanged: 1468/1468.
+
+---
+
 ## v7.30.0 — 2026-06-05
 
 **Affected products:** consumers modeling typed relationships with sub-classification

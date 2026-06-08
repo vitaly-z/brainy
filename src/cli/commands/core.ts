@@ -21,6 +21,13 @@ interface AddOptions extends CoreOptions {
   id?: string
   metadata?: string
   type?: string
+  /**
+   * Sub-classification within the noun type. Defaults to `'cli-add'` when not
+   * supplied so the CLI works against strict-mode brains; production-style
+   * ingestion should pass `--subtype` explicitly to use the consumer's
+   * registered vocabulary. Added 7.30.1.
+   */
+  subtype?: string
   confidence?: string
   weight?: string
 }
@@ -51,6 +58,12 @@ interface GetOptions extends CoreOptions {
 interface RelateOptions extends CoreOptions {
   weight?: string
   metadata?: string
+  /**
+   * Sub-classification within the verb type. Defaults to `'cli-relate'` when
+   * not supplied so the CLI works against strict-mode brains; production-style
+   * ingestion should pass `--subtype` explicitly. Added 7.30.1.
+   */
+  subtype?: string
 }
 
 interface ExportOptions extends CoreOptions {
@@ -153,10 +166,15 @@ export const coreCommands = {
         spinner.text = `No type specified, using default: ${nounType}`
       }
       
-      // Add with explicit type
+      // Add with explicit type. Subtype precedence: caller-supplied
+      // `--subtype <value>` → Brainy default `'cli-add'`. The default ensures
+      // CLI invocations against a strict-mode brain succeed without the user
+      // needing to know the vocabulary in advance — for production-style
+      // ingestion, pass `--subtype` explicitly (added 7.30.1).
       const addParams: any = {
         data: text,
         type: nounType,
+        subtype: options.subtype ?? 'cli-add',
         metadata
       }
 
@@ -589,11 +607,15 @@ export const coreCommands = {
         metadata.weight = parseFloat(options.weight)
       }
       
-      // Create the relationship
+      // Create the relationship. Subtype precedence: caller-supplied
+      // `--subtype <value>` → Brainy default `'cli-relate'`. Same rationale
+      // as `brainy add` — guarantees CLI works under strict-mode brains
+      // (added 7.30.1).
       const result = await brain.relate({
         from: source,
         to: target,
         type: verb as any,
+        subtype: options.subtype ?? 'cli-relate',
         metadata
       })
       

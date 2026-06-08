@@ -642,9 +642,13 @@ export class UniversalImportAPI {
 
     let entitiesProcessed = 0
     for (const entity of neuralResults.entities.values()) {
+      // Subtype precedence: extractor-set → `'extracted'` (this is the universal
+      // neural-extraction path, so `'extracted'` is the honest provenance label).
+      // Added 7.30.1 so enforcement consumers don't get rejected on auto-extraction.
       const id = await this.brain.add({
         data: entity.data,
         type: entity.type,
+        subtype: (entity as any).subtype ?? 'extracted',
         metadata: entity.metadata,
         vector: entity.vector
       })
@@ -682,8 +686,10 @@ export class UniversalImportAPI {
         total: neuralResults.relationships.size
       })
 
-      // Collect all relationship parameters
-      const relationshipParams: Array<{from: string; to: string; type: VerbType; weight?: number; metadata?: any}> = []
+      // Collect all relationship parameters. Subtype `extracted` matches the
+      // entity-side label so consumers can query "everything from this neural pass"
+      // via `(type, subtype: 'extracted')` (added 7.30.1).
+      const relationshipParams: Array<{from: string; to: string; type: VerbType; subtype?: string; weight?: number; metadata?: any}> = []
 
       for (const relation of neuralResults.relationships.values()) {
         // Map to actual entity IDs
@@ -697,6 +703,7 @@ export class UniversalImportAPI {
             from: sourceEntity.id,
             to: targetEntity.id,
             type: relation.type,
+            subtype: (relation as any).subtype ?? 'extracted',
             weight: relation.weight,
             metadata: relation.metadata
           })

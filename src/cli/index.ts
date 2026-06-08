@@ -93,6 +93,9 @@ program
   .option('-i, --id <id>', 'Specify custom ID')
   .option('-m, --metadata <json>', 'Add metadata')
   .option('-t, --type <type>', 'Specify noun type')
+  .option('-s, --subtype <subtype>', 'Specify sub-classification within the noun type (e.g. employee, customer, invoice). Required under strict-mode brains; defaults to "cli-add" otherwise.')
+  .option('--confidence <number>', 'Type classification confidence (0-1)')
+  .option('--weight <number>', 'Entity importance/salience (0-1)')
   .action(coreCommands.add)
 
 program
@@ -132,6 +135,7 @@ program
   .description('Create a relationship between items (interactive if parameters missing)')
   .option('-w, --weight <number>', 'Relationship weight')
   .option('-m, --metadata <json>', 'Relationship metadata')
+  .option('-s, --subtype <subtype>', 'Specify sub-classification within the verb type (e.g. direct, dotted-line). Required under strict-mode brains; defaults to "cli-relate" otherwise.')
   .action(coreCommands.relate)
 
 program
