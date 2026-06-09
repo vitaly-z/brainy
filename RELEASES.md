@@ -10,6 +10,43 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.31.2 — 2026-06-09
+
+**Affected products:** none in behaviour; affects anyone reading Brainy's TypeScript
+type definitions or coreTypes for the `hnsw.quantization.bits` option. Drop-in from 7.31.1.
+
+### Fix: stale comment claimed SQ4 vector quantization required a paid native provider
+
+Brainy ships a pure-JS SQ4 distance implementation (`distanceSQ4Js` in
+`src/utils/vectorQuantization.ts`) that's been part of the open-core path the whole
+time. Two type-definition comments incorrectly stated SQ4 required a native (paid)
+provider:
+
+```ts
+// coreTypes.ts:472 + types/brainy.types.ts:1123 — before
+bits?: 8 | 4   // default: 8 (SQ8). SQ4 requires cortex native.
+```
+
+The comment was simply wrong — open-core users can use SQ4 today, and the native SIMD
+acceleration is a drop-in via `setSQ4DistanceImplementation`, not a hard requirement.
+Corrected to:
+
+```ts
+bits?: 8 | 4   // default: 8 (SQ8). SQ4 has a pure-JS implementation;
+               // cortex's distance:sq4 SIMD provider accelerates it.
+```
+
+Both locations updated. Pure documentation; no behaviour change. Caught during an
+upstream open-core-boundary audit — thanks to whoever read the types carefully enough
+to spot the misleading comment.
+
+### Cortex compatibility
+
+Zero changes required. The fix is documentation only; runtime behaviour was already
+correct (`vectorQuantization.ts:412` ships `distanceSQ4Js`).
+
+---
+
 ## v7.31.1 — 2026-06-09
 
 **Affected products:** any consumer running `@soulcraft/brainy` against `FileSystemStorage`

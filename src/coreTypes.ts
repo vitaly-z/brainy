@@ -469,7 +469,7 @@ export interface HNSWConfig {
   // SQ8 vector quantization (4x memory reduction, ~0.4% accuracy loss)
   quantization?: {
     enabled: boolean        // default: false — preserves current behavior exactly
-    bits?: 8 | 4            // default: 8 (SQ8). SQ4 requires cortex native.
+    bits?: 8 | 4            // default: 8 (SQ8). SQ4 has a pure-JS implementation; cortex's distance:sq4 SIMD provider accelerates it.
     rerankMultiplier?: number // default: 3 — over-retrieve 3x, rerank with float32
   }
   // Vector storage mode
