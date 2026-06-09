@@ -10,6 +10,101 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.31.1 — 2026-06-09
+
+**Affected products:** any consumer running `@soulcraft/brainy` against `FileSystemStorage`
+that triggers concurrent flush / compaction (e.g. explicit `brain.flush()` calls overlapping
+with periodic background compaction, or a backup job + a flush job racing). Production-impacting
+when present: `brain.flush()` throws `ENOENT` on rename, downstream jobs that rely on flush
+(GCS / S3 / Azure backups, snapshot exports) fail continuously. Drop-in from 7.31.0.
+
+### Fixes a same-key rename race in `saveBinaryBlob`
+
+`FileSystemStorage.saveBinaryBlob` used a bare `${filePath}.tmp` suffix for its atomic-write
+temp file. Two concurrent same-key calls computed the **same** temp path; both `writeFile`d,
+the first `rename` succeeded, the second `rename` fired against a missing temp and threw
+`ENOENT`. The throw propagated up through `brain.flush()` and broke any downstream job that
+called it.
+
+```
+[job-queue] gcs-backup: failed — ENOENT: no such file or directory,
+  rename '/data/brainy-data/.../_column_index/owner/DELETED.bin.tmp'
+       -> '/data/brainy-data/.../_column_index/owner/DELETED.bin'
+```
+
+**Patch:** unique per-writer temp suffix (matches the pattern at six other atomic-write
+sites in the same file) + ENOENT swallow on rename (defensive: if the temp is gone, the
+work has already landed; `saveBinaryBlob` is idempotent for a given key) + temp cleanup
+on any other rename failure (no orphan `.tmp.*` files).
+
+```ts
+// before (7.31.0)
+const tmpPath = filePath + '.tmp'
+await fs.promises.writeFile(tmpPath, data)
+await fs.promises.rename(tmpPath, filePath)
+
+// after (7.31.1)
+const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`
+await fs.promises.writeFile(tmpPath, data)
+try {
+  await fs.promises.rename(tmpPath, filePath)
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+  await fs.promises.unlink(tmpPath).catch(() => {})
+  throw err
+}
+```
+
+### Scope
+
+The fix is one site — `src/storage/adapters/fileSystemStorage.ts:992-999`. Audit results:
+
+- **`FileSystemStorage`** — six sibling atomic-write sites already used unique suffixes;
+  only `saveBinaryBlob` was the outlier. All six were rechecked. Clean.
+- **`OPFSStorage`** — writes via WritableStream (no tmp+rename). Not affected.
+- **`GCSStorage` / `R2Storage` / `AzureBlobStorage` / `S3CompatibleStorage`** — use
+  object-store `PUT` (atomic at the API). Not affected.
+- **`MemoryStorage`** — in-memory. Not affected.
+- **`HistoricalStorageAdapter`** — read-only. Not affected.
+- **COW / versioning / snapshot / HNSW / aggregation** — all delegate to storage adapters
+  via `saveBinaryBlob` / `writeObjectToPath`. They get the fix automatically by virtue of
+  using the patched primitive.
+
+### Beneficiary surfaces (broader than the reported bug)
+
+Column-store compaction (`_column_index/<field>/DELETED.bin`, segment files) is what the
+production report named, but `saveBinaryBlob` is also used by HNSW connection persistence
+(`_hnsw_conn/<nodeId>` — `src/hnsw/hnswIndex.ts:252`). If two flush paths ever raced on
+HNSW persistence for the same node, they would have hit the same ENOENT. No production
+reports of HNSW-side failures, but the fix removes the latent race.
+
+### Tests
+
+- **New `tests/integration/savebinaryblob-concurrent-rename.test.ts`** (4 tests):
+  - 20 concurrent `saveBinaryBlob(sameKey, ...)` calls all resolve without throwing
+  - No orphan `.tmp.*` siblings remain in the blob directory after concurrent writes
+  - Production-shape: two concurrent compactor passes over 10 column-index fields
+    (`owner`, `path`, `permissions`, `vfsType`, `modified`, `createdAt`, `accessed`,
+    `updatedAt`, `mimeType`, `size`)
+  - Single-writer path still produces correct bytes (no regression)
+- The first three tests reproduce the production `ENOENT: rename '...DELETED.bin.tmp' ->
+  '...DELETED.bin'` error verbatim on the pre-7.31.1 code path. Verified by stashing the
+  fix and watching the tests fail with the exact production error.
+- Existing suites unchanged: 1468/1468 unit. All integration suites pass.
+
+### Cortex compatibility
+
+Zero changes required. The bug and the fix are pure JS in the filesystem storage adapter;
+the Cortex mmap-filesystem adapter wraps `FileSystemStorage` and inherits the patch
+automatically.
+
+### Forward-compat
+
+The bare-`.tmp` pattern is gone repo-wide. 8.0's `Db.persist()` will route through the
+same patched primitive; no additional work needed when the immutable Db API ships.
+
+---
+
 ## v7.31.0 — 2026-06-09
 
 **Affected products:** consumers that need multi-writer coordination (job

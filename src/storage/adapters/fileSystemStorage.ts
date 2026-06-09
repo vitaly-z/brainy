@@ -993,9 +993,28 @@ export class FileSystemStorage extends BaseStorage {
     await this.ensureInitialized()
     const filePath = this.blobPath(key)
     await this.ensureDirectoryExists(path.dirname(filePath))
-    const tmpPath = filePath + '.tmp'
+    // Unique per-writer temp suffix — matches the pattern used at every other
+    // atomic-write site in this file (lines 336, 551, 744, 781, 1529, 2908).
+    // Without a unique suffix, two concurrent saveBinaryBlob() calls for the
+    // same key collide on `${filePath}.tmp`: both writeFile, the first rename
+    // succeeds, the second fires against a missing temp and throws ENOENT.
+    // Reproduced in production: column-store compaction running alongside an
+    // explicit flush() repeatedly raced on `_column_index/<field>/DELETED.bin`.
+    const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`
     await fs.promises.writeFile(tmpPath, data)
-    await fs.promises.rename(tmpPath, filePath)
+    try {
+      await fs.promises.rename(tmpPath, filePath)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      // The writes are idempotent for a given key — every caller persists the
+      // same logical bytes for that key — so ENOENT on rename means the temp
+      // is already gone (rare with the unique suffix, but defensive against
+      // crash-resume cleanup paths and external file-system sweepers).
+      if (code === 'ENOENT') return
+      // Any other failure: clean up our own temp to avoid orphans before rethrow.
+      await fs.promises.unlink(tmpPath).catch(() => {})
+      throw err
+    }
   }
 
   /**
