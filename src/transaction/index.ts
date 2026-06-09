@@ -30,3 +30,5 @@ export {
   InvalidTransactionStateError,
   TransactionTimeoutError
 } from './errors.js'
+
+export { RevisionConflictError } from './RevisionConflictError.js'

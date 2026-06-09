@@ -46,6 +46,7 @@ import type {
 import { MmapVectorBackend } from './hnsw/mmapVectorBackend.js'
 import { ConnectionsCodec } from './hnsw/connectionsCodec.js'
 import { TransactionManager } from './transaction/TransactionManager.js'
+import { RevisionConflictError } from './transaction/RevisionConflictError.js'
 import {
   ValidationConfig,
   validateAddParams,
@@ -1052,6 +1053,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // missing-subtype check via the `isVFSEntity` marker.
     this.enforceSubtypeOnAdd('add', params.type, params.subtype, params.metadata)
 
+    // ifAbsent (7.31.0) — by-ID idempotent insert. Only meaningful when a custom id
+    // is supplied; a freshly generated UUID can never collide. Returns the existing
+    // id without writing if the entity is already present (no throw, no overwrite).
+    if (params.id && params.ifAbsent) {
+      const existing = await this.storage.getNounMetadata(params.id)
+      if (existing) return params.id
+    }
+
     // Generate ID if not provided
     const id = params.id || uuidv4()
 
@@ -1078,6 +1087,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         service: params.service,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        _rev: 1,
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
         ...(params.createdBy && { createdBy: params.createdBy })
@@ -1372,6 +1382,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       data: entity.data,
       confidence: entity.confidence,
       weight: entity.weight,
+      _rev: entity._rev,
       // Preserve full entity for backward compatibility
       entity,
       // Optional score explanation
@@ -1406,6 +1417,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       service: noun.service,
       data: noun.data,
       createdBy: noun.createdBy,
+      // 7.31.0 — surface revision counter (defaults to 1 for pre-7.31.0 entities)
+      _rev: typeof noun._rev === 'number' ? noun._rev : 1,
 
       // ONLY custom user fields in metadata (already separated by storage adapter)
       metadata: noun.metadata as T
@@ -1438,7 +1451,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Extract standard fields, rest are custom metadata
     // Same destructuring as baseStorage.getNoun() to ensure consistency
-    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     const entity: Entity<T> = {
       id,
@@ -1454,6 +1467,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       service,
       data,
       createdBy,
+      // 7.31.0 — surface revision counter (defaults to 1 for pre-7.31.0 entities)
+      _rev: typeof _rev === 'number' ? _rev : 1,
 
       // Custom user fields (standard fields removed, only custom remain)
       metadata: customMetadata as T
@@ -1549,6 +1564,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         throw new Error(`Entity ${params.id} not found`)
       }
 
+      // ifRev (7.31.0) — optimistic concurrency. If caller supplied ifRev, the persisted
+      // _rev must match exactly. Pre-7.31.0 entities without _rev are treated as rev 1.
+      const currentRev = typeof (existing.metadata as any)?._rev === 'number'
+        ? (existing.metadata as any)._rev
+        : (typeof (existing as any)._rev === 'number' ? (existing as any)._rev : 1)
+      if (typeof params.ifRev === 'number' && params.ifRev !== currentRev) {
+        throw new RevisionConflictError(params.id, params.ifRev, currentRev)
+      }
+
       // Update vector if data changed
       let vector = existing.vector
       const newType = params.type || existing.type
@@ -1571,6 +1595,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         service: existing.service,
         createdAt: existing.createdAt,
         updatedAt: Date.now(),
+        _rev: currentRev + 1,
         // Update confidence and weight if provided, otherwise preserve existing
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
@@ -3613,7 +3638,12 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
         const promises = chunk.map(async (item) => {
           try {
-            const id = await this.add(item)
+            // ifAbsent (7.31.0) — propagate batch-level flag to each item, but let
+            // per-item flag take precedence so callers can override individual rows.
+            const itemWithIfAbsent = params.ifAbsent && item.ifAbsent === undefined
+              ? { ...item, ifAbsent: true }
+              : item
+            const id = await this.add(itemWithIfAbsent)
             result.successful.push(id)
           } catch (error) {
             result.failed.push({

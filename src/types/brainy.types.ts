@@ -49,6 +49,13 @@ export interface Entity<T = any> {
   confidence?: number
   /** Entity importance/salience (0-1) */
   weight?: number
+  /**
+   * Monotonic revision counter, auto-bumped on every successful `update()`.
+   * Starts at `1` on `add()`. Pre-7.31.0 entities without `_rev` are read as `1`.
+   * Pass back as `update({ id, ..., ifRev: _rev })` for optimistic-concurrency CAS —
+   * throws `RevisionConflictError` if the persisted rev moved since read.
+   */
+  _rev?: number
 }
 
 /**
@@ -126,6 +133,7 @@ export interface Result<T = any> {
   data?: any           // Entity data (from entity.data)
   confidence?: number  // Type classification confidence (from entity.confidence)
   weight?: number      // Entity importance (from entity.weight)
+  _rev?: number        // Monotonic revision counter (from entity._rev) — pass back as update({ ifRev }) for CAS
 
   // Full entity (preserved for backward compatibility)
   entity: Entity<T>
@@ -197,6 +205,13 @@ export interface AddParams<T = any> {
   weight?: number
   /** Track which augmentation created this entity */
   createdBy?: { augmentation: string; version: string }
+  /**
+   * Conditional insert. When `true` AND a custom `id` is supplied AND an entity with
+   * that `id` already exists, `add()` returns the existing `id` without writing — no
+   * throw, no overwrite. Used for idempotent bootstrap and create-or-noop patterns.
+   * Ignored when `id` is omitted (a freshly generated UUID can never collide).
+   */
+  ifAbsent?: boolean
 }
 
 /**
@@ -212,6 +227,13 @@ export interface UpdateParams<T = any> {
   vector?: Vector             // New pre-computed vector
   confidence?: number          // Update type classification confidence
   weight?: number              // Update entity importance/salience
+  /**
+   * Optimistic concurrency check. When provided, the update fails with
+   * `RevisionConflictError` if the persisted entity's `_rev` does not equal `ifRev`.
+   * `_rev` is auto-bumped on every successful update — read it from the entity returned
+   * by `get()` / `find()` / `search()`. Omit to skip the check (unconditional update).
+   */
+  ifRev?: number
 }
 
 /**
@@ -499,6 +521,11 @@ export interface AddManyParams<T = any> {
   chunkSize?: number        // Batch size (default: 100)
   onProgress?: (done: number, total: number) => void
   continueOnError?: boolean  // Continue if some fail
+  /**
+   * Conditional insert applied to every item. Equivalent to setting `ifAbsent: true`
+   * on each item individually. Item-level `ifAbsent` overrides the batch flag.
+   */
+  ifAbsent?: boolean
 }
 
 /**

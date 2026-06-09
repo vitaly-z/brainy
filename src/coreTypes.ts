@@ -237,6 +237,11 @@ export interface HNSWNounWithMetadata {
   // USER DATA (top-level) - compatible with other types
   data?: Record<string, any>
 
+  // REVISION COUNTER (7.31.0) — monotonic per-write integer for optimistic concurrency.
+  // Initialized to 1 on add(); bumped on every successful update(). Pre-7.31.0
+  // entities without _rev are surfaced as `1` so existing callers see a consistent value.
+  _rev?: number
+
   // CUSTOM USER METADATA (only custom fields, no standard fields)
   metadata?: Record<string, unknown>
 }
@@ -265,7 +270,8 @@ export const STANDARD_ENTITY_FIELDS: ReadonlySet<string> = new Set([
   'updatedAt',
   'service',
   'createdBy',
-  'data'
+  'data',
+  '_rev'
 ])
 
 /**

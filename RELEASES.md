@@ -10,6 +10,136 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.31.0 — 2026-06-09
+
+**Affected products:** consumers that need multi-writer coordination (job
+schedulers, idempotent state machines, distributed locks, optimistic UI updates)
+or idempotent bootstrap of well-known singletons. Additive; drop-in from 7.30.2.
+
+### Per-entity `_rev` + `update({ ifRev })` + `add({ ifAbsent })`
+
+CouchDB / PouchDB / ETag-style optimistic concurrency. Every entity now carries a
+monotonic `_rev: number` that Brainy auto-bumps on every successful `update()`.
+Pass it back as `ifRev` to make read-modify-write race-safe without an external
+lock service. `ifAbsent` adds by-ID idempotent insert for singletons / config rows
+/ deterministic-ID bootstraps.
+
+**What's new:**
+
+- **`entity._rev: number`** — initialized to `1` on `add()`, bumped by `1` on every
+  successful `update()` that reaches storage. Surfaced on `get()` (both fast metadata-
+  only and full-vector paths), `find()`, `search()`, and on the `Result` flatten layer
+  for backward compatibility. Pre-7.31.0 entities without `_rev` are read as `1`.
+- **`update({ id, ..., ifRev: number })`** — optimistic-concurrency check. When
+  provided, throws `RevisionConflictError` if the persisted `_rev` no longer matches.
+  Carries `{ id, expected, actual }` for principled recovery. Omitting `ifRev` keeps
+  the prior unconditional-update behavior.
+- **`add({ id, ifAbsent: true })`** — by-ID idempotent insert. Returns the existing
+  `id` without writing if the entity already exists. No throw, no overwrite. Ignored
+  when `id` is omitted (a fresh UUID can never collide).
+- **`addMany({ items, ifAbsent: true })`** — applies the flag to every item; per-item
+  `ifAbsent` overrides the batch flag.
+
+### The lock recipe (single-process or distributed)
+
+```ts
+import { Brainy, RevisionConflictError } from '@soulcraft/brainy'
+
+const LOCK_ID = '...uuid...'
+
+await brain.add({
+  id: LOCK_ID,
+  type: NounType.Document,
+  data: { owner: null, expiresAt: 0 },
+  ifAbsent: true
+})
+
+async function tryAcquireLock(workerId: string, ttlMs: number) {
+  const lock = await brain.get(LOCK_ID)
+  if (!lock) throw new Error('lock document missing')
+  const state = lock.data as { owner: string | null; expiresAt: number }
+  if (state.owner && state.expiresAt > Date.now()) return false
+
+  try {
+    await brain.update({
+      id: LOCK_ID,
+      data: { owner: workerId, expiresAt: Date.now() + ttlMs },
+      ifRev: lock._rev
+    })
+    return true
+  } catch (err) {
+    if (err instanceof RevisionConflictError) return false
+    throw err
+  }
+}
+```
+
+### Why this is scoped to `_rev` + `ifAbsent`
+
+A public `brain.transaction(fn)` wrapper was on the table but was cut. The internal
+`TransactionManager` exposes raw `Operation` classes that take a `StorageAdapter`
+constructor argument; a high-level facade in 7.31.0 would have meant either
+(a) delegating to `brain.add()` / `update()` / `relate()` — each of which commits
+its own internal transaction before the closure returns, so multi-write rollback
+wouldn't actually work (a footgun), or (b) threading `tx?` through every internal
+write path — ~2 days of refactor with regression surface, and the API shape changes
+again in 8.0 anyway.
+
+The SDK-scheduler use case that drove the thread (read-then-CAS lock pattern) is
+fully solved by `_rev` + `ifRev`. Multi-write atomicity is the 8.0 `brain.transact()`
+use case, where the Datomic-style immutable Db makes it atomic by construction. We
+chose not to ship a worse version in the interim.
+
+### How `_rev` interacts with branches and the snapshot API
+
+| System | What it tracks | When it advances |
+|---|---|---|
+| `_rev` (NEW) | Per-entity write counter | Auto, on every successful `update()` |
+| `brain.versions.save()` | Named snapshots per entity | Explicit — you call `save()` |
+| `brain.fork()` / branches | Whole-brain copy-on-write | Explicit — you call `fork(name)` |
+| VFS file versioning | Per-VFS-file snapshots | Same as `brain.versions.save()` |
+
+`_rev` is independent. Each branch has its own copy of every entity, so each
+branch has its own `_rev` per entity (same as every other field under COW).
+Snapshots taken via `brain.versions.save()` capture the entity at that moment
+including its `_rev` at that time; the snapshot's own `version: number` is the
+snapshot index, distinct from `_rev`.
+
+### Docs
+
+- **New `docs/guides/optimistic-concurrency.md`** (public, indexed at
+  soulcraft.com/docs after portal deploy) — full reference: the lock pattern,
+  read-modify-write retry, idempotent bootstrap, how `_rev` interacts with branches /
+  snapshots / VFS, what's coming in 8.0.
+- `docs/api/README.md` `add()` and `update()` entries get the new params + tips
+  pointing at the guide.
+
+### Tests
+
+- **New `tests/integration/rev-and-ifabsent.test.ts`** (18 tests): rev initialization,
+  rev bump on update, ifRev pass / fail / omit / legacy-entity-fallback, ifAbsent
+  with custom id / no id / batch propagation / per-item override, plus a full
+  SDK-scheduler-style two-concurrent-CAS-updaters scenario.
+- Existing suites unchanged: subtype-and-facets 26/26, verb-subtype-and-enforcement
+  30/30, strict-mode-self-test 13/13, find-limits 9/9. Unit 1468/1468.
+
+### Cortex compatibility
+
+Zero changes required. `_rev` is a metadata column already supported by
+`NativeColumnStore`; the auto-bump runs in Brainy JS before any storage call.
+Cortex never sees the per-entity counter — it's a single integer field updated
+alongside every other metadata field on the existing write paths.
+
+### 8.0 forward-compat
+
+`_rev`, `ifRev`, `RevisionConflictError`, and `ifAbsent` all survive the 8.0 Db
+redesign unchanged. 8.0 layers `brain.transact(tx, { ifAtGeneration })` for
+whole-tx CAS on top of the same per-entity mechanism — per-entity for single-record
+patterns, generation-based for "did the world move under me." See
+`.strategy/BRAINY-8.0-SUBTYPE-CONTRACT.md` § C-6 (internal).
+
+---
+
 ## v7.30.2 — 2026-06-08
 
 **Affected products:** any consumer with `find({ limit })` call sites that pass values

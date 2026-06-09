@@ -128,6 +128,7 @@ const id = await brain.add({
 - `vector?`: `number[]` - Pre-computed vector (skips auto-embedding)
 - `confidence?`: `number` - Type classification confidence (0-1)
 - `weight?`: `number` - Entity importance/salience (0-1)
+- `ifAbsent?`: `boolean` - By-ID idempotent insert. When `true` AND a custom `id` is supplied AND an entity with that `id` already exists, returns the existing `id` without writing (no throw, no overwrite). Ignored without `id`. See [guides/optimistic-concurrency](../guides/optimistic-concurrency.md).
 
 > **`data`** is embedded into vectors for semantic search. **`metadata`** is indexed for `where` filters. See [Data Model](../DATA_MODEL.md).
 
@@ -176,8 +177,11 @@ await brain.update({
 - `metadata?`: `object` - Metadata to merge (or replace with `merge: false`)
 - `confidence?`: `number` - Update classification confidence
 - `weight?`: `number` - Update entity importance
+- `ifRev?`: `number` - Optimistic-concurrency check. When provided, the update throws `RevisionConflictError` if the persisted entity's `_rev` no longer equals `ifRev`. See [guides/optimistic-concurrency](../guides/optimistic-concurrency.md).
 
 **Returns:** `Promise<void>`
+
+> **Tip — read-then-CAS.** Every entity returned by `get()` / `find()` / `search()` carries `entity._rev` (a monotonic counter Brainy auto-bumps on every successful `update()`). Pass it back as `ifRev` to make multi-writer coordination safe without an external lock service. Full guide: [guides/optimistic-concurrency](../guides/optimistic-concurrency.md).
 
 ---
 

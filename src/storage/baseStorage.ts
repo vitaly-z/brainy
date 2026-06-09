@@ -904,7 +904,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWNounWithMetadata - Extract standard fields to top-level
-    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     return {
       id: vector.id,
@@ -921,6 +921,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       service: service as string | undefined,
       data: data as Record<string, any> | undefined,
       createdBy,
+      _rev: typeof _rev === 'number' ? _rev : 1,
       // Only custom user fields remain in metadata
       metadata: customMetadata
     }
@@ -942,7 +943,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     for (const noun of nouns) {
       const metadata = await this.getNounMetadata(noun.id)
       if (metadata) {
-        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
         nounsWithMetadata.push({
           ...noun,
@@ -956,6 +957,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           service: service as string | undefined,
           data: data as Record<string, any> | undefined,
           createdBy,
+          _rev: typeof _rev === 'number' ? _rev : 1,
           // Only custom user fields in metadata
           metadata: customMetadata
         })
@@ -1021,7 +1023,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWVerbWithMetadata - Extract standard fields to top-level
-    const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadata
+    const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     return {
       id: verb.id,
@@ -1096,7 +1098,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const verb = this.deserializeVerb(vectorData)
 
         // Extract standard fields to top-level
-        const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+        const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadataData
 
         results.set(id, {
           id: verb.id,
@@ -2475,7 +2477,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const noun = this.deserializeNoun(vectorData)
 
         // Extract standard fields to top-level
-        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataData
+        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadataData
 
         results.set(id, {
           id: noun.id,
@@ -2492,6 +2494,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           service: service as string | undefined,
           data: data as Record<string, any> | undefined,
           createdBy,
+          _rev: typeof _rev === 'number' ? _rev : 1,
           // Only custom user fields remain in metadata
           metadata: customMetadata
         })
@@ -3992,7 +3995,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
             // Extract standard fields from metadata to top-level
             const metadataObj = (metadata || {}) as VerbMetadata
-            const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, ...customMetadata } = metadataObj
+            const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadataObj
 
             const verbWithMetadata: HNSWVerbWithMetadata = {
               id: hnswVerb.id,

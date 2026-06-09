@@ -124,6 +124,9 @@ export { PluginRegistry } from './plugin.js'
 export { MigrationRunner, MIGRATIONS } from './migration/index.js'
 export type { Migration, MigrationState, MigrationPreview, MigrationResult, MigrateOptions, MigrationError } from './migration/index.js'
 
+// Export optimistic-concurrency types (7.31.0)
+export { RevisionConflictError } from './transaction/RevisionConflictError.js'
+
 // Export embedding functionality
 import {
   UniversalSentenceEncoder,
