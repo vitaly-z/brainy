@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.2](https://github.com/soulcraftlabs/brainy/compare/v7.31.1...v7.31.2) (2026-06-09)
+
+- docs: correct misleading SQ4 quantization comment in type definitions (89e4d81)
+
+
 ### [7.31.1](https://github.com/soulcraftlabs/brainy/compare/v7.31.0...v7.31.1) (2026-06-09)
 
 - fix: saveBinaryBlob unique tmp suffix + ENOENT swallow on rename (550bd4a)
