@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.1](https://github.com/soulcraftlabs/brainy/compare/v7.31.0...v7.31.1) (2026-06-09)
+
+- fix: saveBinaryBlob unique tmp suffix + ENOENT swallow on rename (550bd4a)
+
+
 ### [7.31.0](https://github.com/soulcraftlabs/brainy/compare/v7.30.2...v7.31.0) (2026-06-09)
 
 - feat: per-entity _rev + update({ ifRev }) CAS + add({ ifAbsent }) (bafb4e4)
