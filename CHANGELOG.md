@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.0](https://github.com/soulcraftlabs/brainy/compare/v7.30.2...v7.31.0) (2026-06-09)
+
+- feat: per-entity _rev + update({ ifRev }) CAS + add({ ifAbsent }) (bafb4e4)
+
+
 ### [7.30.2](https://github.com/soulcraftlabs/brainy/compare/v7.30.1...v7.30.2) (2026-06-08)
 
 - fix: recalibrate find({ limit }) cap + two-tier enforcement + caller location (9e307e4)
