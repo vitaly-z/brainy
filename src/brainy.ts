@@ -9469,6 +9469,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const idMapper = this.metadataIndex.getIdMapper?.()
     if (!idMapper) return
 
+    // Feature-detect: vector-index providers without per-node connection
+    // lists (e.g. single-file graph formats) don't expose this hook. Skip
+    // silently — the codec only applies to the JS HNSW connection layout.
+    if (typeof this.index.setConnectionsCodec !== 'function') return
+
     const codec = new ConnectionsCodec(provider, idMapper)
     this.index.setConnectionsCodec(codec)
     if (!this.config.silent) {
