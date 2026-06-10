@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.4](https://github.com/soulcraftlabs/brainy/compare/v7.31.3...v7.31.4) (2026-06-10)
+
+- fix: feature-detect setConnectionsCodec before wiring the connections codec (747ab97)
+
+
 ### [7.31.3](https://github.com/soulcraftlabs/brainy/compare/v7.31.2...v7.31.3) (2026-06-10)
 
 - fix: mmap-vector backend capacity NaN at the provider FFI boundary (eade6ff)
