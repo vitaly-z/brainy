@@ -77,11 +77,17 @@ export class MmapVectorBackend {
     idMapper: EntityIdMapperProvider
   ): Promise<MmapVectorBackend> {
     await mkdir(dirname(path), { recursive: true })
+    // NaN/Infinity/non-positive capacities coerce to 0 at the provider's u32
+    // FFI boundary ("Capacity must be > 0"). Sanitize here so no caller can
+    // ever hand the provider an invalid allocation size.
+    const capacity = Number.isFinite(initialCapacity) && initialCapacity >= 16
+      ? Math.ceil(initialCapacity)
+      : 16
     let store: VectorStoreMmapInstance
     try {
       store = provider.open(path)
     } catch {
-      store = provider.create(path, dim, Math.max(initialCapacity, 16))
+      store = provider.create(path, dim, capacity)
     }
     return new MmapVectorBackend(store, idMapper)
   }

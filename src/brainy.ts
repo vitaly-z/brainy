@@ -9410,7 +9410,15 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (!idMapper) return
 
     const dim = this.dimensions ?? 384
-    const initialCapacity = Math.max(idMapper.size * 2, 1024)
+    // Provider-supplied id mappers (e.g. a native metadata index's façade) may
+    // not expose a `size` property. `undefined * 2` is NaN, and NaN coerces to
+    // 0 at the napi u32 boundary — the provider then rejects the create() with
+    // "Capacity must be > 0". Treat a missing/non-finite size as 0 so the
+    // 1024 floor always holds; the file grows on demand past it.
+    const mapperSize = Number.isFinite((idMapper as { size?: number }).size)
+      ? (idMapper as { size: number }).size
+      : 0
+    const initialCapacity = Math.max(mapperSize * 2, 1024)
 
     try {
       const backend = await MmapVectorBackend.open(

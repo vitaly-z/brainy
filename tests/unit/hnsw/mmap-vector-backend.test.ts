@@ -239,4 +239,56 @@ describe('MmapVectorBackend (2.4.0 #2 — wraps vectorStore:mmap provider)', () 
     const backend2 = await MmapVectorBackend.open(provider, path, 2, 8, idMapper)
     expect(backend2.readByUuid('persisted')).toEqual([7, 7])
   })
+
+  describe('capacity sanitization at the provider FFI boundary (7.31.3 regression)', () => {
+    /**
+     * Mimics cortex's NativeMmapVectorStore napi boundary: JS numbers are
+     * coerced ToUint32 (NaN → 0, Infinity → 0) before the Rust-side
+     * `capacity == 0` guard fires with "Capacity must be > 0". This is the
+     * exact production failure from a metadata-provider idMapper façade that
+     * exposes no `size` property: `undefined * 2` = NaN at the caller.
+     */
+    class U32CoercingProvider extends MockMmapProvider {
+      lastCreateCapacity: number | null = null
+      override create(path: string, dim: number, capacity: number): VectorStoreMmapInstance {
+        const coerced = capacity >>> 0 // ECMA ToUint32 — what napi-rs does
+        this.lastCreateCapacity = coerced
+        if (coerced === 0) throw new Error('Capacity must be > 0')
+        return super.create(path, dim, coerced)
+      }
+    }
+
+    it('NaN initialCapacity (idMapper façade without `size`) still wires with the floor capacity', async () => {
+      const strictProvider = new U32CoercingProvider()
+      const facadeWithoutSize = {
+        getInt: (uuid: string) => idMapper.getInt(uuid),
+        getOrAssign: (uuid: string) => idMapper.getOrAssign(uuid),
+        getUuid: (intId: number) => idMapper.getUuid(intId)
+      } as any
+
+      // Pre-fix: NaN reached create(), coerced to 0, threw, and the backend
+      // never wired. Post-fix it must construct with the 16-slot floor.
+      const naiveCapacity = (facadeWithoutSize.size as number) * 2 // NaN
+      const backend = await MmapVectorBackend.open(
+        strictProvider,
+        path,
+        4,
+        naiveCapacity,
+        facadeWithoutSize
+      )
+      expect(strictProvider.lastCreateCapacity).toBeGreaterThanOrEqual(16)
+
+      backend.writeByUuid('wired', [1, 2, 3, 4])
+      expect(backend.readByUuid('wired')).toEqual([1, 2, 3, 4])
+    })
+
+    it('Infinity and non-positive capacities are clamped to the floor', async () => {
+      for (const bad of [Infinity, -Infinity, 0, -5]) {
+        const strictProvider = new U32CoercingProvider()
+        const p = join(dir, `vectors-${String(bad)}.bin`)
+        await MmapVectorBackend.open(strictProvider, p, 2, bad, idMapper)
+        expect(strictProvider.lastCreateCapacity).toBe(16)
+      }
+    })
+  })
 })
