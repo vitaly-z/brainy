@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.5](https://github.com/soulcraftlabs/brainy/compare/v7.31.4...v7.31.5) (2026-06-11)
+
+- fix: feature-detect setVectorBackend before wiring the mmap-vector backend (a537b36)
+
+
 ### [7.31.4](https://github.com/soulcraftlabs/brainy/compare/v7.31.3...v7.31.4) (2026-06-10)
 
 - fix: feature-detect setConnectionsCodec before wiring the connections codec (747ab97)
