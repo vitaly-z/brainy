@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.7](https://github.com/soulcraftlabs/brainy/compare/v7.31.6...v7.31.7) (2026-06-11)
+
+- fix: vfs.rename() issues a metadata-only update + rollback of fresh adds removes them (ac29b0e)
+
+
 ### [7.31.6](https://github.com/soulcraftlabs/brainy/compare/v7.31.5...v7.31.6) (2026-06-11)
 
 - fix: remap reserved fields from update() metadata patches to their canonical location (67e5fc8)
