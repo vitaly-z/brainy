@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.31.6](https://github.com/soulcraftlabs/brainy/compare/v7.31.5...v7.31.6) (2026-06-11)
+
+- fix: remap reserved fields from update() metadata patches to their canonical location (67e5fc8)
+
+
 ### [7.31.5](https://github.com/soulcraftlabs/brainy/compare/v7.31.4...v7.31.5) (2026-06-11)
 
 - fix: feature-detect setVectorBackend before wiring the mmap-vector backend (a537b36)
