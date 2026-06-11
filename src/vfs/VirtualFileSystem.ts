@@ -1664,17 +1664,6 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       if (err.code !== VFSErrorCode.ENOENT) throw err
     }
 
-    // Update entity metadata
-    const updatedEntity = {
-      ...entity,
-      metadata: {
-        ...entity.metadata,
-        path: newPath,
-        name: this.getBasename(newPath),
-        modified: Date.now()
-      }
-    }
-
     // Update parent relationships if needed
     const oldParentPath = this.getParentPath(oldPath)
     const newParentPath = this.getParentPath(newPath)
@@ -1700,10 +1689,19 @@ export class VirtualFileSystem implements IVirtualFileSystem {
       }
     }
 
-    // Update the entity
+    // A rename is a path/metadata change, never a content change — issue a
+    // metadata-only update. Spreading the whole entity here used to forward
+    // its vector field into update(), which failed dimension validation when
+    // the entity was fetched without vectors (and would needlessly touch the
+    // vector index when it wasn't).
     await this.brain.update({
-      ...updatedEntity,
-      id: entityId
+      id: entityId,
+      metadata: {
+        ...entity.metadata,
+        path: newPath,
+        name: this.getBasename(newPath),
+        modified: Date.now()
+      }
     })
 
     // Update path cache

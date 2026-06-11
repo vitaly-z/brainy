@@ -51,13 +51,26 @@ export class AddToHNSWOperation implements Operation {
   }
 
   /**
-   * Check if item exists in index
+   * Check if item exists in index.
+   *
+   * `getItem` is an optional provider capability that the built-in HNSW index
+   * does not implement. When the capability is missing the answer must be
+   * `false`, not `true`: `await undefined` resolves without throwing, so the
+   * old probe reported every item as pre-existing and rollback of fresh adds
+   * never removed them — leaving phantom index entries after a failed
+   * transaction. The safe default is to remove what this operation added;
+   * update flows pair this op with a RemoveFromHNSWOperation whose own
+   * rollback restores the prior vector, so reverse-order rollback
+   * reconstructs the original state either way.
    */
   private async itemExists(id: string): Promise<boolean> {
+    const index = this.index as HNSWIndex & {
+      getItem?: (id: string) => Promise<unknown>
+    }
+    if (typeof index.getItem !== 'function') return false
     try {
-      // Try to get item - if exists, no error
-      await (this.index as any).getItem?.(id)
-      return true
+      const item = await index.getItem(id)
+      return item !== undefined && item !== null
     } catch {
       return false
     }
