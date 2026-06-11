@@ -9400,6 +9400,24 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     const provider = this.pluginRegistry.getProvider<VectorStoreMmapProvider>('vectorStore:mmap')
     if (!provider) return
 
+    // Feature-detect: only Brainy's own JS HNSW index consumes an external
+    // vector backend. A native vector-index provider manages its own vector
+    // storage and exposes no setVectorBackend hook — skip silently (same
+    // pattern as the setConnectionsCodec feature-detect). Checked BEFORE
+    // opening the backend so no mmap file is created that nothing will read.
+    const indexWithBackend = this.index as unknown as {
+      setVectorBackend?: (backend: MmapVectorBackend) => void
+    }
+    if (typeof indexWithBackend.setVectorBackend !== 'function') {
+      if (!this.config.silent) {
+        console.log(
+          '[brainy] mmap-vector backend not wired (vector index manages its own ' +
+            'vector storage; no setVectorBackend hook) — per-entity reads in use'
+        )
+      }
+      return
+    }
+
     const storageWithBlob = this.storage as unknown as {
       getBinaryBlobPath?: (key: string) => string | null
     }
