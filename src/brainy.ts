@@ -32,7 +32,7 @@ import { CommitBuilder } from './storage/cow/CommitObject.js'
 import { BlobStorage } from './storage/cow/BlobStorage.js'
 import { NULL_HASH } from './storage/cow/constants.js'
 import { createPipeline } from './streaming/pipeline.js'
-import { configureLogger, LogLevel } from './utils/logger.js'
+import { configureLogger, LogLevel, prodLog } from './utils/logger.js'
 import { setGlobalCache } from './utils/unifiedCache.js'
 import type { UnifiedCache } from './utils/unifiedCache.js'
 import { rankIndicesByScore, reorderByIndices } from './utils/resultRanking.js'
@@ -1527,12 +1527,81 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    * })
    * ```
    */
+  /**
+   * @description Normalize an update's metadata patch with respect to
+   * Brainy-reserved fields. `add()` lifts reserved fields out of `metadata`
+   * to their canonical top-level location; this applies the same contract to
+   * `update()` so the two write paths behave identically:
+   * - `confidence`, `weight`, `subtype` — remapped to the top-level param
+   *   unless the caller also passed that param explicitly (top-level wins).
+   * - `noun`, `data`, `createdAt`, `updatedAt`, `service`, `createdBy`,
+   *   `_rev` — system-managed or owned by a dedicated param; dropped from the
+   *   patch with a one-shot warning that names the correct write path.
+   * @param params - The caller's update params (not mutated).
+   * @returns Params with reserved fields normalized out of `metadata`.
+   */
+  private remapReservedMetadataFields(params: UpdateParams<T>): UpdateParams<T> {
+    if (!params.metadata || typeof params.metadata !== 'object') return params
+
+    const {
+      noun, subtype, createdAt, updatedAt, confidence, weight, service,
+      data, createdBy, _rev, ...customMetadata
+    } = params.metadata as Record<string, unknown>
+
+    const hasReserved =
+      noun !== undefined || subtype !== undefined || createdAt !== undefined ||
+      updatedAt !== undefined || confidence !== undefined || weight !== undefined ||
+      service !== undefined || data !== undefined || createdBy !== undefined ||
+      _rev !== undefined
+    if (!hasReserved) return params
+
+    const warnDropped = (field: string, rightPath: string) => {
+      if (Brainy.warnedReservedFields.has(field)) return
+      Brainy.warnedReservedFields.add(field)
+      prodLog.warn(
+        `[brainy] update(): '${field}' is a reserved field and cannot be set ` +
+          `through a metadata patch — use ${rightPath}. The value was ignored. ` +
+          `(This warning is shown once per field per process.)`
+      )
+    }
+
+    if (noun !== undefined) warnDropped('noun', "the top-level 'type' param")
+    if (data !== undefined) warnDropped('data', "the top-level 'data' param")
+    if (createdAt !== undefined) warnDropped('createdAt', 'nothing — creation time is immutable')
+    if (updatedAt !== undefined) warnDropped('updatedAt', 'nothing — set automatically on every update')
+    if (service !== undefined) warnDropped('service', 'nothing — fixed at add() time')
+    if (createdBy !== undefined) warnDropped('createdBy', 'nothing — fixed at add() time')
+    if (_rev !== undefined) warnDropped('_rev', "the 'ifRev' param for optimistic concurrency")
+
+    return {
+      ...params,
+      metadata: customMetadata as UpdateParams<T>['metadata'],
+      ...(params.confidence === undefined && typeof confidence === 'number' && { confidence }),
+      ...(params.weight === undefined && typeof weight === 'number' && { weight }),
+      ...(params.subtype === undefined && typeof subtype === 'string' && { subtype })
+    }
+  }
+
+  /** One-shot registry for reserved-field warnings (per process). */
+  private static warnedReservedFields = new Set<string>()
+
   async update(params: UpdateParams<T>): Promise<void> {
     this.assertWritable('update')
     await this.ensureInitialized()
 
     // Zero-config validation (static import for performance)
     validateUpdateParams(params)
+
+    // Reserved fields arriving via the metadata patch are remapped to their
+    // canonical top-level location, mirroring add()'s lift behavior. Before
+    // this fix the patch value survived the merge but was then clobbered by
+    // the preserve-existing spreads below — a silent no-op that consumers
+    // could only detect by reading values back. User-mutable reserved fields
+    // (confidence, weight, subtype) remap unless the same field was also
+    // passed top-level (top-level wins). System-managed fields (createdAt,
+    // updatedAt, _rev, noun, data, service, createdBy) cannot be set through
+    // a metadata patch and are dropped with a warning naming the right path.
+    params = this.remapReservedMetadataFields(params)
 
     // Tracked-field vocabulary enforcement (Layer 2). Same as add() — the
     // metadata bag carries fields registered via trackField(), and subtype is
