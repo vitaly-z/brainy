@@ -81,6 +81,19 @@ export class FileSystemStorage extends BaseStorage {
   private readonly MAX_SHARDS = 256 // Hex range: 00-ff
   private cachedShardingDepth: number = this.SHARDING_DEPTH // Always use fixed depth
   protected rootDir: string
+
+  /**
+   * Public read-only alias for the storage root path. Native vector plugins
+   * (e.g. `@soulcraft/cortex`) feature-detect `storage.rootDirectory` to enable
+   * their memory-mapped vector fast path; brainy stores it as the protected
+   * `rootDir`, so without this getter the native mmap backend stays un-wired and
+   * the index rebuilds via slow per-entity disk reads on cold start. Exposing
+   * the alias lets the native backend memory-map its index file instead.
+   */
+  get rootDirectory(): string {
+    return this.rootDir
+  }
+
   private nounsDir!: string
   private verbsDir!: string
   private metadataDir!: string

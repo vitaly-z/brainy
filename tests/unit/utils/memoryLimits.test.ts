@@ -399,4 +399,32 @@ describe('Memory Limits - Container Detection & Smart Calculation', () => {
       await brain.close()
     })
   })
+
+  // Regression: a memory MISREAD (tiny detected limit, or os.freemem reading a
+  // sliver on a page-cache-heavy mmap box) must NOT collapse the auto cap to
+  // ~1000 and 500 legitimate queries. Auto-detected caps are floored at 10k;
+  // explicit operator settings still pass through unfloored.
+  describe('Auto-cap floor (BUG: querycap collapse on healthy VM)', () => {
+    it('floors the container-derived cap so a tiny/misread limit cannot collapse it', () => {
+      // 50 MB → queryMemory 12.5 MB → floor(12.5/25)·1000 = 0 pre-fix.
+      process.env.MEMORY_LIMIT = String(50 * 1024 * 1024)
+      const config = ValidationConfig.getInstance()
+      expect(config.limitBasis).toBe('containerMemory')
+      expect(config.maxLimit).toBe(10000) // floored, not 0/1000
+    })
+
+    it('floors the free-memory-derived cap as well', () => {
+      // No container env → freeMemory branch. On any real box this is well
+      // above the floor; the guarantee is it can never drop below it.
+      const config = ValidationConfig.getInstance()
+      expect(config.limitBasis).toBe('freeMemory')
+      expect(config.maxLimit).toBeGreaterThanOrEqual(10000)
+    })
+
+    it('does NOT floor an explicit (small) operator override', () => {
+      const config = ValidationConfig.getInstance({ maxQueryLimit: 500 })
+      expect(config.limitBasis).toBe('override')
+      expect(config.maxLimit).toBe(500) // explicit intent respected, not floored
+    })
+  })
 })

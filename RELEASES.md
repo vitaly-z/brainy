@@ -10,6 +10,29 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.31.8 — 2026-06-16
+
+**Affected products:** every consumer on a bare VM or `mmap-filesystem` storage — **upgrade recommended** (Memory, Workshop on 7.31.x; Venue on 7.28.x). Two platform-wide production fixes. Drop-in; no API or data changes.
+
+### Fix 1 — auto query-limit cap no longer collapses on a healthy VM (the 500s)
+
+`new Brainy()`'s auto-configured `maxQueryLimit` could collapse to ~1000 on a perfectly healthy box, throwing `exceeds the auto-configured query limit` on legitimate queries (e.g. `find({ limit: 2400 })`) → HTTP 500s. Root cause: detection read `os.freemem()` (kernel MemFree), which **excludes reclaimable page cache** — on a long-running box using mmap-filesystem storage the page cache grows until MemFree is a thin sliver (tens of MB) even though several GB are actually available, so `floor(freemem / 25KB)·1000` floored the cap to ~1000.
+
+- Memory detection now reads **`/proc/meminfo` `MemAvailable`** (the figure `free -h` shows — counts reclaimable cache), falling back to `os.freemem()` only off-Linux.
+- A **10,000 floor** on auto-detected caps (container / free-memory branches) so a detection miss can never silently collapse the cap. Explicit `maxQueryLimit` / `reservedQueryMemory` settings are honored as-is (never floored).
+
+No action beyond upgrading. A `MEMORY_LIMIT` override (if you set one as a workaround) is still honored.
+
+### Fix 2 — native mmap vector fast-path re-engages (cold-start 57s → instant)
+
+`FileSystemStorage` now exposes a public `rootDirectory` getter. The optional native vector provider feature-detects `storage.rootDirectory` to enable its memory-mapped graph fast path; brainy stored the path as the protected `rootDir`, so the gate silently failed and every cold start rebuilt the index via per-entity disk reads (~57s for a 283 MB brain on a measured deployment). With the getter, the mmap path engages and cold start becomes a near-instant memory-mapped load.
+
+Self-heals after the first post-upgrade flush writes the mmap file — the first restart after upgrading rebuilds once, then every subsequent boot is fast. Benefits the full deployed matrix (the gate exists in the native provider versions Memory/Workshop and Venue run).
+
+**Upgrade:** bump `@soulcraft/brainy` to `7.31.8`. No code or data migration.
+
+---
+
 ## v7.31.2 — 2026-06-09
 
 **Affected products:** none in behaviour; affects anyone reading Brainy's TypeScript

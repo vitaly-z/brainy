@@ -32,6 +32,24 @@ const getSystemMemory = (): number => {
 }
 
 const getAvailableMemory = (): number => {
+  // Prefer /proc/meminfo `MemAvailable` — it counts reclaimable page cache as
+  // available, which `os.freemem()` (kernel MemFree) does NOT. On a long-running
+  // box using mmap-filesystem storage, the page cache grows until MemFree is a
+  // thin sliver (tens of MB) even though several GB are actually available; the
+  // freemem reading then collapses the auto query-limit cap to ~1000 and 500s
+  // legitimate queries. MemAvailable reflects the real figure `free -h` shows.
+  if (fs) {
+    try {
+      const meminfo = fs.readFileSync('/proc/meminfo', 'utf8') as string
+      const match = meminfo.match(/^MemAvailable:\s+(\d+)\s*kB/m)
+      if (match) {
+        const bytes = parseInt(match[1], 10) * 1024
+        if (bytes > 0) return bytes
+      }
+    } catch {
+      // Not Linux / no procfs — fall through to freemem.
+    }
+  }
   if (os) {
     return os.freemem()
   }
@@ -137,6 +155,11 @@ const getContainerMemoryLimit = (): number | null => {
  *   the throw tier still fires before OOM territory (72 K+).
  */
 const MAX_LIMIT_KB_PER_RESULT = 25
+// Floor for AUTO-DETECTED caps (container/free-memory branches). A memory
+// misread must never silently collapse the cap below a practical safety value
+// and 500 legitimate queries; explicit operator settings (maxQueryLimit /
+// reservedQueryMemory) are honored as-is and bypass this floor.
+const MIN_AUTO_QUERY_LIMIT = 10000
 
 /**
  * One-time-per-call-site warning dedup. Keyed on the caller location returned
@@ -230,9 +253,12 @@ export class ValidationConfig {
       // Reserve 25% for query operations
       const queryMemory = this.detectedContainerLimit * 0.25
 
-      this.maxLimit = Math.min(
-        100000,
-        Math.floor(queryMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
+      this.maxLimit = Math.max(
+        MIN_AUTO_QUERY_LIMIT,
+        Math.min(
+          100000,
+          Math.floor(queryMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
+        )
       )
       this.limitBasis = 'containerMemory'
 
@@ -246,9 +272,12 @@ export class ValidationConfig {
     // Priority 4: Free memory (fallback, current behavior)
     const availableMemory = getAvailableMemory()
 
-    this.maxLimit = Math.min(
-      100000,
-      Math.floor(availableMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
+    this.maxLimit = Math.max(
+      MIN_AUTO_QUERY_LIMIT,
+      Math.min(
+        100000,
+        Math.floor(availableMemory / (1024 * 1024 * MAX_LIMIT_KB_PER_RESULT)) * 1000
+      )
     )
     this.limitBasis = 'freeMemory'
 
