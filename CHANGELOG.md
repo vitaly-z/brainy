@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.32.0](https://github.com/soulcraftlabs/brainy/compare/v7.31.8...v7.32.0) (2026-06-16)
+
+- feat: portable graph export()/import() (BackupData v1) on brain.data() (a408d37)
+
+
 ### [7.31.8](https://github.com/soulcraftlabs/brainy/compare/v7.31.7...v7.31.8) (2026-06-16)
 
 - fix: query-cap memory misread (MemAvailable + floor) + rootDirectory getter for native mmap fast-path (3f8e097)
