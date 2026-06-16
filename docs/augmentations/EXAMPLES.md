@@ -546,11 +546,9 @@ const appComponent = await brain.findOne({ type: 'ReactComponent', name: 'App' }
 const imports = await brain.getRelated(appComponent.id, 'Imports')
 console.log(`App component imports:`, imports.map(c => c.name))
 
-// Export diagram
-const diagram = await brain.export({
-  format: 'react-diagram'
-})
-console.log(diagram.diagram) // Mermaid diagram
+// Export the analyzed component graph as a portable BackupData document
+const graph = await brain.data().then(d => d.export({ type: 'ReactComponent' }))
+console.log(`Exported ${graph.stats.entityCount} components, ${graph.stats.relationCount} edges`)
 ```
 
 ### Step 4: Premium Licensing (Optional)

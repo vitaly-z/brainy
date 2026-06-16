@@ -5770,12 +5770,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
    */
   async data() {
     const { DataAPI } = await import('./api/DataAPI.js')
-    return new DataAPI(
-      this.storage,
-      (id: string) => this.get(id),
-      undefined, // No getRelation method yet
-      this
-    )
+    return new DataAPI(this.storage, this)
   }
 
   /**

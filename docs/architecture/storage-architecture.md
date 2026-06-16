@@ -457,22 +457,18 @@ await brain.storage.withLock('resource-id', async () => {
 
 ### Export Data
 ```typescript
-// Export entire database
-const backup = await brain.export({
- format: 'json',
- includeVectors: true,
- includeIndexes: false
-})
+// Export the whole brain to a portable BackupData document
+const backup = await brain.data().then(d => d.export(undefined, { includeVectors: true }))
 ```
 
 ### Import Data
 ```typescript
-// Import from backup
-await brain.import(backup, {
- mode: 'merge', // or 'replace'
- validateSchema: true
-})
+// Restore a BackupData document (dedup-by-id merge by default)
+await brain.data().then(d => d.import(backup, { onConflict: 'merge' }))
 ```
+
+See the [Export & Import guide](../guides/export-and-import.md) for partial exports
+(by id, collection, connected neighbourhood, VFS subtree, or predicate).
 
 ### Storage Migration
 ```typescript
@@ -483,9 +479,9 @@ const newBrain = new Brainy({ storage: { type: 's3' } })
 await oldBrain.init()
 await newBrain.init()
 
-// Transfer all data
-const data = await oldBrain.export()
-await newBrain.import(data)
+// Transfer all data via a portable backup
+const data = await oldBrain.data().then(d => d.export(undefined, { includeVectors: true }))
+await newBrain.data().then(d => d.import(data))
 ```
 
 ## Performance Tuning

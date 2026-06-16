@@ -1765,19 +1765,32 @@ await brain.import('https://api.example.com/data.json')
 
 ---
 
-### Export & Snapshots
+### Export & Import (portable backup)
+
+`brain.data()` exposes a portable graph backup/restore API. `export(selector?, options?)`
+serializes part or all of the graph to a versioned, portable `BackupData` document;
+`import(backup, options?)` restores it (dedup-by-id merge by default, re-embedding when
+vectors are absent).
 
 ```typescript
-// Export to file
-await brain.export('/path/to/backup.brainy')
+const data = await brain.data()
 
-// Create instant snapshot using COW fork
-await brain.fork('backup-2025-01-19')
+// Whole brain → a portable BackupData document
+const backup = await data.export()
 
-// Time-travel to specific commit
-const snapshot = await brain.asOf(commitId)
-const entities = await snapshot.find({ limit: 100 })
+// Just one workbench's members, with vectors, then restore elsewhere (merge by id)
+const subset = await data.export({ ids }, { includeVectors: true })
+await otherBrain.data().then(d => d.import(subset, { onConflict: 'merge' }))
+
+// A collection + its children; a connected neighbourhood; a VFS subtree (+ bytes)
+await data.export({ collection: collectionId })
+await data.export({ connected: { from: id, depth: 2 } })
+await data.export({ vfsPath: '/docs' }, { includeContent: true })
 ```
+
+The format is versioned (`formatVersion`) and current-state (no generation history) — see
+the **[Export & Import guide →](../guides/export-and-import.md)**. This is distinct from
+`brain.import(file)` (CSV/PDF/Excel/JSON ingestion).
 
 ---
 

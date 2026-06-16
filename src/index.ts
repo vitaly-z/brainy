@@ -116,6 +116,18 @@ export {
 // Export version utilities
 export { getBrainyVersion } from './utils/version.js'
 
+// Export portable graph backup/restore API (brain.data())
+export { DataAPI } from './api/DataAPI.js'
+export type {
+  BackupData,
+  BackupEntity,
+  BackupRelation,
+  ExportSelector,
+  ExportOptions,
+  ImportOptions,
+  ImportResult
+} from './api/DataAPI.js'
+
 // Export plugin system
 export type { BrainyPlugin, BrainyPluginContext, StorageAdapterFactory } from './plugin.js'
 export { PluginRegistry } from './plugin.js'

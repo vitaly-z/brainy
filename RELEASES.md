@@ -10,6 +10,53 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.32.0 — 2026-06-16
+
+**Affected products:** anyone who needs a **portable graph backup**, a partial export, or a
+**7.x → 8.0 migration path**. Purely additive — no API removed, no data change. Drop-in.
+
+### New — portable graph `export()` / `import()` on `brain.data()`
+
+`brain.data()` gains a portable backup/restore pair that serializes part or all of a brain
+to a single versioned JSON document (`BackupData`) and restores it. This is the format that
+embeds inside portable artifacts (e.g. a serialized subgraph carried by a higher-level file
+type) and the recommended way to move a graph between environments or **upgrade an existing
+7.x brain into an 8.0 brain**.
+
+```typescript
+const data = await brain.data()
+
+const backup = await data.export()                              // whole brain → BackupData
+const subset = await data.export({ ids }, { includeVectors: true })
+await otherBrain.data().then(d => d.import(subset, { onConflict: 'merge' }))
+```
+
+- **Selectors** — `export(selector?, options?)` picks the node set: `{ ids }`, `{ collection }`
+  (alias `memberOf`) + transitive `Contains` members, `{ connected: { from, depth, verbs?, direction? } }`,
+  `{ vfsPath, recursive? }`, a predicate (`{ type, subtype, where, service }`), or the whole brain
+  (omit). Structural + predicate selectors **compose**.
+- **Options** — `includeVectors` (default off → re-embed on import), `includeContent` (VFS file
+  bytes in `blobs`), `includeSystem` (include the VFS root etc.), `edges` (`'induced'` default /
+  `'incident'` / `'none'`).
+- **Import** — `import(backup, options?)` → `{ imported, merged, skipped, reembedded, blobsWritten, errors }`.
+  `onConflict` defaults to `'merge'` (dedup-by-id, so you can assemble many documents into one
+  graph); `reembed` defaults to `'auto'` (re-embed from `data` when no vector is carried);
+  `remapIds` clones a subgraph under fresh ids.
+- **Format** — `{ format:'brainy-backup', formatVersion:1, brainyVersion, createdAt, embedding,
+  entities, relations, blobs?, danglingIds?, stats }`. Entities carry `subtype` and the standard
+  reserved fields at the top level; `metadata` is custom-only. **Current-state** (no generation
+  history). `formatVersion` gates cross-version import (a 7.x document imports into 8.0).
+- **Types** — `BackupData`, `BackupEntity`, `BackupRelation`, `ExportSelector`, `ExportOptions`,
+  `ImportOptions`, `ImportResult`, and the `DataAPI` class are now exported from the package root.
+
+This replaces the previous `brain.data().export()` flat-entity array (which dropped relations)
+with a graph-complete document. Distinct from `brain.import(file)` (CSV/PDF/Excel/JSON ingestion),
+which is unchanged. The CLI `brainy export` now writes a `BackupData` document (json/jsonl/csv).
+
+Guide: `docs/guides/export-and-import.md`. Tested in `tests/unit/api/data-backup.test.ts`.
+
+---
+
 ## v7.31.8 — 2026-06-16
 
 **Affected products:** every consumer on a bare VM or `mmap-filesystem` storage — **upgrade recommended** (Memory, Workshop on 7.31.x; Venue on 7.28.x). Two platform-wide production fixes. Drop-in; no API or data changes.

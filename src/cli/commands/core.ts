@@ -876,60 +876,66 @@ export const coreCommands = {
       const brain = getBrainy()
       const format = options.format || 'json'
       
-      // Export all data
+      // Export the whole brain as a portable BackupData document (vectors + VFS file bytes).
       const dataApi = await brain.data()
-      const data = await dataApi.export({ format: 'json' })
+      const backup = await dataApi.export(undefined, {
+        includeVectors: true,
+        includeContent: true
+      })
       let output = ''
-      
+
+      const csvCell = (v: any): string => {
+        if (v === undefined || v === null) return ''
+        const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }
+
       switch (format) {
         case 'json':
-          output = options.pretty 
-            ? JSON.stringify(data, null, 2)
-            : JSON.stringify(data)
+          output = options.pretty
+            ? JSON.stringify(backup, null, 2)
+            : JSON.stringify(backup)
           break
-          
-        case 'jsonl':
-          if (Array.isArray(data)) {
-            output = data.map(item => JSON.stringify(item)).join('\n')
-          } else {
-            output = JSON.stringify(data)
-          }
+
+        case 'jsonl': {
+          // NDJSON: a header line, then one line per entity, then one line per relation.
+          const { entities, relations, ...header } = backup
+          const lines: string[] = [JSON.stringify({ kind: 'header', ...header })]
+          for (const e of entities) lines.push(JSON.stringify({ kind: 'entity', ...e }))
+          for (const r of relations) lines.push(JSON.stringify({ kind: 'relation', ...r }))
+          output = lines.join('\n')
           break
-          
-        case 'csv':
-          if (Array.isArray(data) && data.length > 0) {
-            // Get all unique keys for headers
+        }
+
+        case 'csv': {
+          // CSV represents entities only — a graph's edges and blobs can't be tabular.
+          const entities = backup.entities
+          if (entities.length > 0) {
             const headers = new Set<string>()
-            data.forEach(item => {
-              Object.keys(item).forEach(key => headers.add(key))
-            })
+            entities.forEach((e: Record<string, any>) => Object.keys(e).forEach(k => headers.add(k)))
             const headerArray = Array.from(headers)
-            
-            // Create CSV
             output = headerArray.join(',') + '\n'
-            output += data.map(item => {
-              return headerArray.map(h => {
-                const value = item[h]
-                if (typeof value === 'object') {
-                  return JSON.stringify(value)
-                }
-                return value || ''
-              }).join(',')
-            }).join('\n')
+            output += entities
+              .map((e: Record<string, any>) => headerArray.map(h => csvCell(e[h])).join(','))
+              .join('\n')
           }
           break
+        }
       }
-      
+
       if (file) {
         writeFileSync(file, output)
         spinner.succeed(`Exported to ${file}`)
-        
+
         if (!options.json) {
           console.log(chalk.green(`✓ Successfully exported database to ${file}`))
           console.log(chalk.dim(`  Format: ${format}`))
-          console.log(chalk.dim(`  Items: ${Array.isArray(data) ? data.length : 1}`))
+          console.log(chalk.dim(`  Entities: ${backup.stats.entityCount}  Relations: ${backup.stats.relationCount}`))
         } else {
-          formatOutput({ file, format, count: Array.isArray(data) ? data.length : 1 }, options)
+          formatOutput(
+            { file, format, entityCount: backup.stats.entityCount, relationCount: backup.stats.relationCount },
+            options
+          )
         }
       } else {
         spinner.succeed('Export complete')
