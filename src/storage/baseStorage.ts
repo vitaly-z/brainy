@@ -1515,11 +1515,28 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
     // Apply pagination
     const paginatedNouns = collectedNouns.slice(offset, offset + limit)
-    const hasMore = collectedNouns.length > targetCount
+
+    // totalCount must be the TRUE dataset total, not the size of this page.
+    // The shard scan above early-terminates at `targetCount = offset + limit`
+    // for memory efficiency, so `collectedNouns.length` only ever reaches the
+    // page size — returning it as `totalCount` made every non-empty brain look
+    // like it held exactly `limit` items. In particular
+    // `getNouns({ pagination: { limit: 1 } })` reported `totalCount: 1`, which
+    // tripped the index-rebuild gate into logging "Small dataset (1 items)" and
+    // rebuilding from scratch regardless of the real corpus size. For the
+    // unfiltered case the authoritative total is the O(1) counter maintained on
+    // every add/delete and rehydrated from `counts.json` on init; `Math.max`
+    // guards against a stale counter ever under-reporting below what we
+    // actually collected. A filtered scan has no cheap exact total, so it keeps
+    // the collected length (a lower bound — unchanged behaviour).
+    const totalCount = filter
+      ? collectedNouns.length
+      : Math.max(this.totalNounCount, collectedNouns.length)
+    const hasMore = offset + paginatedNouns.length < totalCount
 
     return {
       items: paginatedNouns,
-      totalCount: collectedNouns.length,
+      totalCount,
       hasMore,
       nextCursor: hasMore && paginatedNouns.length > 0
         ? paginatedNouns[paginatedNouns.length - 1].id

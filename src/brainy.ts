@@ -9473,12 +9473,17 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       setVectorBackend?: (backend: MmapVectorBackend) => void
     }
     if (typeof indexWithBackend.setVectorBackend !== 'function') {
-      if (!this.config.silent) {
-        console.log(
-          '[brainy] mmap-vector backend not wired (vector index manages its own ' +
-            'vector storage; no setVectorBackend hook) — per-entity reads in use'
-        )
-      }
+      // Expected in the native-vector-index model: a native provider (e.g.
+      // @soulcraft/cortex) replaces the JS HNSW index and owns its own vector
+      // storage + persisted snapshot, so there is no setVectorBackend hook to
+      // wire here. This is benign, not a fault, and does NOT by itself imply
+      // per-entity reads — keep it at debug level so it never reads as a problem
+      // in normal operation. (The old console.log fired on every init and was
+      // repeatedly mistaken for the cold-start cause; see BRAINY-MMAP-VECTOR-HOOK.)
+      prodLog.debug(
+        '[brainy] mmap-vector backend not wired (native vector index manages ' +
+          'its own vector storage; no setVectorBackend hook)'
+      )
       return
     }
 

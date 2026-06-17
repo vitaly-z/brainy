@@ -10,6 +10,44 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.32.1 — 2026-06-17
+
+**Affected products:** consumers on `filesystem` / `mmap-filesystem` storage whose logs showed
+`🔄 Small dataset (1 items) - rebuilding all indexes…` on cold start, or noise from a
+`mmap-vector backend not wired` line on every init. Two fixes. Drop-in; no API or data changes.
+
+### Fix — `getNouns().totalCount` reports the true total, not the page size
+
+`storage.getNouns({ pagination: { limit } })` returned `totalCount` equal to the **page size**, not
+the dataset total: the type-first shard scan early-terminates at `offset + limit` for memory
+efficiency, and the page-collected length was returned as the total. So
+`getNouns({ pagination: { limit: 1 } })` reported `totalCount: 1` for **any** non-empty brain.
+
+The index-rebuild gate uses exactly this call to size the corpus, so a cold start that needs a
+rebuild logged `Small dataset (1 items) - rebuilding all indexes…` regardless of the real entity
+count (a production deployment saw this for an ~8,800-entity brain — the rebuild then ran from
+scratch instead of loading the persisted vector snapshot).
+
+`getNounsWithPagination` now reports the authoritative O(1) noun counter (maintained on every
+add/delete and rehydrated from `counts.json` on init) as the unfiltered `totalCount`, and computes
+`hasMore` from it. Filtered scans are unchanged (collected length, a lower bound). Layout-independent
+(applies equally to branch/COW layouts). Regression: `tests/unit/storage/getNouns-totalCount.test.ts`.
+
+### Log — benign "mmap-vector backend not wired" downgraded to debug
+
+When a native vector provider replaces the JS HNSW index (it owns its own vector storage and exposes
+no `setVectorBackend` hook), brainy logged `mmap-vector backend not wired … per-entity reads in use`
+on **every** init. This is expected and benign in the native-index model — not a fault, and not by
+itself an indication of per-entity reads — but it appeared on every warm and was repeatedly mistaken
+for a cold-start cause. It is now a debug-level line (surface it with `BRAINY_LOG_LEVEL=debug`).
+
+> Note: this release fixes the misleading *count/log*. The remaining cold-start symptom on the
+> native line (rebuilding instead of loading the persisted vector snapshot) is resolved when the
+> native provider loads its snapshot at construction so the index reports a non-zero size before
+> brainy's rebuild gate — already the model in the next major (8.0 + native 3.0).
+
+---
+
 ## v7.32.0 — 2026-06-16
 
 **Affected products:** anyone who needs a **portable graph backup**, a partial export, or a
