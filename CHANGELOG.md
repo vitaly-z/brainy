@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [7.33.0](https://github.com/soulcraftlabs/brainy/compare/v7.32.2...v7.33.0) (2026-06-19)
+
+- feat: visibility tier (public/internal/system) on nouns + verbs (3a62445)
+
+
 ### [7.32.2](https://github.com/soulcraftlabs/brainy/compare/v7.32.1...v7.32.2) (2026-06-19)
 
 - refactor: rename BackupData → PortableGraph (the type is interchange, not a backup) (89036de)
