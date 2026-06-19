@@ -876,7 +876,7 @@ export const coreCommands = {
       const brain = getBrainy()
       const format = options.format || 'json'
       
-      // Export the whole brain as a portable BackupData document (vectors + VFS file bytes).
+      // Export the whole brain as a portable PortableGraph document (vectors + VFS file bytes).
       const dataApi = await brain.data()
       const backup = await dataApi.export(undefined, {
         includeVectors: true,

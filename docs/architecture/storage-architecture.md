@@ -457,14 +457,14 @@ await brain.storage.withLock('resource-id', async () => {
 
 ### Export Data
 ```typescript
-// Export the whole brain to a portable BackupData document
-const backup = await brain.data().then(d => d.export(undefined, { includeVectors: true }))
+// Export the whole brain to a portable PortableGraph document
+const graph = await brain.data().then(d => d.export(undefined, { includeVectors: true }))
 ```
 
 ### Import Data
 ```typescript
-// Restore a BackupData document (dedup-by-id merge by default)
-await brain.data().then(d => d.import(backup, { onConflict: 'merge' }))
+// Restore a PortableGraph document (dedup-by-id merge by default)
+await brain.data().then(d => d.import(graph, { onConflict: 'merge' }))
 ```
 
 See the [Export & Import guide](../guides/export-and-import.md) for partial exports
@@ -479,7 +479,7 @@ const newBrain = new Brainy({ storage: { type: 's3' } })
 await oldBrain.init()
 await newBrain.init()
 
-// Transfer all data via a portable backup
+// Transfer all data via a portable graph
 const data = await oldBrain.data().then(d => d.export(undefined, { includeVectors: true }))
 await newBrain.data().then(d => d.import(data))
 ```

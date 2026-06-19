@@ -1765,18 +1765,18 @@ await brain.import('https://api.example.com/data.json')
 
 ---
 
-### Export & Import (portable backup)
+### Export & Import (portable graph)
 
-`brain.data()` exposes a portable graph backup/restore API. `export(selector?, options?)`
-serializes part or all of the graph to a versioned, portable `BackupData` document;
-`import(backup, options?)` restores it (dedup-by-id merge by default, re-embedding when
+`brain.data()` exposes a portable graph graph/restore API. `export(selector?, options?)`
+serializes part or all of the graph to a versioned, portable `PortableGraph` document;
+`import(graph, options?)` restores it (dedup-by-id merge by default, re-embedding when
 vectors are absent).
 
 ```typescript
 const data = await brain.data()
 
-// Whole brain → a portable BackupData document
-const backup = await data.export()
+// Whole brain → a portable PortableGraph document
+const graph = await data.export()
 
 // Just one workbench's members, with vectors, then restore elsewhere (merge by id)
 const subset = await data.export({ ids }, { includeVectors: true })

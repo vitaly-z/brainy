@@ -116,12 +116,12 @@ export {
 // Export version utilities
 export { getBrainyVersion } from './utils/version.js'
 
-// Export portable graph backup/restore API (brain.data())
+// Export portable graph export/import API (brain.data())
 export { DataAPI } from './api/DataAPI.js'
 export type {
-  BackupData,
-  BackupEntity,
-  BackupRelation,
+  PortableGraph,
+  PortableGraphEntity,
+  PortableGraphRelation,
   ExportSelector,
   ExportOptions,
   ImportOptions,

@@ -1,14 +1,17 @@
 /**
  * @module DataAPI
- * @description Portable graph backup/restore for Brainy — the `BackupData v1`
- * export/import format plus `clear()`/`getStats()` data-management helpers.
+ * @description Portable graph export/import for Brainy — the `PortableGraph v1`
+ * format plus `clear()`/`getStats()` data-management helpers.
  *
- * Accessed via `brain.data()`. The two headline methods are:
+ * A `PortableGraph` is the portable, versioned interchange representation of a graph
+ * (entities + relations + optional vectors), NOT a backup — exported for transport
+ * between instances, versions, and products. Accessed via `brain.data()`. The two
+ * headline methods are:
  *
- * - **`export(selector?, options?) → BackupData`** — serialize a graph (an item, a
+ * - **`export(selector?, options?) → PortableGraph`** — serialize a graph (an item, a
  *   collection + children, a connected neighbourhood, a VFS subtree, a predicate
  *   match, or the whole brain) into ONE versioned, portable JSON document.
- * - **`import(backup, options?) → ImportResult`** — restore a `BackupData` into the
+ * - **`import(graph, options?) → ImportResult`** — restore a `PortableGraph` into the
  *   brain (dedup-by-id merge by default), re-embedding from `data` when vectors are
  *   absent.
  *
@@ -20,7 +23,7 @@
  *
  * **Design decision (reserved-field split):** entities carry Brainy's standard fields
  * (`subtype`, `data`, `confidence`, `weight`, `service`, `createdBy`, `createdAt`) at
- * the TOP LEVEL of each `BackupEntity`, and `metadata` holds ONLY custom user fields —
+ * the TOP LEVEL of each `PortableGraphEntity`, and `metadata` holds ONLY custom user fields —
  * mirroring the in-memory `Entity` shape, so `import()` maps each field to its dedicated
  * `add()`/`relate()` parameter rather than dumping everything into the metadata bag.
  */
@@ -32,10 +35,10 @@ import { getBrainyVersion } from '../utils/version.js'
 
 /** The fixed entity id of the VFS root collection (excluded from exports unless `includeSystem`). */
 const VFS_ROOT_ID = '00000000-0000-0000-0000-000000000000'
-/** Magic string identifying a Brainy portable backup document. */
-const BACKUP_FORMAT = 'brainy-backup'
+/** Magic string identifying a Brainy `PortableGraph` document (the `format` tag). */
+const PORTABLE_GRAPH_FORMAT = 'brainy-portable-graph'
 /** Current portable-format version. Import gates on this for cross-version migration. */
-const BACKUP_FORMAT_VERSION = 1
+const PORTABLE_GRAPH_FORMAT_VERSION = 1
 /** Default embedding model label (informational; `dimensions` is the real compat gate). */
 const DEFAULT_EMBED_MODEL = 'all-MiniLM-L6-v2'
 /** Storage-layer fetch ceiling for enumerations (well above any single-brain entity count). */
@@ -109,12 +112,12 @@ export interface ExportOptions {
 }
 
 /**
- * @description Controls how a `BackupData` is applied to the brain on `import()`.
+ * @description Controls how a `PortableGraph` is applied to the brain on `import()`.
  */
 export interface ImportOptions {
   /**
    * Conflict policy when an entity id already exists (default: `'merge'`):
-   * - `'merge'` — update in place (dedup-by-id; the default that lets you assemble many backups).
+   * - `'merge'` — update in place (dedup-by-id; the default that lets you assemble many graphs).
    * - `'replace'` — delete then re-create.
    * - `'skip'` — leave the existing entity untouched.
    */
@@ -129,8 +132,8 @@ export interface ImportOptions {
   remapIds?: (id: string) => string
 }
 
-/** One entity in a `BackupData`. Standard fields top-level; `metadata` is custom-only. */
-export interface BackupEntity {
+/** One entity in a `PortableGraph`. Standard fields top-level; `metadata` is custom-only. */
+export interface PortableGraphEntity {
   id: string
   /** NounType value. */
   type: string
@@ -156,8 +159,8 @@ export interface BackupEntity {
   metadata?: any
 }
 
-/** One relation (edge) in a `BackupData`. */
-export interface BackupRelation {
+/** One relation (edge) in a `PortableGraph`. */
+export interface PortableGraphRelation {
   id: string
   from: string
   to: string
@@ -179,9 +182,9 @@ export interface BackupRelation {
  * @description A self-describing, versioned, portable graph document. The same shape
  * is produced/consumed on 7.x and 8.0; `formatVersion` gates cross-version migration.
  */
-export interface BackupData {
-  /** Always `'brainy-backup'` — identifies the document type. */
-  format: typeof BACKUP_FORMAT
+export interface PortableGraph {
+  /** Always `'brainy-portable-graph'` — identifies the document type. */
+  format: typeof PORTABLE_GRAPH_FORMAT
   /** Integer format version (import gates on this). */
   formatVersion: number
   /** The Brainy version that produced the document (informational). */
@@ -193,9 +196,9 @@ export interface BackupData {
   /** Echo of the selector that produced this document (provenance). */
   selector?: ExportSelector
   /** Exported entities. */
-  entities: BackupEntity[]
+  entities: PortableGraphEntity[]
   /** Exported relations. */
-  relations: BackupRelation[]
+  relations: PortableGraphRelation[]
   /** VFS file bytes keyed by sha256 — present only with `includeContent`. */
   blobs?: Record<string, string>
   /** Endpoints referenced by `edges:'incident'` that fell outside the node set. */
@@ -244,10 +247,10 @@ export class DataAPI {
   // ============================================================================
 
   /**
-   * @description Serialize part or all of the graph into a portable `BackupData`.
+   * @description Serialize part or all of the graph into a portable `PortableGraph`.
    * @param selector - WHAT to export (omit for the whole brain). See {@link ExportSelector}.
    * @param options - HOW to export (vectors, file bytes, edge policy). See {@link ExportOptions}.
-   * @returns A versioned, portable `BackupData` document.
+   * @returns A versioned, portable `PortableGraph` document.
    * @example
    * // A single workbench's members (exact id set), with vectors:
    * const backup = await brain.data().export({ ids }, { includeVectors: true })
@@ -261,7 +264,7 @@ export class DataAPI {
    * // The whole brain:
    * const backup = await brain.data().export()
    */
-  async export(selector: ExportSelector = {}, options: ExportOptions = {}): Promise<BackupData> {
+  async export(selector: ExportSelector = {}, options: ExportOptions = {}): Promise<PortableGraph> {
     if (!this.brain) {
       throw new Error('DataAPI.export() requires a Brainy instance (use brain.data().export()).')
     }
@@ -291,10 +294,10 @@ export class DataAPI {
     }
 
     // 4. Build entity records.
-    const entities: BackupEntity[] = []
+    const entities: PortableGraphEntity[] = []
     for (const id of idSet) {
       const e = entityMap.get(id)
-      if (e) entities.push(this.toBackupEntity(e, includeVectors))
+      if (e) entities.push(this.toPortableGraphEntity(e, includeVectors))
     }
 
     // 5. Collect edges per policy.
@@ -315,8 +318,8 @@ export class DataAPI {
     const blobCount = blobs ? Object.keys(blobs).length : 0
 
     return {
-      format: BACKUP_FORMAT,
-      formatVersion: BACKUP_FORMAT_VERSION,
+      format: PORTABLE_GRAPH_FORMAT,
+      formatVersion: PORTABLE_GRAPH_FORMAT_VERSION,
       brainyVersion: getBrainyVersion(),
       createdAt: new Date().toISOString(),
       embedding: { model: this.detectModel(), dimensions },
@@ -339,30 +342,30 @@ export class DataAPI {
   // ============================================================================
 
   /**
-   * @description Restore a `BackupData` into the brain. Dedup-by-id merge by default, so
+   * @description Restore a `PortableGraph` into the brain. Dedup-by-id merge by default, so
    * assembling many backups that share entity ids merges rather than duplicates. Vectors
    * are re-embedded from `data` when absent (`reembed:'auto'`).
-   * @param data - A `BackupData` document (must have `format:'brainy-backup'`).
+   * @param data - A `PortableGraph` document (must have `format:'brainy-portable-graph'`).
    * @param options - Conflict/vector/id-remap policy. See {@link ImportOptions}.
    * @returns Counts of imported/merged/skipped/re-embedded entities + any per-record errors.
-   * @throws If `data` is not a `BackupData`, or its `formatVersion` is newer than supported.
+   * @throws If `data` is not a `PortableGraph`, or its `formatVersion` is newer than supported.
    * @example
    * const result = await brain.data().import(backup, { onConflict: 'merge' })
    */
-  async import(data: BackupData, options: ImportOptions = {}): Promise<ImportResult> {
+  async import(data: PortableGraph, options: ImportOptions = {}): Promise<ImportResult> {
     if (!this.brain) {
       throw new Error('DataAPI.import() requires a Brainy instance (use brain.data().import()).')
     }
-    if (!data || (data as any).format !== BACKUP_FORMAT) {
+    if (!data || (data as any).format !== PORTABLE_GRAPH_FORMAT) {
       throw new Error(
-        `DataAPI.import() expects a BackupData document (format:'${BACKUP_FORMAT}'). ` +
+        `DataAPI.import() expects a PortableGraph document (format:'${PORTABLE_GRAPH_FORMAT}'). ` +
           `For file ingestion (CSV/PDF/Excel/JSON), use brain.import() instead.`
       )
     }
-    if (typeof data.formatVersion === 'number' && data.formatVersion > BACKUP_FORMAT_VERSION) {
+    if (typeof data.formatVersion === 'number' && data.formatVersion > PORTABLE_GRAPH_FORMAT_VERSION) {
       throw new Error(
-        `Backup formatVersion ${data.formatVersion} is newer than this Brainy supports ` +
-          `(max ${BACKUP_FORMAT_VERSION}). Upgrade Brainy to import this document.`
+        `PortableGraph formatVersion ${data.formatVersion} is newer than this Brainy supports ` +
+          `(max ${PORTABLE_GRAPH_FORMAT_VERSION}). Upgrade Brainy to import this document.`
       )
     }
 
@@ -698,9 +701,9 @@ export class DataAPI {
   // SERIALIZATION HELPERS (private)
   // ============================================================================
 
-  /** Map a canonical `Entity` to a `BackupEntity` (reserved fields top-level). */
-  private toBackupEntity(e: Entity, includeVectors: boolean): BackupEntity {
-    const be: BackupEntity = { id: e.id, type: e.type as string }
+  /** Map a canonical `Entity` to a `PortableGraphEntity` (reserved fields top-level). */
+  private toPortableGraphEntity(e: Entity, includeVectors: boolean): PortableGraphEntity {
+    const be: PortableGraphEntity = { id: e.id, type: e.type as string }
     if (e.subtype !== undefined) be.subtype = e.subtype
     const vis = (e as any).visibility
     if (vis !== undefined && vis !== 'public') be.visibility = vis
@@ -715,9 +718,9 @@ export class DataAPI {
     return be
   }
 
-  /** Map a canonical `Relation` to a `BackupRelation`. */
-  private toBackupRelation(r: Relation): BackupRelation {
-    const br: BackupRelation = { id: r.id, from: r.from, to: r.to, type: r.type as string }
+  /** Map a canonical `Relation` to a `PortableGraphRelation`. */
+  private toPortableGraphRelation(r: Relation): PortableGraphRelation {
+    const br: PortableGraphRelation = { id: r.id, from: r.from, to: r.to, type: r.type as string }
     if (r.subtype !== undefined) br.subtype = r.subtype
     const vis = (r as any).visibility
     if (vis !== undefined && vis !== 'public') br.visibility = vis
@@ -731,10 +734,10 @@ export class DataAPI {
   private async collectEdges(
     idSet: Set<string>,
     edges: 'induced' | 'incident' | 'none'
-  ): Promise<{ relations: BackupRelation[]; danglingIds?: string[] }> {
+  ): Promise<{ relations: PortableGraphRelation[]; danglingIds?: string[] }> {
     if (edges === 'none') return { relations: [] }
 
-    const relations: BackupRelation[] = []
+    const relations: PortableGraphRelation[] = []
     const dangling = new Set<string>()
     const seen = new Set<string>()
 
@@ -747,7 +750,7 @@ export class DataAPI {
         if (edges === 'induced' && !toIn) continue
         if (!toIn) dangling.add(r.to)
         seen.add(r.id)
-        relations.push(this.toBackupRelation(r))
+        relations.push(this.toPortableGraphRelation(r))
       }
     }
 
@@ -760,7 +763,7 @@ export class DataAPI {
           if (!idSet.has(r.from)) {
             dangling.add(r.from)
             seen.add(r.id)
-            relations.push(this.toBackupRelation(r))
+            relations.push(this.toPortableGraphRelation(r))
           }
         }
       }
@@ -771,7 +774,7 @@ export class DataAPI {
 
   /** Read VFS file bytes (base64) for file entities, keyed by content hash. */
   private async collectBlobs(
-    entities: BackupEntity[],
+    entities: PortableGraphEntity[],
     entityMap: Map<string, Entity>
   ): Promise<Record<string, string>> {
     const blobs: Record<string, string> = {}
@@ -820,8 +823,8 @@ export class DataAPI {
     }
   }
 
-  /** `add()` params from a `BackupEntity` (excludes brain-managed fields like `createdAt`). */
-  private entityAddFields(be: BackupEntity): Record<string, any> {
+  /** `add()` params from a `PortableGraphEntity` (excludes brain-managed fields like `createdAt`). */
+  private entityAddFields(be: PortableGraphEntity): Record<string, any> {
     const fields: Record<string, any> = {
       data: be.data,
       type: be.type as NounType
@@ -834,8 +837,8 @@ export class DataAPI {
     return fields
   }
 
-  /** `update()` params from a `BackupEntity` (for `onConflict:'merge'`). */
-  private entityUpdateFields(be: BackupEntity): Record<string, any> {
+  /** `update()` params from a `PortableGraphEntity` (for `onConflict:'merge'`). */
+  private entityUpdateFields(be: PortableGraphEntity): Record<string, any> {
     const fields: Record<string, any> = {}
     if (be.data !== undefined) fields.data = be.data
     if (be.type !== undefined) fields.type = be.type as NounType

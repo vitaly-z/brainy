@@ -540,11 +540,11 @@ export async function generateStaticProps() {
   })
   await brain.init()
 
-  // Build a search index — export the whole brain as a portable BackupData document
-  const backup = await brain.data().then(d => d.export())
+  // Build a search index — export the whole brain as a portable PortableGraph document
+  const graph = await brain.data().then(d => d.export())
 
   return {
-    props: { searchIndex: backup.entities }
+    props: { searchIndex: graph.entities }
   }
 }
 ```

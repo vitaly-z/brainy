@@ -1,7 +1,7 @@
 /**
  * Unit tests for the portable graph backup/restore API (brain.data()).
  *
- * Exercises BackupData v1 export()/import(): real round-trips against in-memory
+ * Exercises PortableGraph v1 export()/import(): real round-trips against in-memory
  * storage (no mocks of the API under test) — selectors, edge policy, vectors,
  * conflict handling, id remapping, subtype fidelity, and cross-version guards.
  */
@@ -11,11 +11,11 @@ import { randomUUID } from 'node:crypto'
 import { Brainy } from '../../../src/brainy'
 import { createTestConfig } from '../../helpers/test-factory'
 import { NounType, VerbType } from '../../../src/types/graphTypes'
-import type { BackupData } from '../../../src/api/DataAPI'
+import type { PortableGraph } from '../../../src/api/DataAPI'
 
 const VFS_ROOT_ID = '00000000-0000-0000-0000-000000000000'
 
-describe('DataAPI — portable graph backup/restore (BackupData v1)', () => {
+describe('DataAPI — portable graph backup/restore (PortableGraph v1)', () => {
   let brain: Brainy
 
   beforeEach(async () => {
@@ -28,14 +28,14 @@ describe('DataAPI — portable graph backup/restore (BackupData v1)', () => {
   })
 
   describe('format + whole-brain round-trip', () => {
-    it('exports a self-describing, versioned BackupData document', async () => {
+    it('exports a self-describing, versioned PortableGraph document', async () => {
       const a = await brain.add({ data: 'Alice', type: NounType.Person, subtype: 'employee' })
       const b = await brain.add({ data: 'Acme', type: NounType.Organization })
       await brain.relate({ from: a, to: b, type: VerbType.WorksWith, subtype: 'full-time' })
 
       const backup = await brain.data().then((d) => d.export())
 
-      expect(backup.format).toBe('brainy-backup')
+      expect(backup.format).toBe('brainy-portable-graph')
       expect(backup.formatVersion).toBe(1)
       expect(typeof backup.brainyVersion).toBe('string')
       expect(backup.brainyVersion.length).toBeGreaterThan(0)
@@ -288,15 +288,15 @@ describe('DataAPI — portable graph backup/restore (BackupData v1)', () => {
   })
 
   describe('import validation', () => {
-    it('rejects a non-BackupData payload', async () => {
+    it('rejects a non-PortableGraph payload', async () => {
       const d = await brain.data()
-      await expect(d.import({ entities: [] } as any)).rejects.toThrow(/BackupData/)
+      await expect(d.import({ entities: [] } as any)).rejects.toThrow(/PortableGraph/)
     })
 
     it('rejects a newer formatVersion', async () => {
       const d = await brain.data()
-      const future: BackupData = {
-        format: 'brainy-backup',
+      const future: PortableGraph = {
+        format: 'brainy-portable-graph',
         formatVersion: 999,
         brainyVersion: 'x',
         createdAt: new Date().toISOString(),

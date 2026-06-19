@@ -5,7 +5,7 @@ public: true
 category: guides
 template: guide
 order: 9
-description: Export part or all of a brain to a portable, versioned BackupData document and import it back — by id, collection, connected neighbourhood, VFS subtree, predicate, or the whole brain. Covers vectors, edge policy, conflict handling, and id remapping.
+description: Export part or all of a brain to a portable, versioned PortableGraph document and import it back — by id, collection, connected neighbourhood, VFS subtree, predicate, or the whole brain. Covers vectors, edge policy, conflict handling, and id remapping.
 next:
   - guides/subtypes-and-facets
   - api/README
@@ -15,19 +15,19 @@ next:
 
 `brain.data()` exposes a **portable graph export/import** API. One method serializes a
 graph — an item, a collection, a connected neighbourhood, a VFS subtree, a predicate
-match, or the whole brain — into a single versioned JSON document (`BackupData`); the
+match, or the whole brain — into a single versioned JSON document (`PortableGraph`); the
 inverse restores it.
 
 ```typescript
 const data = await brain.data()
 
-const backup = await data.export()          // whole brain → BackupData
-await data.import(backup)                    // restore (merge by id, re-embed if no vectors)
+const graph = await data.export()          // whole brain → PortableGraph
+await data.import(graph)                    // restore (merge by id, re-embed if no vectors)
 ```
 
 It is **portable** (human-readable JSON), **versioned** (`formatVersion`, so a 7.x export
 imports cleanly into 8.0), and **current-state** (the entities and edges as they are now —
-no generation history). Use it for portable artifacts, partial backups, cross-environment
+no generation history). Use it for portable artifacts, partial graphs, cross-environment
 moves, and version upgrades.
 
 ## When to use which
@@ -38,13 +38,13 @@ moves, and version upgrades.
 | To ingest a CSV / PDF / Excel / JSON **file** as new entities | `brain.import(file)` — see [Import Anything](./import-anything.md) |
 
 The two are different operations that happen to share a verb: `import(file)` parses a
-foreign document into new entities; `data().import(backup)` restores a graph this API
+foreign document into new entities; `data().import(graph)` restores a graph this API
 exported.
 
 ## Exporting
 
 ```typescript
-export(selector?, options?): Promise<BackupData>
+export(selector?, options?): Promise<PortableGraph>
 ```
 
 ### Selectors — *what* to export
@@ -96,17 +96,17 @@ const tree = await data.export({ vfsPath: '/docs' }, { includeContent: true })
 ## Importing
 
 ```typescript
-import(backup, options?): Promise<ImportResult>
+import(graph, options?): Promise<ImportResult>
 ```
 
 ```typescript
-const result = await brain.data().then(d => d.import(backup, { onConflict: 'merge' }))
+const result = await brain.data().then(d => d.import(graph, { onConflict: 'merge' }))
 // → { imported, merged, skipped, reembedded, blobsWritten, errors }
 ```
 
 | Option | Default | Effect |
 |--------|---------|--------|
-| `onConflict` | `'merge'` | `'merge'` (update existing id in place — assemble many backups), `'replace'` (delete + recreate), or `'skip'`. |
+| `onConflict` | `'merge'` | `'merge'` (update existing id in place — assemble many graphs), `'replace'` (delete + recreate), or `'skip'`. |
 | `reembed` | `'auto'` | `'auto'` (use the carried vector, else re-embed from `data`) or `'never'` (require a carried vector; record an error if absent). |
 | `remapIds` | — | Rewrite every id on the way in, e.g. to clone a template subgraph under fresh ids. |
 
@@ -115,15 +115,15 @@ exported documents that share entity ids — re-importing an id merges rather th
 
 ```typescript
 // Clone a subgraph under fresh ids (a copy, not a move)
-const remap = new Map(backup.entities.map(e => [e.id, crypto.randomUUID()]))
-await data.import(backup, { remapIds: id => remap.get(id) ?? id })
+const remap = new Map(graph.entities.map(e => [e.id, crypto.randomUUID()]))
+await data.import(graph, { remapIds: id => remap.get(id) ?? id })
 ```
 
-## The `BackupData` format
+## The `PortableGraph` format
 
 ```jsonc
 {
-  "format": "brainy-backup",
+  "format": "brainy-portable-graph",
   "formatVersion": 1,                 // import gates on this (cross-version migration)
   "brainyVersion": "7.32.0",
   "createdAt": "2026-06-16T…Z",
@@ -154,7 +154,7 @@ of each entity; `metadata` holds **only** custom user fields — mirroring the i
 
 ## Cross-version (7.x → 8.0)
 
-Because the document is shared and versioned, a backup written by 7.x imports into 8.0:
+Because the document is shared and versioned, a graph written by 7.x imports into 8.0:
 `formatVersion` is read forward, `subtype` is carried so 8.0 re-types correctly, and the
 same 384-dimension model on both lines means `includeVectors:false` re-embeds identically
 (or `true` carries vectors verbatim). The format is **current-state** — if you need a
