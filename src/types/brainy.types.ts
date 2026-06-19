@@ -5,6 +5,7 @@
  */
 
 import { Vector } from '../coreTypes.js'
+import type { EntityVisibility } from '../coreTypes.js'
 import { NounType, VerbType } from './graphTypes.js'
 
 // ============= Core Types =============
@@ -33,6 +34,13 @@ export interface Entity<T = any> {
    * rolled into per-NounType statistics.
    */
   subtype?: string
+  /**
+   * Visibility tier (reserved top-level field). Absent === `'public'` (counted and
+   * returned everywhere). `'internal'` hides the entity from default `find()` / counts /
+   * `stats()` (opt back in with `find({ includeInternal: true })`); `'system'` is Brainy
+   * plumbing, hidden unless `find({ includeSystem: true })`. See {@link EntityVisibility}.
+   */
+  visibility?: EntityVisibility
   /** Opaque content — used for embeddings and semantic search. Not indexed by MetadataIndex. */
   data?: any
   /** User-defined structured fields — indexed and queryable via `where` filters. */
@@ -84,6 +92,14 @@ export interface Relation<T = any> {
    * the column-store directly.
    */
   subtype?: string
+  /**
+   * Visibility tier (reserved top-level field), the verb mirror of `Entity.visibility`.
+   * Absent === `'public'` (counted and returned everywhere). `'internal'` hides the edge
+   * from default `related()` / counts / `stats()` (opt back in with
+   * `related({ includeInternal: true })`); `'system'` is Brainy plumbing. See
+   * {@link EntityVisibility}.
+   */
+  visibility?: EntityVisibility
   /** Connection strength (0-1, default: 1.0) */
   weight?: number
   /** Opaque content for the relationship (overrides auto-computed vector if provided) */
@@ -129,6 +145,7 @@ export interface Result<T = any> {
   // Convenience: Common entity fields flattened to top level
   type?: NounType      // Entity type (from entity.type)
   subtype?: string     // Per-product sub-classification (from entity.subtype)
+  visibility?: EntityVisibility  // Visibility tier (from entity.visibility); absent === 'public'
   metadata?: T         // Entity metadata (from entity.metadata)
   data?: any           // Entity data (from entity.data)
   confidence?: number  // Type classification confidence (from entity.confidence)
@@ -191,6 +208,15 @@ export interface AddParams<T = any> {
    * aggregation on the standard-field fast path.
    */
   subtype?: string
+  /**
+   * Visibility tier (reserved top-level field). Omit (or pass `'public'`) for normal
+   * data that is counted and returned everywhere. Pass `'internal'` for app-internal
+   * data that should be hidden from default `find()` / counts / `stats()` but stay
+   * retrievable via `find({ includeInternal: true })`. The `'system'` tier is reserved
+   * for Brainy's own plumbing and is intentionally not accepted here. Stored only when
+   * not `'public'`.
+   */
+  visibility?: 'public' | 'internal'
   /** Structured queryable fields — indexed by MetadataIndex, used in `where` filters */
   metadata?: T
   /** Custom entity ID (auto-generated UUID v4 if not provided) */
@@ -222,6 +248,13 @@ export interface UpdateParams<T = any> {
   data?: any                   // New content to re-embed
   type?: NounType             // Change type
   subtype?: string            // Change subtype (set to '' or null-equivalent via dedicated unset is future work)
+  /**
+   * Change the visibility tier. Omit to preserve the existing value. Toggling between
+   * `'public'` and `'internal'` moves the entity in/out of the default-visible counts and
+   * `find()` results. The `'system'` tier is Brainy-internal (e.g. re-asserted on the VFS
+   * root during repair) — consumer code should only ever use `'public'` / `'internal'`.
+   */
+  visibility?: EntityVisibility
   metadata?: Partial<T>        // Metadata to update
   merge?: boolean             // Merge or replace metadata (default: true)
   vector?: Vector             // New pre-computed vector
@@ -259,6 +292,15 @@ export interface RelateParams<T = any> {
    * (`getRelations({ verb, subtype })`) and aggregation (`groupBy:['subtype']`).
    */
   subtype?: string
+  /**
+   * Visibility tier (reserved top-level field), the verb mirror of `AddParams.visibility`.
+   * Omit (or pass `'public'`) for normal edges that are counted and returned everywhere.
+   * Pass `'internal'` for app-internal edges hidden from default `related()` / counts /
+   * `stats()` but retrievable via `related({ includeInternal: true })`. The `'system'`
+   * tier is reserved for Brainy's own plumbing and is not accepted here. Stored only when
+   * not `'public'`.
+   */
+  visibility?: 'public' | 'internal'
   /** Connection strength (0-1, default: 1.0) */
   weight?: number
   /** Content for the relationship (optional — overrides auto-computed vector) */
@@ -282,6 +324,12 @@ export interface UpdateRelationParams<T = any> {
   id: string                 // Relation to update
   type?: VerbType            // Change verb type
   subtype?: string           // Change sub-classification (omit to preserve existing)
+  /**
+   * Change the visibility tier. Omit to preserve the existing value. The verb mirror of
+   * `UpdateParams.visibility`; `'system'` is Brainy-internal — consumer code should only
+   * use `'public'` / `'internal'`.
+   */
+  visibility?: EntityVisibility
   weight?: number            // New weight
   confidence?: number        // New confidence (0-1)
   data?: any                 // New content
@@ -320,7 +368,24 @@ export interface FindParams<T = any> {
   subtype?: string | string[]
   /** Metadata filters using BFO operators (e.g., `{ year: { greaterThan: 2020 } }`) */
   where?: Partial<T>
-  
+
+  // Visibility
+  /**
+   * Also return `visibility: 'internal'` entities. By default `find()` returns ONLY
+   * public entities (those with no `visibility` field, or `visibility: 'public'`);
+   * app-internal entities are hidden. Set `true` to include them. Applied as a hard
+   * candidate filter, so `limit` / `offset` stay correct. Does NOT include `'system'`
+   * entities — use `includeSystem` for those.
+   */
+  includeInternal?: boolean
+  /**
+   * Also return `visibility: 'system'` entities (Brainy's own plumbing, e.g. the VFS
+   * root). Hidden by default and even when `includeInternal` is set. Set `true` only
+   * when you specifically need to see system entities. Applied as a hard candidate
+   * filter, so `limit` / `offset` stay correct.
+   */
+  includeSystem?: boolean
+
   // Graph Intelligence
   connected?: GraphConstraints
   
@@ -480,6 +545,25 @@ export interface GetRelationsParams {
    * for set membership (e.g. `subtype: ['direct', 'dotted-line']`).
    */
   subtype?: string | string[]
+
+  /**
+   * Also return `visibility: 'internal'` relationships.
+   *
+   * By default `related()` returns ONLY public relationships (those with no
+   * `visibility` field, or `visibility: 'public'`); app-internal edges are hidden.
+   * Set `true` to include them. Applied as a hard candidate filter so `limit` /
+   * `offset` stay correct. Does NOT include `'system'` edges — use `includeSystem`.
+   */
+  includeInternal?: boolean
+
+  /**
+   * Also return `visibility: 'system'` relationships (Brainy's own plumbing).
+   *
+   * Hidden by default and even when `includeInternal` is set. Set `true` only when
+   * you specifically need system edges. Applied as a hard candidate filter so
+   * `limit` / `offset` stay correct.
+   */
+  includeSystem?: boolean
 
   /**
    * Maximum number of results to return

@@ -13,8 +13,10 @@ import {
   VerbMetadata,
   HNSWNounWithMetadata,
   HNSWVerbWithMetadata,
-  StatisticsData
+  StatisticsData,
+  isCountedVisibility
 } from '../coreTypes.js'
+import type { EntityVisibility } from '../coreTypes.js'
 import { BaseStorageAdapter } from './adapters/baseStorageAdapter.js'
 import { validateNounType, validateVerbType } from '../utils/typeValidation.js'
 import {
@@ -185,6 +187,18 @@ function getVerbMetadataPath(id: string): string {
 }
 
 /**
+ * Extract the entity id from an ID-first metadata path. Both noun and verb
+ * metadata live at `entities/<kind>/<shard>/<id>/metadata.json`, so the id is
+ * the second-to-last path segment.
+ * @param path - A metadata.json path produced by `getNounMetadataPath` / `getVerbMetadataPath`.
+ * @returns The id segment, or `undefined` if the path doesn't have the expected shape.
+ */
+function idFromMetadataPath(path: string): string | undefined {
+  const segments = path.split('/')
+  return segments[segments.length - 2]
+}
+
+/**
  * Base storage adapter that implements common functionality
  * This is an abstract class that should be extended by specific storage adapters
  */
@@ -277,6 +291,23 @@ export abstract class BaseStorage extends BaseStorageAdapter {
    */
   protected verbSubtypeByIdCache = new Map<string, { verb: VerbType; subtype: string }>()
   // Total: 676 bytes (99.2% reduction vs Map-based tracking)
+
+  /**
+   * In-memory map from noun id → its non-public `visibility` tier ('internal' |
+   * 'system'). Parallel to `nounTypeByIdCache`. Lets `saveNoun_internal()`
+   * (which has no metadata access in its signature) skip the user-facing
+   * `nounCountsByType` increment for hidden entities, and lets
+   * `deleteNounMetadata()` skip the matching decrement — keeping the counts
+   * symmetric. Sparse by design: public entities (the common case) get NO
+   * entry, so the absence of an id means "public, counted".
+   */
+  protected nounVisibilityByIdCache = new Map<string, EntityVisibility>()
+
+  /**
+   * In-memory map from verb id → its non-public `visibility` tier. Verb-side
+   * mirror of `nounVisibilityByIdCache`. Sparse — public edges get no entry.
+   */
+  protected verbVisibilityByIdCache = new Map<string, EntityVisibility>()
 
   // Type caches REMOVED - ID-first paths eliminate need for type lookups!
   // With ID-first architecture, we construct paths directly from IDs: {SHARD}/{ID}/metadata.json
@@ -904,7 +935,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWNounWithMetadata - Extract standard fields to top-level
-    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
+    const { noun, subtype, visibility, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     return {
       id: vector.id,
@@ -914,6 +945,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       // Standard fields at top-level
       type: (noun as NounType) || NounType.Thing,
       subtype: subtype as string | undefined,
+      visibility: visibility as EntityVisibility | undefined,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
       confidence: confidence as number | undefined,
@@ -943,13 +975,14 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     for (const noun of nouns) {
       const metadata = await this.getNounMetadata(noun.id)
       if (metadata) {
-        const { noun: nounType, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
+        const { noun: nounType, subtype, visibility, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
         nounsWithMetadata.push({
           ...noun,
           // Standard fields at top-level
           type: (nounType as NounType) || NounType.Thing,
           subtype: subtype as string | undefined,
+          visibility: visibility as EntityVisibility | undefined,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -1023,7 +1056,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     }
 
     // Combine into HNSWVerbWithMetadata - Extract standard fields to top-level
-    const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
+    const { subtype, visibility, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     return {
       id: verb.id,
@@ -1034,6 +1067,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       targetId: verb.targetId,
       // Standard fields at top-level
       subtype: subtype as string | undefined,
+      visibility: visibility as EntityVisibility | undefined,
       createdAt: (createdAt as number) || Date.now(),
       updatedAt: (updatedAt as number) || Date.now(),
       confidence: confidence as number | undefined,
@@ -1098,7 +1132,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         const verb = this.deserializeVerb(vectorData)
 
         // Extract standard fields to top-level
-        const { subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadataData
+        const { subtype, visibility, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadataData
 
         results.set(id, {
           id: verb.id,
@@ -1109,6 +1143,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           targetId: verb.targetId,
           // Standard fields at top-level
           subtype: subtype as string | undefined,
+          visibility: visibility as EntityVisibility | undefined,
           createdAt: (createdAt as number) || Date.now(),
           updatedAt: (updatedAt as number) || Date.now(),
           confidence: confidence as number | undefined,
@@ -1489,6 +1524,7 @@ export abstract class BaseStorage extends BaseStorageAdapter {
                   ...deserialized,
                   type: (metadata.noun || 'thing') as NounType,
                   subtype: (metadata as any).subtype as string | undefined,
+                  visibility: (metadata as any).visibility as EntityVisibility | undefined,
                   confidence: metadata.confidence,
                   weight: metadata.weight,
                   createdAt: metadata.createdAt
@@ -1569,6 +1605,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       targetId?: string | string[]
       service?: string | string[]
       metadata?: Record<string, any>
+      /**
+       * 8.0 visibility: tiers to exclude from results (e.g. `['internal','system']`).
+       * Applied after metadata load in the full scan, so it disqualifies the
+       * metadata-less graph-index fast paths (same as `subtype`).
+       */
+      excludeVisibility?: string[]
     }
   }): Promise<{
     items: HNSWVerbWithMetadata[]
@@ -1598,6 +1640,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
             ? (filter as any).subtype
             : [(filter as any).subtype]
         )
+      : null
+    // 8.0 visibility exclusion — applied after metadata load (verb visibility lives in
+    // metadata), so hidden edges are skipped BEFORE the pagination window fills.
+    const excludeVisibility = (filter as { excludeVisibility?: string[] } | undefined)?.excludeVisibility
+    const filterExcludeVisibility = excludeVisibility && excludeVisibility.length > 0
+      ? new Set(excludeVisibility)
       : null
 
     // Iterate by shards (0x00-0xFF) instead of types - single pass!
@@ -1645,10 +1693,20 @@ export abstract class BaseStorage extends BaseStorageAdapter {
               }
             }
 
+            // Apply visibility exclusion (8.0). Absent === 'public' (kept); a stored
+            // 'internal'/'system' value is dropped when its tier is excluded.
+            if (filterExcludeVisibility) {
+              const visibility = (metadata as any)?.visibility as string | undefined
+              if (visibility && filterExcludeVisibility.has(visibility)) {
+                continue
+              }
+            }
+
             // Combine verb + metadata
             collectedVerbs.push({
               ...verb,
               subtype: (metadata as any)?.subtype as string | undefined,
+              visibility: (metadata as any)?.visibility as EntityVisibility | undefined,
               weight: metadata?.weight,
               confidence: metadata?.confidence,
               createdAt: metadata?.createdAt
@@ -1701,6 +1759,12 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       targetId?: string | string[]
       service?: string | string[]
       metadata?: Record<string, any>
+      /**
+       * 8.0 visibility: tiers to exclude from results (e.g. `['internal','system']`).
+       * Applied after metadata load in the full scan, so it disqualifies the
+       * metadata-less graph-index fast paths (same as `subtype`).
+       */
+      excludeVisibility?: string[]
     }
   }): Promise<{
     items: HNSWVerbWithMetadata[]
@@ -1721,8 +1785,13 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // fallthrough to the full shard scan (which loads metadata and applies the
     // subtype check after the load). Subtype is not stored on the raw HNSWVerb;
     // it's a metadata field. The graph-index fast paths return verbs without
-    // metadata, so they can't apply subtype filtering correctly.
-    if (options?.filter && !(options.filter as any).subtype) {
+    // metadata, so they can't apply subtype filtering correctly. The 8.0
+    // `excludeVisibility` filter (also a metadata field) disqualifies them the same way.
+    if (
+      options?.filter &&
+      !(options.filter as any).subtype &&
+      !(options.filter as { excludeVisibility?: string[] }).excludeVisibility
+    ) {
       // CRITICAL VFS FIX: If filtering by sourceId + verbType (most common VFS pattern!)
       // This is the query PathResolver.getChildren() uses: getRelations({ from: dirId, type: VerbType.Contains })
       if (
@@ -2311,16 +2380,40 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       this.nounSubtypeByIdCache.delete(id)
     }
 
+    // Visibility (8.0): only public entities count toward the user-facing totals.
+    // Warm `nounVisibilityByIdCache` so `saveNoun_internal()` (no metadata access)
+    // can gate the `nounCountsByType` increment, and `deleteNounMetadata()` can gate
+    // the matching decrement. Sparse — public ids get no entry.
+    const newVisibility = metadata.visibility
+    const wasCounted = isNew ? false : isCountedVisibility(existingMetadata?.visibility)
+    const isCounted = isCountedVisibility(newVisibility)
+    if (isCounted) {
+      this.nounVisibilityByIdCache.delete(id)
+    } else {
+      this.nounVisibilityByIdCache.set(id, newVisibility as EntityVisibility)
+    }
+
     // CRITICAL FIX: Increment count for new entities
     // This runs AFTER metadata is saved, guaranteeing type information is available
     // Uses synchronous increment since storage operations are already serialized
     // Fixes Bug #1: Count synchronization failure during add() and import()
-    if (isNew && metadata.noun) {
+    // 8.0: skip the user-facing total for internal/system entities (counts.json + getNounCount()).
+    if (isNew && metadata.noun && isCounted) {
       this.incrementEntityCount(metadata.noun)
       // Persist counts asynchronously (fire and forget)
       this.scheduleCountPersist().catch(() => {
         // Ignore persist errors - will retry on next operation
       })
+    } else if (!isNew && metadata.noun && wasCounted !== isCounted) {
+      // Visibility flipped on update(): move the entity in/out of the user-facing total
+      // (counts.json / getNounCount()). `nounCountsByType` is gated independently in
+      // `saveNoun_internal()` off the cache warmed just above, so it is not touched here.
+      if (isCounted) {
+        this.incrementEntityCount(metadata.noun)
+      } else {
+        this.decrementEntityCount(metadata.noun)
+      }
+      this.scheduleCountPersist().catch(() => {})
     }
   }
 
@@ -2707,11 +2800,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     // decrement `nounCountsByType` so type-statistics stay honest across
     // deletes; symmetric with the increment in `saveNounMetadata_internal()`.
     const priorType = this.nounTypeByIdCache.get(id)
+    // 8.0 visibility: an internal/system entity was never added to `nounCountsByType`
+    // (gated in `saveNoun_internal()`), so it must not be decremented here either.
+    const priorCounted = isCountedVisibility(this.nounVisibilityByIdCache.get(id))
+    this.nounVisibilityByIdCache.delete(id)
     if (priorType) {
       this.nounTypeByIdCache.delete(id)
-      const idx = TypeUtils.getNounIndex(priorType)
-      if (this.nounCountsByType[idx] > 0) {
-        this.nounCountsByType[idx]--
+      if (priorCounted) {
+        const idx = TypeUtils.getNounIndex(priorType)
+        if (this.nounCountsByType[idx] > 0) {
+          this.nounCountsByType[idx]--
+        }
       }
 
       // Symmetric subtype decrement
@@ -2797,16 +2896,52 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       this.verbSubtypeByIdCache.delete(id)
     }
 
+    // Visibility (8.0): verb mirror of the noun count gating. Warm
+    // `verbVisibilityByIdCache` so `deleteVerbMetadata()` can prune it. Sparse —
+    // public edges get no entry.
+    //
+    // NOTE on `verbCountsByType`: unlike the noun path, `saveVerb_internal()` runs
+    // BEFORE this method (relate() saves the verb vector first) and has already done
+    // an UNCONDITIONAL `verbCountsByType[idx]++`. We therefore COMPENSATE here: for a
+    // new hidden edge, undo that bump. `updateRelation()` does not re-run
+    // `saveVerb_internal()`, so on a visibility flip we adjust the bucket directly.
+    const newVisibility = metadata.visibility
+    const wasCounted = isNew ? false : isCountedVisibility(existingMetadata?.visibility)
+    const isCounted = isCountedVisibility(newVisibility)
+    if (isCounted) {
+      this.verbVisibilityByIdCache.delete(id)
+    } else {
+      this.verbVisibilityByIdCache.set(id, newVisibility as EntityVisibility)
+    }
+    const verbTypeIdx = TypeUtils.getVerbIndex(verbType)
+
     // CRITICAL FIX: Increment verb count for new relationships
     // This runs AFTER metadata is saved
     // Uses synchronous increment since storage operations are already serialized
     // Fixes Bug #2: Count synchronization failure during relate() and import()
+    // 8.0: skip the user-facing total for internal/system edges (counts.json + getVerbCount()).
     if (isNew) {
-      this.incrementVerbCount(verbType)
+      if (isCounted) {
+        this.incrementVerbCount(verbType)
+      } else {
+        // Hidden edge: undo the unconditional bump from saveVerb_internal().
+        if (this.verbCountsByType[verbTypeIdx] > 0) this.verbCountsByType[verbTypeIdx]--
+      }
       // Persist counts asynchronously (fire and forget)
       this.scheduleCountPersist().catch(() => {
         // Ignore persist errors - will retry on next operation
       })
+    } else if (wasCounted !== isCounted) {
+      // Visibility flipped on updateRelation() (saveVerb_internal did not run): move the
+      // edge in/out of both the user-facing total and the per-type bucket.
+      if (isCounted) {
+        this.incrementVerbCount(verbType)
+        this.verbCountsByType[verbTypeIdx]++
+      } else {
+        this.decrementVerbCount(verbType)
+        if (this.verbCountsByType[verbTypeIdx] > 0) this.verbCountsByType[verbTypeIdx]--
+      }
+      this.scheduleCountPersist().catch(() => {})
     }
   }
 
@@ -2845,6 +2980,9 @@ export abstract class BaseStorage extends BaseStorageAdapter {
       this.verbSubtypeByIdCache.delete(id)
       this.decrementVerbSubtypeCount(priorEntry.verb, priorEntry.subtype)
     }
+    // 8.0 visibility: prune the cache entry (verb deletes don't touch verbCountsByType
+    // in this path, mirroring the existing verb-subtype delete semantics).
+    this.verbVisibilityByIdCache.delete(id)
   }
 
   // ============================================================================
@@ -3276,9 +3414,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           try {
             const metadata = await this.readWithInheritance(path)
             if (metadata && metadata.noun) {
-              const typeIndex = TypeUtils.getNounIndex(metadata.noun)
-              if (typeIndex >= 0 && typeIndex < NOUN_TYPE_COUNT) {
-                this.nounCountsByType[typeIndex]++
+              // 8.0 visibility: rebuild only public entities into the user-facing
+              // per-type stat; warm the cache so later writes/deletes stay symmetric.
+              const id = idFromMetadataPath(path)
+              if (isCountedVisibility(metadata.visibility)) {
+                const typeIndex = TypeUtils.getNounIndex(metadata.noun)
+                if (typeIndex >= 0 && typeIndex < NOUN_TYPE_COUNT) {
+                  this.nounCountsByType[typeIndex]++
+                }
+                if (id) this.nounVisibilityByIdCache.delete(id)
+              } else if (id) {
+                this.nounVisibilityByIdCache.set(id, metadata.visibility as EntityVisibility)
               }
             }
           } catch (error) {
@@ -3304,9 +3450,16 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           try {
             const metadata = await this.readWithInheritance(path)
             if (metadata && metadata.verb) {
-              const typeIndex = TypeUtils.getVerbIndex(metadata.verb)
-              if (typeIndex >= 0 && typeIndex < VERB_TYPE_COUNT) {
-                this.verbCountsByType[typeIndex]++
+              // 8.0 visibility: rebuild only public edges into the user-facing per-type stat.
+              const id = idFromMetadataPath(path)
+              if (isCountedVisibility(metadata.visibility)) {
+                const typeIndex = TypeUtils.getVerbIndex(metadata.verb)
+                if (typeIndex >= 0 && typeIndex < VERB_TYPE_COUNT) {
+                  this.verbCountsByType[typeIndex]++
+                }
+                if (id) this.verbVisibilityByIdCache.delete(id)
+              } else if (id) {
+                this.verbVisibilityByIdCache.set(id, metadata.visibility as EntityVisibility)
               }
             }
           } catch (error) {
@@ -3483,17 +3636,24 @@ export abstract class BaseStorage extends BaseStorageAdapter {
     const type = this.getNounType(noun)
     const path = getNounVectorPath(noun.id)
 
-    // Update type tracking
+    // Update type tracking — but only for entities that count toward the
+    // user-facing per-type stats. `nounVisibilityByIdCache` (warmed by
+    // `saveNounMetadata_internal()`) flags internal/system ids; public ids are
+    // absent, so the common case still increments. 8.0 visibility exclusion.
     const typeIndex = TypeUtils.getNounIndex(type)
-    this.nounCountsByType[typeIndex]++
+    const counted = isCountedVisibility(this.nounVisibilityByIdCache.get(noun.id))
+    if (counted) {
+      this.nounCountsByType[typeIndex]++
+    }
 
     // COW-aware write: Use COW helper for branch isolation
     await this.writeObjectToBranch(path, noun)
 
     // Periodically save statistics
     // Also save on first noun of each type to ensure low-count types are tracked
-    const shouldSave = this.nounCountsByType[typeIndex] === 1 ||  // First noun of type
-                       this.nounCountsByType[typeIndex] % 100 === 0  // Every 100th
+    const shouldSave = counted &&
+                       (this.nounCountsByType[typeIndex] === 1 ||  // First noun of type
+                        this.nounCountsByType[typeIndex] % 100 === 0)  // Every 100th
     if (shouldSave) {
       await this.saveTypeStatistics()
     }

@@ -204,6 +204,38 @@ export interface VerbMetadata {
  *
  * Used for API responses and storage retrieval.
  */
+
+/**
+ * Visibility tier for an entity or relationship — controls whether it surfaces
+ * on Brainy's default user-facing read paths. A reserved, top-level field; the
+ * absence of the field is exactly equivalent to `'public'`.
+ *
+ * - `'public'` (DEFAULT, and the meaning when the field is absent) — counted and
+ *   returned everywhere: `find()`, `related()`, `getNounCount()`/`getVerbCount()`,
+ *   `stats()`.
+ * - `'internal'` — a consumer's app-internal data. HIDDEN from the default
+ *   `find()` / `related()` / counts / `stats()`, but retrievable with an explicit
+ *   opt-in (`find({ includeInternal: true })`, `related({ includeInternal: true })`).
+ * - `'system'` — Brainy's own plumbing (e.g. the VFS root entity). Hidden
+ *   EVERYWHERE by default and surfaced only via the explicit `includeSystem`
+ *   opt-in. NOT settable by consumer code — only internal Brainy code assigns it,
+ *   which is why the `add()` / `relate()` params type narrows to
+ *   `'public' | 'internal'`.
+ */
+export type EntityVisibility = 'public' | 'internal' | 'system'
+
+/**
+ * Whether an entity/relationship of the given visibility is counted on the
+ * user-facing surfaces (`getNounCount()`/`getVerbCount()`, per-type stats). Only
+ * `'public'` (and absent, which means public) is counted; `'internal'` and
+ * `'system'` are not.
+ * @param visibility - The stored `visibility` value (may be absent/unknown).
+ * @returns `true` when the entity is counted on the user-facing surfaces.
+ */
+export function isCountedVisibility(visibility: unknown): boolean {
+  return visibility !== 'internal' && visibility !== 'system'
+}
+
 export interface HNSWNounWithMetadata {
   // HNSW Core (unchanged)
   id: string
@@ -221,6 +253,14 @@ export interface HNSWNounWithMetadata {
   // (`find({ type, subtype })`) and aggregable (`groupBy:['subtype']`) on the standard-field
   // fast path, never falling through to the metadata fallback.
   subtype?: string
+
+  // VISIBILITY — three-value tier gating whether this entity surfaces on default
+  // user-facing reads. Absent === 'public' (counted + returned everywhere). 'internal'
+  // hides the entity from default find()/counts/stats but keeps it retrievable via
+  // find({ includeInternal: true }). 'system' (Brainy plumbing) is hidden everywhere
+  // unless find({ includeSystem: true }). Stored only when not 'public' so the common
+  // case stays lean. See {@link EntityVisibility}.
+  visibility?: EntityVisibility
 
   // QUALITY METRICS (top-level, explicit)
   confidence?: number
@@ -264,6 +304,7 @@ export const STANDARD_ENTITY_FIELDS: ReadonlySet<string> = new Set([
   'level',
   'type',
   'subtype',
+  'visibility',
   'confidence',
   'weight',
   'createdAt',
@@ -323,6 +364,7 @@ export const STANDARD_VERB_FIELDS: ReadonlySet<string> = new Set([
   'sourceId',
   'targetId',
   'subtype',
+  'visibility',
   'confidence',
   'weight',
   'createdAt',
@@ -394,6 +436,13 @@ export interface HNSWVerbWithMetadata {
   // the metadata fallback.
   subtype?: string
 
+  // VISIBILITY — verb mirror of the entity tier. Absent === 'public' (counted +
+  // returned everywhere). 'internal' hides the edge from default related()/counts/stats
+  // but keeps it retrievable via related({ includeInternal: true }). 'system' is hidden
+  // everywhere unless related({ includeSystem: true }). Stored only when not 'public'.
+  // See {@link EntityVisibility}.
+  visibility?: EntityVisibility
+
   // QUALITY METRICS (top-level, explicit)
   weight?: number
   confidence?: number
@@ -427,6 +476,7 @@ export interface GraphVerb {
   connections?: Map<number, Set<string>> // Optional connections from HNSW index
   type?: string // Optional type of the relationship
   subtype?: string // Optional sub-classification within the VerbType (7.30+)
+  visibility?: EntityVisibility // Visibility tier; absent === 'public'. See {@link EntityVisibility}.
   weight?: number // Optional weight of the relationship
   confidence?: number // Optional confidence score (0-1)
   metadata?: any // Optional metadata for the verb

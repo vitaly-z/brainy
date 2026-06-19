@@ -75,6 +75,11 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
     for (const noun of result.items) {
       const metadata = await storage.getNounMetadata(noun.id)
       if (metadata?.noun) {
+        // 8.0 visibility: the user-facing counts only include public entities.
+        // Internal/system entities (e.g. the VFS root) are excluded — keeping this
+        // rebuild consistent with the incremental gating in baseStorage.
+        const visibility = metadata.visibility
+        if (visibility === 'internal' || visibility === 'system') continue
         const entityType = metadata.noun
         entityCounts.set(entityType, (entityCounts.get(entityType) || 0) + 1)
         totalNouns++
@@ -105,6 +110,8 @@ export async function rebuildCounts(storage: BaseStorage): Promise<RebuildCounts
 
     for (const verb of result.items) {
       if (verb.verb) {
+        // 8.0 visibility: exclude internal/system edges from the user-facing counts.
+        if (verb.visibility === 'internal' || verb.visibility === 'system') continue
         const verbType = verb.verb
         verbCounts.set(verbType, (verbCounts.get(verbType) || 0) + 1)
         totalVerbs++

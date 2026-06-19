@@ -227,6 +227,9 @@ export class VirtualFileSystem implements IVirtualFileSystem {
           console.warn('⚠️  VFS: Root metadata incomplete, repairing...')
           await this.brain.update({
             id: rootId,
+            // Re-assert system visibility on repair so a pre-8.0 root (created before the
+            // tier existed) is moved out of the default-visible counts/find() too.
+            visibility: 'system',
             metadata: this.getRootMetadata()
           })
         }
@@ -246,6 +249,12 @@ export class VirtualFileSystem implements IVirtualFileSystem {
         data: '/',
         type: NounType.Collection,
         subtype: 'vfs-root',  // Standard subtype for the VFS root collection (7.30+)
+        // visibility 'system' (8.0): the VFS root is Brainy's own plumbing, not user data,
+        // so it is hidden everywhere by default (getNounCount()/find()/stats()) and surfaces
+        // only via find({ includeSystem: true }). 'system' is intentionally not part of the
+        // public AddParams.visibility union ('public' | 'internal') — this is the single
+        // sanctioned internal setter, hence the cast.
+        visibility: 'system' as 'public' | 'internal',
         metadata: this.getRootMetadata()
       })
 

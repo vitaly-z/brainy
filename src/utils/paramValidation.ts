@@ -534,6 +534,7 @@ export function validateUpdateParams(params: UpdateParams): void {
     !params.type &&
     !params.vector &&
     params.subtype === undefined &&
+    params.visibility === undefined &&
     params.confidence === undefined &&
     params.weight === undefined
   ) {

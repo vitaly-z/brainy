@@ -12,6 +12,7 @@ import { HNSWIndex } from './hnsw/hnswIndex.js'
 import { createStorage } from './storage/storageFactory.js'
 import { BaseStorage } from './storage/baseStorage.js'
 import { StorageAdapter, Vector, DistanceFunction, EmbeddingFunction, GraphVerb, STANDARD_ENTITY_FIELDS } from './coreTypes.js'
+import type { EntityVisibility } from './coreTypes.js'
 import {
   defaultEmbeddingFunction,
   cosineDistance,
@@ -1038,6 +1039,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateAddParams(params)
 
+    // Reserved 'visibility' arriving via the metadata bag is normalized to the
+    // top-level param, mirroring add()'s lift behavior for the other reserved
+    // fields. A 'public'/'internal' value is user-settable and remaps to
+    // params.visibility (top-level wins when both are supplied); 'system' is
+    // Brainy-only and is dropped with a one-shot warning. In every case the key
+    // is stripped from metadata so it never echoes inside the custom bag.
+    params = this.remapReservedVisibilityOnAdd('add', params)
+
     // Tracked-field vocabulary enforcement (Layer 2). Walks both bags so a
     // tracked field declared at top level (e.g. 'subtype') and one declared in
     // metadata (e.g. 'status') both validate.
@@ -1084,6 +1093,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         data: params.data,
         noun: params.type,
         ...(params.subtype !== undefined && { subtype: params.subtype }),
+        // visibility: stored only when not 'public' (absent === public, keeps records lean)
+        ...(params.visibility !== undefined &&
+          params.visibility !== 'public' && { visibility: params.visibility }),
         service: params.service,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1105,6 +1117,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         level: 0,
         type: params.type,
         ...(params.subtype !== undefined && { subtype: params.subtype }),
+        ...(params.visibility !== undefined &&
+          params.visibility !== 'public' && { visibility: params.visibility }),
         ...(params.confidence !== undefined && { confidence: params.confidence }),
         ...(params.weight !== undefined && { weight: params.weight }),
         createdAt: Date.now(),
@@ -1378,6 +1392,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       // Flatten common entity fields to top level
       type: entity.type,
       subtype: entity.subtype,
+      visibility: entity.visibility,
       metadata: entity.metadata,
       data: entity.data,
       confidence: entity.confidence,
@@ -1408,6 +1423,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       vector: noun.vector,
       type: noun.type || NounType.Thing,
       subtype: noun.subtype,
+      visibility: noun.visibility,
 
       // Standard fields at top-level
       confidence: noun.confidence,
@@ -1451,13 +1467,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     // Extract standard fields, rest are custom metadata
     // Same destructuring as baseStorage.getNoun() to ensure consistency
-    const { noun, subtype, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
+    const { noun, subtype, visibility, createdAt, updatedAt, confidence, weight, service, data, createdBy, _rev, ...customMetadata } = metadata
 
     const entity: Entity<T> = {
       id,
       vector: [],  // Stub vector (empty array - vectors not loaded for metadata-only)
       type: noun as NounType || NounType.Thing,
       subtype,
+      visibility: visibility as EntityVisibility | undefined,
 
       // Standard fields from metadata
       confidence,
@@ -1544,12 +1561,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (!params.metadata || typeof params.metadata !== 'object') return params
 
     const {
-      noun, subtype, createdAt, updatedAt, confidence, weight, service,
+      noun, subtype, visibility, createdAt, updatedAt, confidence, weight, service,
       data, createdBy, _rev, ...customMetadata
     } = params.metadata as Record<string, unknown>
 
     const hasReserved =
-      noun !== undefined || subtype !== undefined || createdAt !== undefined ||
+      noun !== undefined || subtype !== undefined || visibility !== undefined ||
+      createdAt !== undefined ||
       updatedAt !== undefined || confidence !== undefined || weight !== undefined ||
       service !== undefined || data !== undefined || createdBy !== undefined ||
       _rev !== undefined
@@ -1572,14 +1590,123 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     if (service !== undefined) warnDropped('service', 'nothing — fixed at add() time')
     if (createdBy !== undefined) warnDropped('createdBy', 'nothing — fixed at add() time')
     if (_rev !== undefined) warnDropped('_rev', "the 'ifRev' param for optimistic concurrency")
+    // 'system' visibility is Brainy-only — a user bag cannot set it. (A 'public'/'internal'
+    // value IS user-settable and is silently remapped to the top-level param below.)
+    if (visibility === 'system') {
+      warnDropped('visibility', "the 'visibility' param ('public' | 'internal')")
+    }
 
     return {
       ...params,
       metadata: customMetadata as UpdateParams<T>['metadata'],
       ...(params.confidence === undefined && typeof confidence === 'number' && { confidence }),
       ...(params.weight === undefined && typeof weight === 'number' && { weight }),
-      ...(params.subtype === undefined && typeof subtype === 'string' && { subtype })
+      ...(params.subtype === undefined && typeof subtype === 'string' && { subtype }),
+      ...(params.visibility === undefined &&
+        (visibility === 'public' || visibility === 'internal') && {
+          visibility: visibility as 'public' | 'internal'
+        })
     }
+  }
+
+  /**
+   * @description Normalize a reserved `visibility` field that arrived inside the
+   * `metadata` bag of an `add()` / `relate()` call. Untyped (JavaScript) callers
+   * can smuggle the reserved key past the compile-time guard; this applies the
+   * same contract as the rest of the reserved fields:
+   * - `'public'` / `'internal'` — user-settable; remapped to the top-level
+   *   `visibility` param unless the caller also passed it explicitly (top-level
+   *   wins), and stripped from the metadata bag.
+   * - `'system'` — Brainy-only; dropped with a one-shot warning and stripped from
+   *   the metadata bag (the entity/edge stays public).
+   * In every case the key is removed from `metadata` so it never echoes inside the
+   * custom bag.
+   * @param method - The calling method name (`'add'` | `'relate'`) for the warning text.
+   * @param params - The caller's params (not mutated; a normalized copy is returned).
+   * @returns Params with `visibility` normalized out of `metadata`.
+   */
+  private remapReservedVisibilityOnAdd<
+    P extends { visibility?: 'public' | 'internal'; metadata?: any }
+  >(method: 'add' | 'relate', params: P): P {
+    if (!params.metadata || typeof params.metadata !== 'object') return params
+    const bag = params.metadata as Record<string, unknown>
+    if (!('visibility' in bag)) return params
+
+    const { visibility, ...customMetadata } = bag
+    if (visibility === 'system') {
+      this.warnDroppedReservedField(
+        method,
+        'visibility',
+        "the 'visibility' param ('public' | 'internal')"
+      )
+    }
+
+    return {
+      ...params,
+      metadata: customMetadata,
+      ...(params.visibility === undefined &&
+        (visibility === 'public' || visibility === 'internal') && {
+          visibility: visibility as 'public' | 'internal'
+        })
+    }
+  }
+
+  /**
+   * @description Emit a one-shot (per field, per process) warning that a reserved
+   * field supplied through a metadata bag was ignored, naming the correct write
+   * path. Shared by the add/relate/update reserved-field normalizers.
+   * @param method - The calling method name, used in the message.
+   * @param field - The reserved field that was dropped.
+   * @param rightPath - Human-readable description of where the value should go instead.
+   */
+  private warnDroppedReservedField(method: string, field: string, rightPath: string): void {
+    if (Brainy.warnedReservedFields.has(field)) return
+    Brainy.warnedReservedFields.add(field)
+    prodLog.warn(
+      `[brainy] ${method}(): '${field}' is a reserved field and cannot be set ` +
+        `through a metadata patch — use ${rightPath}. The value was ignored. ` +
+        `(This warning is shown once per field per process.)`
+    )
+  }
+
+  /**
+   * The visibility tiers a read should EXCLUDE, given the caller's opt-ins.
+   * Default (no opts) hides both `'internal'` and `'system'`; `includeInternal`
+   * unhides internal; `includeSystem` unhides system. Returns `null` when nothing
+   * is excluded (both opts set) so callers can skip the filter entirely.
+   *
+   * @param params - The read params carrying `includeInternal` / `includeSystem`.
+   * @returns The set of excluded tier strings, or `null` for "exclude nothing".
+   */
+  private excludedVisibilityTiers(
+    params: { includeInternal?: boolean; includeSystem?: boolean }
+  ): EntityVisibility[] | null {
+    const excluded: EntityVisibility[] = []
+    if (!params.includeInternal) excluded.push('internal')
+    if (!params.includeSystem) excluded.push('system')
+    return excluded.length > 0 ? excluded : null
+  }
+
+  /**
+   * Resolve the set of entity/relationship ids to hide for this read, by asking
+   * the metadata index for everything tagged with an excluded visibility tier.
+   * Public entities carry NO stored `visibility` (absent === public), so they are
+   * never in this set — exactly the entities we want to keep. Returns an empty set
+   * when nothing is excluded. The result is used as a HARD candidate filter
+   * (subtracted from candidate ids BEFORE pagination), so `limit`/`offset` stay correct.
+   *
+   * @param params - The read params carrying the visibility opt-ins.
+   * @returns A set of ids to omit from results.
+   */
+  private async resolveHiddenIds(
+    params: { includeInternal?: boolean; includeSystem?: boolean }
+  ): Promise<Set<string>> {
+    const excluded = this.excludedVisibilityTiers(params)
+    if (!excluded) return new Set()
+    const ids = await this.metadataIndex.getIdsForFilter({
+      visibility: excluded.length === 1 ? excluded[0] : { oneOf: excluded }
+    })
+    return new Set(ids)
   }
 
   /** One-shot registry for reserved-field warnings (per process). */
@@ -1672,7 +1799,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.weight === undefined && existing.weight !== undefined && { weight: existing.weight }),
         // Update subtype if provided, otherwise preserve existing
         ...(params.subtype !== undefined && { subtype: params.subtype }),
-        ...(params.subtype === undefined && existing.subtype !== undefined && { subtype: existing.subtype })
+        ...(params.subtype === undefined && existing.subtype !== undefined && { subtype: existing.subtype }),
+        // Visibility: take the new value if provided, else preserve existing. Stored only
+        // when the effective value is not 'public' (absent === public, keeps records lean).
+        // A change to 'public' therefore drops the field entirely.
+        ...(((params.visibility ?? existing.visibility) ?? 'public') !== 'public' && {
+          visibility: params.visibility ?? existing.visibility
+        })
       }
 
       // Build entity structure for metadata index (with top-level fields)
@@ -1683,6 +1816,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         level: 0,
         type: params.type || existing.type,
         subtype: params.subtype !== undefined ? params.subtype : existing.subtype,
+        ...(((params.visibility ?? existing.visibility) ?? 'public') !== 'public' && {
+          visibility: params.visibility ?? existing.visibility
+        }),
         confidence: params.confidence !== undefined ? params.confidence : existing.confidence,
         weight: params.weight !== undefined ? params.weight : existing.weight,
         createdAt: existing.createdAt,
@@ -1976,6 +2112,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
     // Zero-config validation (static import for performance)
     validateRelateParams(params)
 
+    // Reserved 'visibility' arriving via the metadata bag is normalized to the
+    // top-level param (mirror of add()): 'public'/'internal' lifts, 'system' is
+    // dropped with a one-shot warning, and the key is stripped from the bag.
+    params = this.remapReservedVisibilityOnAdd('relate', params)
+
     // Subtype pairing enforcement (Layer 3 — 7.30.0). Per-type rules registered
     // via brain.requireSubtype() compose with the brain-wide strict-mode flag.
     // Metadata is passed so infrastructure edges (VFS containment) can bypass
@@ -2028,6 +2169,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         ...(params.metadata || {}),
         verb: params.type,
         ...(params.subtype !== undefined && { subtype: params.subtype }),
+        // visibility: stored only when not 'public' (absent === public, keeps records lean)
+        ...(params.visibility !== undefined &&
+          params.visibility !== 'public' && { visibility: params.visibility }),
         weight: params.weight ?? 1.0,
         createdAt: Date.now(),
         ...((params as any).data !== undefined && { data: (params as any).data })
@@ -2044,6 +2188,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         verb: params.type,
         type: params.type,
         ...(params.subtype !== undefined && { subtype: params.subtype }),
+        ...(params.visibility !== undefined &&
+          params.visibility !== 'public' && { visibility: params.visibility }),
         weight: params.weight ?? 1.0,
         metadata: params.metadata,
         data: (params as any).data,
@@ -2213,6 +2359,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       ...(params.subtype !== undefined
         ? { subtype: params.subtype }
         : existingAny.subtype !== undefined && { subtype: existingAny.subtype }),
+      // Visibility: new value if provided, else preserve existing; stored only when the
+      // effective value is not 'public' (a change to 'public' drops the field).
+      ...(((params.visibility ?? existingAny.visibility) ?? 'public') !== 'public' && {
+        visibility: params.visibility ?? existingAny.visibility
+      }),
       weight: params.weight ?? existingAny.weight ?? 1.0,
       ...(params.confidence !== undefined
         ? { confidence: params.confidence }
@@ -2237,6 +2388,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       ...(params.subtype !== undefined
         ? { subtype: params.subtype }
         : existingAny.subtype !== undefined && { subtype: existingAny.subtype }),
+      ...(((params.visibility ?? existingAny.visibility) ?? 'public') !== 'public' && {
+        visibility: params.visibility ?? existingAny.visibility
+      }),
       weight: updatedMetadata.weight,
       metadata: newMetadata,
       data: updatedMetadata.data,
@@ -2333,6 +2487,14 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     if (params.service) {
       filter.service = params.service
+    }
+
+    // Visibility (8.0): exclude hidden tiers by default. The exclusion is applied in the
+    // storage scan AFTER metadata load (where verb.visibility is known), so the storage
+    // limit stays exact. Like subtype, it disqualifies the metadata-less fast paths.
+    const excludedTiers = this.excludedVisibilityTiers(params)
+    if (excludedTiers) {
+      filter.excludeVisibility = excludedTiers
     }
 
     // VFS relationships are no longer filtered
@@ -3004,6 +3166,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
       return this.findAggregate(params)
     }
 
+    // Visibility (8.0): resolve the ids to hide for this read ONCE. Default hides
+    // internal + system; opt back in with includeInternal / includeSystem. Applied as a
+    // hard candidate filter at every candidate-gathering point below so limit/offset stay
+    // correct. Empty set when both opts are set (nothing excluded).
+    const hiddenIds = await this.resolveHiddenIds(params)
+    const isHidden = (id: string): boolean => hiddenIds.size > 0 && hiddenIds.has(id)
+
     const startTime = Date.now()
     const result = await (async () => {
       let results: Result<T>[] = []
@@ -3079,6 +3248,9 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           filteredIds = await this.metadataIndex.getIdsForFilter(filter)
         }
 
+        // Visibility hard filter — drop hidden ids BEFORE pagination so limit is exact.
+        if (hiddenIds.size > 0) filteredIds = filteredIds.filter((id) => !hiddenIds.has(id))
+
         // Paginate BEFORE loading entities (production-scale!)
         const limit = params.limit || 10
         const offset = params.offset || 0
@@ -3105,7 +3277,8 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         // Unfiltered sort: column store handles this at O(K log S) scale.
         // No per-entity storage reads, no bucketing precision loss.
         if (params.orderBy) {
-          const k = limit + offset
+          // Over-fetch by the hidden count so dropping hidden ids still fills the page.
+          const k = limit + offset + hiddenIds.size
           const sortedIntIds = await this.metadataIndex.columnStore.sortTopK(
             params.orderBy,
             params.order || 'asc',
@@ -3114,9 +3287,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
           // Convert int IDs to UUIDs and paginate
           const idMapper = this.metadataIndex.getIdMapper()
-          const allUuids = sortedIntIds
+          let allUuids = sortedIntIds
             .map(intId => idMapper.getUuid(intId))
             .filter((uuid): uuid is string => uuid !== undefined)
+          // Visibility hard filter — drop hidden ids BEFORE pagination.
+          if (hiddenIds.size > 0) allUuids = allUuids.filter((id) => !hiddenIds.has(id))
           const pageIds = allUuids.slice(offset, offset + limit)
 
           const entitiesMap = await this.batchGet(pageIds)
@@ -3137,9 +3312,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           filter.isVFSEntity = { ne: true }
         }
 
-        // Use metadata index if we need to filter
+        // Use metadata index when there's an actual filter (e.g. excludeVFS). The empty
+        // filter returns nothing from getIdsForFilter, so the unfiltered case below uses
+        // getNouns instead (it returns all nouns, including their visibility).
         if (Object.keys(filter).length > 0) {
-          const filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+          let filteredIds = await this.metadataIndex.getIdsForFilter(filter)
+          // Visibility hard filter — drop hidden ids BEFORE pagination.
+          if (hiddenIds.size > 0) filteredIds = filteredIds.filter((id) => !hiddenIds.has(id))
           const pageIds = filteredIds.slice(offset, offset + limit)
 
           // Batch-load entities for 10x faster cloud storage performance
@@ -3151,13 +3330,19 @@ export class Brainy<T = any> implements BrainyInterface<T> {
             }
           }
         } else {
-          // No filtering needed, use direct storage query
+          // No metadata filter, use direct storage query. Over-fetch by the hidden count
+          // so the visibility filter below still fills the requested page (limit-exact).
           const storageResults = await this.storage.getNouns({
-            pagination: { limit: limit + offset, offset: 0 }
+            pagination: { limit: limit + offset + hiddenIds.size, offset: 0 }
           })
 
-          for (let i = offset; i < Math.min(offset + limit, storageResults.items.length); i++) {
-            const noun = storageResults.items[i]
+          // Visibility hard filter on the materialized nouns (each carries `visibility`).
+          const visible = hiddenIds.size > 0
+            ? storageResults.items.filter((noun) => noun && !hiddenIds.has(noun.id))
+            : storageResults.items
+
+          for (let i = offset; i < Math.min(offset + limit, visible.length); i++) {
+            const noun = visible[i]
             if (noun) {
               const entity = await this.convertNounToEntity(noun)
               results.push(this.createResult(noun.id, 1.0, entity))
@@ -3211,6 +3396,11 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
         preResolvedMetadataIds = await this.metadataIndex.getIdsForFilter(preResolvedFilter)
+
+        // Visibility hard filter — restrict the HNSW candidate set to non-hidden ids.
+        if (hiddenIds.size > 0) {
+          preResolvedMetadataIds = preResolvedMetadataIds.filter((id) => !hiddenIds.has(id))
+        }
 
         // Short-circuit: if metadata filter matches nothing, skip expensive vector search
         if (preResolvedMetadataIds.length === 0) {
@@ -3273,6 +3463,13 @@ export class Brainy<T = any> implements BrainyInterface<T> {
           }
         }
         results = Array.from(uniqueResults.values())
+      }
+
+      // Visibility hard filter for vector/text/proximity candidates (the pre-resolved
+      // path already excluded hidden ids; this covers searches with no metadata filter).
+      // Applied BEFORE the final sort+slice so limit/offset remain exact.
+      if (hiddenIds.size > 0 && results.length > 0) {
+        results = results.filter((r) => !isHidden(r.id))
       }
 
       // Apply metadata filtering using pre-resolved IDs (metadata-first optimization).
@@ -8821,6 +9018,7 @@ export class Brainy<T = any> implements BrainyInterface<T> {
         to: v.targetId,
         type: (v.verb || v.type) as VerbType,
         ...(va.subtype !== undefined && { subtype: va.subtype as string }),
+        ...(v.visibility !== undefined && { visibility: v.visibility }),
         weight: v.weight ?? 1.0,
         data: v.data,
         metadata: v.metadata,
