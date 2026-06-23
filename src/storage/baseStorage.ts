@@ -199,6 +199,33 @@ function idFromMetadataPath(path: string): string | undefined {
 }
 
 /**
+ * Prefix marking a `getNouns()` pagination cursor as an opaque resume-OFFSET
+ * token. The shard-scan adapter (`getNounsWithPagination`) is offset-based and
+ * ignores a raw cursor, so `getNouns()` encodes the next offset INTO the cursor
+ * and decodes it on the way back in — making cursor pagination actually advance.
+ * Without this a cursor-paginating caller re-fetched page 0 every iteration and
+ * (once `totalCount` reported the true total) `hasMore` stayed true forever — a
+ * permanent re-scan loop on any store larger than one page.
+ */
+const OFFSET_CURSOR_PREFIX = 'off:'
+
+/** Encode a resume offset as an opaque `getNouns()` cursor token. */
+function encodeOffsetCursor(offset: number): string {
+  return `${OFFSET_CURSOR_PREFIX}${offset}`
+}
+
+/**
+ * Decode a `getNouns()` cursor into its resume offset. Returns `undefined` for
+ * `undefined`/legacy/unrecognized cursors so the caller falls back to the
+ * explicit `offset` argument (never to a silent re-scan of page 0).
+ */
+function decodeOffsetCursor(cursor: string | undefined): number | undefined {
+  if (cursor === undefined || !cursor.startsWith(OFFSET_CURSOR_PREFIX)) return undefined
+  const n = Number(cursor.slice(OFFSET_CURSOR_PREFIX.length))
+  return Number.isInteger(n) && n >= 0 ? n : undefined
+}
+
+/**
  * Base storage adapter that implements common functionality
  * This is an abstract class that should be extended by specific storage adapters
  */
@@ -1353,22 +1380,19 @@ export abstract class BaseStorage extends BaseStorageAdapter {
         // Get nouns by type directly (already combines with metadata)
         const nounsByType = await this.getNounsByNounType(nounType)
 
-        // Apply pagination
-        const paginatedNouns = nounsByType.slice(offset, offset + limit)
-        const hasMore = offset + limit < nounsByType.length
-
-        // Set next cursor if there are more items
-        let nextCursor: string | undefined = undefined
-        if (hasMore && paginatedNouns.length > 0) {
-          const lastItem = paginatedNouns[paginatedNouns.length - 1]
-          nextCursor = lastItem.id
-        }
+        // Apply pagination. A cursor resumes by OFFSET (opaque offset token) so
+        // cursor pagination advances; fall back to the explicit offset otherwise.
+        const startOffset = decodeOffsetCursor(cursor) ?? offset
+        const paginatedNouns = nounsByType.slice(startOffset, startOffset + limit)
+        const hasMore = startOffset + limit < nounsByType.length
 
         return {
           items: paginatedNouns,
           totalCount: nounsByType.length,
           hasMore,
-          nextCursor
+          // Next resume offset, so a cursor-paginating caller advances instead
+          // of re-fetching the same page.
+          nextCursor: hasMore ? encodeOffsetCursor(startOffset + paginatedNouns.length) : undefined
         }
       }
     }
@@ -1390,11 +1414,17 @@ export abstract class BaseStorage extends BaseStorageAdapter {
 
       // Check if the adapter has a paginated method for getting nouns
       if (typeof (this as any).getNounsWithPagination === 'function') {
+        // A cursor resumes by OFFSET: the shard-scan adapter is offset-based and
+        // ignores the raw cursor, so decode the resume offset the cursor carries.
+        // Without this, a cursor-paginating caller re-fetched offset 0 every call
+        // and `hasMore` stayed true forever → a permanent re-scan loop. Falls
+        // back to the explicit `offset` for a first page / legacy cursor.
+        const resolvedOffset = decodeOffsetCursor(cursor) ?? offset
+
         // Use the adapter's paginated method - pass offset directly to adapter
         const result = await (this as any).getNounsWithPagination({
           limit,
-          offset,  // Let the adapter handle offset for O(1) operation
-          cursor,
+          offset: resolvedOffset,  // Let the adapter handle offset for O(1) operation
           filter: options?.filter
         })
 
@@ -1422,7 +1452,10 @@ export abstract class BaseStorage extends BaseStorageAdapter {
           items,
           totalCount: finalTotalCount,
           hasMore: safeHasMore,
-          nextCursor: result.nextCursor
+          // Re-issue the cursor as the NEXT resume offset so cursor pagination
+          // advances exactly like offset pagination (it is offset pagination
+          // under the hood). Omitted when there is no next page.
+          nextCursor: safeHasMore ? encodeOffsetCursor(resolvedOffset + items.length) : undefined
         }
       }
 

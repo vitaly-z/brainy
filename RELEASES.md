@@ -10,6 +10,35 @@ Full auto-generated changelog: `CHANGELOG.md` · Releases: https://github.com/so
 
 ---
 
+## v7.33.1 — 2026-06-22
+
+**Affected products:** any consumer on `filesystem` / `mmap-filesystem` storage with **more than one
+page (> 500) of entities** that defines an **aggregate** over an already-populated brain (the common
+reopen-then-`defineAggregate()`/`queryAggregate()` case). **Critical fix** — a permanent post-init
+CPU loop. Drop-in; no API or data changes. **Upgrade from 7.32.1 / 7.33.0 immediately.**
+
+### Fix — `getNouns()` cursor pagination no longer re-scans the first page forever (permanent CPU loop)
+
+`storage.getNouns({ pagination: { cursor } })` paginated by **cursor** never advanced: the shard-scan
+adapter is offset-based and **ignored** the cursor, so every cursor call re-returned the first page.
+On its own that was harmless — until v7.32.1 correctly made `totalCount` the true dataset total, which
+makes `hasMore` stay `true` until a caller has paged through everything. A caller that paginates by
+cursor (`cursor = page.nextCursor`) — notably **aggregate backfill** (`defineAggregate()` /
+`queryAggregate()` over a pre-populated store) — therefore looped **forever**, re-walking the entire
+entity shard tree on every iteration. With more than one page of entities this pegged 1–2 CPU cores
+permanently on the JS main thread — with zero queries or traffic — and never settled. (Before v7.32.1
+the very same loop terminated after one page, silently backfilling only the first 500 entities — an
+incomplete aggregate.)
+
+`getNouns()` now treats the cursor as an **opaque, advancing offset token**, so cursor pagination
+behaves exactly like offset pagination — it advances and terminates — and an aggregate backfill now
+streams the **whole** corpus exactly once (no longer truncated at 500, no longer looping). The backfill
+loop was additionally hardened to pure offset pagination as defense in depth. Regression that
+reproduces the infinite loop and fails fast on any re-scan:
+`tests/unit/storage/getNouns-cursor-pagination.test.ts`.
+
+---
+
 ## v7.32.1 — 2026-06-17
 
 **Affected products:** consumers on `filesystem` / `mmap-filesystem` storage whose logs showed

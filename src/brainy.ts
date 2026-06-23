@@ -10089,22 +10089,23 @@ export class Brainy<T = any> implements BrainyInterface<T> {
 
     index.beginBackfill(name)
 
+    // Pure OFFSET pagination: advance by the number of items actually returned
+    // and stop as soon as the store reports no more (or returns an empty page).
+    // Driving this off `offset` alone — never re-feeding `nextCursor` — makes
+    // the loop provably terminating regardless of how the adapter implements
+    // cursors (an earlier cursor-fed variant re-fetched page 0 forever on a
+    // store larger than one page).
     const PAGE = 500
     let offset = 0
-    let cursor: string | undefined
     for (;;) {
       const page = await this.storage.getNouns({
-        pagination: cursor ? { limit: PAGE, cursor } : { limit: PAGE, offset }
+        pagination: { limit: PAGE, offset }
       })
       for (const noun of page.items) {
         index.backfillEntity(name, noun as unknown as Record<string, unknown>)
       }
+      offset += page.items.length
       if (!page.hasMore || page.items.length === 0) break
-      if (page.nextCursor) {
-        cursor = page.nextCursor
-      } else {
-        offset += page.items.length
-      }
     }
 
     index.finishBackfill(name)
